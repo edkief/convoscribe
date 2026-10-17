@@ -175,6 +175,35 @@ class WavRoundTripTest {
     }
 
     @Test
+    fun inspect_locatesThePayloadOfAFinishedFile() {
+        val file = tmp.newFile("finished.wav")
+        WavWriter(file).use { it.write(ShortArray(100)) }
+
+        val info = WavReader.inspect(file)
+
+        assertEquals(16_000, info.sampleRate)
+        assertEquals(44L, info.dataOffset)
+        assertEquals(200L, info.dataBytes)
+    }
+
+    @Test
+    fun inspect_trustsTheFileLengthWhenTheHeaderHasZeroSizes() {
+        val file = tmp.newFile("crashed.wav")
+        WavWriter(file).use { it.write(ShortArray(100)) }
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.seek(WavWriter.RIFF_SIZE_OFFSET)
+            raf.write(ByteArray(4))
+            raf.seek(WavWriter.DATA_SIZE_OFFSET)
+            raf.write(ByteArray(4))
+        }
+
+        val info = WavReader.inspect(file)
+
+        assertEquals(44L, info.dataOffset)
+        assertEquals(200L, info.dataBytes)
+    }
+
+    @Test
     fun repairHeader_throwsIfFileIsShorterThanTheHeader() {
         val file = tmp.newFile("tiny.wav")
         RandomAccessFile(file, "rw").use { it.setLength(10) }

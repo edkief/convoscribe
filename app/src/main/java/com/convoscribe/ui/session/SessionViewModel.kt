@@ -1,21 +1,34 @@
 package com.convoscribe.ui.session
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.convoscribe.audio.AudioExporter
+import com.convoscribe.audio.AudioPlayer
+import com.convoscribe.audio.PlayerState
+import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.diarization.EnrollFromSessionUseCase
+import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -45,8 +58,18 @@ data class SessionUiState(
     val speakers: List<SpeakerEntity> = emptyList(),
     val notFound: Boolean = false,
     /** Speaker count chosen for this session; `null` follows Settings. */
-    val numSpeakers: Int? = null
+    val numSpeakers: Int? = null,
+    /** Path of the session's WAV recording; blank until the session row has one. */
+    val audioPath: String = ""
 )
+
+/** State of an audio export (share or save); the screen shows a progress dialog while encoding. */
+sealed interface ExportState {
+    data object Idle : ExportState
+
+    /** The recording is being encoded to M4A; [progress] is `0f..1f`. */
+    data class Encoding(val progress: Float) : ExportState
+}
 
 /**
  * ViewModel for the session-detail screen. Exposes a single
@@ -72,12 +95,23 @@ data class SessionUiState(
  * or surfaces its error). Backed by a buffered [Channel] so a
  * message emitted while the screen is being recomposed is not
  * lost and never re-fires on rotation.
+ *
+ * Playback: when [playerFactory] is given (the screen passes the
+ * real one; tests pass a fake, and `null` means no player) the
+ * ViewModel owns an [AudioPlayer] for the session's recording. It
+ * opens the file once the session is no longer `RECORDING`,
+ * exposes [playerState], [activeLineIndex] and [following], and
+ * releases the player in [onCleared]. With an [audioExporter] it
+ * also encodes the recording to M4A for [shareAudio] / [saveAudio],
+ * reporting [exportState] and cancellable with [cancelExport].
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionViewModel(
     private val sessionId: Long,
     private val repository: SessionRepository,
-    private val enrollFromSession: EnrollFromSessionUseCase? = null
+    private val enrollFromSession: EnrollFromSessionUseCase? = null,
+    playerFactory: ((CoroutineScope) -> AudioPlayer)? = null,
+    private val audioExporter: AudioExporter? = null
 ) : ViewModel() {
 
     val uiState: StateFlow<SessionUiState> = repository.observeSession(sessionId)
@@ -94,7 +128,8 @@ class SessionViewModel(
                         status = session.status,
                         lines = TranscriptFormatter.lines(segments, speakers),
                         speakers = speakers,
-                        numSpeakers = session.numSpeakers
+                        numSpeakers = session.numSpeakers,
+                        audioPath = session.audioPath
                     )
                 }
             }
@@ -104,6 +139,52 @@ class SessionViewModel(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = SessionUiState()
         )
+
+    private val player: AudioPlayer? = playerFactory?.invoke(viewModelScope)
+
+    /** Player state for the player bar; stays at the idle default when there is no player. */
+    val playerState: StateFlow<PlayerState> = player?.state ?: MutableStateFlow(PlayerState()).asStateFlow()
+
+    private val _following = MutableStateFlow(true)
+
+    /**
+     * Whether the transcript scrolls to keep the current line in view.
+     * A manual scroll turns it off; a seek or [resumeFollow] turns it on.
+     */
+    val following: StateFlow<Boolean> = _following.asStateFlow()
+
+    /**
+     * Index in [SessionUiState.lines] of the line being played, or
+     * `null` while nothing has been played yet (or there is no player).
+     */
+    val activeLineIndex: StateFlow<Int?> = combine(
+        uiState.map { it.lines }.distinctUntilChanged(),
+        playerState
+    ) { lines, p ->
+        if (!p.ready || (!p.isPlaying && p.positionMs == 0L)) {
+            null
+        } else {
+            PlaybackSync.activeLineIndex(lines, p.positionMs)
+        }
+    }.distinctUntilChanged().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    init {
+        val audio = player
+        if (audio != null) {
+            viewModelScope.launch {
+                uiState
+                    .map { state ->
+                        state.audioPath.takeIf { state.status != null && state.status != SessionStatus.RECORDING }
+                    }
+                    .distinctUntilChanged()
+                    .collect { path -> if (path.isNullOrBlank()) audio.stop() else audio.prepare(File(path)) }
+            }
+        }
+    }
 
     /**
      * Buffered channel of snackbar messages. Capacity `Channel.BUFFERED`
@@ -188,5 +269,107 @@ class SessionViewModel(
                 _snackbar.trySend(t.message ?: t.javaClass.simpleName)
             }
         }
+    }
+
+    /** Play button: pause when playing, otherwise play from the current position. */
+    fun togglePlayback() {
+        val audio = player ?: return
+        if (audio.state.value.isPlaying) audio.pause() else audio.play()
+    }
+
+    /** Stop playback (leaving the screen, re-identifying speakers); the position is kept. */
+    fun stopPlayback() {
+        player?.stop()
+    }
+
+    /** Seek bar: jump to [positionMs] and follow the transcript again. */
+    fun seekTo(positionMs: Long) {
+        player?.seekTo(positionMs)
+        _following.value = true
+    }
+
+    /** Skip buttons: move by [deltaMs] and follow the transcript again. */
+    fun skip(deltaMs: Long) {
+        player?.skip(deltaMs)
+        _following.value = true
+    }
+
+    /** Speed button: 1x → 1.5x → 2x → 1x. */
+    fun cycleSpeed() {
+        val audio = player ?: return
+        audio.setSpeed(PlaybackSync.nextSpeed(audio.state.value.speed))
+    }
+
+    /** A transcript line was tapped: play from where it starts. */
+    fun playLine(line: TranscriptLine) {
+        val audio = player ?: return
+        audio.seekTo(PlaybackSync.seekTargetMs(line))
+        audio.play()
+        _following.value = true
+    }
+
+    /** The user scrolled the transcript by hand: stop following until they ask. */
+    fun onUserScrolled() {
+        _following.value = false
+    }
+
+    /** The "Follow" button: scroll back to the playing line and keep following. */
+    fun resumeFollow() {
+        _following.value = true
+    }
+
+    private val _exportState = MutableStateFlow<ExportState>(ExportState.Idle)
+
+    /** Progress of the running audio export, or [ExportState.Idle]. */
+    val exportState: StateFlow<ExportState> = _exportState.asStateFlow()
+
+    private val shareAudioChannel = Channel<File>(Channel.BUFFERED)
+
+    /** One-shot: an M4A is ready to hand to the system share sheet. */
+    val shareAudioFiles: Flow<File> = shareAudioChannel.receiveAsFlow()
+
+    private var exportJob: Job? = null
+
+    /** Encode the recording to M4A and emit it on [shareAudioFiles]. */
+    fun shareAudio() = export { exporter, session, wav ->
+        shareAudioChannel.trySend(exporter.export(sessionId, session.title, wav, ::reportProgress))
+    }
+
+    /** Encode the recording to M4A and write it to the document the user picked at [target]. */
+    fun saveAudio(target: Uri) = export { exporter, session, wav ->
+        exporter.saveTo(target, sessionId, session.title, wav, ::reportProgress)
+        _snackbar.trySend("Audio saved")
+    }
+
+    /** Abort the running export; nothing is shared or saved. */
+    fun cancelExport() {
+        exportJob?.cancel()
+    }
+
+    private fun reportProgress(progress: Float) {
+        _exportState.value = ExportState.Encoding(progress)
+    }
+
+    private fun export(block: suspend (AudioExporter, SessionEntity, File) -> Unit) {
+        val exporter = audioExporter ?: return
+        if (exportJob?.isActive == true) return
+        exportJob = viewModelScope.launch {
+            _exportState.value = ExportState.Encoding(0f)
+            try {
+                val session = repository.getSession(sessionId)
+                if (session == null || session.audioPath.isBlank()) return@launch
+                block(exporter, session, File(session.audioPath))
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _snackbar.trySend("Could not export the audio: ${e.message ?: e.javaClass.simpleName}")
+            } finally {
+                _exportState.value = ExportState.Idle
+            }
+        }
+    }
+
+    override fun onCleared() {
+        player?.release()
     }
 }

@@ -1,7 +1,12 @@
 package com.convoscribe.ui.session
 
+import android.content.ClipData
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,8 +22,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,6 +48,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -59,6 +67,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -76,9 +85,16 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -86,6 +102,9 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.audio.AudioExporter
+import com.convoscribe.audio.MediaPlayerAudioPlayer
+import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionStatus
@@ -154,7 +173,9 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
                 SessionViewModel(
                     sessionId = sessionId,
                     repository = container.sessionRepository,
-                    enrollFromSession = container.enrollFromSessionUseCase
+                    enrollFromSession = container.enrollFromSessionUseCase,
+                    playerFactory = { scope -> MediaPlayerAudioPlayer(scope) },
+                    audioExporter = container.audioExporter
                 )
             }
         }
@@ -186,6 +207,32 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val summaryState by summaryVm.state.collectAsStateWithLifecycle()
     val askState by askVm.state.collectAsStateWithLifecycle()
+    val playerState by vm.playerState.collectAsStateWithLifecycle()
+    val activeLineIndex by vm.activeLineIndex.collectAsStateWithLifecycle()
+    val following by vm.following.collectAsStateWithLifecycle()
+    val exportState by vm.exportState.collectAsStateWithLifecycle()
+    val saveAudioLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("audio/mp4")
+    ) { uri -> if (uri != null) vm.saveAudio(uri) }
+    LaunchedEffect(vm) {
+        // An M4A is ready: hand it to the share sheet through the
+        // FileProvider, with a one-off read grant for the receiving app.
+        vm.shareAudioFiles.collect { file ->
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "audio/mp4"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, state.title)
+                clipData = ClipData.newRawUri(file.name, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(send, context.getString(R.string.session_share_audio_chooser)))
+        }
+    }
+    // Playback ends when the user leaves the screen or the app goes to
+    // the background (there is no background playback).
+    DisposableEffect(vm) { onDispose { vm.stopPlayback() } }
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.stopPlayback() }
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(vm) {
         // Surface one-shot messages from the ViewModel: a
@@ -213,6 +260,22 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         notFound = state.notFound,
         summaryState = summaryState,
         askState = askState,
+        playerState = playerState,
+        activeLineIndex = activeLineIndex,
+        following = following,
+        exportState = exportState,
+        onShareAudio = { vm.shareAudio() },
+        onSaveAudio = { saveAudioLauncher.launch(AudioExporter.fileName(state.title)) },
+        onCancelExport = { vm.cancelExport() },
+        playback = PlaybackActions(
+            onTogglePlay = { vm.togglePlayback() },
+            onSeek = { vm.seekTo(it) },
+            onSkip = { vm.skip(it) },
+            onCycleSpeed = { vm.cycleSpeed() },
+            onLineTapped = { vm.playLine(it) },
+            onUserScrolled = { vm.onUserScrolled() },
+            onResumeFollow = { vm.resumeFollow() }
+        ),
         snackbarHostState = snackbarHostState,
         canContinueRecording = !state.notFound &&
             recorderState.phase == RecordingPhase.IDLE &&
@@ -247,6 +310,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
             // already picks up the DIARIZING flip the use case
             // writes, so the screen mirrors the work without having
             // to track it locally.
+            vm.stopPlayback()
             ContextCompat.startForegroundService(
                 context,
                 RecordingService.diarizeIntent(context, sessionId, numSpeakers = count)
@@ -278,6 +342,14 @@ internal fun SessionBody(
     notFound: Boolean,
     summaryState: SummaryUiState,
     askState: AskUiState,
+    playerState: PlayerState,
+    activeLineIndex: Int?,
+    following: Boolean,
+    exportState: ExportState,
+    onShareAudio: () -> Unit,
+    onSaveAudio: () -> Unit,
+    onCancelExport: () -> Unit,
+    playback: PlaybackActions,
     snackbarHostState: SnackbarHostState,
     canContinueRecording: Boolean,
     onContinueRecording: () -> Unit,
@@ -358,6 +430,23 @@ internal fun SessionBody(
                                 renameSessionOpen = true
                             }
                         )
+                        val hasAudio = status != SessionStatus.RECORDING && playerState.ready
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.session_overflow_share_audio)) },
+                            enabled = hasAudio,
+                            onClick = {
+                                overflowExpanded = false
+                                onShareAudio()
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.session_overflow_save_audio)) },
+                            enabled = hasAudio,
+                            onClick = {
+                                overflowExpanded = false
+                                onSaveAudio()
+                            }
+                        )
                         val canDiarize = status != SessionStatus.DIARIZING && status != SessionStatus.RECORDING
                         DropdownMenuItem(
                             text = { Text(text = stringResource(R.string.session_overflow_reidentify)) },
@@ -402,12 +491,24 @@ internal fun SessionBody(
                     text = { Text(text = stringResource(R.string.session_tab_ask)) }
                 )
             }
+            // Finished sessions with a readable recording get the player;
+            // it is not offered while the session is still being recorded.
+            val canPlay = !notFound && status != SessionStatus.RECORDING && playerState.ready
+            if (canPlay && selectedTab == 0) {
+                PlayerBar(state = playerState, actions = playback)
+            }
             when {
                 notFound -> SessionNotFound()
                 selectedTab == 0 -> TranscriptTab(
                     status = status,
                     lines = lines,
                     speakers = speakers,
+                    canPlay = canPlay,
+                    isPlaying = playerState.isPlaying,
+                    positionMs = { playerState.positionMs },
+                    activeLineIndex = activeLineIndex,
+                    following = following,
+                    playback = playback,
                     onSpeakerChipTapped = { index -> renameSpeakerIndex = index }
                 )
                 selectedTab == 1 -> SummaryTab(
@@ -427,6 +528,28 @@ internal fun SessionBody(
         }
     }
 
+    if (exportState is ExportState.Encoding) {
+        // Not dismissable by tapping outside: encoding a long session
+        // takes a while, and Cancel is the explicit way out.
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text(text = stringResource(R.string.session_export_title)) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = stringResource(R.string.session_export_message))
+                    LinearProgressIndicator(
+                        progress = { exportState.progress },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = onCancelExport) {
+                    Text(text = stringResource(R.string.session_export_cancel))
+                }
+            }
+        )
+    }
     // Rename-a-speaker dialog. `renameSpeakerIndex == null`
     // means the dialog is closed. We snapshot the speaker at
     // open-time so cancelling and re-opening starts fresh.
@@ -681,6 +804,12 @@ private fun TranscriptTab(
     status: SessionStatus?,
     lines: List<TranscriptLine>,
     speakers: List<SpeakerEntity>,
+    canPlay: Boolean,
+    isPlaying: Boolean,
+    positionMs: () -> Long,
+    activeLineIndex: Int?,
+    following: Boolean,
+    playback: PlaybackActions,
     onSpeakerChipTapped: (Int) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -701,17 +830,53 @@ private fun TranscriptTab(
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                items(items = lines, key = { it.startMs.toString() + "-" + it.text.hashCode() }) { line ->
-                    TranscriptRow(line = line, onLabelTapped = { speaker ->
-                        val idx = speakers.firstOrNull { it.label == speaker }?.speakerIndex
-                        if (idx != null) onSpeakerChipTapped(idx)
-                    })
+            val listState = rememberLazyListState()
+            // A drag (or the fling it starts) is the user taking over the
+            // scroll position; programmatic scrolls below do not emit one.
+            LaunchedEffect(listState) {
+                listState.interactionSource.interactions.collect {
+                    if (it is DragInteraction.Start) playback.onUserScrolled()
+                }
+            }
+            LaunchedEffect(activeLineIndex, following) {
+                val index = activeLineIndex
+                if (following && index != null && index < lines.size && !listState.isFullyVisible(index)) {
+                    listState.animateScrollToItem(index)
+                }
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(items = lines, key = { _, line -> line.id }) { index, line ->
+                        val active = index == activeLineIndex
+                        TranscriptRow(
+                            line = line,
+                            active = active,
+                            positionMs = if (active) positionMs else NO_POSITION,
+                            onLabelTapped = { speaker ->
+                                val idx = speakers.firstOrNull { it.label == speaker }?.speakerIndex
+                                if (idx != null) onSpeakerChipTapped(idx)
+                            },
+                            onTapped = if (canPlay) ({ playback.onLineTapped(line) }) else null
+                        )
+                    }
+                }
+                if (isPlaying && !following && activeLineIndex != null) {
+                    FilledTonalButton(
+                        onClick = {
+                            playback.onResumeFollow()
+                        },
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(16.dp)
+                    ) {
+                        Text(text = stringResource(R.string.player_follow))
+                    }
                 }
             }
         }
@@ -759,10 +924,20 @@ private fun SpeakerChipRow(speakers: List<SpeakerEntity>, onChipTapped: (Int) ->
  * primary signal is still the speaker index. The `labelMedium`
  * metadata line shows `"00:03 · Speaker 1"` or just `"00:03"` when
  * the segment is unlabelled. Tapping the label opens the rename
- * dialog for the matching speaker (when there is one).
+ * dialog for the matching speaker (when there is one); tapping the
+ * rest of the row ([onTapped], only when the recording can be played)
+ * plays from the start of the line. The [active] row is tinted and,
+ * when the line has word timings, the word at [positionMs] is
+ * emphasised.
  */
 @Composable
-private fun TranscriptRow(line: TranscriptLine, onLabelTapped: (String) -> Unit) {
+private fun TranscriptRow(
+    line: TranscriptLine,
+    active: Boolean,
+    positionMs: () -> Long,
+    onLabelTapped: (String) -> Unit,
+    onTapped: (() -> Unit)?
+) {
     val paletteColor = speakerColor(line.speaker)
     val timestamp = remember(line.startMs) { com.convoscribe.data.TranscriptFormatter.timestamp(line.startMs) }
     val labelText = if (line.speaker.isNullOrEmpty()) {
@@ -771,8 +946,32 @@ private fun TranscriptRow(line: TranscriptLine, onLabelTapped: (String) -> Unit)
         "$timestamp · ${line.speaker}"
     }
     val speaker = line.speaker
+    val words = remember(line) { PlaybackSync.words(line) }
+    // Only the playing line reads the position, so the other rows do not
+    // recompose on every playback tick.
+    val wordIndex = if (active && words != null) PlaybackSync.activeWordIndex(line, positionMs()) else null
+    val wordStyle = SpanStyle(
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        textDecoration = TextDecoration.Underline
+    )
+    val text = remember(line.text, words, wordIndex, wordStyle) {
+        buildAnnotatedString {
+            append(line.text)
+            val word = if (wordIndex != null && words != null) words[wordIndex] else null
+            if (word != null) addStyle(wordStyle, word.start, word.end)
+        }
+    }
+    var rowModifier = Modifier.fillMaxWidth()
+    if (active) {
+        rowModifier = rowModifier.background(
+            color = MaterialTheme.colorScheme.secondaryContainer,
+            shape = RoundedCornerShape(8.dp)
+        )
+    }
+    if (onTapped != null) rowModifier = rowModifier.clickable(onClick = onTapped)
     Column(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = rowModifier.padding(horizontal = 4.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         val labelModifier = if (speaker.isNullOrEmpty()) {
@@ -787,10 +986,19 @@ private fun TranscriptRow(line: TranscriptLine, onLabelTapped: (String) -> Unit)
             modifier = labelModifier
         )
         Text(
-            text = line.text,
+            text = text,
             style = MaterialTheme.typography.bodyLarge
         )
     }
+}
+
+private val NO_POSITION: () -> Long = { 0L }
+
+/** `true` when the item at [index] is on screen and not cut off at either edge. */
+private fun LazyListState.isFullyVisible(index: Int): Boolean {
+    val info = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return false
+    return info.offset >= layoutInfo.viewportStartOffset &&
+        info.offset + info.size <= layoutInfo.viewportEndOffset
 }
 
 /**

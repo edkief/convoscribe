@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import com.convoscribe.asr.TimedToken
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -70,6 +71,28 @@ class TranscriptFormatterTest {
         assertEquals(3_000L, lines[1].startMs)
         assertEquals("Bob", lines[1].speaker)
         assertEquals("Hi", lines[1].text)
+    }
+
+    @Test
+    fun lines_carryIdEndTimeAndTokens() {
+        val tokens = listOf(TimedToken(" Hello", 100), TimedToken(" there", 600))
+        val segments = listOf(
+            SegmentEntity(
+                id = 7,
+                sessionId = 42,
+                startMs = 100,
+                endMs = 1_000,
+                text = "Hello there",
+                tokens = TokenTimingCodec.encode(tokens)
+            ),
+            SegmentEntity(id = 8, sessionId = 42, startMs = 2_000, endMs = 2_500, text = "Old line")
+        )
+
+        val lines = TranscriptFormatter.lines(segments, emptyList())
+        assertEquals(7L, lines[0].id)
+        assertEquals(1_000L, lines[0].endMs)
+        assertEquals(tokens, lines[0].tokens)
+        assertEquals(emptyList<TimedToken>(), lines[1].tokens)
     }
 
     @Test

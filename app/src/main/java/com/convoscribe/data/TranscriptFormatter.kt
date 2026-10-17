@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import com.convoscribe.asr.TimedToken
 import java.util.Locale
 
 /**
@@ -7,11 +8,19 @@ import java.util.Locale
  * segment's start time in milliseconds; [speaker] is the user-facing
  * label (`"Speaker 1"`, `"Alice"`, …) or `null` for an unlabelled
  * segment; [text] is the ASR text verbatim.
+ *
+ * [id] is the segment's row id (a stable list key), [endMs] its end
+ * time, and [tokens] its per-word timings with absolute times (empty
+ * for lines recorded before schema v3); the audio player uses them to
+ * follow the transcript.
  */
 data class TranscriptLine(
     val startMs: Long,
     val speaker: String?,
-    val text: String
+    val text: String,
+    val id: Long = 0,
+    val endMs: Long = startMs,
+    val tokens: List<TimedToken> = emptyList()
 )
 
 /**
@@ -69,7 +78,10 @@ object TranscriptFormatter {
             TranscriptLine(
                 startMs = segment.startMs,
                 speaker = label,
-                text = segment.text
+                text = segment.text,
+                id = segment.id,
+                endMs = segment.endMs,
+                tokens = TokenTimingCodec.decode(segment.tokens)
             )
         }
 

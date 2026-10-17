@@ -51,6 +51,15 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   download the French model (~71 MB) and transcribe French speech
   with the CPU engine. Each language has an explicit model status
   caption ("installed" / "missing").
+- **Play back a session's recording** from its session screen: play /
+  pause, a seek bar, ±10 s skip and 1× / 1.5× / 2× speed. Tap a
+  transcript line to play from there; while playing, the current line
+  is highlighted (and the current word, for lines recorded with word
+  timings) and the list follows along until you scroll by hand — tap
+  *Follow* or seek to resume. Playback stops when you leave the screen.
+- **Share or save the audio** from the session menu (*Share audio*,
+  *Save audio…*) as an M4A (AAC, about 0.5 MB a minute), encoded on
+  demand with a progress dialog you can cancel.
 - **Share transcript** to any system share-sheet target (notes app,
   email, …) and rename sessions / speakers from the overflow menu.
 

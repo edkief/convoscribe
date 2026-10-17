@@ -3,6 +3,7 @@ package com.convoscribe
 import android.content.Context
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.MicAudioSource
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
@@ -108,6 +109,17 @@ class AppContainer(val context: Context) {
     val sessionRepository: SessionRepository = SessionRepository(
         db = database,
         recordingsDir = File(context.filesDir, "recordings").apply { mkdirs() }
+    )
+
+    /**
+     * Encodes a session's WAV to M4A for sharing and saving. Exports
+     * live in the cache directory, which the system may clear; the
+     * FileProvider declared in the manifest serves `exports/` to the
+     * share sheet.
+     */
+    val audioExporter: AudioExporter = AudioExporter(
+        exportDir = File(context.cacheDir, "exports"),
+        openOutput = { uri -> context.contentResolver.openOutputStream(uri) }
     )
 
     /**

@@ -3,6 +3,8 @@ package com.convoscribe.ui.session
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.audio.AudioExporter
+import com.convoscribe.audio.FakeAudioPlayer
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
@@ -11,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -240,5 +243,214 @@ class SessionViewModelTest {
         vm.renameSession(title = "  Standup  ")
         val state = vm.uiState.first { it.title == "Standup" }
         assertEquals("Standup", state.title)
+    }
+
+    // ---- playback -------------------------------------------------
+
+    private suspend fun finishedSessionWithLines(): Long {
+        val id = repo.createSession(title = "play", language = "en")
+        repo.addSegment(sessionId = id, startMs = 1_000, endMs = 3_000, text = "First")
+        repo.addSegment(sessionId = id, startMs = 5_000, endMs = 7_000, text = "Second")
+        repo.finishRecording(id, durationMs = 8_000)
+        return id
+    }
+
+    private fun playbackVm(id: Long, player: FakeAudioPlayer) =
+        SessionViewModel(sessionId = id, repository = repo, playerFactory = { player })
+
+    @Test
+    fun playback_opensTheRecordingOnceTheSessionIsFinished() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val player = FakeAudioPlayer()
+        val vm = playbackVm(id, player)
+
+        vm.uiState.first { it.lines.size == 2 }
+        advanceUntilIdle()
+
+        assertEquals(listOf(File(repo.audioPath(id))), player.prepared)
+        assertTrue(vm.playerState.value.ready)
+    }
+
+    @Test
+    fun playback_isNotOpenedWhileTheSessionIsStillRecording() = runTest(dispatcher) {
+        val id = repo.createSession(title = "live", language = "en")
+        val player = FakeAudioPlayer()
+        val vm = playbackVm(id, player)
+
+        vm.uiState.first { it.title == "live" }
+        advanceUntilIdle()
+
+        assertTrue(player.prepared.isEmpty())
+        assertFalse(vm.playerState.value.ready)
+    }
+
+    @Test
+    fun tappingALine_seeksToItsStartAndPlays() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val player = FakeAudioPlayer()
+        val vm = playbackVm(id, player)
+        val lines = vm.uiState.first { it.lines.size == 2 }.lines
+        advanceUntilIdle()
+
+        vm.playLine(lines[1])
+
+        assertEquals(5_000L, vm.playerState.value.positionMs)
+        assertTrue(vm.playerState.value.isPlaying)
+    }
+
+    @Test
+    fun activeLine_followsThePlayerPosition() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val player = FakeAudioPlayer()
+        val vm = playbackVm(id, player)
+        val lines = vm.uiState.first { it.lines.size == 2 }.lines
+        advanceUntilIdle()
+        // Nothing has been played yet, so nothing is highlighted.
+        assertNull(vm.activeLineIndex.first())
+
+        vm.playLine(lines[0])
+        assertEquals(0, vm.activeLineIndex.first { it != null })
+
+        player.seekTo(5_500)
+        assertEquals(1, vm.activeLineIndex.first { it == 1 })
+    }
+
+    @Test
+    fun scrollingByHand_suspendsFollowUntilASeekOrTheFollowButton() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val vm = playbackVm(id, FakeAudioPlayer())
+        advanceUntilIdle()
+        assertTrue(vm.following.value)
+
+        vm.onUserScrolled()
+        assertFalse(vm.following.value)
+        vm.resumeFollow()
+        assertTrue(vm.following.value)
+
+        vm.onUserScrolled()
+        vm.seekTo(2_000)
+        assertTrue(vm.following.value)
+
+        vm.onUserScrolled()
+        vm.skip(10_000)
+        assertTrue(vm.following.value)
+    }
+
+    @Test
+    fun stopPlayback_pausesButKeepsThePosition() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val player = FakeAudioPlayer()
+        val vm = playbackVm(id, player)
+        advanceUntilIdle()
+        vm.seekTo(4_000)
+        vm.togglePlayback()
+        assertTrue(vm.playerState.value.isPlaying)
+
+        vm.stopPlayback()
+
+        assertFalse(vm.playerState.value.isPlaying)
+        assertEquals(4_000L, vm.playerState.value.positionMs)
+    }
+
+    @Test
+    fun cycleSpeed_goesThroughTheSpeedsAndWraps() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val vm = playbackVm(id, FakeAudioPlayer())
+        advanceUntilIdle()
+
+        vm.cycleSpeed()
+        assertEquals(1.5f, vm.playerState.value.speed)
+        vm.cycleSpeed()
+        assertEquals(2f, vm.playerState.value.speed)
+        vm.cycleSpeed()
+        assertEquals(1f, vm.playerState.value.speed)
+    }
+
+    @Test
+    fun playback_isNoopWithoutAPlayer() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val vm = SessionViewModel(sessionId = id, repository = repo)
+
+        vm.togglePlayback()
+        vm.seekTo(1_000)
+        vm.stopPlayback()
+
+        assertFalse(vm.playerState.value.ready)
+    }
+
+    // ---- audio export ---------------------------------------------
+
+    private fun exportVm(id: Long, encode: (File, File, (Float) -> Unit, () -> Unit) -> Unit) = SessionViewModel(
+        sessionId = id,
+        repository = repo,
+        audioExporter = AudioExporter(
+            exportDir = File(recordingsDir, "exports"),
+            encode = encode,
+            openOutput = { java.io.ByteArrayOutputStream() }
+        )
+    )
+
+    @Test
+    fun shareAudio_emitsTheEncodedFileAndEndsIdle() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val vm = exportVm(id) { _, out, onProgress, _ ->
+            onProgress(0.5f)
+            out.writeText("m4a")
+        }
+
+        vm.shareAudio()
+        val file = vm.shareAudioFiles.first()
+
+        assertEquals("m4a", file.readText())
+        assertTrue(file.name.endsWith(".m4a"))
+        advanceUntilIdle()
+        assertEquals(ExportState.Idle, vm.exportState.value)
+    }
+
+    @Test
+    fun saveAudio_writesToTheChosenLocationAndSaysSo() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val vm = exportVm(id) { _, out, _, _ -> out.writeText("m4a") }
+
+        vm.saveAudio(android.net.Uri.parse("content://documents/x.m4a"))
+
+        assertEquals("Audio saved", vm.snackbar.first())
+        advanceUntilIdle()
+        assertEquals(ExportState.Idle, vm.exportState.value)
+    }
+
+    @Test
+    fun cancelExport_stopsEncodingAndSharesNothing() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val started = java.util.concurrent.CountDownLatch(1)
+        val vm = exportVm(id) { _, _, _, checkCancelled ->
+            started.countDown()
+            while (true) {
+                Thread.sleep(5)
+                checkCancelled()
+            }
+        }
+
+        vm.shareAudio()
+        kotlinx.coroutines.withContext(Dispatchers.IO) { started.await() }
+        assertTrue(vm.exportState.value is ExportState.Encoding)
+        vm.cancelExport()
+        advanceUntilIdle()
+        // The job ends on the IO thread; wait for it to report back.
+        vm.exportState.first { it == ExportState.Idle }
+
+        assertEquals(ExportState.Idle, vm.exportState.value)
+    }
+
+    @Test
+    fun exportFailure_isReportedOnTheSnackbar() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val vm = exportVm(id) { _, _, _, _ -> throw java.io.IOException("disk full") }
+
+        vm.shareAudio()
+
+        assertEquals("Could not export the audio: disk full", vm.snackbar.first())
+        advanceUntilIdle()
+        assertEquals(ExportState.Idle, vm.exportState.value)
     }
 }
