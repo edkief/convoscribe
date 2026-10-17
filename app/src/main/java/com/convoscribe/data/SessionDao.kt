@@ -55,15 +55,28 @@ interface SessionDao {
     @Query("UPDATE sessions SET durationMs = :durationMs WHERE id = :id")
     suspend fun updateDuration(id: Long, durationMs: Long)
 
+    @Query("UPDATE sessions SET numSpeakers = :numSpeakers WHERE id = :id")
+    suspend fun setNumSpeakers(id: Long, numSpeakers: Int?)
+
+    /** Expected participants, already encoded by [ParticipantsCodec]. */
+    @Query("UPDATE sessions SET participants = :participants WHERE id = :id")
+    suspend fun setParticipants(id: Long, participants: String?)
+
+    @Query("UPDATE sessions SET asrEngine = :engine, asrModel = :model WHERE id = :id")
+    suspend fun setEngine(id: Long, engine: String?, model: String?)
+
+    @Query("UPDATE sessions SET language = :language WHERE id = :id")
+    suspend fun setLanguage(id: Long, language: String)
+
+    @Query("DELETE FROM segments WHERE sessionId = :id")
+    suspend fun deleteSegments(id: Long)
+
     /**
      * Update the user-visible [title] of a session. Called by the
      * session-detail screen's "Rename session" menu; the
      * repository enforces the 100-character cap so the DAO stays
      * free of business rules.
      */
-    @Query("UPDATE sessions SET numSpeakers = :numSpeakers WHERE id = :id")
-    suspend fun setNumSpeakers(id: Long, numSpeakers: Int?)
-
     @Query("UPDATE sessions SET title = :title WHERE id = :id")
     suspend fun rename(id: Long, title: String)
 }

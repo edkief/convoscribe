@@ -88,12 +88,36 @@ class RecordingControllerTest {
             reopenCalls += sessionId
         }
 
-        override suspend fun createSession(title: String, language: String): Long {
+        /** A call to [createSession], in order. */
+        data class Create(
+            val title: String,
+            val language: String,
+            val numSpeakers: Int?,
+            val participants: List<String>?
+        )
+
+        /** A call to [recordEngine], in order. */
+        data class Engine(val sessionId: Long, val engine: String, val model: String, val continued: Boolean)
+
+        val createCalls: MutableList<Create> = mutableListOf()
+        val engineCalls: MutableList<Engine> = mutableListOf()
+
+        override suspend fun createSession(
+            title: String,
+            language: String,
+            numSpeakers: Int?,
+            participants: List<String>?
+        ): Long {
+            createCalls += Create(title, language, numSpeakers, participants)
             val id = nextId.incrementAndGet()
             // Match the production `SessionRepository`: a file at
             // <root>/<id>.wav that the WAV writer will overwrite.
             File(root, "$id.wav")
             return id
+        }
+
+        override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) {
+            engineCalls += Engine(sessionId, engine, model, continued)
         }
 
         override suspend fun audioPath(sessionId: Long): String = File(root, "$sessionId.wav").absolutePath

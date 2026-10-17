@@ -313,4 +313,79 @@ class SessionRepositoryTest {
         repo.renameSession(sessionId = id, title = "   ")
         assertEquals("keep", repo.getSession(id)!!.title)
     }
+
+    @Test
+    fun createSession_storesSpeakerCountAndParticipants() = runTest {
+        val id = repo.createSession(
+            title = "Interview",
+            language = "fr",
+            numSpeakers = 2,
+            participants = listOf(" Alice ", "Bob", "Alice")
+        )
+        val row = repo.getSession(id)!!
+        assertEquals("fr", row.language)
+        assertEquals(2, row.numSpeakers)
+        assertEquals(listOf("Alice", "Bob"), ParticipantsCodec.decode(row.participants))
+        assertNull(row.asrEngine)
+
+        val anyone = repo.createSession(title = "Any", language = "en", numSpeakers = 0, participants = emptyList())
+        assertEquals(-1, repo.getSession(anyone)!!.numSpeakers)
+        assertNull(repo.getSession(anyone)!!.participants)
+    }
+
+    @Test
+    fun setParticipants_replacesAndClears() = runTest {
+        val id = repo.createSession(title = "t", language = "en")
+        repo.setParticipants(id, listOf("Carol"))
+        assertEquals(listOf("Carol"), ParticipantsCodec.decode(repo.getSession(id)!!.participants))
+        repo.setParticipants(id, null)
+        assertNull(repo.getSession(id)!!.participants)
+    }
+
+    @Test
+    fun recordEngine_keepsBothWhenAContinuationDiffers() = runTest {
+        val id = repo.createSession(title = "t", language = "en")
+        repo.recordEngine(id, engine = "npu", model = "asr-npu")
+        repo.recordEngine(id, engine = "npu", model = "asr-npu", continued = true)
+        assertEquals("npu", repo.getSession(id)!!.asrEngine)
+        repo.recordEngine(id, engine = "cpu", model = "asr-cpu", continued = true)
+        val row = repo.getSession(id)!!
+        assertEquals("npu + cpu", row.asrEngine)
+        assertEquals("asr-npu + asr-cpu", row.asrModel)
+    }
+
+    @Test
+    fun recordEngine_continuingAnOldSessionMarksTheFirstPartUnknown() = runTest {
+        val id = repo.createSession(title = "old", language = "en")
+        repo.recordEngine(id, engine = "cpu", model = "asr-cpu", continued = true)
+        assertEquals("unknown + cpu", repo.getSession(id)!!.asrEngine)
+    }
+
+    @Test
+    fun replaceTranscript_swapsSegmentsLanguageAndEngine() = runTest {
+        val id = repo.createSession(title = "t", language = "en")
+        repo.addSegment(id, startMs = 0, endMs = 1000, text = "hello")
+        repo.applyDiarization(id, assignments = emptyMap(), speakerCount = 1, labels = mapOf(0 to "Alice"))
+
+        repo.replaceTranscript(
+            sessionId = id,
+            language = "fr",
+            segments = listOf(
+                SegmentPiece(startMs = 0, endMs = 600, text = "bonjour", tokens = emptyList(), speakerIndex = 0),
+                SegmentPiece(startMs = 600, endMs = 1000, text = "salut", tokens = emptyList(), speakerIndex = null)
+            ),
+            engine = "cpu",
+            model = "asr-fr"
+        )
+
+        val row = repo.getSession(id)!!
+        assertEquals("fr", row.language)
+        assertEquals("cpu", row.asrEngine)
+        assertEquals("asr-fr", row.asrModel)
+        assertEquals(SessionStatus.TRANSCRIBED, row.status)
+        assertEquals(listOf("bonjour", "salut"), repo.getSegments(id).map { it.text })
+        assertEquals(listOf(0, null), repo.getSegments(id).map { it.speakerIndex })
+        // Speaker rows survive so the next diarization can carry "Alice" over.
+        assertEquals(listOf("Alice"), repo.getSpeakers(id).map { it.label })
+    }
 }

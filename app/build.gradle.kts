@@ -71,6 +71,12 @@ android {
         compose = true
     }
 
+    // Room's exported schemas, so MigrationTest can build each old
+    // version of the database. Robolectric only reads the variant's
+    // merged assets (not the `test` source set's), so they are debug
+    // assets: a few KB in debug APKs, nothing in release.
+    sourceSets["debug"].assets.srcDir("$projectDir/schemas")
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
         // Return default values (0/null/false) for every
