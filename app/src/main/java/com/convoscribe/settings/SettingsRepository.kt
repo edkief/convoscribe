@@ -51,6 +51,8 @@ class SettingsRepository(
      *    it marks the engine as chosen, so it is persisted from then on
      *  - `displayMode` must be a [DisplayMode.key]; anything else
      *    keeps the previous value
+     *  - `speakerIdMode` must be a [SpeakerIdMode.key]; anything else
+     *    keeps the previous value
      */
     fun update(transform: (AppSettings) -> AppSettings) {
         val current = _settings.value
@@ -68,6 +70,7 @@ class SettingsRepository(
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
+            putString(KEY_SPEAKER_ID_MODE, next.speakerIdMode)
             putString(KEY_DISPLAY_MODE, next.displayMode)
             putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
             putBoolean(KEY_FLOATING_CONTROL, next.floatingControl)
@@ -116,6 +119,7 @@ class SettingsRepository(
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
+            speakerIdMode = prefs.getString(KEY_SPEAKER_ID_MODE, null) ?: SpeakerIdMode.AUTO.key,
             defaultParticipants = ParticipantsCodec.decode(prefs.getString(KEY_DEFAULT_PARTICIPANTS, null)),
             displayMode = prefs.getString(KEY_DISPLAY_MODE, null) ?: DisplayMode.AUTO.key,
             dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
@@ -133,6 +137,7 @@ class SettingsRepository(
         // Every numeric field is normalised in-place via [normaliseNumeric].
         val lang = if (raw.asrLanguage == "en" || raw.asrLanguage == "fr") raw.asrLanguage else "en"
         val displayMode = if (DisplayMode.fromKey(raw.displayMode) != null) raw.displayMode else DisplayMode.AUTO.key
+        val speakerIdMode = SpeakerIdMode.of(raw.speakerIdMode).key
         val storedValid = raw.asrEngine == "npu" || raw.asrEngine == "cpu"
         val chosen = storedValid && prefs.getBoolean(KEY_ASR_ENGINE_CHOSEN, prefs.contains(KEY_ASR_ENGINE))
         val engine = if (chosen) raw.asrEngine else defaultEngine()
@@ -140,7 +145,8 @@ class SettingsRepository(
             asrLanguage = lang,
             asrEngine = engine,
             asrEngineChosen = chosen,
-            displayMode = displayMode
+            displayMode = displayMode,
+            speakerIdMode = speakerIdMode
         ).normaliseNumeric().copy(
             llmBaseUrl = raw.llmBaseUrl.trim().trimEnd('/')
         )
@@ -180,6 +186,7 @@ class SettingsRepository(
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
         const val KEY_SPEAKER_MATCH_THRESHOLD = "speakerMatchThreshold"
+        const val KEY_SPEAKER_ID_MODE = "speakerIdMode"
         const val KEY_DEFAULT_PARTICIPANTS = "defaultParticipants"
         const val KEY_DISPLAY_MODE = "displayMode"
         const val KEY_DYNAMIC_COLOR = "dynamicColor"
@@ -195,15 +202,18 @@ class SettingsRepository(
  * fields are clamped; `llmBaseUrl` is trimmed and stripped of its
  * trailing `/`; `asrLanguage` keeps the previous value when it is
  * not "en" or "fr"; `asrEngine` keeps the previous value when it is
- * not "npu" or "cpu"; `displayMode` keeps the previous value when it
- * is not a [DisplayMode.key].
+ * not "npu" or "cpu"; `displayMode` and `speakerIdMode` keep the
+ * previous value when they are not a [DisplayMode.key] /
+ * [SpeakerIdMode.key].
  */
 private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val lang = if (asrLanguage == "en" || asrLanguage == "fr") asrLanguage else previous.asrLanguage
     val engine = if (asrEngine == "npu" || asrEngine == "cpu") asrEngine else previous.asrEngine
     val mode = if (DisplayMode.fromKey(displayMode) != null) displayMode else previous.displayMode
+    val idMode = if (SpeakerIdMode.fromKey(speakerIdMode) != null) speakerIdMode else previous.speakerIdMode
     return this.normaliseNumeric().copy(
         displayMode = mode,
+        speakerIdMode = idMode,
         llmBaseUrl = llmBaseUrl.trim().trimEnd('/'),
         defaultParticipants = ParticipantsCodec.normalise(defaultParticipants),
         asrLanguage = lang,

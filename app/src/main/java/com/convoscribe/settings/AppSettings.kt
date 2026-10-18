@@ -35,6 +35,10 @@ package com.convoscribe.settings
  * update request unless the user taps *Check for updates*.
  * [updateIncludePrereleases] also offers releases marked pre-release.
  *
+ * [speakerIdMode] is a [SpeakerIdMode.key] (`"auto"`, `"charging"` or
+ * `"manual"`): when speakers are identified after a transcript is done
+ * (issue #11).
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -53,6 +57,7 @@ data class AppSettings(
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
+    val speakerIdMode: String = SpeakerIdMode.AUTO.key,
     val defaultParticipants: List<String>? = null,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
