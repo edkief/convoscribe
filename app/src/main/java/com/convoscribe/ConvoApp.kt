@@ -1,6 +1,9 @@
 package com.convoscribe
 
 import android.app.Application
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.SessionRecovery
 import kotlinx.coroutines.launch
@@ -16,6 +19,12 @@ class ConvoApp : Application() {
         // not run there: it would see an idle controller and patch
         // the session the main process may be recording right now.
         if (Application.getProcessName()?.contains(':') == true) return
+        // Whether any activity is visible, for the floating control.
+        ProcessLifecycleOwner.get().lifecycle.addObserver(
+            LifecycleEventObserver { owner, _ ->
+                container.appInForeground.value = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+            }
+        )
         // Crash-recovery: walk the database for sessions that were
         // left mid-recording / mid-diarization by a previous
         // process and patch them so the user can see them in the

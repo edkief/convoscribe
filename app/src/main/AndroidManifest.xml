@@ -33,6 +33,15 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!--
+        "Display over other apps", for the floating recording control
+        shown in other apps while a session is open (issue #7). A
+        special access the user grants in system Settings; without it
+        the notification stays the only control. It also lets the
+        control's tap bring ConvoScribe forward from the background.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <application
         android:name=".ConvoApp"
         android:label="@string/app_name"

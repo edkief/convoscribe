@@ -1,5 +1,6 @@
 package com.convoscribe
 
+import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
@@ -39,7 +40,10 @@ class MainActivity : ComponentActivity() {
         val container = (applicationContext as ConvoApp).container
         // A share / Open with intent, unless this is a re-creation that
         // already took it.
-        if (savedInstanceState == null) takeImport(intent)
+        if (savedInstanceState == null) {
+            takeImport(intent)
+            takeOpenRecord(intent)
+        }
         // The active language and ASR engine are settings; if every
         // required bundle for that combination is already on disk we
         // can skip the first-run download screen and go straight to
@@ -86,6 +90,13 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         takeImport(intent)
+        takeOpenRecord(intent)
+    }
+
+    /** Ask the navigation graph for the Record screen if [intent] came from [openRecordIntent]. */
+    private fun takeOpenRecord(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_RECORD, false) != true) return
+        (applicationContext as ConvoApp).container.pendingOpenRecord.value = true
     }
 
     /**
@@ -102,5 +113,20 @@ class MainActivity : ComponentActivity() {
             else -> null
         } ?: return
         (applicationContext as ConvoApp).container.pendingImport.value = PendingImport(uri)
+    }
+
+    companion object {
+        private const val EXTRA_OPEN_RECORD = "com.convoscribe.EXTRA_OPEN_RECORD"
+
+        /**
+         * Bring ConvoScribe forward on the Record screen, which shows the
+         * open session (the floating control and the Quick Settings tile,
+         * issue #7). Usable from a non-activity context.
+         */
+        fun openRecordIntent(context: Context): Intent = Intent(context, MainActivity::class.java)
+            .putExtra(EXTRA_OPEN_RECORD, true)
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
     }
 }

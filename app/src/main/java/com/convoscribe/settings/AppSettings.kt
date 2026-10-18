@@ -25,6 +25,11 @@ package com.convoscribe.settings
  * `"eink"`); [dynamicColor] opts into the wallpaper-based colours on
  * Android 12+ instead of the brand ones (ignored in e-ink mode).
  *
+ * [floatingControl] shows the floating recording control over other
+ * apps while a session is open (issue #7); it also needs the "Display
+ * over other apps" permission. [overlayPromptShown] is `true` once the
+ * user has been asked for that permission, so they are asked only once.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -45,5 +50,7 @@ data class AppSettings(
     val speakerMatchThreshold: Float = 0.5f,
     val defaultParticipants: List<String>? = null,
     val displayMode: String = DisplayMode.AUTO.key,
-    val dynamicColor: Boolean = false
+    val dynamicColor: Boolean = false,
+    val floatingControl: Boolean = true,
+    val overlayPromptShown: Boolean = false
 )

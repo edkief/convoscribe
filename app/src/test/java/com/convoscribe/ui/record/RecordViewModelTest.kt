@@ -77,6 +77,19 @@ class RecordViewModelTest {
     )
 
     @Test
+    fun shouldAskForOverlay_onlyOnce_andNotWhenGrantedOrSwitchedOff() {
+        val vm = newViewModel()
+        assertFalse(vm.shouldAskForOverlay(granted = true))
+        assertTrue(vm.shouldAskForOverlay(granted = false))
+        assertTrue(settings.settings.value.overlayPromptShown)
+        // Asked once: never again.
+        assertFalse(vm.shouldAskForOverlay(granted = false))
+
+        settings.update { it.copy(overlayPromptShown = false, floatingControl = false) }
+        assertFalse(vm.shouldAskForOverlay(granted = false))
+    }
+
+    @Test
     fun options_arePreFilledFromTheSettingsDefaults() {
         settings.update { it.copy(asrLanguage = "fr", numSpeakers = 3, defaultParticipants = listOf("Alice")) }
         val options = newViewModel().options.value

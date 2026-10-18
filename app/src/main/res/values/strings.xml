@@ -8,6 +8,11 @@
     <string name="unit_gigabytes">%1$.1f GB</string>
     <string name="status_recording">Recording</string>
     <string name="status_paused">Paused</string>
+    <string name="overlay_open">Open the recording</string>
+    <string name="overlay_permission_title">Control recordings from other apps?</string>
+    <string name="overlay_permission_message">While a recording is open and you switch to another app, ConvoScribe can show a small control with the time, Pause and Stop. Android asks you to allow \"Display over other apps\" for that. Without it, use the notification. You can turn the control off in Settings.</string>
+    <string name="overlay_permission_allow">Allow</string>
+    <string name="overlay_permission_not_now">Not now</string>
     <string name="status_diarizing">Identifying speakers</string>
     <string name="status_failed">Speaker detection failed</string>
     <string name="setup_title">Set up</string>
@@ -268,6 +273,11 @@
     <string name="session_ask_clear_confirm">Clear</string>
     <string name="session_ask_clear_cancel">Cancel</string>
     <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_section_recording">Recording</string>
+    <string name="settings_floating_control_label">Floating control over other apps</string>
+    <string name="settings_floating_control_help">While a recording is open and you are in another app, show a small control with the time, Pause and Stop. Drag it to move it.</string>
+    <string name="settings_floating_control_needs_permission">Needs \"Display over other apps\". Until it is allowed, use the notification.</string>
+    <string name="settings_floating_control_allow">Allow display over other apps</string>
     <string name="settings_display_mode_label">Display</string>
     <string name="settings_display_mode_auto">Auto</string>
     <string name="settings_display_mode_standard">Standard</string>

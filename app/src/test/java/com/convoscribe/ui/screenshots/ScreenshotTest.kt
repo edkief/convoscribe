@@ -3,8 +3,11 @@ package com.convoscribe.ui.screenshots
 import android.app.Application
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.SnackbarHostState
@@ -27,6 +30,7 @@ import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
+import com.convoscribe.overlay.FloatingControlContent
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.ImportStep
@@ -206,6 +210,14 @@ class ScreenshotTest(private val variant: Variant) {
             onStart = {},
             onStop = {}
         )
+    }
+
+    @Test
+    fun floatingControl() = capture("floating_control") {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            FloatingControlContent(paused = false, elapsedMs = 754_000L, onOpen = {}, onPauseResume = {}, onStop = {})
+            FloatingControlContent(paused = true, elapsedMs = 754_000L, onOpen = {}, onPauseResume = {}, onStop = {})
+        }
     }
 
     @Test

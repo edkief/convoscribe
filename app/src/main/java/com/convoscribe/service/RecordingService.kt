@@ -19,6 +19,7 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.MainActivity
 import com.convoscribe.R
 import com.convoscribe.diarization.DiarizeSessionUseCase
+import com.convoscribe.overlay.FloatingControl
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportSource
 import com.convoscribe.recording.ImportState
@@ -32,7 +33,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 
@@ -96,6 +100,14 @@ class RecordingService : Service() {
      * Cancelled in [onDestroy].
      */
     private var stateObserver: Job? = null
+
+    /**
+     * The floating control over other apps (issue #7), created with
+     * the first recording. [overlayObserver] shows it while a session
+     * is open, the setting is on and ConvoScribe is in the background.
+     */
+    private var floatingControl: FloatingControl? = null
+    private var overlayObserver: Job? = null
 
     /**
      * Last notification-text update timestamp (elapsedRealtime).
@@ -181,6 +193,7 @@ class RecordingService : Service() {
         // finish. Cancellation is cooperative; next start will spin
         // up a fresh scope.
         releaseWakeLock()
+        floatingControl?.setWanted(false)
         scope.cancel()
         super.onDestroy()
     }
@@ -214,6 +227,36 @@ class RecordingService : Service() {
         acquireWakeLock()
         controller.start(scope, resumeSessionId, options)
         startStateObserver()
+        startOverlayObserver()
+    }
+
+    /**
+     * Keep the floating control in step with the session, the
+     * Settings switch and whether ConvoScribe is in the foreground.
+     * Its buttons call the same handlers as the notification actions.
+     */
+    private fun startOverlayObserver() {
+        if (overlayObserver?.isActive == true) return
+        val container = (application as ConvoApp).container
+        val control = floatingControl ?: FloatingControl(
+            context = this,
+            scope = scope,
+            state = controller().state,
+            settings = container.settingsRepository.settings,
+            onOpen = { startActivity(MainActivity.openRecordIntent(this)) },
+            onPauseResume = {
+                if (controller().state.value.phase == RecordingPhase.PAUSED) handleResume() else handlePause()
+            },
+            onStop = ::handleStop
+        ).also { floatingControl = it }
+        overlayObserver = combine(
+            controller().state.map { it.phase.active }.distinctUntilChanged(),
+            container.settingsRepository.settings.map { it.floatingControl }.distinctUntilChanged(),
+            container.appInForeground
+        ) { active, enabled, foreground -> active && enabled && !foreground }
+            .distinctUntilChanged()
+            .onEach { control.setWanted(it) }
+            .launchIn(scope)
     }
 
     private fun handleStop() {

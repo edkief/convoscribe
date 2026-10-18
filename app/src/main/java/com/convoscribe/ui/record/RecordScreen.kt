@@ -51,6 +51,8 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.models.ModelCatalog
+import com.convoscribe.overlay.OverlayPermission
+import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
@@ -127,6 +129,15 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     // `rememberSaveable` keeps the denial message around process
     // death so a transient blank does not make it vanish.
     var micDeniedMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    // The one-time explanation of the floating control's permission.
+    var askOverlay by rememberSaveable { mutableStateOf(false) }
+    val startRecording: () -> Unit = {
+        ContextCompat.startForegroundService(
+            context,
+            RecordingService.startIntent(context, resumeSessionId, startOptions)
+        )
+        if (vm.shouldAskForOverlay(OverlayPermission.granted(context))) askOverlay = true
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -140,12 +151,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             // notification just stays invisible.
             context.getString(R.string.record_error_mic_required)
         }
-        if (micOk) {
-            ContextCompat.startForegroundService(
-                context,
-                RecordingService.startIntent(context, resumeSessionId, startOptions)
-            )
-        }
+        if (micOk) startRecording()
     }
 
     // Pop the screen when the session has been acknowledged by the
@@ -212,10 +218,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                 launcher.launch(requiredPermissions())
                 return@RecordBody
             }
-            ContextCompat.startForegroundService(
-                context,
-                RecordingService.startIntent(context, resumeSessionId, startOptions)
-            )
+            startRecording()
         },
         onStop = {
             // Plain startService is intentional: we are sending the
@@ -227,6 +230,16 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         onPause = { context.startService(RecordingService.pauseIntent(context)) },
         onResume = { context.startService(RecordingService.resumeIntent(context)) }
     )
+
+    if (askOverlay) {
+        OverlayPermissionDialog(
+            onAllow = {
+                askOverlay = false
+                context.startActivity(OverlayPermission.settingsIntent(context))
+            },
+            onDismiss = { askOverlay = false }
+        )
+    }
 }
 
 /**

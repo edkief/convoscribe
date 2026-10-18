@@ -1,11 +1,16 @@
 package com.convoscribe.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.convoscribe.ConvoApp
 import com.convoscribe.ui.enginecheck.EngineCheckScreen
 import com.convoscribe.ui.home.HomeScreen
 import com.convoscribe.ui.record.RecordScreen
@@ -57,10 +62,24 @@ private const val ROUTE_SPEAKERS = "speakers"
  *  - `session/{id}` — session-detail screen (transcript tab,
  *    summary tab and ask tab). The route id is a `Long` so the
  *    home list's `session/${row.id}` push lands on the right row.
+ *
+ * A request from the floating control or the Quick Settings tile
+ * (`pendingOpenRecord`, issue #7) pushes `record`, unless a Record
+ * screen is already in front.
  */
 @Composable
 fun AppNavHost(startDestination: String = ROUTE_HOME) {
     val navController = rememberNavController()
+    val container = (LocalContext.current.applicationContext as ConvoApp).container
+    val openRecord by container.pendingOpenRecord.collectAsStateWithLifecycle()
+    LaunchedEffect(openRecord) {
+        if (!openRecord) return@LaunchedEffect
+        container.pendingOpenRecord.value = false
+        val route = navController.currentDestination?.route
+        if (route != null && !route.startsWith(ROUTE_RECORD) && !route.startsWith(ROUTE_SETUP)) {
+            navController.navigate(ROUTE_RECORD) { launchSingleTop = true }
+        }
+    }
     NavHost(navController = navController, startDestination = startDestination) {
         composable(ROUTE_HOME) {
             HomeScreen(navController = navController)
