@@ -15,6 +15,12 @@ package com.convoscribe.settings
  * or NPU once the engine check has seen it work, see
  * [com.convoscribe.enginecheck.NpuAvailability]).
  *
+ * [asrLanguage], [numSpeakers] and [defaultParticipants] are only the
+ * defaults a new conversation starts from (issue #6): each session
+ * stores its own values, chosen on the Record screen.
+ * [defaultParticipants] is a list of enrolled names, or `null` for
+ * anyone.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -32,5 +38,6 @@ data class AppSettings(
     val numThreads: Int = 4,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
-    val speakerMatchThreshold: Float = 0.5f
+    val speakerMatchThreshold: Float = 0.5f,
+    val defaultParticipants: List<String>? = null
 )

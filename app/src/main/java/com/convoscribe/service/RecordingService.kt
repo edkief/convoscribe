@@ -17,6 +17,7 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.MainActivity
 import com.convoscribe.R
 import com.convoscribe.diarization.DiarizeSessionUseCase
+import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import kotlinx.coroutines.CoroutineScope
@@ -93,7 +94,8 @@ class RecordingService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> handleStart(
-                resumeSessionId = intent.getLongExtra(EXTRA_SESSION_ID, -1L).takeIf { it > 0L }
+                resumeSessionId = intent.getLongExtra(EXTRA_SESSION_ID, -1L).takeIf { it > 0L },
+                options = optionsFrom(intent)
             )
             ACTION_STOP -> handleStop()
             ACTION_DIARIZE -> {
@@ -126,7 +128,7 @@ class RecordingService : Service() {
         super.onDestroy()
     }
 
-    private fun handleStart(resumeSessionId: Long?) {
+    private fun handleStart(resumeSessionId: Long?, options: ConversationOptions?) {
         // Only allow one START — if the service is already driving
         // a session, second callers get the live notification and
         // nothing else. The controller's `start` is also idempotent
@@ -146,7 +148,7 @@ class RecordingService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         )
         acquireWakeLock()
-        controller.start(scope, resumeSessionId)
+        controller.start(scope, resumeSessionId, options)
         startStateObserver()
     }
 
@@ -424,24 +426,53 @@ class RecordingService : Service() {
 
         /**
          * Optional int extra for [ACTION_DIARIZE]: the speaker count
-         * to save on the session and use (`-1` automatic).
+         * to save on the session and use (`-1` automatic). Also part
+         * of a new session's options on [ACTION_START].
          */
         const val EXTRA_NUM_SPEAKERS = "com.convoscribe.EXTRA_NUM_SPEAKERS"
 
         private const val NUM_SPEAKERS_UNSET = Int.MIN_VALUE
 
         /**
+         * Extras for [ACTION_START] carrying a new session's
+         * [ConversationOptions]; absent means the Settings defaults.
+         * [EXTRA_PARTICIPANTS] is absent for anyone.
+         */
+        private const val EXTRA_LANGUAGE = "com.convoscribe.EXTRA_LANGUAGE"
+        private const val EXTRA_PARTICIPANTS = "com.convoscribe.EXTRA_PARTICIPANTS"
+        private const val EXTRA_TITLE = "com.convoscribe.EXTRA_TITLE"
+
+        private fun optionsFrom(intent: Intent): ConversationOptions? {
+            val language = intent.getStringExtra(EXTRA_LANGUAGE) ?: return null
+            return ConversationOptions(
+                language = language,
+                numSpeakers = intent.getIntExtra(EXTRA_NUM_SPEAKERS, -1),
+                participants = intent.getStringArrayExtra(EXTRA_PARTICIPANTS)?.toList(),
+                title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+            )
+        }
+
+        /**
          * Build an [Intent] that, when sent to [RecordingService],
-         * starts a new recording session, or continues
-         * [resumeSessionId] by appending to its audio and transcript.
+         * starts a new recording session with [options] (the Settings
+         * defaults when `null`), or continues [resumeSessionId] by
+         * appending to its audio and transcript.
          * The caller is responsible for `startForegroundService`
          * (Android 8+) and the `POST_NOTIFICATIONS` runtime
          * permission (Android 13+).
          */
-        fun startIntent(context: Context, resumeSessionId: Long? = null): Intent =
+        fun startIntent(context: Context, resumeSessionId: Long? = null, options: ConversationOptions? = null): Intent =
             Intent(context, RecordingService::class.java)
                 .setAction(ACTION_START)
-                .apply { if (resumeSessionId != null) putExtra(EXTRA_SESSION_ID, resumeSessionId) }
+                .apply {
+                    if (resumeSessionId != null) putExtra(EXTRA_SESSION_ID, resumeSessionId)
+                    if (options != null) {
+                        putExtra(EXTRA_LANGUAGE, options.language)
+                        putExtra(EXTRA_NUM_SPEAKERS, options.numSpeakers)
+                        options.participants?.let { putExtra(EXTRA_PARTICIPANTS, it.toTypedArray()) }
+                        putExtra(EXTRA_TITLE, options.title)
+                    }
+                }
 
         /**
          * Build an [Intent] that, when sent to [RecordingService],

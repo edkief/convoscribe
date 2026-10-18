@@ -10,9 +10,6 @@ import com.convoscribe.audio.WavWriter
 import com.convoscribe.audio.samplesToMs
 import com.convoscribe.audio.toFloatSamples
 import java.io.File
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -49,9 +46,9 @@ import kotlinx.coroutines.withContext
  *   for the chosen language each session.
  * @param store persistence façade used to create the session, look
  *   up the WAV path, append segments and stamp the duration.
- * @param language returns the ASR language to use (typically a
- *   lambda that reads [com.convoscribe.settings.SettingsRepository]
- *   so a settings change while recording picks up the right value).
+ * @param defaultOptions the options a new session starts with when
+ *   [start] is not given any (typically the Settings defaults, read
+ *   at start time).
  * @param asrDispatcher single-threaded dispatcher the ASR engine
  *   runs on; one in-flight [accept] / [finish] at a time so the
  *   recognizer's native state is never touched concurrently. In
@@ -64,7 +61,7 @@ class RecordingController(
     private val audioSource: AudioSource,
     private val transcriberFactory: TranscriberFactory,
     private val store: RecordingStore,
-    private val language: () -> String,
+    private val defaultOptions: () -> ConversationOptions,
     private val asrDispatcher: CoroutineDispatcher,
     private val clock: () -> Long = System::currentTimeMillis
 ) {
@@ -89,6 +86,11 @@ class RecordingController(
      * session is already live) and we silently drop the second
      * call rather than wreck the in-flight recording.
      *
+     * A new session is created with [options] (language, speaker
+     * count, expected participants, title), or [defaultOptions] when
+     * `null`. The engine and model that transcribe it are recorded on
+     * the session once the transcriber is open.
+     *
      * The work runs in [scope]; the caller owns that scope so a
      * cancelled service also cancels the recording cleanly. Errors
      * are surfaced through [RecordingState.error] (see the class
@@ -100,9 +102,9 @@ class RecordingController(
      * recorded, and [RecordingState.elapsedMs] continues from it.
      * The session is only flipped back to `RECORDING` once the
      * transcriber and the WAV are open, so a failed continue leaves
-     * it untouched.
+     * it untouched. [options] are ignored when continuing.
      */
-    fun start(scope: CoroutineScope, resumeSessionId: Long? = null) {
+    fun start(scope: CoroutineScope, resumeSessionId: Long? = null, options: ConversationOptions? = null) {
         if (_state.value.phase != RecordingPhase.IDLE) return
         // Reset everything we know from a prior session: a fresh
         // start means a fresh error message, a fresh partial/final
@@ -111,10 +113,11 @@ class RecordingController(
         // (before the launched coroutine runs) so the UI gets the
         // right label even if the NPU first-run compile is slow
         // enough to be observed.
-        val settingsLang = language()
+        val newOptions = options ?: defaultOptions()
+        val newLang = newOptions.language
         // A continued session's language is only known once its row
         // is read, so its NPU flag is sampled inside the coroutine.
-        val preparingNpu = resumeSessionId == null && transcriberFactory.needsPreparation(settingsLang)
+        val preparingNpu = resumeSessionId == null && transcriberFactory.needsPreparation(newLang)
         _state.update {
             RecordingState(
                 phase = RecordingPhase.LOADING,
@@ -132,7 +135,7 @@ class RecordingController(
             var transcriber: StreamingTranscriber? = null
             var wav: WavWriter? = null
             var sessionId: Long? = null
-            var lang = settingsLang
+            var lang = newLang
             try {
                 if (resumeSessionId != null) {
                     lang = store.sessionLanguage(resumeSessionId)
@@ -152,12 +155,17 @@ class RecordingController(
                     wav = WavWriter(File(store.audioPath(id)), append = true)
                     store.reopenSession(id)
                 } else {
-                    val title = "Recording " +
-                        SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(clock()))
-                    id = store.createSession(title, lang)
+                    id = store.createSession(
+                        title = newOptions.sessionTitle(clock()),
+                        language = lang,
+                        numSpeakers = newOptions.numSpeakers,
+                        participants = newOptions.participants
+                    )
                     wav = WavWriter(File(store.audioPath(id)))
                 }
                 sessionId = id
+                val engine = transcriberFactory.describe(lang)
+                store.recordEngine(id, engine.engine, engine.model, continued = resumeSessionId != null)
                 // The recognizer's timestamps start at 0 for this
                 // run; shift them past the audio already in the file.
                 segmentOffsetMs = samplesToMs(wav.samplesWritten)

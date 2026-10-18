@@ -22,6 +22,7 @@ import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.OpenAiChatClient
 import com.convoscribe.models.ModelDownloader
 import com.convoscribe.models.ModelStore
+import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
@@ -186,7 +187,7 @@ class AppContainer(val context: Context) {
         audioSource = MicAudioSource(),
         transcriberFactory = transcriberFactory,
         store = sessionRepository,
-        language = { settingsRepository.settings.value.asrLanguage },
+        defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) },
         asrDispatcher = Dispatchers.Default.limitedParallelism(1)
     )
 
