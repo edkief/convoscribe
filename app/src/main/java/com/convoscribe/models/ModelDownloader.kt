@@ -24,8 +24,16 @@ import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
  * Keeps [ModelDownloader] free of an Android dependency while
  * distinguishing network/IO failures (HTTP 5xx, DNS, timeout, partial
  * body) from programmer errors (illegal URL, null body).
+ *
+ * [transient] marks a failure worth retrying once the network is back
+ * (a timeout, a reset, HTTP 5xx/408/429); a permanent one (HTTP 404, a
+ * size mismatch, a missing archive entry) fails at once.
  */
-class ModelDownloadException(message: String, cause: Throwable? = null) : Exception(message, cause)
+class ModelDownloadException(
+    message: String,
+    cause: Throwable? = null,
+    val transient: Boolean = false
+) : Exception(message, cause)
 
 /**
  * Per-file progress and terminal event for [ModelDownloader.download].
