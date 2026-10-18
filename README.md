@@ -151,6 +151,63 @@ Ollama at `http://<host>:11434/v1`) work without a custom
 `network_security_config`. Do not place a stricter network
 security config on the app — that would block the local endpoint.
 
+## Release
+
+`scripts/release.sh` cuts a GitHub release. It bumps `versionName`
+(minor by default; `--patch`, `--major` or `--version X.Y.Z`) and
+`versionCode` in `app/build.gradle.kts`, then asks an OpenAI-compatible
+LLM to write release notes from the git log since the previous `v*`
+tag. Next it runs the verify gate and `assembleRelease`, commits
+`chore(release): vX.Y.Z`, tags it, pushes the branch and tag together,
+and runs `gh release create` with `convoscribe-X.Y.Z.apk` and its
+`.sha256`. Release builds are signed with the shared
+`app/debug.keystore` for now, so they upgrade in place over debug
+installs (a dedicated release key is #16).
+
+```bash
+LLM_API_KEY=... bash scripts/release.sh            # 0.1.0 -> 0.2.0
+LLM_API_KEY=... bash scripts/release.sh --patch --dry-run   # build and notes only, into dist/
+bash scripts/release.sh --notes-file my-notes.md   # skip the LLM
+```
+
+The notes endpoint defaults to `http://llama-chat.llama:8080/v1`, model
+`llama-chat` (`LLM_BASE_URL`, `LLM_MODEL`). The script turns the model's
+thinking off with `chat_template_kwargs`. Set `LLM_DISABLE_THINKING=0`
+for servers that reject that field. Releases come from `main` with a
+clean tree that is not behind `origin`. In an interactive shell the
+script asks before publishing (`--yes` skips the prompt).
+
+### sherpa-onnx is prebuilt for releases
+
+The release never compiles sherpa-onnx. If its outputs are missing from
+`app/`, it copies them from `$CONVOSCRIBE_SHERPA_PREBUILT` or extracts
+them from the sherpa image with podman or docker. Two images
+(Containerfiles in `docker/`, build context the repo root) make this
+work in CI:
+
+- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>` is a
+  `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so` and
+  `/sherpa/libs/*.jar`. Its tag comes from the pins in
+  `scripts/build-sherpa-onnx.sh`, so you rebuild it only when a pin
+  changes.
+- `convoscribe-android-builder:<sherpa tag>-tc<hash>` has JDK 17, the
+  SDK (no NDK) and `gh`, with the sherpa outputs at `/opt/sherpa`. The
+  Tekton release task runs `scripts/release.sh` in this image.
+
+```bash
+buildah login registry.kieffer.me
+bash scripts/build-images.sh --push              # both; the sherpa build takes 10-30 min
+bash scripts/build-images.sh --push builder      # after a toolchain change only
+bash scripts/build-images.sh --print-builder-image   # the image the Tekton task should use
+# in-cluster plain-HTTP registry:
+bash scripts/build-images.sh --push --tls-verify=false --registry docker-registry.docker-registry:5000
+```
+
+The Tekton task needs `LLM_API_KEY` and `GH_TOKEN` from secrets, a git
+identity (`user.name`, `user.email`) and push credentials for `origin`.
+A detached checkout releases to `RELEASE_BRANCH` (default `main`), and
+the script unshallows a shallow clone itself.
+
 ## Boox / Onyx e-readers
 
 Tested on a Boox Note Air 6C (Qualcomm QCS6690, Android 16):
