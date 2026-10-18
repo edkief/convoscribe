@@ -19,6 +19,7 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -622,6 +623,60 @@ class DiarizeSessionUseCaseTest {
         // labels take over.
         assertEquals("Speaker 1", speakers[0].label)
         assertEquals("Speaker 2", speakers[1].label)
+    }
+
+    /**
+     * Expected participants limit the matching: both speakers sound
+     * exactly like Bob, but only Alice was expected, so Bob's name
+     * never appears and the closer Alice match wins. With anyone
+     * expected, Bob is matched as before.
+     */
+    @Test
+    fun run_withParticipants_neverAssignsANameOutsideThem() = runTest {
+        suspend fun labelsFor(participants: List<String>?): List<String> {
+            val id = repo.createSession(title = "Test", language = "en", participants = participants)
+            repo.addSegment(id, startMs = 0L, endMs = 5_000L, text = "first")
+            repo.addSegment(id, startMs = 5_000L, endMs = 10_000L, text = "second")
+            val turns = listOf(
+                SpeakerTurn(startMs = 0L, endMs = 5_000L, speaker = 0),
+                SpeakerTurn(startMs = 5_000L, endMs = 10_000L, speaker = 1)
+            )
+            settings.update { it.copy(speakerMatchThreshold = 0.3f) }
+            DiarizeSessionUseCase(
+                repository = repo,
+                diarizerFactory = ScriptedDiarizerFactory(ScriptedDiarizer(turns)),
+                settings = settings,
+                embedderFactory = FakeSpeakerEmbedderFactory(FakeSpeakerEmbedder()),
+                enrolled = FakeEnrolledSpeakerStore("Bob" to unit(0.0), "Alice" to unit(60.0)),
+                readSamples = { FloatArray(12 * 16_000) }
+            ).run(id)
+            return repo.getSpeakers(id).sortedBy { it.speakerIndex }.map { it.label }
+        }
+
+        val onlyAlice = labelsFor(listOf("Alice"))
+        assertFalse(onlyAlice.toString(), "Bob" in onlyAlice)
+        assertEquals(listOf("Alice", "Speaker 2"), onlyAlice)
+
+        assertEquals("Bob", labelsFor(null).first())
+
+        // Nobody enrolled is expected: nothing to match.
+        assertEquals(listOf("Speaker 1", "Speaker 2"), labelsFor(listOf("Carol")))
+    }
+
+    /** The speaker count chosen before Start drives the first diarization. */
+    @Test
+    fun run_usesTheSpeakerCountChosenAtStart() = runTest {
+        settings.update { it.copy(numSpeakers = -1) }
+        val id = repo.createSession(title = "Test", language = "en", numSpeakers = 2)
+        repo.addSegment(id, startMs = 0L, endMs = 5_000L, text = "first")
+        val diarizer = ScriptedDiarizer(listOf(SpeakerTurn(startMs = 0L, endMs = 5_000L, speaker = 0)))
+        DiarizeSessionUseCase(
+            repository = repo,
+            diarizerFactory = ScriptedDiarizerFactory(diarizer),
+            settings = settings,
+            readSamples = { FloatArray(16_000) }
+        ).run(id)
+        assertEquals(2, diarizer.lastNumSpeakers)
     }
 }
 
