@@ -1,7 +1,6 @@
 package com.convoscribe.service
 
 import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
@@ -75,7 +74,7 @@ class UpdateDownloadService : Service() {
     }
 
     private fun handleStart() {
-        ensureNotificationChannel()
+        ModelDownloadService.ensureDownloadsChannel(this)
         val manager = manager()
         // Attaches to a download already running instead of starting a second.
         manager.download()
@@ -171,20 +170,6 @@ class UpdateDownloadService : Service() {
             .setContentIntent(openAppIntent(this))
             .setAutoCancel(true)
             .build()
-    }
-
-    private fun ensureNotificationChannel() {
-        val nm = getSystemService<NotificationManager>() ?: return
-        if (nm.getNotificationChannel(ModelDownloadService.CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            ModelDownloadService.CHANNEL_ID,
-            getString(R.string.notification_channel_downloads),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.notification_channel_downloads_description)
-            setShowBadge(false)
-        }
-        nm.createNotificationChannel(channel)
     }
 
     companion object {

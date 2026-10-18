@@ -158,8 +158,9 @@ class UpdateDownloaderTest {
         File(dir, "0.2.1").mkdirs()
         File(dir, "0.3.0").mkdirs()
         File(dir, "junk").mkdirs()
-        downloader.cleanUp(SemVer(0, 2, 1))
+        assertTrue(downloader.cleanUp(SemVer(0, 2, 1)))
         assertEquals(listOf("0.3.0"), dir.list()!!.toList())
+        assertFalse(downloader.cleanUp(SemVer(0, 2, 1)))
     }
 
     @Test

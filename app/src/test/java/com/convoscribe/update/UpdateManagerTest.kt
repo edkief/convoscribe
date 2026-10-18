@@ -66,8 +66,9 @@ class UpdateManagerTest {
             discarded += offer.versionName
         }
 
-        override fun cleanUp(installed: SemVer?) {
+        override fun cleanUp(installed: SemVer?): Boolean {
             cleanedUpFor = installed
+            return false
         }
     }
 
@@ -76,6 +77,16 @@ class UpdateManagerTest {
         override fun installed(): ApkFacts = installed
     }
 
+    private class FakeInstaller : ApkInstaller {
+        val installed = mutableListOf<File>()
+        var failWith: Exception? = null
+        override suspend fun install(apk: File) {
+            failWith?.let { throw it }
+            installed += apk
+        }
+    }
+
+    private val installer = FakeInstaller()
     private val downloads = FakeDownloads()
     private val inspector = FakeInspector(
         archive = ApkFacts("com.convoscribe", 4L, setOf("key")),
@@ -95,6 +106,7 @@ class UpdateManagerTest {
         store = store,
         downloads = downloads,
         inspector = inspector,
+        installer = installer,
         installed = { installed },
         autoCheck = { auto },
         includePrereleases = { false },
@@ -401,5 +413,76 @@ class UpdateManagerTest {
         scope.runCurrent()
         assertEquals(1, source.calls)
         assertTrue(manager.isDownloading)
+    }
+
+    /** A manager with 0.3.0 downloaded and verified. */
+    private fun ready(): UpdateManager = offered().also {
+        it.download()
+        downloads.result.complete(apk)
+        scope.runCurrent()
+        check(it.state.value is UpdateState.ReadyToInstall)
+    }
+
+    @Test
+    fun install_handsTheApkToTheInstaller() {
+        val manager = ready()
+        assertEquals(InstallStart.STARTED, manager.install())
+        assertTrue(manager.state.value is UpdateState.Installing)
+        scope.runCurrent()
+        assertEquals(listOf(apk), installer.installed)
+    }
+
+    @Test
+    fun install_isRefusedWhileBusy_andStaysReady() {
+        val manager = ready()
+        busy = true
+        assertEquals(InstallStart.BUSY, manager.install())
+        assertTrue(manager.state.value is UpdateState.ReadyToInstall)
+        scope.runCurrent()
+        assertTrue(installer.installed.isEmpty())
+    }
+
+    @Test
+    fun install_withNothingDownloaded_doesNothing() {
+        assertEquals(InstallStart.NOTHING_TO_INSTALL, offered().install())
+    }
+
+    @Test
+    fun installResult_cancelledGoesBackToReady_failureIsReported() {
+        val manager = ready()
+        manager.install()
+        scope.runCurrent()
+        manager.onInstallResult(InstallResult.CANCELLED, null)
+        assertEquals(apk, (manager.state.value as UpdateState.ReadyToInstall).apk)
+
+        manager.install()
+        manager.onInstallResult(InstallResult.FAILED, "INSTALL_FAILED_INSUFFICIENT_STORAGE")
+        val failed = manager.state.value as UpdateState.Failed
+        assertEquals(UpdateFailure.INSTALL, failed.reason)
+        assertEquals("INSTALL_FAILED_INSUFFICIENT_STORAGE", failed.detail)
+    }
+
+    @Test
+    fun installResult_incompatible_isTheSignatureCase() {
+        val manager = ready()
+        manager.install()
+        manager.onInstallResult(InstallResult.INCOMPATIBLE, "signatures do not match")
+        assertEquals(UpdateFailure.SIGNATURE_MISMATCH, (manager.state.value as UpdateState.Failed).reason)
+    }
+
+    @Test
+    fun install_thatCannotStartASession_isReported() {
+        installer.failWith = java.io.IOException("no space")
+        val manager = ready()
+        manager.install()
+        scope.runCurrent()
+        assertEquals(UpdateFailure.INSTALL, (manager.state.value as UpdateState.Failed).reason)
+    }
+
+    @Test
+    fun installResult_outsideAnInstall_isIgnored() {
+        val manager = offered()
+        manager.onInstallResult(InstallResult.FAILED, "late")
+        assertTrue(manager.state.value is UpdateState.Available)
     }
 }

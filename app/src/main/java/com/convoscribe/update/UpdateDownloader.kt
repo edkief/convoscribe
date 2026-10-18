@@ -28,7 +28,8 @@ interface UpdateDownloads {
 
     fun discard(offer: UpdateOffer)
 
-    fun cleanUp(installed: SemVer?)
+    /** Delete downloads for [installed] or older; `true` when something was deleted. */
+    fun cleanUp(installed: SemVer?): Boolean
 }
 
 /**
@@ -101,12 +102,17 @@ class UpdateDownloader(
      * Delete downloads for [installed] or older (they are installed or
      * superseded) and anything that is not a version directory.
      */
-    override fun cleanUp(installed: SemVer?) {
-        val children = dir.listFiles() ?: return
+    override fun cleanUp(installed: SemVer?): Boolean {
+        val children = dir.listFiles() ?: return false
+        var deleted = false
         for (child in children) {
             val version = SemVer.parse(child.name)
-            if (version == null || installed == null || version <= installed) child.deleteRecursively()
+            if (version == null || installed == null || version <= installed) {
+                child.deleteRecursively()
+                deleted = true
+            }
         }
+        return deleted
     }
 
     /** `sha256sum` output: the hex digest, then the file name. */

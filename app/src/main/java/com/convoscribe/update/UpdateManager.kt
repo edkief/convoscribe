@@ -16,6 +16,12 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** What the system installer reported for an update ([UpdateInstallReceiver]). */
+enum class InstallResult { SUCCESS, CANCELLED, INCOMPATIBLE, FAILED }
+
+/** Whether [UpdateManager.install] handed the update to the system installer. */
+enum class InstallStart { STARTED, BUSY, NOTHING_TO_INSTALL }
+
 /** The installed app's version, from `PackageManager`. */
 data class InstalledApp(val versionName: String, val versionCode: Long)
 
@@ -68,8 +74,8 @@ sealed interface UpdateState {
     /** [apk] is downloaded and verified, ready for the system installer. */
     data class ReadyToInstall(val offer: UpdateOffer, val apk: File) : UpdateState
 
-    /** Handed to the system installer, waiting for the user and the result. */
-    data class Installing(val offer: UpdateOffer) : UpdateState
+    /** [apk] is with the system installer, waiting for the user and the result. */
+    data class Installing(val offer: UpdateOffer, val apk: File) : UpdateState
 
     data class Failed(val offer: UpdateOffer, val reason: UpdateFailure, val detail: String? = null) : UpdateState
 }
@@ -103,6 +109,11 @@ val UpdateState.offer: UpdateOffer?
  * process alive), then checks it against the installed app with
  * [ApkVerifier] before it is [UpdateState.ReadyToInstall].
  *
+ * [install] gives a [UpdateState.ReadyToInstall] APK to [installer],
+ * unless [isBusy]: an update stops the app, which would cut a live
+ * recording short. The installer's verdict comes back through
+ * [onInstallResult]; a cancelled prompt goes back to *Install*.
+ *
  * [bannerDismissed] is *Not now* on Home: the banner hides until the
  * next process start (or a manual check), while Settings › About still
  * shows the offer.
@@ -116,6 +127,7 @@ class UpdateManager(
     private val store: UpdateStore,
     private val downloads: UpdateDownloads,
     private val inspector: ApkInspector,
+    private val installer: ApkInstaller,
     private val installed: () -> InstalledApp,
     private val autoCheck: () -> Boolean,
     private val includePrereleases: () -> Boolean,
@@ -256,6 +268,45 @@ class UpdateManager(
             _state.value = UpdateState.Failed(current.offer, UpdateFailure.DOWNLOAD, message)
             downloadJob?.cancel()
             downloadJob = null
+        }
+    }
+
+    /** *Install*: hand the downloaded APK to the system installer. */
+    fun install(): InstallStart {
+        val ready = synchronized(lock) {
+            val ready = _state.value as? UpdateState.ReadyToInstall ?: return InstallStart.NOTHING_TO_INSTALL
+            if (isBusy()) return InstallStart.BUSY
+            _state.value = UpdateState.Installing(ready.offer, ready.apk)
+            ready
+        }
+        scope.launch {
+            try {
+                installer.install(ready.apk)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "update install failed to start", e)
+                onInstallResult(InstallResult.FAILED, e.message ?: e.javaClass.simpleName)
+            }
+        }
+        return InstallStart.STARTED
+    }
+
+    /**
+     * The installer's verdict. On success the process is usually
+     * stopped before this runs; [UpdatedReceiver] takes over then.
+     */
+    fun onInstallResult(result: InstallResult, message: String?) {
+        synchronized(lock) {
+            val installing = _state.value as? UpdateState.Installing ?: return
+            _state.value = when (result) {
+                InstallResult.SUCCESS -> UpdateState.Idle
+                InstallResult.CANCELLED -> UpdateState.ReadyToInstall(installing.offer, installing.apk)
+                // The verification should have caught this; the installer has the last word.
+                InstallResult.INCOMPATIBLE ->
+                    UpdateState.Failed(installing.offer, UpdateFailure.SIGNATURE_MISMATCH, message)
+                InstallResult.FAILED -> UpdateState.Failed(installing.offer, UpdateFailure.INSTALL, message)
+            }
         }
     }
 

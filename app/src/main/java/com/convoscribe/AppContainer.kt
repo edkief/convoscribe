@@ -36,6 +36,7 @@ import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.update.GitHubReleases
 import com.convoscribe.update.InstalledApp
 import com.convoscribe.update.PackageApkInspector
+import com.convoscribe.update.PackageUpdateInstaller
 import com.convoscribe.update.PrefsUpdateStore
 import com.convoscribe.update.UpdateDownloader
 import com.convoscribe.update.UpdateManager
@@ -406,6 +407,13 @@ class AppContainer(val context: Context) {
         )
     }
 
+    /** Update APKs in `filesDir/updates/<version>/`; also cleaned up after an update. */
+    val updateDownloads = UpdateDownloader(
+        client = httpClient,
+        dir = File(context.filesDir, "updates"),
+        awaitNetwork = NetworkWaiter(context)::awaitNetwork
+    )
+
     /**
      * Looks for a newer GitHub release on start and from Settings ›
      * About, and downloads it to `filesDir/updates/<version>/` with the
@@ -416,12 +424,9 @@ class AppContainer(val context: Context) {
     val updateManager = UpdateManager(
         source = GitHubReleases(httpClient, userAgent = "ConvoScribe/${installedApp.versionName}"),
         store = PrefsUpdateStore(context.getSharedPreferences(PrefsUpdateStore.PREFS_NAME, Context.MODE_PRIVATE)),
-        downloads = UpdateDownloader(
-            client = httpClient,
-            dir = File(context.filesDir, "updates"),
-            awaitNetwork = NetworkWaiter(context)::awaitNetwork
-        ),
+        downloads = updateDownloads,
         inspector = PackageApkInspector(context),
+        installer = PackageUpdateInstaller(context),
         installed = { installedApp },
         autoCheck = { settingsRepository.settings.value.updateCheckAuto },
         includePrereleases = { settingsRepository.settings.value.updateIncludePrereleases },

@@ -81,7 +81,7 @@ class ModelDownloadService : Service() {
     }
 
     private fun handleStart(bundles: List<ModelBundle>) {
-        ensureNotificationChannel()
+        ensureDownloadsChannel(this)
         val manager = manager()
         // Attaches to a download already running instead of starting a second.
         manager.start(bundles)
@@ -192,26 +192,27 @@ class ModelDownloadService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
-    private fun ensureNotificationChannel() {
-        val nm = getSystemService<NotificationManager>() ?: return
-        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.notification_channel_downloads),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.notification_channel_downloads_description)
-            setShowBadge(false)
-        }
-        nm.createNotificationChannel(channel)
-    }
-
     companion object {
         /** Own id, so a download and a recording each keep their notification. */
         private const val NOTIFICATION_ID = 2
 
         /** "Downloads" channel, shared with [UpdateDownloadService]. */
         const val CHANNEL_ID = "downloads"
+
+        /** Create the [CHANNEL_ID] channel unless it exists. */
+        fun ensureDownloadsChannel(context: Context) {
+            val nm = context.getSystemService<NotificationManager>() ?: return
+            if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.notification_channel_downloads),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = context.getString(R.string.notification_channel_downloads_description)
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+        }
 
         private const val REQUEST_OPEN = 2001
         private const val REQUEST_CANCEL = 2002

@@ -76,6 +76,8 @@
     <string name="update_failed_not_newer">The downloaded app is not newer than the installed one.</string>
     <string name="update_failed_signature">This release is signed with a different key, so Android cannot install it over this copy. To update, uninstall ConvoScribe and install the release from its GitHub page (your sessions are deleted with it).</string>
     <string name="update_failed_busy">Finish the open recording, import or re-transcription first: installing restarts ConvoScribe.</string>
+    <string name="notification_updated_title">ConvoScribe updated to %1$s</string>
+    <string name="notification_updated_text">Tap to open it. Your sessions are all there.</string>
     <string name="update_failed_install">Android did not install the update: %1$s</string>
     <string name="record_title">New recording</string>
     <string name="record_title_continue">Continue recording</string>
