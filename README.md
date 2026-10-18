@@ -117,6 +117,16 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   or failed, with Delete in each card's menu. The Record screen shows
   a live **microphone level** meter, and each speaker keeps one colour
   on their chip and lines, also after a rename.
+- **In-app updates.** Once a day on start (never while a recording is
+  open), the app asks GitHub for a newer release and offers it on
+  Home: *View notes*, *Update*, *Not now* or *Skip this version*. The
+  APK downloads in the background with a progress notification
+  (resuming after a lost connection), is checked against the
+  release's sha256 and against the installed app (same package,
+  higher `versionCode`, same signing key), then goes to the system
+  installer, which you confirm. Settings → About shows the version,
+  *Check for updates*, and switches for the automatic check (on) and
+  for pre-releases (off).
 
 ## Build
 
@@ -144,6 +154,15 @@ Run `bash scripts/build-apk.sh` to build and copy the APK to `dist/convoscribe-<
 ```bash
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+Later versions arrive in the app (Features → *In-app updates*): the
+first install asks for Android's *Install unknown apps* access for
+ConvoScribe, then every update shows the system prompt. Releases are
+signed with the shared `app/debug.keystore` for now, so they install
+over a debug build. Once releases get their own key (#16), a copy
+signed with the old key cannot update in place: the app says so and
+links to the release page, and you uninstall and reinstall once
+(which deletes the sessions).
 
 `usesCleartextTraffic="true"` is already enabled on `<application>`
 so plain-HTTP local endpoints (e.g. `http://192.168.1.10:8000/v1`,
@@ -342,12 +361,20 @@ one package per concern:
   `RecordingState`, `RecordingStore`, `SessionRecovery` (the
   crash-recovery boot pass).
 - `service/` — `RecordingService` (foreground microphone service),
-  notification text helper.
+  `ModelDownloadService` and `UpdateDownloadService` (`dataSync`
+  download services sharing `DownloadLocks`), notification text helper.
+- `update/` — in-app updates (#15): `GitHubReleases` (the releases
+  API), `SemVer`, `UpdateSelector` (which release to offer),
+  `UpdateDownloader` (`ResumableFetch` + sha256), `ApkVerifier`
+  (package, `versionCode`, signing key), `UpdateManager` (the app-wide
+  check / download / install state), `PackageUpdateInstaller` and its
+  receivers.
 - `enginecheck/` — `DeviceInfo` (manufacturer / SoC / libcdsprpc /
   storage), `EngineCheckRunner`, `Report`.
 - `ui/<screen>/` — one package per screen, Composable + ViewModel
   pair (`home`, `record`, `session`, `settings`, `setup`,
-  `enginecheck`); `ui/AppNavHost.kt` is the navigation graph;
+  `enginecheck`); `ui/update/` holds the update banner shared by Home
+  and Settings; `ui/AppNavHost.kt` is the navigation graph;
   `ui/theme/` is the Material 3 theme.
 
 Dependency injection is manual: `com.convoscribe.AppContainer` is
