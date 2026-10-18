@@ -46,6 +46,17 @@
     <string name="import_step_identifying">Identifying speakers… %1$d%%</string>
     <string name="notification_diarizing_title">Identifying speakers</string>
     <string name="notification_diarizing_text">Identifying speakers…</string>
+    <string name="notification_channel_downloads">Downloads</string>
+    <string name="notification_channel_downloads_description">Shows while ConvoScribe downloads speech models.</string>
+    <string name="notification_download_title">Downloading speech models</string>
+    <string name="notification_download_progress">%1$d MB / %2$d MB</string>
+    <string name="notification_download_waiting">Connection lost, will resume when back online…</string>
+    <string name="notification_download_unpacking">Unpacking… %1$d%%</string>
+    <string name="notification_download_cancel">Cancel</string>
+    <string name="notification_download_done_title">Speech models downloaded</string>
+    <string name="notification_download_done_text">ConvoScribe is ready to record.</string>
+    <string name="notification_download_failed_title">Model download failed</string>
+    <string name="download_timeout">Android paused the download. Tap Retry to resume where it stopped.</string>
     <string name="record_title">New recording</string>
     <string name="record_title_continue">Continue recording</string>
     <string name="record_back">Back</string>

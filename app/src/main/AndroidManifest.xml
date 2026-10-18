@@ -124,6 +124,17 @@
             android:exported="false"
             android:foregroundServiceType="microphone|dataSync" />
         <!--
+            Model downloads (issue #10): a `dataSync` foreground service
+            so a first-run download survives the screen turning off or
+            the user switching apps. Its own notification, separate from
+            the recording service. Not exported: started by the setup
+            screen and the notification's Cancel action only.
+        -->
+        <service
+            android:name=".service.ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!--
             "ConvoScribe" Quick Settings tile (issue #7): start a
             recording from anywhere, pause / resume an open one. Exported
             for System UI only, through the bind permission.
