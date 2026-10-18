@@ -58,4 +58,9 @@ class RecordingNotificationTextTest {
         // throw and should render as the zero timestamp.
         assertEquals("Recording – 00:00", recordingNotificationText(-1))
     }
+
+    @Test
+    fun pausedReadsPausedWithTheFrozenTime() {
+        assertEquals("Paused – 01:05", recordingNotificationText(65_000, paused = true))
+    }
 }
