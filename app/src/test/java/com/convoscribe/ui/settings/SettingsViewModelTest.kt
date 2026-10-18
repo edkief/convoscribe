@@ -368,6 +368,35 @@ class SettingsViewModelTest {
         assertNull(vm.state.value.defaultParticipants)
     }
 
+    @Test
+    fun displayMode_andDynamicColour_areWrittenImmediately() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertEquals("auto", vm.state.value.displayMode)
+
+        vm.setDisplayMode("eink")
+        vm.setDynamicColor(true)
+        advanceUntilIdle()
+
+        assertEquals("eink", repo.settings.value.displayMode)
+        assertTrue(repo.settings.value.dynamicColor)
+        assertEquals("eink", vm.state.value.displayMode)
+        assertTrue(vm.state.value.dynamicColor)
+
+        vm.setDisplayMode("sepia")
+        advanceUntilIdle()
+        assertEquals("eink", repo.settings.value.displayMode)
+    }
+
+    @Test
+    fun save_keepsTheDisplayMode() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        vm.setDisplayMode("standard")
+        vm.save()
+        assertEquals("standard", repo.settings.value.displayMode)
+    }
+
     /**
      * Trivial in-memory [ChatClient] for tests. Returns the
      * configured `models` list, or throws the configured `error`

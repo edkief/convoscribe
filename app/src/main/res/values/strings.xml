@@ -206,6 +206,14 @@
     <string name="session_ask_clear_message">This removes every question and answer for this session.</string>
     <string name="session_ask_clear_confirm">Clear</string>
     <string name="session_ask_clear_cancel">Cancel</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_display_mode_label">Display</string>
+    <string name="settings_display_mode_auto">Auto</string>
+    <string name="settings_display_mode_standard">Standard</string>
+    <string name="settings_display_mode_eink">E-ink</string>
+    <string name="settings_display_mode_help">Auto uses E-ink on Boox devices. E-ink is high-contrast and flat, with no animations and larger touch targets.</string>
+    <string name="settings_dynamic_color_label">Use device colours</string>
+    <string name="settings_dynamic_color_help">Take the app\'s colours from your wallpaper instead of the ConvoScribe ones.</string>
     <string name="settings_section_about">About</string>
     <string name="settings_about_nemotron_name">Nemotron Speech Streaming EN 0.6B</string>
     <string name="settings_about_nemotron_licence">NVIDIA Open Model License</string>

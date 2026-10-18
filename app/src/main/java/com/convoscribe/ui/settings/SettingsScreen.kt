@@ -1,6 +1,7 @@
 package com.convoscribe.ui.settings
 
 import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -32,6 +34,7 @@ import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -48,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -59,6 +63,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.settings.DisplayMode
+import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.launch
 
 /**
@@ -159,7 +165,9 @@ fun SettingsScreen(navController: NavHostController) {
             onEngineCheck = { navController.navigate("engine-check") },
             onDeleteFrenchModel = vm::deleteFrenchModel,
             onResetDefaultParticipants = vm::resetDefaultParticipants,
-            onOpenKnownSpeakers = { navController.navigate("speakers") }
+            onOpenKnownSpeakers = { navController.navigate("speakers") },
+            onDisplayModeChange = vm::setDisplayMode,
+            onDynamicColorChange = vm::setDynamicColor
         )
     )
 }
@@ -175,7 +183,9 @@ internal class SettingsActions(
     val onEngineCheck: () -> Unit = {},
     val onDeleteFrenchModel: () -> Unit = {},
     val onResetDefaultParticipants: () -> Unit = {},
-    val onOpenKnownSpeakers: () -> Unit = {}
+    val onOpenKnownSpeakers: () -> Unit = {},
+    val onDisplayModeChange: (String) -> Unit = {},
+    val onDynamicColorChange: (Boolean) -> Unit = {}
 )
 
 /** Render-only body of [SettingsScreen] for previews and screenshot tests. */
@@ -214,6 +224,12 @@ internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions) {
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Spacer(Modifier.height(8.dp))
+            AppearanceSection(
+                displayMode = state.displayMode,
+                dynamicColor = state.dynamicColor,
+                onDisplayModeChange = actions.onDisplayModeChange,
+                onDynamicColorChange = actions.onDynamicColorChange
+            )
             LanguageModelSection(
                 form = state.form,
                 testing = state.testing,
@@ -259,6 +275,69 @@ internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions) {
         }
     }
 }
+
+/**
+ * "Appearance" section: the display mode (Auto / Standard / E-ink) and,
+ * on Android 12+ outside e-ink mode, "Use device colours". Both are
+ * written immediately and the app re-themes at once.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceSection(
+    displayMode: String,
+    dynamicColor: Boolean,
+    onDisplayModeChange: (String) -> Unit,
+    onDynamicColorChange: (Boolean) -> Unit
+) {
+    SectionHeader(text = stringResource(R.string.settings_section_appearance))
+    Text(
+        text = stringResource(R.string.settings_display_mode_label),
+        style = MaterialTheme.typography.titleSmall
+    )
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        DISPLAY_MODES.forEachIndexed { index, (mode, label) ->
+            SegmentedButton(
+                selected = displayMode == mode.key,
+                onClick = { onDisplayModeChange(mode.key) },
+                shape = SegmentedButtonDefaults.itemShape(index = index, count = DISPLAY_MODES.size)
+            ) {
+                Text(text = stringResource(label))
+            }
+        }
+    }
+    Text(
+        text = stringResource(R.string.settings_display_mode_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !AppTheme.isEink) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(value = dynamicColor, role = Role.Switch, onValueChange = onDynamicColorChange),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_dynamic_color_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                Text(
+                    text = stringResource(R.string.settings_dynamic_color_help),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = dynamicColor, onCheckedChange = null)
+        }
+    }
+}
+
+private val DISPLAY_MODES = listOf(
+    DisplayMode.AUTO to R.string.settings_display_mode_auto,
+    DisplayMode.STANDARD to R.string.settings_display_mode_standard,
+    DisplayMode.EINK to R.string.settings_display_mode_eink
+)
 
 /**
  * "Language model" section: base URL, API key (with show/hide

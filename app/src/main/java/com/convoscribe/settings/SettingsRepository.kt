@@ -49,6 +49,8 @@ class SettingsRepository(
      *  - `asrEngine` must be "npu" or "cpu"; anything else keeps
      *    the previous value (no exception, no overwrite); changing
      *    it marks the engine as chosen, so it is persisted from then on
+     *  - `displayMode` must be a [DisplayMode.key]; anything else
+     *    keeps the previous value
      */
     fun update(transform: (AppSettings) -> AppSettings) {
         val current = _settings.value
@@ -66,6 +68,8 @@ class SettingsRepository(
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
+            putString(KEY_DISPLAY_MODE, next.displayMode)
+            putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
             if (participants == null) {
                 remove(
@@ -108,7 +112,9 @@ class SettingsRepository(
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
-            defaultParticipants = ParticipantsCodec.decode(prefs.getString(KEY_DEFAULT_PARTICIPANTS, null))
+            defaultParticipants = ParticipantsCodec.decode(prefs.getString(KEY_DEFAULT_PARTICIPANTS, null)),
+            displayMode = prefs.getString(KEY_DISPLAY_MODE, null) ?: DisplayMode.AUTO.key,
+            dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false)
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -118,10 +124,16 @@ class SettingsRepository(
         // stored value is invalid, the engine is the device default.
         // Every numeric field is normalised in-place via [normaliseNumeric].
         val lang = if (raw.asrLanguage == "en" || raw.asrLanguage == "fr") raw.asrLanguage else "en"
+        val displayMode = if (DisplayMode.fromKey(raw.displayMode) != null) raw.displayMode else DisplayMode.AUTO.key
         val storedValid = raw.asrEngine == "npu" || raw.asrEngine == "cpu"
         val chosen = storedValid && prefs.getBoolean(KEY_ASR_ENGINE_CHOSEN, prefs.contains(KEY_ASR_ENGINE))
         val engine = if (chosen) raw.asrEngine else defaultEngine()
-        return raw.copy(asrLanguage = lang, asrEngine = engine, asrEngineChosen = chosen).normaliseNumeric().copy(
+        return raw.copy(
+            asrLanguage = lang,
+            asrEngine = engine,
+            asrEngineChosen = chosen,
+            displayMode = displayMode
+        ).normaliseNumeric().copy(
             llmBaseUrl = raw.llmBaseUrl.trim().trimEnd('/')
         )
     }
@@ -161,6 +173,8 @@ class SettingsRepository(
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
         const val KEY_SPEAKER_MATCH_THRESHOLD = "speakerMatchThreshold"
         const val KEY_DEFAULT_PARTICIPANTS = "defaultParticipants"
+        const val KEY_DISPLAY_MODE = "displayMode"
+        const val KEY_DYNAMIC_COLOR = "dynamicColor"
     }
 }
 
@@ -169,12 +183,15 @@ class SettingsRepository(
  * fields are clamped; `llmBaseUrl` is trimmed and stripped of its
  * trailing `/`; `asrLanguage` keeps the previous value when it is
  * not "en" or "fr"; `asrEngine` keeps the previous value when it is
- * not "npu" or "cpu".
+ * not "npu" or "cpu"; `displayMode` keeps the previous value when it
+ * is not a [DisplayMode.key].
  */
 private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val lang = if (asrLanguage == "en" || asrLanguage == "fr") asrLanguage else previous.asrLanguage
     val engine = if (asrEngine == "npu" || asrEngine == "cpu") asrEngine else previous.asrEngine
+    val mode = if (DisplayMode.fromKey(displayMode) != null) displayMode else previous.displayMode
     return this.normaliseNumeric().copy(
+        displayMode = mode,
         llmBaseUrl = llmBaseUrl.trim().trimEnd('/'),
         defaultParticipants = ParticipantsCodec.normalise(defaultParticipants),
         asrLanguage = lang,

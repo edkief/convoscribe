@@ -9,6 +9,7 @@ import com.convoscribe.llm.toUserMessage
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
 import com.convoscribe.settings.AppSettings
+import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -111,7 +112,10 @@ data class SettingsUiState(
     val selectedLanguageModelInstalled: Boolean = true,
     val selectedLanguageModelMissingBytes: Long = 0L,
     /** Participants new conversations start with (saved by "Set as default"); `null` is anyone. */
-    val defaultParticipants: List<String>? = null
+    val defaultParticipants: List<String>? = null,
+    /** [com.convoscribe.settings.DisplayMode.key]; written immediately, like the engine. */
+    val displayMode: String = DisplayMode.AUTO.key,
+    val dynamicColor: Boolean = false
 )
 
 /**
@@ -328,6 +332,21 @@ class SettingsViewModel(
     }
 
     /**
+     * Persist the display mode ([DisplayMode.key]) immediately; the
+     * activity re-themes as soon as the setting changes. An unknown
+     * key is ignored.
+     */
+    fun setDisplayMode(key: String) {
+        if (DisplayMode.fromKey(key) == null) return
+        repo.update { it.copy(displayMode = key) }
+    }
+
+    /** Persist the "Use device colours" switch immediately. */
+    fun setDynamicColor(enabled: Boolean) {
+        repo.update { it.copy(dynamicColor = enabled) }
+    }
+
+    /**
      * Persist the current form, then call [ChatClient.listModels].
      * Records the outcome as `"Connected – N models: a, b, c"`
      * (first five ids, comma-separated) or `"Failed: <message>"`
@@ -387,6 +406,8 @@ class SettingsViewModel(
             asrEngine = current.asrEngine,
             asrLanguage = current.asrLanguage,
             defaultParticipants = current.defaultParticipants,
+            displayMode = current.displayMode,
+            dynamicColor = current.dynamicColor,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
