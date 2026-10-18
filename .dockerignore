@@ -1,0 +1,5 @@
+# Both images under docker/ only need scripts/; keep the build context
+# small (jniLibs, .gradle and build outputs are hundreds of MB).
+*
+!scripts/
+scripts/eval/
