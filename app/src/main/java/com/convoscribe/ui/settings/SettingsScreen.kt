@@ -28,6 +28,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -71,6 +74,11 @@ import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.theme.AppTheme
+import com.convoscribe.ui.update.UpdateActions
+import com.convoscribe.ui.update.UpdateBanner
+import com.convoscribe.ui.update.hasBanner
+import com.convoscribe.ui.update.rememberUpdateActions
+import com.convoscribe.update.UpdateState
 import kotlinx.coroutines.launch
 
 /**
@@ -176,9 +184,19 @@ fun SettingsScreen(navController: NavHostController) {
             onDismiss = { askOverlay = false }
         )
     }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val updateState by container.updateManager.state.collectAsStateWithLifecycle()
+    val updateActions = rememberUpdateActions(container.updateManager) { message ->
+        coroutineScope.launch { snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Long) }
+    }
     SettingsBody(
         state = state,
         overlayGranted = overlayGranted,
+        update = updateState,
+        installedVersion = container.installedApp.versionName,
+        installedVersionCode = container.installedApp.versionCode,
+        updateActions = updateActions,
+        snackbarHostState = snackbarHostState,
         actions = SettingsActions(
             onBack = leave,
             onSave = leave,
@@ -196,7 +214,9 @@ fun SettingsScreen(navController: NavHostController) {
                 vm.setFloatingControl(enabled)
                 if (enabled && !overlayGranted) askOverlay = true
             },
-            onAllowOverlay = { context.startActivity(OverlayPermission.settingsIntent(context)) }
+            onAllowOverlay = { context.startActivity(OverlayPermission.settingsIntent(context)) },
+            onUpdateCheckAutoChange = vm::setUpdateCheckAuto,
+            onUpdateIncludePrereleasesChange = vm::setUpdateIncludePrereleases
         )
     )
 }
@@ -216,19 +236,32 @@ internal class SettingsActions(
     val onDisplayModeChange: (String) -> Unit = {},
     val onDynamicColorChange: (Boolean) -> Unit = {},
     val onFloatingControlChange: (Boolean) -> Unit = {},
-    val onAllowOverlay: () -> Unit = {}
+    val onAllowOverlay: () -> Unit = {},
+    val onUpdateCheckAutoChange: (Boolean) -> Unit = {},
+    val onUpdateIncludePrereleasesChange: (Boolean) -> Unit = {}
 )
 
 /**
  * Render-only body of [SettingsScreen] for previews and screenshot tests.
- * [overlayGranted] is whether "Display over other apps" is allowed.
+ * [overlayGranted] is whether "Display over other apps" is allowed;
+ * [update] and [updateActions] drive the update part of About (issue #15).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions, overlayGranted: Boolean = true) {
+internal fun SettingsBody(
+    state: SettingsUiState,
+    actions: SettingsActions,
+    overlayGranted: Boolean = true,
+    update: UpdateState = UpdateState.Idle,
+    installedVersion: String = "",
+    installedVersionCode: Long = 0L,
+    updateActions: UpdateActions = UpdateActions(),
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+) {
     ScreenScaffold(
         title = stringResource(R.string.settings_title),
         onBack = actions.onBack,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         actions = {
             IconButton(onClick = actions.onSave) {
                 Icon(
@@ -299,7 +332,16 @@ internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions, over
                 },
                 onOpenKnownSpeakers = actions.onOpenKnownSpeakers
             )
-            AboutSection()
+            AboutSection(
+                installedVersion = installedVersion,
+                installedVersionCode = installedVersionCode,
+                update = update,
+                checkAuto = state.updateCheckAuto,
+                includePrereleases = state.updateIncludePrereleases,
+                updateActions = updateActions,
+                onCheckAutoChange = actions.onUpdateCheckAutoChange,
+                onIncludePrereleasesChange = actions.onUpdateIncludePrereleasesChange
+            )
             Spacer(Modifier.height(AppTheme.spacing.xl))
         }
     }
@@ -751,7 +793,10 @@ private fun SpeakersSection(
 }
 
 /**
- * "About" section: lists every model bundled by the on-device ASR and
+ * "About" section: the installed version and updates (issue #15) —
+ * *Check for updates* with its result (or the offer and its download,
+ * as on the Home banner), *Check for updates automatically* and
+ * *Include pre-releases* — then every model bundled by the on-device ASR and
  * diarization pipeline alongside its licence and a source link. Renders
  * after the three editable sections as a read-only credit roll so a
  * user who skipped the README can still see which upstream / licence
@@ -766,11 +811,58 @@ private fun SpeakersSection(
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AboutSection() {
+private fun AboutSection(
+    installedVersion: String,
+    installedVersionCode: Long,
+    update: UpdateState,
+    checkAuto: Boolean,
+    includePrereleases: Boolean,
+    updateActions: UpdateActions,
+    onCheckAutoChange: (Boolean) -> Unit,
+    onIncludePrereleasesChange: (Boolean) -> Unit
+) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_about)
     ) {
+        Text(
+            text = stringResource(R.string.settings_about_version, installedVersion, installedVersionCode),
+            style = MaterialTheme.typography.bodyLarge
+        )
+        val checking = update is UpdateState.Checking
+        val busy = checking || update is UpdateState.Downloading || update is UpdateState.Installing ||
+            update is UpdateState.ReadyToInstall
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            OutlinedButton(onClick = updateActions.onCheck, enabled = !busy, modifier = Modifier.weight(1f)) {
+                Text(text = stringResource(R.string.settings_update_check))
+            }
+            if (checking) InlineProgress()
+        }
+        when {
+            checking -> SupportingText(text = stringResource(R.string.settings_update_checking))
+            update == UpdateState.UpToDate -> NoticeText(text = stringResource(R.string.settings_update_up_to_date))
+            update == UpdateState.CheckFailed -> NoticeText(
+                text = stringResource(R.string.settings_update_check_failed),
+                isError = true
+            )
+            update.hasBanner() -> UpdateBanner(state = update, actions = updateActions, dismissible = false)
+        }
+        SwitchRow(
+            label = stringResource(R.string.settings_update_auto_label),
+            help = stringResource(R.string.settings_update_auto_help),
+            checked = checkAuto,
+            onCheckedChange = onCheckAutoChange
+        )
+        SwitchRow(
+            label = stringResource(R.string.settings_update_prerelease_label),
+            help = stringResource(R.string.settings_update_prerelease_help),
+            checked = includePrereleases,
+            onCheckedChange = onIncludePrereleasesChange
+        )
         Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
             AboutModelRow(
                 name = stringResource(R.string.settings_about_nemotron_name),
@@ -803,6 +895,24 @@ private fun AboutSection() {
                 url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
             )
         }
+    }
+}
+
+/** A labelled switch with help text; the whole row toggles it. */
+@Composable
+private fun SwitchRow(label: String, help: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            SupportingText(text = help)
+        }
+        Switch(checked = checked, onCheckedChange = null)
     }
 }
 

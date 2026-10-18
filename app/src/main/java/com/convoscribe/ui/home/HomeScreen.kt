@@ -73,6 +73,11 @@ import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.StatusBadge
 import com.convoscribe.ui.components.statusLabel
 import com.convoscribe.ui.theme.AppTheme
+import com.convoscribe.ui.update.UpdateActions
+import com.convoscribe.ui.update.UpdateBanner
+import com.convoscribe.ui.update.hasBanner
+import com.convoscribe.ui.update.rememberUpdateActions
+import com.convoscribe.update.UpdateState
 import kotlinx.coroutines.launch
 
 /**
@@ -89,6 +94,10 @@ import kotlinx.coroutines.launch
  * back), then hands it to the foreground service. A banner shows the
  * import's progress with Cancel, a failure is a snackbar, and the new
  * session opens as soon as it exists.
+ *
+ * A newer release (issue #15) shows as a banner above the list, with
+ * View notes, Update, Not now and Skip this version, then the
+ * download's progress and Install.
  *
  * The top bar has Settings and an overflow menu with Engine check. Each
  * session is a card (title, date, duration, speakers, language and a
@@ -177,6 +186,9 @@ fun HomeScreen(navController: NavHostController) {
         importer.consumeCreated()
         navController.navigate("session/$id")
     }
+    val updateState by container.updateManager.state.collectAsStateWithLifecycle()
+    val updateDismissed by container.updateManager.bannerDismissed.collectAsStateWithLifecycle()
+    val updateActions = rememberUpdateActions(container.updateManager, showMessage)
     LaunchedEffect(importState) {
         val failed = importState as? ImportState.Failed ?: return@LaunchedEffect
         importer.acknowledgeFailure()
@@ -186,6 +198,8 @@ fun HomeScreen(navController: NavHostController) {
     HomeBody(
         sessions = sessions,
         importing = importState as? ImportState.Running,
+        update = if (updateDismissed) UpdateState.Idle else updateState,
+        updateActions = updateActions,
         snackbarHostState = snackbarHostState,
         onImport = { pickAudio.launch(IMPORT_MIME_TYPES) },
         onCancelImport = { context.startService(RecordingService.cancelImportIntent(context)) },
@@ -206,6 +220,8 @@ fun HomeScreen(navController: NavHostController) {
 internal fun HomeBody(
     sessions: List<SessionRow>,
     importing: ImportState.Running? = null,
+    update: UpdateState = UpdateState.Idle,
+    updateActions: UpdateActions = UpdateActions(),
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     onImport: () -> Unit = {},
     onCancelImport: () -> Unit = {},
@@ -266,6 +282,13 @@ internal fun HomeBody(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (update.hasBanner()) {
+                UpdateBanner(
+                    state = update,
+                    actions = updateActions,
+                    modifier = Modifier.padding(horizontal = AppTheme.spacing.screen)
+                )
+            }
             importing?.let { ImportBanner(state = it, onCancel = onCancelImport) }
             SessionList(
                 sessions = sessions,

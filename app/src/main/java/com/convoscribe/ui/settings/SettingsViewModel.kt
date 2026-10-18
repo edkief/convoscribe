@@ -127,7 +127,11 @@ data class SettingsUiState(
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     /** The floating recording control over other apps (issue #7); written immediately. */
-    val floatingControl: Boolean = true
+    val floatingControl: Boolean = true,
+    /** Check GitHub for a newer release on start (issue #15); written immediately. */
+    val updateCheckAuto: Boolean = true,
+    /** Offer pre-releases too (issue #15); written immediately. */
+    val updateIncludePrereleases: Boolean = false
 )
 
 /**
@@ -367,6 +371,16 @@ class SettingsViewModel(
         repo.update { it.copy(floatingControl = enabled, overlayPromptShown = it.overlayPromptShown || enabled) }
     }
 
+    /** Persist *Check for updates automatically* immediately (issue #15). */
+    fun setUpdateCheckAuto(enabled: Boolean) {
+        repo.update { it.copy(updateCheckAuto = enabled) }
+    }
+
+    /** Persist *Include pre-releases* immediately (issue #15). */
+    fun setUpdateIncludePrereleases(enabled: Boolean) {
+        repo.update { it.copy(updateIncludePrereleases = enabled) }
+    }
+
     /**
      * Persist the current form, then call [ChatClient.listModels].
      * Records the outcome as [ConnectionTestResult.Connected] (with
@@ -429,6 +443,8 @@ class SettingsViewModel(
             displayMode = current.displayMode,
             dynamicColor = current.dynamicColor,
             floatingControl = current.floatingControl,
+            updateCheckAuto = current.updateCheckAuto,
+            updateIncludePrereleases = current.updateIncludePrereleases,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
