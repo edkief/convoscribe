@@ -176,7 +176,7 @@ class ScreenshotTest(private val variant: Variant) {
         session(
             status = SessionStatus.DIARIZING,
             speakers = emptyList(),
-            lines = TRANSCRIPT.map { it.copy(speaker = null) }
+            lines = TRANSCRIPT.map { it.copy(speaker = null, speakerIndex = null) }
         )
     }
 
@@ -391,6 +391,7 @@ class ScreenshotTest(private val variant: Variant) {
                 startMs = 0L,
                 endMs = 4_000L,
                 speaker = "Alice",
+                speakerIndex = 0,
                 text = "So the first thing on the agenda is the release date."
             ),
             TranscriptLine(
@@ -398,6 +399,7 @@ class ScreenshotTest(private val variant: Variant) {
                 startMs = 4_500L,
                 endMs = 9_800L,
                 speaker = "Speaker 2",
+                speakerIndex = 1,
                 text = "We said the end of the month, but QA needs another week to go through the Boox build."
             ),
             TranscriptLine(
@@ -405,6 +407,7 @@ class ScreenshotTest(private val variant: Variant) {
                 startMs = 10_200L,
                 endMs = 13_000L,
                 speaker = "Bob",
+                speakerIndex = 2,
                 text = "That's fine as long as the e-ink mode is in."
             ),
             TranscriptLine(
@@ -412,6 +415,7 @@ class ScreenshotTest(private val variant: Variant) {
                 startMs = 13_400L,
                 endMs = 18_000L,
                 speaker = "Alice",
+                speakerIndex = 0,
                 text = "Agreed. Let's move on to the budget."
             ),
             TranscriptLine(
@@ -419,6 +423,7 @@ class ScreenshotTest(private val variant: Variant) {
                 startMs = 18_600L,
                 endMs = 25_000L,
                 speaker = "Speaker 2",
+                speakerIndex = 1,
                 text = "I've put the numbers in the shared sheet; the short version is we're under " +
                     "by about ten percent."
             )

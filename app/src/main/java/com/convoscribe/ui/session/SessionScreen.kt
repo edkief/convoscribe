@@ -37,11 +37,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -115,20 +113,11 @@ import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
 import com.convoscribe.ui.asString
+import com.convoscribe.ui.components.SpeakerDot
 import com.convoscribe.ui.record.ParticipantsDialog
+import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.map
 
-/**
- * Fixed 6-entry palette used to tint speaker labels by their
- * index. The index is taken modulo six so the sixth speaker and
- * onward share the last colour; in practice a conversation rarely
- * exceeds four or five speakers, so the wrap is rarely visible.
- *
- * The colours are picked to be distinguishable on both the light
- * and dark Material themes; none of them is the background or the
- * primary text colour, so a label rendered in any of them stays
- * legible against the transcript background.
- */
 /**
  * Statuses a session can be continued from: finished recording,
  * with no diarization in flight.
@@ -137,21 +126,6 @@ private val CONTINUABLE_STATUSES = setOf(
     SessionStatus.TRANSCRIBED,
     SessionStatus.DIARIZED,
     SessionStatus.DIARIZATION_FAILED
-)
-
-private val SPEAKER_PALETTE: List<Color> = listOf(
-    // blue
-    Color(0xFF1976D2),
-    // red
-    Color(0xFFD32F2F),
-    // green
-    Color(0xFF388E3C),
-    // orange
-    Color(0xFFF57C00),
-    // purple
-    Color(0xFF7B1FA2),
-    // teal
-    Color(0xFF00838F)
 )
 
 /**
@@ -920,10 +894,9 @@ private fun StatusBanner(status: SessionStatus?) {
  * Transcript tab body: status banner, then either a "No speech
  * was recognised." placeholder or the list of [TranscriptLine]s.
  * Each row renders the timestamp and the speaker label in
- * `labelMedium` (the label is coloured from [SPEAKER_PALETTE] by
- * speaker index, looking up the index on the in-memory list of
- * speakers so renames do not break the colour assignment) and the
- * text in `bodyLarge`.
+ * `labelMedium` (the label is coloured from the theme's speaker
+ * palette by [TranscriptLine.speakerIndex], so renames do not break
+ * the colour assignment) and the text in `bodyLarge`.
  *
  * When the session has at least one speaker, a row of
  * [AssistChip]s above the transcript lets the user jump
@@ -990,10 +963,7 @@ private fun TranscriptTab(
                             line = line,
                             active = active,
                             positionMs = if (active) positionMs else NO_POSITION,
-                            onLabelTapped = { speaker ->
-                                val idx = speakers.firstOrNull { it.label == speaker }?.speakerIndex
-                                if (idx != null) onSpeakerChipTapped(idx)
-                            },
+                            onLabelTapped = onSpeakerChipTapped,
                             onTapped = if (canPlay) ({ playback.onLineTapped(line) }) else null
                         )
                     }
@@ -1031,29 +1001,19 @@ private fun SpeakerChipRow(speakers: List<SpeakerEntity>, onChipTapped: (Int) ->
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items(items = speakers, key = { it.speakerIndex }) { speaker ->
-            val paletteColor = speakerColorByIndex(speaker.speakerIndex)
             AssistChip(
                 onClick = { onChipTapped(speaker.speakerIndex) },
                 label = { Text(text = speaker.label) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = null,
-                        tint = paletteColor,
-                        modifier = Modifier.height(AssistChipDefaults.IconSize)
-                    )
-                }
+                leadingIcon = { SpeakerDot(speakerIndex = speaker.speakerIndex) }
             )
         }
     }
 }
 
 /**
- * Render one [TranscriptLine]. The speaker label colour is
- * derived from the line's position in [SPEAKER_PALETTE]; we use
- * the [TranscriptLine.speaker] string as a fallback key so two
- * segments labelled "Alice" share the same colour, but the
- * primary signal is still the speaker index. The `labelMedium`
+ * Render one [TranscriptLine]. The speaker label colour comes from
+ * [TranscriptLine.speakerIndex], the same key as the speaker chips,
+ * so a chip and its lines always match. The `labelMedium`
  * metadata line shows `"00:03 · Speaker 1"` or just `"00:03"` when
  * the segment is unlabelled. Tapping the label opens the rename
  * dialog for the matching speaker (when there is one); tapping the
@@ -1067,17 +1027,17 @@ private fun TranscriptRow(
     line: TranscriptLine,
     active: Boolean,
     positionMs: () -> Long,
-    onLabelTapped: (String) -> Unit,
+    onLabelTapped: (Int) -> Unit,
     onTapped: (() -> Unit)?
 ) {
-    val paletteColor = speakerColor(line.speaker)
+    val speakerIndex = line.speakerIndex
+    val paletteColor = if (speakerIndex == null) Color.Unspecified else AppTheme.speakerColors[speakerIndex]
     val timestamp = remember(line.startMs) { com.convoscribe.data.TranscriptFormatter.timestamp(line.startMs) }
     val labelText = if (line.speaker.isNullOrEmpty()) {
         timestamp
     } else {
         "$timestamp · ${line.speaker}"
     }
-    val speaker = line.speaker
     val words = remember(line) { PlaybackSync.words(line) }
     // Only the playing line reads the position, so the other rows do not
     // recompose on every playback tick.
@@ -1106,10 +1066,10 @@ private fun TranscriptRow(
         modifier = rowModifier.padding(horizontal = 4.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
-        val labelModifier = if (speaker.isNullOrEmpty()) {
+        val labelModifier = if (speakerIndex == null) {
             Modifier
         } else {
-            Modifier.clickable { onLabelTapped(speaker) }
+            Modifier.clickable { onLabelTapped(speakerIndex) }
         }
         Text(
             text = labelText,
@@ -1131,31 +1091,6 @@ private fun LazyListState.isFullyVisible(index: Int): Boolean {
     val info = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return false
     return info.offset >= layoutInfo.viewportStartOffset &&
         info.offset + info.size <= layoutInfo.viewportEndOffset
-}
-
-/**
- * Stable colour for a speaker label. Hashing the label keeps the
- * colour constant across renames — a user named "Alice" keeps
- * their colour even if they are later renamed to "Alex". The
- * fallback when the label is `null` is the default on-surface
- * colour so unlabelled segments are visually quiet.
- */
-private fun speakerColor(speaker: String?): Color {
-    if (speaker.isNullOrEmpty()) return Color.Unspecified
-    val idx = (speaker.hashCode() and Int.MAX_VALUE) % SPEAKER_PALETTE.size
-    return SPEAKER_PALETTE[idx]
-}
-
-/**
- * Palette colour for a chip row keyed on the 0-based speaker
- * index. Unlike [speakerColor], this one is stable across
- * renames by design — the user can rename "Speaker 1" to "Alice"
- * and the chip (and the matching transcript labels) still share
- * the same blue. Used by [SpeakerChipRow].
- */
-private fun speakerColorByIndex(speakerIndex: Int): Color {
-    val idx = (speakerIndex.toLong() and Int.MAX_VALUE.toLong()).toInt() % SPEAKER_PALETTE.size
-    return SPEAKER_PALETTE[idx]
 }
 
 /**

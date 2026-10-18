@@ -7,7 +7,10 @@ import java.util.Locale
  * One transcript line displayed to the user. [startMs] is the
  * segment's start time in milliseconds; [speaker] is the user-facing
  * label (`"Speaker 1"`, `"Alice"`, …) or `null` for an unlabelled
- * segment; [text] is the ASR text verbatim.
+ * segment, and [speakerIndex] the 0-based speaker it belongs to (set
+ * together with [speaker]); the UI keys the speaker's colour and the
+ * rename dialog on the index, so both survive a rename. [text] is the
+ * ASR text verbatim.
  *
  * [id] is the segment's row id (a stable list key), [endMs] its end
  * time, and [tokens] its per-word timings with absolute times (empty
@@ -20,7 +23,8 @@ data class TranscriptLine(
     val text: String,
     val id: Long = 0,
     val endMs: Long = startMs,
-    val tokens: List<TimedToken> = emptyList()
+    val tokens: List<TimedToken> = emptyList(),
+    val speakerIndex: Int? = null
 )
 
 /**
@@ -60,7 +64,8 @@ object TranscriptFormatter {
      * Resolve each segment's speaker label from [speakers] by
      * matching [SegmentEntity.speakerIndex] to the
      * [SpeakerEntity.speakerIndex] with the same index. Segments
-     * with a `null` speaker index stay unlabelled. The returned
+     * with a `null` speaker index, or an index with no speaker row,
+     * stay unlabelled (no label and no [TranscriptLine.speakerIndex]). The returned
      * list mirrors the input order: callers pass the segments
      * already ordered by `startMs ASC` and get the same order
      * back.
@@ -72,12 +77,13 @@ object TranscriptFormatter {
      */
     fun lines(segments: List<SegmentEntity>, speakers: List<SpeakerEntity>): List<TranscriptLine> =
         segments.map { segment ->
-            val label = segment.speakerIndex?.let { idx ->
-                speakers.firstOrNull { it.speakerIndex == idx }?.label
+            val speaker = segment.speakerIndex?.let { idx ->
+                speakers.firstOrNull { it.speakerIndex == idx }
             }
             TranscriptLine(
                 startMs = segment.startMs,
-                speaker = label,
+                speaker = speaker?.label,
+                speakerIndex = speaker?.speakerIndex,
                 text = segment.text,
                 id = segment.id,
                 endMs = segment.endMs,
