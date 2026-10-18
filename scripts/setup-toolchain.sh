@@ -2,6 +2,11 @@
 # Idempotent installer for JDK 17, Gradle, and Android command-line tools.
 # Nothing here uses sudo or apt; everything installs under $CONVOSCRIBE_TOOLCHAIN
 # (default /workspace/toolchain), the same root scripts/env.sh points at.
+#
+# CONVOSCRIBE_APP_ONLY=1 installs only what building the app needs (JDK,
+# Gradle, SDK) and skips CMake, the NDK and the sherpa-onnx build. The
+# release builder image uses it and takes sherpa-onnx prebuilt instead
+# (see docker/android-builder.Containerfile).
 
 set -euo pipefail
 
@@ -13,6 +18,7 @@ JDK_VERSION="17"
 ANDROID_PLATFORM="35"
 ANDROID_BUILD_TOOLS="35.0.0"
 ANDROID_PLATFORM_TOOLS="platform-tools"
+APP_ONLY="${CONVOSCRIBE_APP_ONLY:-0}"
 
 mkdir -p "$TOOLS"
 
@@ -61,7 +67,9 @@ fi
 # ----------------------------------------------------------------------------
 CMAKE_VERSION="${CMAKE_VERSION:-3.27.9}"
 CMAKES_DIR="$TOOLS/cmake-${CMAKE_VERSION}"
-if [[ ! -x "$CMAKES_DIR/bin/cmake" ]]; then
+if [[ "$APP_ONLY" == 1 ]]; then
+  echo "CONVOSCRIBE_APP_ONLY=1: skipping CMake."
+elif [[ ! -x "$CMAKES_DIR/bin/cmake" ]]; then
   echo "Installing CMake ${CMAKE_VERSION}..."
   cmake_tmp="$TMP_DIR/cmake.tar.gz"
   download "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz" "$cmake_tmp"
@@ -107,9 +115,14 @@ export PATH="$JDK_DIR/bin:$CMDLINE_DIR/bin:$ANDROID_HOME/platform-tools:$PATH"
 echo "Accepting Android SDK licenses..."
 yes | sdkmanager --sdk_root="$ANDROID_HOME" --licenses >/dev/null 2>&1 || true
 
+SDK_PACKAGES=("$ANDROID_PLATFORM_TOOLS" "platforms;android-${ANDROID_PLATFORM}"
+              "build-tools;${ANDROID_BUILD_TOOLS}")
+if [[ "$APP_ONLY" != 1 ]]; then
+  SDK_PACKAGES+=("ndk;${ANDROID_NDK_VERSION}")
+fi
+
 NEED_INSTALL=0
-for pkg in "$ANDROID_PLATFORM_TOOLS" "platforms;android-${ANDROID_PLATFORM}" \
-           "build-tools;${ANDROID_BUILD_TOOLS}" "ndk;${ANDROID_NDK_VERSION}"; do
+for pkg in "${SDK_PACKAGES[@]}"; do
   installed=$(sdkmanager --sdk_root="$ANDROID_HOME" --list_installed 2>/dev/null \
               | grep -E "^[[:space:]]+${pkg}[[:space:]]" || true)
   if [[ -z "$installed" ]]; then
@@ -120,11 +133,7 @@ done
 
 if [[ "$NEED_INSTALL" -eq 1 ]]; then
   echo "Installing Android SDK packages..."
-  { yes || true; } | sdkmanager --sdk_root="$ANDROID_HOME" \
-    "$ANDROID_PLATFORM_TOOLS" \
-    "platforms;android-${ANDROID_PLATFORM}" \
-    "build-tools;${ANDROID_BUILD_TOOLS}" \
-    "ndk;${ANDROID_NDK_VERSION}" >/dev/null
+  { yes || true; } | sdkmanager --sdk_root="$ANDROID_HOME" "${SDK_PACKAGES[@]}" >/dev/null
 else
   echo "Android SDK packages already installed."
 fi
@@ -139,7 +148,9 @@ echo "  NDK     : $ANDROID_HOME/ndk/${ANDROID_NDK_VERSION}"
 # enabled) and the Kotlin API jar. This is a no-op on a re-run; pass
 # --force to rebuild from scratch. The build takes 10-30 minutes.
 SHERPA_BUILD_SCRIPT="$(cd "$(dirname "$0")" && pwd)/build-sherpa-onnx.sh"
-if [[ -x "$SHERPA_BUILD_SCRIPT" ]]; then
+if [[ "$APP_ONLY" == 1 ]]; then
+  echo "CONVOSCRIBE_APP_ONLY=1: skipping the sherpa-onnx build."
+elif [[ -x "$SHERPA_BUILD_SCRIPT" ]]; then
   bash "$SHERPA_BUILD_SCRIPT"
 else
   echo "WARNING: sherpa-onnx build script not found at $SHERPA_BUILD_SCRIPT; skipping." >&2
