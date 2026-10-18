@@ -80,6 +80,13 @@ fun ModelSetupScreen(onFinished: () -> Unit, initialEngine: String? = null, init
         if (state.finished) onFinished()
     }
 
+    SetupBody(state = state, onStart = vm::start)
+}
+
+/** Render-only body of [ModelSetupScreen] for previews and screenshot tests. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+internal fun SetupBody(state: SetupUiState, onStart: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(title = { Text(text = stringResource(R.string.setup_title)) })
@@ -128,12 +135,12 @@ fun ModelSetupScreen(onFinished: () -> Unit, initialEngine: String? = null, init
             Spacer(modifier = Modifier.height(8.dp))
             when {
                 state.error != null -> {
-                    Button(onClick = vm::start) {
+                    Button(onClick = onStart) {
                         Text(text = stringResource(R.string.setup_retry))
                     }
                 }
                 !state.running && !state.finished -> {
-                    Button(onClick = vm::start) {
+                    Button(onClick = onStart) {
                         Text(text = stringResource(R.string.setup_download))
                     }
                 }

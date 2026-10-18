@@ -71,7 +71,6 @@ import com.convoscribe.models.ModelCatalog
  *   re-read via `rememberNavController`) so a configuration change
  *   pushes back onto the same back stack the parent owns.
  */
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(navController: NavHostController) {
     val context = LocalContext.current
@@ -94,16 +93,41 @@ fun HomeScreen(navController: NavHostController) {
         val target = if (missing.isEmpty()) "record" else "setup"
         navController.navigate(target)
     }
+    val sessions by vm.sessions.collectAsStateWithLifecycle()
+    HomeBody(
+        sessions = sessions,
+        onNewRecording = onNewRecording,
+        onOpenSession = { id -> navController.navigate("session/$id") },
+        onDelete = vm::delete,
+        onSettings = { navController.navigate("settings") },
+        onEngineCheck = { navController.navigate("engine-check") }
+    )
+}
+
+/**
+ * Render-only body of [HomeScreen], so previews and screenshot tests
+ * can draw it with fake [sessions]. The delete confirmation dialog
+ * lives here because it is pure UI state.
+ */
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+internal fun HomeBody(
+    sessions: List<SessionRow>,
+    onNewRecording: () -> Unit,
+    onOpenSession: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+    onSettings: () -> Unit,
+    onEngineCheck: () -> Unit
+) {
     var overflowExpanded by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
-    val sessions by vm.sessions.collectAsStateWithLifecycle()
 
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(R.string.app_name)) },
                 actions = {
-                    IconButton(onClick = { navController.navigate("settings") }) {
+                    IconButton(onClick = onSettings) {
                         Icon(
                             imageVector = Icons.Filled.Settings,
                             contentDescription = stringResource(R.string.home_settings)
@@ -123,7 +147,7 @@ fun HomeScreen(navController: NavHostController) {
                             text = { Text(text = stringResource(R.string.home_engine_check)) },
                             onClick = {
                                 overflowExpanded = false
-                                navController.navigate("engine-check")
+                                onEngineCheck()
                             }
                         )
                     }
@@ -172,9 +196,7 @@ fun HomeScreen(navController: NavHostController) {
                         modifier = Modifier.combinedClickable(
                             interactionSource = interactionSource,
                             indication = ripple(),
-                            onClick = {
-                                navController.navigate("session/${row.id}")
-                            },
+                            onClick = { onOpenSession(row.id) },
                             onLongClick = { pendingDeleteId = row.id }
                         )
                     )
@@ -190,7 +212,7 @@ fun HomeScreen(navController: NavHostController) {
             text = { Text(text = stringResource(R.string.home_delete_message)) },
             confirmButton = {
                 TextButton(onClick = {
-                    vm.delete(id)
+                    onDelete(id)
                     pendingDeleteId = null
                 }) {
                     Text(text = stringResource(R.string.home_delete_confirm))

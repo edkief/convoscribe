@@ -143,15 +143,51 @@ fun SettingsScreen(navController: NavHostController) {
         }
     }
 
+    val leave: () -> Unit = {
+        vm.save()
+        navController.popBackStack()
+    }
+    SettingsBody(
+        state = state,
+        actions = SettingsActions(
+            onBack = leave,
+            onSave = leave,
+            onFormChange = vm::update,
+            onTestConnection = { coroutineScope.launch { vm.testConnection() } },
+            onEngineChange = vm::setEngine,
+            onLanguageChange = vm::setLanguage,
+            onEngineCheck = { navController.navigate("engine-check") },
+            onDeleteFrenchModel = vm::deleteFrenchModel,
+            onResetDefaultParticipants = vm::resetDefaultParticipants,
+            onOpenKnownSpeakers = { navController.navigate("speakers") }
+        )
+    )
+}
+
+/** What the Settings screen can do; filled from [SettingsViewModel] and the nav controller. */
+internal class SettingsActions(
+    val onBack: () -> Unit = {},
+    val onSave: () -> Unit = {},
+    val onFormChange: (SettingsForm) -> Unit = {},
+    val onTestConnection: () -> Unit = {},
+    val onEngineChange: (String) -> Unit = {},
+    val onLanguageChange: (String) -> Unit = {},
+    val onEngineCheck: () -> Unit = {},
+    val onDeleteFrenchModel: () -> Unit = {},
+    val onResetDefaultParticipants: () -> Unit = {},
+    val onOpenKnownSpeakers: () -> Unit = {}
+)
+
+/** Render-only body of [SettingsScreen] for previews and screenshot tests. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions) {
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(R.string.settings_title)) },
                 navigationIcon = {
-                    IconButton(onClick = {
-                        vm.save()
-                        navController.popBackStack()
-                    }) {
+                    IconButton(onClick = actions.onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.settings_back)
@@ -159,12 +195,7 @@ fun SettingsScreen(navController: NavHostController) {
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            vm.save()
-                            navController.popBackStack()
-                        }
-                    ) {
+                    IconButton(onClick = actions.onSave) {
                         Icon(
                             imageVector = Icons.Filled.Check,
                             contentDescription = stringResource(R.string.settings_save)
@@ -188,10 +219,8 @@ fun SettingsScreen(navController: NavHostController) {
                 testing = state.testing,
                 testResult = state.testResult,
                 availableModels = state.availableModels,
-                onFormChange = vm::update,
-                onTestConnection = {
-                    coroutineScope.launch { vm.testConnection() }
-                }
+                onFormChange = actions.onFormChange,
+                onTestConnection = actions.onTestConnection
             )
             TranscriptionSection(
                 engine = state.asrEngine,
@@ -200,30 +229,30 @@ fun SettingsScreen(navController: NavHostController) {
                 frenchModelInstalled = state.frenchModelInstalled,
                 selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
                 selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
-                onEngineChange = vm::setEngine,
-                onLanguageChange = vm::setLanguage,
+                onEngineChange = actions.onEngineChange,
+                onLanguageChange = actions.onLanguageChange,
                 onThreadsChange = { threads ->
-                    vm.update(state.form.copy(numThreads = threads))
+                    actions.onFormChange(state.form.copy(numThreads = threads))
                 },
-                onEngineCheck = { navController.navigate("engine-check") },
-                onDeleteFrenchModel = vm::deleteFrenchModel
+                onEngineCheck = actions.onEngineCheck,
+                onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
             SpeakersSection(
                 numSpeakers = state.form.numSpeakers,
                 defaultParticipants = state.defaultParticipants,
-                onResetDefaultParticipants = vm::resetDefaultParticipants,
+                onResetDefaultParticipants = actions.onResetDefaultParticipants,
                 threshold = state.form.clusterThreshold,
                 matchThreshold = state.form.speakerMatchThreshold,
                 onNumSpeakersChange = { count ->
-                    vm.update(state.form.copy(numSpeakers = count))
+                    actions.onFormChange(state.form.copy(numSpeakers = count))
                 },
                 onThresholdChange = { value ->
-                    vm.update(state.form.copy(clusterThreshold = value))
+                    actions.onFormChange(state.form.copy(clusterThreshold = value))
                 },
                 onMatchThresholdChange = { value ->
-                    vm.update(state.form.copy(speakerMatchThreshold = value))
+                    actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
                 },
-                onOpenKnownSpeakers = { navController.navigate("speakers") }
+                onOpenKnownSpeakers = actions.onOpenKnownSpeakers
             )
             AboutSection()
             Spacer(Modifier.height(24.dp))

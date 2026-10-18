@@ -99,13 +99,36 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
     // card does not flash empty.
     LaunchedEffect(Unit) { vm.ensureDeviceInfo() }
 
+    EngineCheckBody(
+        state = state,
+        storageWarning = vm.storageWarningText,
+        onBack = { navController.popBackStack() },
+        onRunCheck = vm::runCheck,
+        onOpenSetup = { engine -> navController.navigate("setup?engine=$engine") },
+        onCopyReport = { copyToClipboard(context, vm.buildReport()) },
+        onShareReport = { shareText(context, vm.buildReport()) }
+    )
+}
+
+/** Render-only body of [EngineCheckScreen] for previews and screenshot tests. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun EngineCheckBody(
+    state: EngineCheckUiState,
+    storageWarning: String?,
+    onBack: () -> Unit,
+    onRunCheck: (String) -> Unit,
+    onOpenSetup: (String) -> Unit,
+    onCopyReport: () -> Unit,
+    onShareReport: () -> Unit
+) {
     val scrollState = rememberScrollState()
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(text = stringResource(R.string.enginecheck_title)) },
                 navigationIcon = {
-                    IconButton(onClick = { navController.popBackStack() }) {
+                    IconButton(onClick = onBack) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = stringResource(R.string.record_back)
@@ -127,7 +150,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                 info = state.deviceInfo,
                 htpSkelCount = state.deviceInfo?.htpSkelLibs?.size ?: 0
             )
-            val warning = vm.storageWarningText
+            val warning = storageWarning
             if (warning != null) {
                 Text(
                     text = warning,
@@ -150,7 +173,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                     style = MaterialTheme.typography.bodyMedium
                 )
                 OutlinedButton(
-                    onClick = { navController.navigate("setup?engine=$missingEngine") }
+                    onClick = { onOpenSetup(missingEngine) }
                 ) {
                     Text(text = stringResource(R.string.enginecheck_open_setup))
                 }
@@ -170,8 +193,8 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                 CheckButtons(
                     button1Enabled = state.runningEngine == null,
                     button2Enabled = state.runningEngine == null,
-                    onCheckNpu = { vm.runCheck("npu") },
-                    onCheckCpu = { vm.runCheck("cpu") }
+                    onCheckNpu = { onRunCheck("npu") },
+                    onCheckCpu = { onRunCheck("cpu") }
                 )
             }
             state.results["npu"]?.let { ResultCard(it) }
@@ -179,14 +202,8 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
             Spacer(modifier = Modifier.height(8.dp))
             ActionRow(
                 enabled = state.results.isNotEmpty(),
-                onCopy = {
-                    val text = vm.buildReport()
-                    copyToClipboard(context, text)
-                },
-                onShare = {
-                    val text = vm.buildReport()
-                    shareText(context, text)
-                }
+                onCopy = onCopyReport,
+                onShare = onShareReport
             )
         }
     }
