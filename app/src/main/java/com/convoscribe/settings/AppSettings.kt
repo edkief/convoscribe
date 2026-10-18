@@ -21,6 +21,10 @@ package com.convoscribe.settings
  * [defaultParticipants] is a list of enrolled names, or `null` for
  * anyone.
  *
+ * [displayMode] is a [DisplayMode.key] (`"auto"`, `"standard"` or
+ * `"eink"`); [dynamicColor] opts into the wallpaper-based colours on
+ * Android 12+ instead of the brand ones (ignored in e-ink mode).
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -39,5 +43,7 @@ data class AppSettings(
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
-    val defaultParticipants: List<String>? = null
+    val defaultParticipants: List<String>? = null,
+    val displayMode: String = DisplayMode.AUTO.key,
+    val dynamicColor: Boolean = false
 )

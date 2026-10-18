@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -25,11 +26,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.unit.dp
 import com.convoscribe.R
 import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.ui.theme.AppTheme
 import java.util.Locale
 
 /**
@@ -59,12 +60,13 @@ internal fun PlayerBar(state: PlayerState, actions: PlaybackActions, modifier: M
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging ?: state.positionMs.toFloat()
     val total = state.durationMs.coerceAtLeast(1L).toFloat()
-    Surface(modifier = modifier.fillMaxWidth(), tonalElevation = 2.dp) {
-        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+    val spacing = AppTheme.spacing
+    Surface(modifier = modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(modifier = Modifier.padding(horizontal = spacing.screen, vertical = spacing.xs)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     text = TranscriptFormatter.timestamp(shown.toLong()),
-                    style = MaterialTheme.typography.labelMedium
+                    style = AppTheme.typography.figures
                 )
                 val positionDescription = stringResource(R.string.player_position)
                 Slider(
@@ -77,12 +79,12 @@ internal fun PlayerBar(state: PlayerState, actions: PlaybackActions, modifier: M
                     valueRange = 0f..total,
                     modifier = Modifier
                         .weight(1f)
-                        .padding(horizontal = 8.dp)
+                        .padding(horizontal = spacing.s)
                         .semantics { contentDescription = positionDescription }
                 )
                 Text(
                     text = TranscriptFormatter.timestamp(state.durationMs),
-                    style = MaterialTheme.typography.labelMedium
+                    style = AppTheme.typography.figures
                 )
             }
             Row(
@@ -128,6 +130,7 @@ internal fun PlayerBar(state: PlayerState, actions: PlaybackActions, modifier: M
             }
         }
     }
+    if (AppTheme.isEink) HorizontalDivider(color = MaterialTheme.colorScheme.outline)
 }
 
 /** `1`, `1.5` or `2`: the speed without a trailing `.0`. */

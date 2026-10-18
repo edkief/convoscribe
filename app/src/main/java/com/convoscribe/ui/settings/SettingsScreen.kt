@@ -1,6 +1,7 @@
 package com.convoscribe.ui.settings
 
 import android.content.Intent
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,12 +12,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -26,15 +27,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -47,11 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -59,6 +57,17 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.settings.DisplayMode
+import com.convoscribe.ui.components.ChoiceGroup
+import com.convoscribe.ui.components.ErrorBanner
+import com.convoscribe.ui.components.FieldLabel
+import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.components.NoticeText
+import com.convoscribe.ui.components.PickerField
+import com.convoscribe.ui.components.ScreenScaffold
+import com.convoscribe.ui.components.SectionCard
+import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.launch
 
 /**
@@ -143,55 +152,83 @@ fun SettingsScreen(navController: NavHostController) {
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(text = stringResource(R.string.settings_title)) },
-                navigationIcon = {
-                    IconButton(onClick = {
-                        vm.save()
-                        navController.popBackStack()
-                    }) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.settings_back)
-                        )
-                    }
-                },
-                actions = {
-                    IconButton(
-                        onClick = {
-                            vm.save()
-                            navController.popBackStack()
-                        }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = stringResource(R.string.settings_save)
-                        )
-                    }
-                }
-            )
+    val leave: () -> Unit = {
+        vm.save()
+        navController.popBackStack()
+    }
+    SettingsBody(
+        state = state,
+        actions = SettingsActions(
+            onBack = leave,
+            onSave = leave,
+            onFormChange = vm::update,
+            onTestConnection = { coroutineScope.launch { vm.testConnection() } },
+            onEngineChange = vm::setEngine,
+            onLanguageChange = vm::setLanguage,
+            onEngineCheck = { navController.navigate("engine-check") },
+            onDeleteFrenchModel = vm::deleteFrenchModel,
+            onResetDefaultParticipants = vm::resetDefaultParticipants,
+            onOpenKnownSpeakers = { navController.navigate("speakers") },
+            onDisplayModeChange = vm::setDisplayMode,
+            onDynamicColorChange = vm::setDynamicColor
+        )
+    )
+}
+
+/** What the Settings screen can do; filled from [SettingsViewModel] and the nav controller. */
+internal class SettingsActions(
+    val onBack: () -> Unit = {},
+    val onSave: () -> Unit = {},
+    val onFormChange: (SettingsForm) -> Unit = {},
+    val onTestConnection: () -> Unit = {},
+    val onEngineChange: (String) -> Unit = {},
+    val onLanguageChange: (String) -> Unit = {},
+    val onEngineCheck: () -> Unit = {},
+    val onDeleteFrenchModel: () -> Unit = {},
+    val onResetDefaultParticipants: () -> Unit = {},
+    val onOpenKnownSpeakers: () -> Unit = {},
+    val onDisplayModeChange: (String) -> Unit = {},
+    val onDynamicColorChange: (Boolean) -> Unit = {}
+)
+
+/** Render-only body of [SettingsScreen] for previews and screenshot tests. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions) {
+    ScreenScaffold(
+        title = stringResource(R.string.settings_title),
+        onBack = actions.onBack,
+        actions = {
+            IconButton(onClick = actions.onSave) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = stringResource(R.string.settings_save)
+                )
+            }
         }
     ) { innerPadding: PaddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.s),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.l),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Spacer(Modifier.height(8.dp))
+            AppearanceSection(
+                displayMode = state.displayMode,
+                dynamicColor = state.dynamicColor,
+                onDisplayModeChange = actions.onDisplayModeChange,
+                onDynamicColorChange = actions.onDynamicColorChange
+            )
             LanguageModelSection(
                 form = state.form,
                 testing = state.testing,
                 testResult = state.testResult,
                 availableModels = state.availableModels,
-                onFormChange = vm::update,
-                onTestConnection = {
-                    coroutineScope.launch { vm.testConnection() }
-                }
+                onFormChange = actions.onFormChange,
+                onTestConnection = actions.onTestConnection
             )
             TranscriptionSection(
                 engine = state.asrEngine,
@@ -200,36 +237,87 @@ fun SettingsScreen(navController: NavHostController) {
                 frenchModelInstalled = state.frenchModelInstalled,
                 selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
                 selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
-                onEngineChange = vm::setEngine,
-                onLanguageChange = vm::setLanguage,
+                onEngineChange = actions.onEngineChange,
+                onLanguageChange = actions.onLanguageChange,
                 onThreadsChange = { threads ->
-                    vm.update(state.form.copy(numThreads = threads))
+                    actions.onFormChange(state.form.copy(numThreads = threads))
                 },
-                onEngineCheck = { navController.navigate("engine-check") },
-                onDeleteFrenchModel = vm::deleteFrenchModel
+                onEngineCheck = actions.onEngineCheck,
+                onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
             SpeakersSection(
                 numSpeakers = state.form.numSpeakers,
                 defaultParticipants = state.defaultParticipants,
-                onResetDefaultParticipants = vm::resetDefaultParticipants,
+                onResetDefaultParticipants = actions.onResetDefaultParticipants,
                 threshold = state.form.clusterThreshold,
                 matchThreshold = state.form.speakerMatchThreshold,
                 onNumSpeakersChange = { count ->
-                    vm.update(state.form.copy(numSpeakers = count))
+                    actions.onFormChange(state.form.copy(numSpeakers = count))
                 },
                 onThresholdChange = { value ->
-                    vm.update(state.form.copy(clusterThreshold = value))
+                    actions.onFormChange(state.form.copy(clusterThreshold = value))
                 },
                 onMatchThresholdChange = { value ->
-                    vm.update(state.form.copy(speakerMatchThreshold = value))
+                    actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
                 },
-                onOpenKnownSpeakers = { navController.navigate("speakers") }
+                onOpenKnownSpeakers = actions.onOpenKnownSpeakers
             )
             AboutSection()
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(AppTheme.spacing.xl))
         }
     }
 }
+
+/**
+ * "Appearance" section: the display mode (Auto / Standard / E-ink) and,
+ * on Android 12+ outside e-ink mode, "Use device colours". Both are
+ * written immediately and the app re-themes at once.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppearanceSection(
+    displayMode: String,
+    dynamicColor: Boolean,
+    onDisplayModeChange: (String) -> Unit,
+    onDynamicColorChange: (Boolean) -> Unit
+) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_appearance)
+    ) {
+        FieldLabel(text = stringResource(R.string.settings_display_mode_label))
+        ChoiceGroup(
+            options = DISPLAY_MODES.map { (mode, label) -> mode.key to stringResource(label) },
+            selected = displayMode,
+            onSelect = onDisplayModeChange
+        )
+        SupportingText(text = stringResource(R.string.settings_display_mode_help))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !AppTheme.isEink) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(value = dynamicColor, role = Role.Switch, onValueChange = onDynamicColorChange),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.settings_dynamic_color_label),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    SupportingText(text = stringResource(R.string.settings_dynamic_color_help))
+                }
+                Switch(checked = dynamicColor, onCheckedChange = null)
+            }
+        }
+    }
+}
+
+private val DISPLAY_MODES = listOf(
+    DisplayMode.AUTO to R.string.settings_display_mode_auto,
+    DisplayMode.STANDARD to R.string.settings_display_mode_standard,
+    DisplayMode.EINK to R.string.settings_display_mode_eink
+)
 
 /**
  * "Language model" section: base URL, API key (with show/hide
@@ -246,103 +334,106 @@ fun SettingsScreen(navController: NavHostController) {
 private fun LanguageModelSection(
     form: SettingsForm,
     testing: Boolean,
-    testResult: String?,
+    testResult: ConnectionTestResult?,
     availableModels: List<String>,
     onFormChange: (SettingsForm) -> Unit,
     onTestConnection: () -> Unit
 ) {
     var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
-    SectionHeader(text = stringResource(R.string.settings_section_llm))
-    OutlinedTextField(
-        value = form.baseUrl,
-        onValueChange = { onFormChange(form.copy(baseUrl = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
-        placeholder = { Text(text = stringResource(R.string.settings_llm_base_url_placeholder)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-        modifier = Modifier.fillMaxWidth()
-    )
-    OutlinedTextField(
-        value = form.apiKey,
-        onValueChange = { onFormChange(form.copy(apiKey = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_api_key_label)) },
-        singleLine = true,
-        visualTransformation = if (apiKeyVisible) {
-            VisualTransformation.None
-        } else {
-            PasswordVisualTransformation()
-        },
-        trailingIcon = {
-            IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                Text(
-                    text = stringResource(
-                        if (apiKeyVisible) {
-                            R.string.settings_llm_api_key_hide
-                        } else {
-                            R.string.settings_llm_api_key_show
-                        }
-                    ),
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth()
-    )
-    OutlinedTextField(
-        value = form.model,
-        onValueChange = { onFormChange(form.copy(model = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
-    OutlinedTextField(
-        value = form.maxChars,
-        onValueChange = { onFormChange(form.copy(maxChars = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_max_chars_label)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth()
-    )
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_llm)
     ) {
-        OutlinedButton(
-            onClick = onTestConnection,
-            enabled = !testing,
+        OutlinedTextField(
+            value = form.baseUrl,
+            onValueChange = { onFormChange(form.copy(baseUrl = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
+            placeholder = { Text(text = stringResource(R.string.settings_llm_base_url_placeholder)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(text = stringResource(R.string.settings_llm_test))
-        }
-    }
-    if (testResult != null) {
-        Text(
-            text = testResult,
-            style = MaterialTheme.typography.bodyMedium,
-            color = if (testResult.startsWith("Failed")) {
-                MaterialTheme.colorScheme.error
+        )
+        OutlinedTextField(
+            value = form.apiKey,
+            onValueChange = { onFormChange(form.copy(apiKey = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_api_key_label)) },
+            singleLine = true,
+            visualTransformation = if (apiKeyVisible) {
+                VisualTransformation.None
             } else {
-                MaterialTheme.colorScheme.onSurface
-            }
+                PasswordVisualTransformation()
+            },
+            trailingIcon = {
+                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
+                    Text(
+                        text = stringResource(
+                            if (apiKeyVisible) {
+                                R.string.settings_llm_api_key_hide
+                            } else {
+                                R.string.settings_llm_api_key_show
+                            }
+                        ),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
         )
-    } else {
-        Text(
-            text = stringResource(R.string.settings_llm_test_idle),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        OutlinedTextField(
+            value = form.model,
+            onValueChange = { onFormChange(form.copy(model = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
         )
-    }
-    if (availableModels.isNotEmpty()) {
-        androidx.compose.foundation.layout.FlowRow(
+        OutlinedTextField(
+            value = form.maxChars,
+            onValueChange = { onFormChange(form.copy(maxChars = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_max_chars_label)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
         ) {
-            availableModels.forEach { id ->
-                SuggestionChip(
-                    onClick = { onFormChange(form.copy(model = id)) },
-                    label = { Text(text = id) }
+            OutlinedButton(
+                onClick = onTestConnection,
+                enabled = !testing,
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(text = stringResource(R.string.settings_llm_test))
+            }
+            if (testing) InlineProgress()
+        }
+        when (testResult) {
+            is ConnectionTestResult.Connected -> NoticeText(
+                text = pluralStringResource(
+                    R.plurals.settings_test_connected,
+                    testResult.count,
+                    testResult.count,
+                    testResult.models.joinToString(", ")
                 )
+            )
+            is ConnectionTestResult.Failed -> ErrorBanner(
+                message = stringResource(R.string.settings_test_failed, testResult.message)
+            )
+            null -> SupportingText(text = stringResource(R.string.settings_llm_test_idle))
+        }
+        if (availableModels.isNotEmpty()) {
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+            ) {
+                availableModels.forEach { id ->
+                    SuggestionChip(
+                        onClick = { onFormChange(form.copy(model = id)) },
+                        label = { Text(text = id) }
+                    )
+                }
             }
         }
     }
@@ -376,127 +467,84 @@ private fun TranscriptionSection(
     onEngineCheck: () -> Unit,
     onDeleteFrenchModel: () -> Unit
 ) {
-    SectionHeader(text = stringResource(R.string.settings_section_transcription))
-    Text(
-        text = stringResource(R.string.settings_transcription_engine),
-        style = MaterialTheme.typography.titleSmall
-    )
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        val npuSelected = engine == "npu"
-        SegmentedButton(
-            selected = npuSelected,
-            onClick = { onEngineChange("npu") },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-        ) {
-            Text(text = stringResource(R.string.settings_transcription_engine_npu))
-        }
-        SegmentedButton(
-            selected = !npuSelected,
-            onClick = { onEngineChange("cpu") },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-        ) {
-            Text(text = stringResource(R.string.settings_transcription_engine_cpu))
-        }
-    }
-    Text(
-        text = stringResource(R.string.settings_transcription_engine_help),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    if (language == "fr") {
-        // French is only supported on the CPU engine today;
-        // explain that the engine selector is unchanged but
-        // does not apply to a French recording.
-        Text(
-            text = stringResource(R.string.settings_transcription_french_uses_cpu),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = stringResource(R.string.settings_transcription_language_label),
-        style = MaterialTheme.typography.titleSmall
-    )
-    Text(
-        text = stringResource(R.string.settings_defaults_help),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-        val englishSelected = language == "en"
-        SegmentedButton(
-            selected = englishSelected,
-            onClick = { onLanguageChange("en") },
-            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-        ) {
-            Text(text = stringResource(R.string.settings_transcription_language_en))
-        }
-        SegmentedButton(
-            selected = !englishSelected,
-            onClick = { onLanguageChange("fr") },
-            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-        ) {
-            Text(text = stringResource(R.string.settings_transcription_language_fr))
-        }
-    }
-    Spacer(Modifier.height(4.dp))
-    if (selectedLanguageModelInstalled) {
-        Text(
-            text = stringResource(R.string.settings_transcription_language_model_installed),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    } else {
-        Text(
-            text = stringResource(
-                R.string.settings_transcription_language_model_missing,
-                (selectedLanguageModelMissingBytes / 1_000_000L).toInt()
-            ),
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-    // The "Delete French model" action is only useful when the
-    // French bundle is actually on disk. Show it whenever it's
-    // installed, regardless of the active language: a user with
-    // English selected and French sitting unused on disk probably
-    // wants the ≈71 MB back.
-    if (frenchModelInstalled) {
-        TextButton(onClick = onDeleteFrenchModel) {
-            Text(text = stringResource(R.string.settings_transcription_language_delete_fr))
-        }
-    }
-    Spacer(Modifier.height(8.dp))
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_transcription)
     ) {
-        Text(
-            text = stringResource(R.string.settings_transcription_engine_check),
-            style = MaterialTheme.typography.bodyLarge
+        FieldLabel(text = stringResource(R.string.settings_transcription_engine))
+        ChoiceGroup(
+            options = listOf(
+                "npu" to stringResource(R.string.settings_transcription_engine_npu),
+                "cpu" to stringResource(R.string.settings_transcription_engine_cpu)
+            ),
+            selected = if (engine == "npu") "npu" else "cpu",
+            onSelect = onEngineChange
         )
-        OutlinedButton(onClick = onEngineCheck) {
-            Text(text = stringResource(R.string.settings_transcription_engine_check))
+        SupportingText(text = stringResource(R.string.settings_transcription_engine_help))
+        if (language == "fr") {
+            // French is only supported on the CPU engine today;
+            // explain that the engine selector is unchanged but
+            // does not apply to a French recording.
+            SupportingText(text = stringResource(R.string.settings_transcription_french_uses_cpu))
         }
+        FieldLabel(text = stringResource(R.string.settings_transcription_language_label))
+        SupportingText(text = stringResource(R.string.settings_defaults_help))
+        ChoiceGroup(
+            options = listOf(
+                "en" to stringResource(R.string.settings_transcription_language_en),
+                "fr" to stringResource(R.string.settings_transcription_language_fr)
+            ),
+            selected = if (language == "en") "en" else "fr",
+            onSelect = onLanguageChange
+        )
+        if (selectedLanguageModelInstalled) {
+            SupportingText(text = stringResource(R.string.settings_transcription_language_model_installed))
+        } else {
+            Text(
+                text = stringResource(
+                    R.string.settings_transcription_language_model_missing,
+                    (selectedLanguageModelMissingBytes / 1_000_000L).toInt()
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        // The "Delete French model" action is only useful when the
+        // French bundle is actually on disk. Show it whenever it's
+        // installed, regardless of the active language: a user with
+        // English selected and French sitting unused on disk probably
+        // wants the ≈71 MB back.
+        if (frenchModelInstalled) {
+            TextButton(onClick = onDeleteFrenchModel) {
+                Text(text = stringResource(R.string.settings_transcription_language_delete_fr))
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.settings_transcription_engine_check),
+                style = MaterialTheme.typography.bodyLarge
+            )
+            OutlinedButton(onClick = onEngineCheck) {
+                Text(text = stringResource(R.string.settings_transcription_engine_check))
+            }
+        }
+        FieldLabel(text = stringResource(R.string.settings_transcription_threads_label))
+        Slider(
+            value = threads.toFloat(),
+            onValueChange = { onThreadsChange(it.toInt().coerceIn(1, 8)) },
+            valueRange = 1f..8f,
+            steps = 6,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = threads.toString(),
+            style = MaterialTheme.typography.bodySmall
+        )
     }
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = stringResource(R.string.settings_transcription_threads_label),
-        style = MaterialTheme.typography.titleSmall
-    )
-    Slider(
-        value = threads.toFloat(),
-        onValueChange = { onThreadsChange(it.toInt().coerceIn(1, 8)) },
-        valueRange = 1f..8f,
-        steps = 6,
-        modifier = Modifier.fillMaxWidth()
-    )
-    Text(
-        text = threads.toString(),
-        style = MaterialTheme.typography.bodySmall
-    )
 }
 
 /**
@@ -520,147 +568,108 @@ private fun SpeakersSection(
     onMatchThresholdChange: (Float) -> Unit,
     onOpenKnownSpeakers: () -> Unit
 ) {
-    SectionHeader(text = stringResource(R.string.settings_section_speakers))
     var speakersExpanded by remember { mutableStateOf(false) }
-    val speakersLabel = if (numSpeakers <= 0) {
-        stringResource(R.string.settings_speakers_automatic)
-    } else {
-        stringResource(R.string.settings_speakers_count, numSpeakers)
-    }
-    OutlinedButton(
-        onClick = { speakersExpanded = true },
-        modifier = Modifier.fillMaxWidth()
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_speakers)
     ) {
+        val speakersLabel = if (numSpeakers <= 0) {
+            stringResource(R.string.settings_speakers_automatic)
+        } else {
+            stringResource(R.string.settings_speakers_count, numSpeakers)
+        }
+        PickerField(
+            label = stringResource(R.string.settings_speakers_number_label),
+            value = speakersLabel,
+            onClick = { speakersExpanded = true }
+        ) {
+            DropdownMenu(
+                expanded = speakersExpanded,
+                onDismissRequest = { speakersExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.settings_speakers_automatic)) },
+                    onClick = {
+                        onNumSpeakersChange(-1)
+                        speakersExpanded = false
+                    }
+                )
+                (2..6).forEach { count ->
+                    DropdownMenuItem(
+                        text = { Text(text = count.toString()) },
+                        onClick = {
+                            onNumSpeakersChange(count)
+                            speakersExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+        FieldLabel(text = stringResource(R.string.settings_speakers_threshold_label))
+        Slider(
+            value = threshold.coerceIn(0.4f, 0.95f),
+            onValueChange = { onThresholdChange(it.coerceIn(0.4f, 0.95f)) },
+            valueRange = 0.4f..0.95f,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = stringResource(R.string.settings_speakers_threshold_value, threshold),
+            style = MaterialTheme.typography.bodySmall
+        )
+        SupportingText(text = stringResource(R.string.settings_speakers_threshold_help))
+        FieldLabel(text = stringResource(R.string.settings_speakers_match_threshold_label))
+        Slider(
+            value = matchThreshold.coerceIn(0.3f, 0.8f),
+            onValueChange = { onMatchThresholdChange(it.coerceIn(0.3f, 0.8f)) },
+            valueRange = 0.3f..0.8f,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Text(
+            text = stringResource(R.string.settings_speakers_match_threshold_value, matchThreshold),
+            style = MaterialTheme.typography.bodySmall
+        )
+        SupportingText(text = stringResource(R.string.settings_speakers_match_threshold_help))
+        // "Known speakers" row: navigates to the SpeakersScreen where
+        // the user records a 15-second voice sample and labels
+        // diarization clusters with the speaker's real name. Lives
+        // inside the Speakers section because both controls feed the
+        // diarization pipeline (number-of-speakers / threshold for the
+        // clustering algorithm; the enrollment list for the cosine
+        // match against each cluster's centroid).
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = stringResource(R.string.settings_speakers_number_label)
+                text = stringResource(R.string.settings_speakers_known_row),
+                style = MaterialTheme.typography.bodyLarge
             )
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = speakersLabel)
-                Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
+            OutlinedButton(onClick = onOpenKnownSpeakers) {
+                Text(text = stringResource(R.string.settings_speakers_known_button))
             }
         }
-    }
-    DropdownMenu(
-        expanded = speakersExpanded,
-        onDismissRequest = { speakersExpanded = false }
-    ) {
-        DropdownMenuItem(
-            text = { Text(text = stringResource(R.string.settings_speakers_automatic)) },
-            onClick = {
-                onNumSpeakersChange(-1)
-                speakersExpanded = false
-            }
-        )
-        (2..6).forEach { count ->
-            DropdownMenuItem(
-                text = { Text(text = count.toString()) },
-                onClick = {
-                    onNumSpeakersChange(count)
-                    speakersExpanded = false
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.settings_speakers_default_participants,
+                    defaultParticipants?.joinToString(", ")
+                        ?: stringResource(R.string.settings_speakers_default_participants_anyone)
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            if (defaultParticipants != null) {
+                TextButton(onClick = onResetDefaultParticipants) {
+                    Text(text = stringResource(R.string.settings_speakers_default_participants_reset))
                 }
-            )
-        }
-    }
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = stringResource(R.string.settings_speakers_threshold_label),
-        style = MaterialTheme.typography.titleSmall
-    )
-    Slider(
-        value = threshold.coerceIn(0.4f, 0.95f),
-        onValueChange = { onThresholdChange(it.coerceIn(0.4f, 0.95f)) },
-        valueRange = 0.4f..0.95f,
-        modifier = Modifier.fillMaxWidth()
-    )
-    Text(
-        text = stringResource(R.string.settings_speakers_threshold_value, threshold),
-        style = MaterialTheme.typography.bodySmall
-    )
-    Text(
-        text = stringResource(R.string.settings_speakers_threshold_help),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(8.dp))
-    Text(
-        text = stringResource(R.string.settings_speakers_match_threshold_label),
-        style = MaterialTheme.typography.titleSmall
-    )
-    Slider(
-        value = matchThreshold.coerceIn(0.3f, 0.8f),
-        onValueChange = { onMatchThresholdChange(it.coerceIn(0.3f, 0.8f)) },
-        valueRange = 0.3f..0.8f,
-        modifier = Modifier.fillMaxWidth()
-    )
-    Text(
-        text = stringResource(R.string.settings_speakers_match_threshold_value, matchThreshold),
-        style = MaterialTheme.typography.bodySmall
-    )
-    Text(
-        text = stringResource(R.string.settings_speakers_match_threshold_help),
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(12.dp))
-    // "Known speakers" row: navigates to the SpeakersScreen where
-    // the user records a 15-second voice sample and labels
-    // diarization clusters with the speaker's real name. Lives
-    // inside the Speakers section because both controls feed the
-    // diarization pipeline (number-of-speakers / threshold for the
-    // clustering algorithm; the enrollment list for the cosine
-    // match against each cluster's centroid).
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = stringResource(R.string.settings_speakers_known_row),
-            style = MaterialTheme.typography.bodyLarge
-        )
-        OutlinedButton(onClick = onOpenKnownSpeakers) {
-            Text(text = stringResource(R.string.settings_speakers_known_button))
-        }
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = stringResource(
-                R.string.settings_speakers_default_participants,
-                defaultParticipants?.joinToString(", ")
-                    ?: stringResource(R.string.settings_speakers_default_participants_anyone)
-            ),
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f)
-        )
-        if (defaultParticipants != null) {
-            TextButton(onClick = onResetDefaultParticipants) {
-                Text(text = stringResource(R.string.settings_speakers_default_participants_reset))
             }
         }
     }
-}
-
-/**
- * Section header used by every settings sub-section. Plain Text
- * in title-medium typography with top padding; kept inline so we
- * do not add another file for three call-sites.
- */
-@Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.titleMedium,
-        modifier = Modifier.padding(top = 8.dp)
-    )
 }
 
 /**
@@ -680,45 +689,48 @@ private fun SectionHeader(text: String) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AboutSection() {
-    SectionHeader(text = stringResource(R.string.settings_section_about))
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AboutModelRow(
-            name = stringResource(R.string.settings_about_nemotron_name),
-            licence = stringResource(R.string.settings_about_nemotron_licence),
-            url = "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"
-        )
-        AboutModelRow(
-            name = stringResource(R.string.settings_about_kroko_name),
-            licence = stringResource(R.string.settings_about_kroko_licence),
-            url = "https://huggingface.co/Banafo/Kroko-ASR"
-        )
-        AboutModelRow(
-            name = stringResource(R.string.settings_about_pyannote_name),
-            licence = stringResource(R.string.settings_about_pyannote_licence),
-            url = "https://github.com/pyannote/pyannote-segmentation"
-        )
-        AboutModelRow(
-            name = stringResource(R.string.settings_about_wespeaker_name),
-            licence = stringResource(R.string.settings_about_wespeaker_licence),
-            url = "https://github.com/wenet-e2e/wespeaker"
-        )
-        AboutModelRow(
-            name = stringResource(R.string.settings_about_sherpa_name),
-            licence = stringResource(R.string.settings_about_sherpa_licence),
-            url = "https://github.com/k2-fsa/sherpa-onnx"
-        )
-        AboutModelRow(
-            name = stringResource(R.string.settings_about_qnn_name),
-            licence = stringResource(R.string.settings_about_qnn_licence),
-            url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
-        )
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_about)
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_nemotron_name),
+                licence = stringResource(R.string.settings_about_nemotron_licence),
+                url = "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"
+            )
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_kroko_name),
+                licence = stringResource(R.string.settings_about_kroko_licence),
+                url = "https://huggingface.co/Banafo/Kroko-ASR"
+            )
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_pyannote_name),
+                licence = stringResource(R.string.settings_about_pyannote_licence),
+                url = "https://github.com/pyannote/pyannote-segmentation"
+            )
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_wespeaker_name),
+                licence = stringResource(R.string.settings_about_wespeaker_licence),
+                url = "https://github.com/wenet-e2e/wespeaker"
+            )
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_sherpa_name),
+                licence = stringResource(R.string.settings_about_sherpa_licence),
+                url = "https://github.com/k2-fsa/sherpa-onnx"
+            )
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_qnn_name),
+                licence = stringResource(R.string.settings_about_qnn_licence),
+                url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
+            )
+        }
     }
 }
 
 /**
- * One row in the [AboutSection]. Renders the model name, the licence
- * in bodySmall, and a `TextButton` that opens the upstream URL via
- * [Intent.ACTION_VIEW]. Using a plain `Text` clickable instead of a
+ * One row in the [AboutSection]: the model name and licence, and a
+ * "Source" button that opens the upstream URL via [Intent.ACTION_VIEW]. Using a plain `Text` clickable instead of a
  * link gives consistent focus / ripple behaviour inside the
  * scrollable settings column.
  */
@@ -726,21 +738,16 @@ private fun AboutSection() {
 @Composable
 private fun AboutModelRow(name: String, licence: String, url: String) {
     val context = LocalContext.current
-    Column {
-        Text(
-            text = name,
-            style = MaterialTheme.typography.bodyLarge
-        )
-        Text(
-            text = licence,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = name, style = MaterialTheme.typography.bodyLarge)
+            SupportingText(text = licence)
+        }
         TextButton(onClick = {
             val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
             runCatching { context.startActivity(intent) }
         }) {
-            Text(text = url)
+            Text(text = stringResource(R.string.settings_about_source))
         }
     }
 }

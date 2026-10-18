@@ -2,9 +2,11 @@ package com.convoscribe.ui.speakers
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.convoscribe.R
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.diarization.EnrollSpeakerUseCase
+import com.convoscribe.ui.UiText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -78,7 +80,7 @@ data class SpeakersUiState(
     val phase: EnrollmentPhase = EnrollmentPhase.IDLE,
     val progress: Float = 0f,
     val embeddingModelInstalled: Boolean = false,
-    val error: String? = null
+    val error: UiText? = null
 )
 
 /**
@@ -189,7 +191,7 @@ class SpeakersViewModel(
         val name = current.enrollName
         if (name.isBlank()) {
             _state.value = current.copy(
-                error = "Speaker name must not be blank",
+                error = UiText.res(R.string.speakers_name_blank),
                 phase = EnrollmentPhase.IDLE
             )
             return
@@ -234,7 +236,7 @@ class SpeakersViewModel(
                 _state.value = _state.value.copy(
                     phase = EnrollmentPhase.IDLE,
                     progress = 0f,
-                    error = message
+                    error = UiText.Plain(message)
                 )
             } finally {
                 enrollmentJob = null

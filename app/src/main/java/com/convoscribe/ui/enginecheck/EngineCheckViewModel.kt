@@ -100,7 +100,8 @@ class EngineCheckViewModel(
      * device-info snapshot is computed once and the warning is
      * then a pure function of two values that never change.
      */
-    var storageWarningText: String? = null
+    /** `true` when free storage is too low to prepare the NPU model (see [storageWarning]). */
+    var storageLow: Boolean = false
         private set
 
     /**
@@ -115,7 +116,7 @@ class EngineCheckViewModel(
         val npuBundle = ModelCatalog.ASR_EN_NPU
         val npuPrepared = isNpuPrepared(npuBundle)
         val warning = storageWarning(info.freeStorageBytes, npuPrepared)
-        storageWarningText = warning
+        storageLow = warning != null
         _state.value = _state.value.copy(deviceInfo = info)
     }
 

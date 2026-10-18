@@ -7,6 +7,7 @@ import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.audio.WavWriter
+import com.convoscribe.audio.inputLevel
 import com.convoscribe.audio.samplesToMs
 import com.convoscribe.audio.toFloatSamples
 import java.io.File
@@ -199,7 +200,9 @@ class RecordingController(
                         transcriber.accept(chunk.toFloatSamples())
                     }
                     applyEvents(events)
-                    _state.update { it.copy(elapsedMs = samplesToMs(wav.samplesWritten)) }
+                    _state.update {
+                        it.copy(elapsedMs = samplesToMs(wav.samplesWritten), inputLevel = chunk.inputLevel())
+                    }
                 }
             } catch (ce: CancellationException) {
                 // Cooperative cancellation: stop() / scope cancel
@@ -261,7 +264,7 @@ class RecordingController(
     suspend fun stop(): Long? {
         if (_state.value.phase != RecordingPhase.RECORDING) return null
         val id = _state.value.sessionId ?: return null
-        _state.update { it.copy(phase = RecordingPhase.STOPPING) }
+        _state.update { it.copy(phase = RecordingPhase.STOPPING, inputLevel = 0f) }
         sessionJob?.cancelAndJoin()
         val transcriber = activeTranscriber
         val wav = activeWav

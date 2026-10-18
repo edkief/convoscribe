@@ -4,68 +4,34 @@ import android.content.ClipData
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.AssistChip
-import androidx.compose.material3.AssistChipDefaults
-import androidx.compose.material3.Button
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -77,20 +43,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -105,8 +61,6 @@ import com.convoscribe.R
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.MediaPlayerAudioPlayer
 import com.convoscribe.audio.PlayerState
-import com.convoscribe.data.ChatMessageEntity
-import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
@@ -114,20 +68,18 @@ import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
+import com.convoscribe.ui.asString
+import com.convoscribe.ui.components.ConfirmDialog
+import com.convoscribe.ui.components.EmptyState
+import com.convoscribe.ui.components.ScreenScaffold
+import com.convoscribe.ui.components.StatusBadge
+import com.convoscribe.ui.home.formatDuration
+import com.convoscribe.ui.home.formatSessionDate
+import com.convoscribe.ui.home.languageTag
 import com.convoscribe.ui.record.ParticipantsDialog
+import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.map
 
-/**
- * Fixed 6-entry palette used to tint speaker labels by their
- * index. The index is taken modulo six so the sixth speaker and
- * onward share the last colour; in practice a conversation rarely
- * exceeds four or five speakers, so the wrap is rarely visible.
- *
- * The colours are picked to be distinguishable on both the light
- * and dark Material themes; none of them is the background or the
- * primary text colour, so a label rendered in any of them stays
- * legible against the transcript background.
- */
 /**
  * Statuses a session can be continued from: finished recording,
  * with no diarization in flight.
@@ -136,21 +88,6 @@ private val CONTINUABLE_STATUSES = setOf(
     SessionStatus.TRANSCRIBED,
     SessionStatus.DIARIZED,
     SessionStatus.DIARIZATION_FAILED
-)
-
-private val SPEAKER_PALETTE: List<Color> = listOf(
-    // blue
-    Color(0xFF1976D2),
-    // red
-    Color(0xFFD32F2F),
-    // green
-    Color(0xFF388E3C),
-    // orange
-    Color(0xFFF57C00),
-    // purple
-    Color(0xFF7B1FA2),
-    // teal
-    Color(0xFF00838F)
 )
 
 /**
@@ -247,7 +184,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         // consumed exactly once, so a configuration change does
         // not double-fire the snackbar.
         vm.snackbar.collect { message ->
-            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+            snackbarHostState.showSnackbar(message = message.asString(context), duration = SnackbarDuration.Short)
         }
     }
 
@@ -261,13 +198,12 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
     val effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val retranscribing = retranscribeState is RetranscribeState.Running
-    val retranscribeFailedMessage = stringResource(R.string.session_retranscribe_failed)
     LaunchedEffect(retranscribeState) {
         val failed = retranscribeState as? RetranscribeState.Failed ?: return@LaunchedEffect
         if (failed.sessionId != sessionId) return@LaunchedEffect
         container.retranscribeUseCase.acknowledgeFailure()
         snackbarHostState.showSnackbar(
-            message = "$retranscribeFailedMessage ${failed.message}",
+            message = context.getString(R.string.session_retranscribe_failed, failed.message),
             duration = SnackbarDuration.Long
         )
     }
@@ -286,6 +222,8 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
     }
 
     SessionBody(
+        createdAt = state.createdAt,
+        durationMs = state.durationMs,
         title = state.title,
         status = state.status,
         lines = state.lines,
@@ -425,9 +363,12 @@ internal fun SessionBody(
     details: SessionDetails = SessionDetails(),
     enrolledNames: List<String> = emptyList(),
     onSetParticipants: (List<String>?) -> Unit = {},
-    retranscribe: RetranscribeUi = RetranscribeUi()
+    retranscribe: RetranscribeUi = RetranscribeUi(),
+    createdAt: Long = 0L,
+    durationMs: Long = 0L,
+    initialTab: Int = 0
 ) {
-    var selectedTab by rememberSaveable { mutableIntStateOf(0) }
+    var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
     // The two rename flows share a dialog shell but different
     // pre-fill / save targets. `renameSpeakerIndex = null` means
@@ -441,121 +382,105 @@ internal fun SessionBody(
     var reidentifyAfterParticipants by remember { mutableStateOf(false) }
     var infoOpen by remember { mutableStateOf(false) }
     var retranscribeOpen by remember { mutableStateOf(false) }
-    Scaffold(
+    ScreenScaffold(
+        title = title,
+        onBack = onBack,
         snackbarHost = {
-            // One-line snackbar with a short duration: the
-            // "remember this voice" success / failure message is
-            // short and ephemeral, so a tall multi-line layout
-            // would just take up vertical space without
-            // conveying more information.
             SnackbarHost(hostState = snackbarHostState) { data ->
                 Snackbar(snackbarData = data)
             }
         },
-        topBar = {
-            TopAppBar(
-                title = { Text(text = title) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.session_back)
-                        )
+        actions = {
+            IconButton(onClick = onContinueRecording, enabled = canContinueRecording) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_mic),
+                    contentDescription = stringResource(R.string.session_continue_recording)
+                )
+            }
+            IconButton(onClick = onShare) {
+                Icon(
+                    imageVector = Icons.Filled.Share,
+                    contentDescription = stringResource(R.string.session_share)
+                )
+            }
+            IconButton(onClick = { overflowExpanded = true }) {
+                Icon(
+                    imageVector = Icons.Filled.MoreVert,
+                    contentDescription = stringResource(R.string.session_overflow)
+                )
+            }
+            DropdownMenu(
+                expanded = overflowExpanded,
+                onDismissRequest = { overflowExpanded = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_rename)) },
+                    onClick = {
+                        overflowExpanded = false
+                        renameSessionOpen = true
                     }
-                },
-                actions = {
-                    IconButton(onClick = onContinueRecording, enabled = canContinueRecording) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_mic),
-                            contentDescription = stringResource(R.string.session_continue_recording)
-                        )
+                )
+                val hasAudio = status != SessionStatus.RECORDING && playerState.ready
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_share_audio)) },
+                    enabled = hasAudio,
+                    onClick = {
+                        overflowExpanded = false
+                        onShareAudio()
                     }
-                    IconButton(onClick = onShare) {
-                        Icon(
-                            imageVector = Icons.Filled.Share,
-                            contentDescription = stringResource(R.string.session_share)
-                        )
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_save_audio)) },
+                    enabled = hasAudio,
+                    onClick = {
+                        overflowExpanded = false
+                        onSaveAudio()
                     }
-                    IconButton(onClick = { overflowExpanded = true }) {
-                        Icon(
-                            imageVector = Icons.Filled.MoreVert,
-                            contentDescription = stringResource(R.string.session_overflow)
-                        )
+                )
+                val canDiarize = status != SessionStatus.DIARIZING &&
+                    status != SessionStatus.RECORDING &&
+                    retranscribe.progress == null
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_reidentify)) },
+                    enabled = canDiarize,
+                    onClick = {
+                        overflowExpanded = false
+                        reidentifyOpen = true
                     }
-                    DropdownMenu(
-                        expanded = overflowExpanded,
-                        onDismissRequest = { overflowExpanded = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_rename)) },
-                            onClick = {
-                                overflowExpanded = false
-                                renameSessionOpen = true
-                            }
-                        )
-                        val hasAudio = status != SessionStatus.RECORDING && playerState.ready
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_share_audio)) },
-                            enabled = hasAudio,
-                            onClick = {
-                                overflowExpanded = false
-                                onShareAudio()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_save_audio)) },
-                            enabled = hasAudio,
-                            onClick = {
-                                overflowExpanded = false
-                                onSaveAudio()
-                            }
-                        )
-                        val canDiarize = status != SessionStatus.DIARIZING &&
-                            status != SessionStatus.RECORDING &&
-                            retranscribe.progress == null
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_reidentify)) },
-                            enabled = canDiarize,
-                            onClick = {
-                                overflowExpanded = false
-                                reidentifyOpen = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_retranscribe)) },
-                            enabled = retranscribe.enabled,
-                            onClick = {
-                                overflowExpanded = false
-                                retranscribeOpen = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_participants)) },
-                            enabled = !notFound,
-                            onClick = {
-                                overflowExpanded = false
-                                participantsOpen = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_info)) },
-                            enabled = !notFound,
-                            onClick = {
-                                overflowExpanded = false
-                                infoOpen = true
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text(text = stringResource(R.string.session_overflow_clear_questions)) },
-                            enabled = askState.messages.isNotEmpty(),
-                            onClick = {
-                                overflowExpanded = false
-                                clearQuestionsOpen = true
-                            }
-                        )
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_retranscribe)) },
+                    enabled = retranscribe.enabled,
+                    onClick = {
+                        overflowExpanded = false
+                        retranscribeOpen = true
                     }
-                }
-            )
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_participants)) },
+                    enabled = !notFound,
+                    onClick = {
+                        overflowExpanded = false
+                        participantsOpen = true
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_info)) },
+                    enabled = !notFound,
+                    onClick = {
+                        overflowExpanded = false
+                        infoOpen = true
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_clear_questions)) },
+                    enabled = askState.messages.isNotEmpty(),
+                    onClick = {
+                        overflowExpanded = false
+                        clearQuestionsOpen = true
+                    }
+                )
+            }
         }
     ) { innerPadding: PaddingValues ->
         Column(
@@ -563,26 +488,19 @@ internal fun SessionBody(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            if (!notFound) {
+                SessionHeader(
+                    createdAt = createdAt,
+                    durationMs = durationMs,
+                    speakerCount = speakers.size,
+                    language = details.language,
+                    status = status
+                )
+            }
             retranscribe.progress?.let { progress ->
                 RetranscribeBanner(progress = progress, onCancel = retranscribe.onCancel)
             }
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text(text = stringResource(R.string.session_tab_transcript)) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text(text = stringResource(R.string.session_tab_summary)) }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text(text = stringResource(R.string.session_tab_ask)) }
-                )
-            }
+            SessionTabs(selectedTab = selectedTab, onSelect = { selectedTab = it })
             // Finished sessions with a readable recording get the player;
             // it is not offered while the session is still being recorded.
             val canPlay = !notFound && status != SessionStatus.RECORDING && playerState.ready
@@ -590,7 +508,10 @@ internal fun SessionBody(
                 PlayerBar(state = playerState, actions = playback)
             }
             when {
-                notFound -> SessionNotFound()
+                notFound -> EmptyState(
+                    icon = painterResource(R.drawable.ic_conversation),
+                    title = stringResource(R.string.session_not_found)
+                )
                 selectedTab == 0 -> TranscriptTab(
                     status = status,
                     lines = lines,
@@ -627,7 +548,7 @@ internal fun SessionBody(
             onDismissRequest = {},
             title = { Text(text = stringResource(R.string.session_export_title)) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
                     Text(text = stringResource(R.string.session_export_message))
                     LinearProgressIndicator(
                         progress = { exportState.progress },
@@ -729,806 +650,79 @@ internal fun SessionBody(
     // `messages.isNotEmpty()` already, so the dialog only opens
     // when there is something to clear.
     if (clearQuestionsOpen) {
-        AlertDialog(
-            onDismissRequest = { clearQuestionsOpen = false },
-            title = { Text(text = stringResource(R.string.session_ask_clear_title)) },
-            text = { Text(text = stringResource(R.string.session_ask_clear_message)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onClearQuestions()
-                    clearQuestionsOpen = false
-                }) {
-                    Text(text = stringResource(R.string.session_ask_clear_confirm))
-                }
+        ConfirmDialog(
+            title = stringResource(R.string.session_ask_clear_title),
+            message = stringResource(R.string.session_ask_clear_message),
+            confirmLabel = stringResource(R.string.session_ask_clear_confirm),
+            dismissLabel = stringResource(R.string.session_ask_clear_cancel),
+            destructive = true,
+            onConfirm = {
+                onClearQuestions()
+                clearQuestionsOpen = false
             },
-            dismissButton = {
-                TextButton(onClick = { clearQuestionsOpen = false }) {
-                    Text(text = stringResource(R.string.session_ask_clear_cancel))
-                }
-            }
+            onDismiss = { clearQuestionsOpen = false }
         )
     }
 }
 
 /**
- * "Re-identify speakers" dialog: pick how many people speak in the
- * recording (Automatic, 2, 3 or 4), preselected with [current] (the
- * session's count, else the Settings default; a Settings value
- * outside the list is offered too). [onConfirm] receives `-1` for
- * Automatic.
+ * Below the top bar: when the session was recorded, how long it is,
+ * how many speakers were found and its language, with a badge while
+ * it is recording, identifying speakers or failed.
  */
 @Composable
-private fun ReidentifySpeakersDialog(current: Int, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
-    val options = (listOf(-1, 2, 3, 4) + current).distinct().sortedBy { if (it == -1) 0 else it }
-    var selected by remember { mutableIntStateOf(current) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(R.string.session_reidentify_title)) },
-        text = {
-            Column {
-                Text(text = stringResource(R.string.session_reidentify_message))
-                for (option in options) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(selected = option == selected, role = Role.RadioButton) { selected = option },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = option == selected, onClick = null)
-                        Text(
-                            text = if (option == -1) {
-                                stringResource(R.string.session_reidentify_auto)
-                            } else {
-                                pluralStringResource(R.plurals.session_reidentify_count, option, option)
-                            },
-                            modifier = Modifier.padding(start = 8.dp)
-                        )
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(selected) }) {
-                Text(text = stringResource(R.string.session_reidentify_confirm))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.session_ask_clear_cancel))
-            }
-        }
-    )
-}
-
-/**
- * Reusable rename dialog used for both the speaker and session
- * rename flows. Pre-fills with [initialValue], commits through
- * [onConfirm] on Save, and discards on Cancel. Empty inputs
- * disable the Save button so the user cannot accidentally blank
- * out a label (the repository also defends against this, but the
- * UI gate gives immediate feedback).
- *
- * When [checkboxLabelRes] is non-null the dialog also renders a
- * checkbox row beneath the text field. The checkbox starts
- * unchecked and the screen reads its value through
- * [onConfirm]'s second parameter. The session-rename flow passes
- * `null` so the checkbox row is hidden; the speaker-rename flow
- * passes the "Remember this voice" label / help string so the
- * user can promote a session speaker to a known voice in one
- * tap (TASK-34).
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun RenameDialog(
-    initialValue: String,
-    titleRes: Int,
-    onConfirm: (String, Boolean) -> Unit,
-    onDismiss: () -> Unit,
-    checkboxLabelRes: Int? = null,
-    checkboxHelpRes: Int? = null
+private fun SessionHeader(
+    createdAt: Long,
+    durationMs: Long,
+    speakerCount: Int,
+    language: String,
+    status: SessionStatus?
 ) {
-    var text by rememberSaveable(initialValue) { mutableStateOf(initialValue) }
-    var rememberVoice by rememberSaveable(initialValue) { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(titleRes)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it },
-                    singleLine = true,
-                    label = { Text(text = stringResource(R.string.session_rename_label)) }
-                )
-                if (checkboxLabelRes != null) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(
-                            checked = rememberVoice,
-                            onCheckedChange = { rememberVoice = it }
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = stringResource(checkboxLabelRes),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            if (checkboxHelpRes != null) {
-                                Text(
-                                    text = stringResource(checkboxHelpRes),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = text.isNotBlank(),
-                onClick = { onConfirm(text, rememberVoice) }
-            ) {
-                Text(text = stringResource(R.string.session_rename_save))
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = stringResource(R.string.session_rename_cancel))
-            }
-        }
-    )
-}
-
-/**
- * Status banner above the transcript: shows an indeterminate
- * progress bar and the "Identifying speakers…" caption while the
- * diarizer is running, and a plain error label once it failed.
- * Hidden for any other status (RECORDING, TRANSCRIBED, DIARIZED)
- * because there is nothing for the user to wait on or react to.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun StatusBanner(status: SessionStatus?) {
-    when (status) {
-        SessionStatus.DIARIZING -> Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.session_status_diarizing),
-                style = MaterialTheme.typography.bodyMedium
-            )
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-        }
-        SessionStatus.DIARIZATION_FAILED -> Text(
-            text = stringResource(R.string.session_status_diarization_failed),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.error,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-        )
-        else -> Spacer(modifier = Modifier.height(0.dp))
-    }
-}
-
-/**
- * Transcript tab body: status banner, then either a "No speech
- * was recognised." placeholder or the list of [TranscriptLine]s.
- * Each row renders the timestamp and the speaker label in
- * `labelMedium` (the label is coloured from [SPEAKER_PALETTE] by
- * speaker index, looking up the index on the in-memory list of
- * speakers so renames do not break the colour assignment) and the
- * text in `bodyLarge`.
- *
- * When the session has at least one speaker, a row of
- * [AssistChip]s above the transcript lets the user jump
- * straight to the rename dialog for that speaker — the same
- * dialog as the per-line tap.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TranscriptTab(
-    status: SessionStatus?,
-    lines: List<TranscriptLine>,
-    speakers: List<SpeakerEntity>,
-    canPlay: Boolean,
-    isPlaying: Boolean,
-    positionMs: () -> Long,
-    activeLineIndex: Int?,
-    following: Boolean,
-    playback: PlaybackActions,
-    onSpeakerChipTapped: (Int) -> Unit
-) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        StatusBanner(status = status)
-        if (speakers.isNotEmpty()) {
-            SpeakerChipRow(speakers = speakers, onChipTapped = onSpeakerChipTapped)
-        }
-        if (lines.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.session_transcript_empty),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-        } else {
-            val listState = rememberLazyListState()
-            // A drag (or the fling it starts) is the user taking over the
-            // scroll position; programmatic scrolls below do not emit one.
-            LaunchedEffect(listState) {
-                listState.interactionSource.interactions.collect {
-                    if (it is DragInteraction.Start) playback.onUserScrolled()
-                }
-            }
-            LaunchedEffect(activeLineIndex, following) {
-                val index = activeLineIndex
-                if (following && index != null && index < lines.size && !listState.isFullyVisible(index)) {
-                    listState.animateScrollToItem(index)
-                }
-            }
-            Box(modifier = Modifier.fillMaxSize()) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 12.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    itemsIndexed(items = lines, key = { _, line -> line.id }) { index, line ->
-                        val active = index == activeLineIndex
-                        TranscriptRow(
-                            line = line,
-                            active = active,
-                            positionMs = if (active) positionMs else NO_POSITION,
-                            onLabelTapped = { speaker ->
-                                val idx = speakers.firstOrNull { it.label == speaker }?.speakerIndex
-                                if (idx != null) onSpeakerChipTapped(idx)
-                            },
-                            onTapped = if (canPlay) ({ playback.onLineTapped(line) }) else null
-                        )
-                    }
-                }
-                if (isPlaying && !following && activeLineIndex != null) {
-                    FilledTonalButton(
-                        onClick = {
-                            playback.onResumeFollow()
-                        },
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(16.dp)
-                    ) {
-                        Text(text = stringResource(R.string.player_follow))
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Horizontally scrollable strip of speaker [AssistChip]s. Each
- * chip is tinted with the same palette colour used by the
- * transcript row labels, so the user can match a chip to its
- * lines at a glance.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SpeakerChipRow(speakers: List<SpeakerEntity>, onChipTapped: (Int) -> Unit) {
-    LazyRow(
+    val spacing = AppTheme.spacing
+    val meta = listOfNotNull(
+        createdAt.takeIf { it > 0L }?.let { formatSessionDate(it) },
+        formatDuration(durationMs).ifEmpty { null },
+        if (speakerCount > 0) pluralStringResource(R.plurals.home_speaker_count, speakerCount, speakerCount) else null,
+        languageTag(language)
+    ).joinToString(" · ")
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        items(items = speakers, key = { it.speakerIndex }) { speaker ->
-            val paletteColor = speakerColorByIndex(speaker.speakerIndex)
-            AssistChip(
-                onClick = { onChipTapped(speaker.speakerIndex) },
-                label = { Text(text = speaker.label) },
-                leadingIcon = {
-                    Icon(
-                        imageVector = Icons.Filled.Refresh,
-                        contentDescription = null,
-                        tint = paletteColor,
-                        modifier = Modifier.height(AssistChipDefaults.IconSize)
-                    )
-                }
-            )
-        }
-    }
-}
-
-/**
- * Render one [TranscriptLine]. The speaker label colour is
- * derived from the line's position in [SPEAKER_PALETTE]; we use
- * the [TranscriptLine.speaker] string as a fallback key so two
- * segments labelled "Alice" share the same colour, but the
- * primary signal is still the speaker index. The `labelMedium`
- * metadata line shows `"00:03 · Speaker 1"` or just `"00:03"` when
- * the segment is unlabelled. Tapping the label opens the rename
- * dialog for the matching speaker (when there is one); tapping the
- * rest of the row ([onTapped], only when the recording can be played)
- * plays from the start of the line. The [active] row is tinted and,
- * when the line has word timings, the word at [positionMs] is
- * emphasised.
- */
-@Composable
-private fun TranscriptRow(
-    line: TranscriptLine,
-    active: Boolean,
-    positionMs: () -> Long,
-    onLabelTapped: (String) -> Unit,
-    onTapped: (() -> Unit)?
-) {
-    val paletteColor = speakerColor(line.speaker)
-    val timestamp = remember(line.startMs) { com.convoscribe.data.TranscriptFormatter.timestamp(line.startMs) }
-    val labelText = if (line.speaker.isNullOrEmpty()) {
-        timestamp
-    } else {
-        "$timestamp · ${line.speaker}"
-    }
-    val speaker = line.speaker
-    val words = remember(line) { PlaybackSync.words(line) }
-    // Only the playing line reads the position, so the other rows do not
-    // recompose on every playback tick.
-    val wordIndex = if (active && words != null) PlaybackSync.activeWordIndex(line, positionMs()) else null
-    val wordStyle = SpanStyle(
-        fontWeight = FontWeight.Bold,
-        color = MaterialTheme.colorScheme.primary,
-        textDecoration = TextDecoration.Underline
-    )
-    val text = remember(line.text, words, wordIndex, wordStyle) {
-        buildAnnotatedString {
-            append(line.text)
-            val word = if (wordIndex != null && words != null) words[wordIndex] else null
-            if (word != null) addStyle(wordStyle, word.start, word.end)
-        }
-    }
-    var rowModifier = Modifier.fillMaxWidth()
-    if (active) {
-        rowModifier = rowModifier.background(
-            color = MaterialTheme.colorScheme.secondaryContainer,
-            shape = RoundedCornerShape(8.dp)
-        )
-    }
-    if (onTapped != null) rowModifier = rowModifier.clickable(onClick = onTapped)
-    Column(
-        modifier = rowModifier.padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
-    ) {
-        val labelModifier = if (speaker.isNullOrEmpty()) {
-            Modifier
-        } else {
-            Modifier.clickable { onLabelTapped(speaker) }
-        }
-        Text(
-            text = labelText,
-            style = MaterialTheme.typography.labelMedium,
-            color = paletteColor,
-            modifier = labelModifier
-        )
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyLarge
-        )
-    }
-}
-
-private val NO_POSITION: () -> Long = { 0L }
-
-/** `true` when the item at [index] is on screen and not cut off at either edge. */
-private fun LazyListState.isFullyVisible(index: Int): Boolean {
-    val info = layoutInfo.visibleItemsInfo.firstOrNull { it.index == index } ?: return false
-    return info.offset >= layoutInfo.viewportStartOffset &&
-        info.offset + info.size <= layoutInfo.viewportEndOffset
-}
-
-/**
- * Stable colour for a speaker label. Hashing the label keeps the
- * colour constant across renames — a user named "Alice" keeps
- * their colour even if they are later renamed to "Alex". The
- * fallback when the label is `null` is the default on-surface
- * colour so unlabelled segments are visually quiet.
- */
-private fun speakerColor(speaker: String?): Color {
-    if (speaker.isNullOrEmpty()) return Color.Unspecified
-    val idx = (speaker.hashCode() and Int.MAX_VALUE) % SPEAKER_PALETTE.size
-    return SPEAKER_PALETTE[idx]
-}
-
-/**
- * Palette colour for a chip row keyed on the 0-based speaker
- * index. Unlike [speakerColor], this one is stable across
- * renames by design — the user can rename "Speaker 1" to "Alice"
- * and the chip (and the matching transcript labels) still share
- * the same blue. Used by [SpeakerChipRow].
- */
-private fun speakerColorByIndex(speakerIndex: Int): Color {
-    val idx = (speakerIndex.toLong() and Int.MAX_VALUE.toLong()).toInt() % SPEAKER_PALETTE.size
-    return SPEAKER_PALETTE[idx]
-}
-
-/**
- * Placeholder rendered for the Summary / Ask tabs until those
- * tasks wire their real bodies. Keeps the tab navigation
- * discoverable without claiming functionality that isn't
- * implemented yet.
- */
-@Composable
-private fun ComingSoonTab() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
+            .padding(start = spacing.screen, end = spacing.screen, top = spacing.xs, bottom = spacing.s),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(spacing.s)
     ) {
         Text(
-            text = stringResource(R.string.session_coming_soon),
-            style = MaterialTheme.typography.bodyLarge
+            text = meta,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
+        if (status != null) StatusBadge(status = status)
     }
 }
 
 /**
- * Summary tab body. Three layouts:
- *
- *  - the LLM endpoint is not configured: a single line of text and
- *    a button that navigates to the Settings screen;
- *  - not configured: hidden behind [SummaryUiState.configured];
- *  - running / saved / streaming / error: the streaming text or
- *    saved summary, the action buttons and the inline error.
- *
- * The summary is rendered through [SelectionContainer] so the user
- * can long-press to copy a phrase, and a `Copy` `TextButton` drops
- * the whole answer on the system clipboard via
- * [LocalClipboardManager]. No markdown library is involved: the
- * raw text from the LLM is shown verbatim.
+ * Transcript / Summary / Ask. Fixed equal-width tabs normally; at large
+ * font scales scrollable tabs sized to their labels, so a label is
+ * never broken across lines.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SummaryTab(
-    state: SummaryUiState,
-    onSummarise: () -> Unit,
-    onCancel: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    val clipboard = LocalClipboardManager.current
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        if (!state.configured) {
-            Text(
-                text = stringResource(R.string.session_summary_not_configured),
-                style = MaterialTheme.typography.bodyLarge
+private fun SessionTabs(selectedTab: Int, onSelect: (Int) -> Unit) {
+    val tabs = listOf(R.string.session_tab_transcript, R.string.session_tab_summary, R.string.session_tab_ask)
+    val content: @Composable () -> Unit = {
+        tabs.forEachIndexed { index, label ->
+            Tab(
+                selected = selectedTab == index,
+                onClick = { onSelect(index) },
+                text = { Text(text = stringResource(label), maxLines = 1) }
             )
-            Button(onClick = onOpenSettings) {
-                Text(text = stringResource(R.string.session_summary_open_settings))
-            }
-            return
-        }
-        if (state.running) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(onClick = onCancel) {
-                    Text(text = stringResource(R.string.session_summary_stop))
-                }
-                Spacer(modifier = Modifier.width(12.dp))
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp
-                )
-            }
-            if (state.streaming.isNotEmpty()) {
-                SelectionContainer {
-                    Text(
-                        text = state.streaming,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-            }
-        } else {
-            val saved = state.saved
-            val buttonLabel = if (saved.isNullOrBlank()) {
-                R.string.session_summary_summarise
-            } else {
-                R.string.session_summary_regenerate
-            }
-            Button(onClick = onSummarise) {
-                Text(text = stringResource(buttonLabel))
-            }
-            if (saved.isNullOrBlank()) {
-                Text(
-                    text = stringResource(R.string.session_summary_empty),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            } else {
-                SelectionContainer {
-                    Text(
-                        text = saved,
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                }
-                TextButton(onClick = {
-                    clipboard.setText(AnnotatedString(saved))
-                }) {
-                    Text(text = stringResource(R.string.session_summary_copy))
-                }
-            }
-        }
-        state.error?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
-            TextButton(onClick = onSummarise) {
-                Text(text = stringResource(R.string.session_summary_retry))
-            }
         }
     }
-}
-
-/**
- * Rendered when the route's id does not match a session row —
- * either it was deleted or the navigation came from somewhere
- * unexpected (e.g. a deep link). Showing a placeholder beats
- * crashing, and the user can hit Back to leave the screen.
- */
-@Composable
-private fun SessionNotFound() {
-    Box(
-        modifier = Modifier.fillMaxSize(),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = stringResource(R.string.session_not_found),
-            style = MaterialTheme.typography.bodyLarge
-        )
-    }
-}
-
-/**
- * Ask tab body. Three layouts:
- *
- *  - the LLM endpoint is not configured: a single line of text
- *    and a button that navigates to the Settings screen;
- *  - configured and idle: a column of chat bubbles (USER on the
- *    right with `primaryContainer`, ASSISTANT on the left with
- *    `surfaceVariant`, text selectable), with the in-flight
- *    streaming answer as a "live" ASSISTANT bubble when one is
- *    in flight, an inline error block with a Retry button when
- *    the previous call failed, and a bottom input row with an
- *    `OutlinedTextField` and a send `IconButton`.
- *
- * Auto-scroll: every time the rendered message list grows
- * (new user/assistant bubble appended or streaming bubble
- * expands) the list is scrolled to the bottom so the user does
- * not have to chase the conversation. While streaming the list
- * keeps following the tail as each new token arrives.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AskTab(
-    state: AskUiState,
-    onAsk: (String) -> Unit,
-    onRetry: () -> Unit,
-    onCancel: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    var draft by rememberSaveable(state.running, state.messages.size) {
-        // Reset the draft when a fresh round starts (either a
-        // new USER bubble was added or `running` just turned
-        // true). The key list keeps the input clear while the
-        // streaming bubble expands and shrinks.
-        mutableStateOf("")
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        if (!state.configured) {
-            Text(
-                text = stringResource(R.string.session_ask_not_configured),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Button(onClick = onOpenSettings) {
-                Text(text = stringResource(R.string.session_ask_open_settings))
-            }
-            return
-        }
-
-        // Lazily-built scroll state: the `LazyListState` is
-        // remembered across recompositions so the scroll
-        // position survives the streaming bubble updates.
-        val listState = rememberLazyListState()
-        val hasContent = state.messages.isNotEmpty() || state.streaming.isNotEmpty()
-        if (hasContent) {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                state = listState,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(
-                    items = state.messages,
-                    key = { it.id }
-                ) { message ->
-                    ChatBubble(message = message)
-                }
-                if (state.streaming.isNotEmpty()) {
-                    item(key = "streaming") {
-                        ChatBubble(
-                            message = ChatMessageEntity(
-                                id = -1L,
-                                sessionId = 0L,
-                                kind = com.convoscribe.data.MessageKind.QA,
-                                role = MessageRole.ASSISTANT,
-                                content = state.streaming,
-                                createdAt = 0L
-                            )
-                        )
-                    }
-                }
-                // The trailing spacer keeps the last bubble clear
-                // of the keyboard when the IME is open.
-                item(key = "tail") { Spacer(modifier = Modifier.height(4.dp)) }
-            }
-            LaunchedEffect(state.messages.size, state.streaming) {
-                // Auto-scroll to the tail whenever the
-                // conversation grows (new bubble appended) or the
-                // streaming bubble expands by at least a few
-                // tokens. Guarded by the LazyColumn's recompose so
-                // we only fire when the inputs actually changed.
-                if (state.messages.isNotEmpty() || state.streaming.isNotEmpty()) {
-                    listState.scrollToItem(
-                        index = (state.messages.size + if (state.streaming.isNotEmpty()) 1 else 0).coerceAtLeast(0)
-                    )
-                }
-            }
-        } else {
-            // Empty placeholder when there is nothing to show yet.
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = stringResource(R.string.session_ask_empty),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-        }
-
-        // Inline error + Retry, shown above the input row.
-        state.error?.let { message ->
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error
-            )
-            TextButton(onClick = onRetry) {
-                Text(text = stringResource(R.string.session_ask_retry))
-            }
-        }
-
-        // Bottom input row: text field + send button.
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .imePadding(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { draft = it },
-                modifier = Modifier.weight(1f),
-                singleLine = false,
-                maxLines = 4,
-                enabled = !state.running,
-                placeholder = { Text(text = stringResource(R.string.session_ask_input_label)) },
-                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                keyboardActions = KeyboardActions(
-                    onSend = {
-                        val text = draft.trim()
-                        if (text.isNotEmpty() && !state.running) {
-                            onAsk(text)
-                            draft = ""
-                        }
-                    }
-                )
-            )
-            if (state.running) {
-                IconButton(onClick = onCancel) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = stringResource(R.string.session_summary_stop)
-                    )
-                }
-            } else {
-                val canSend = draft.trim().isNotEmpty()
-                IconButton(
-                    enabled = canSend,
-                    onClick = {
-                        val text = draft.trim()
-                        if (text.isNotEmpty()) {
-                            onAsk(text)
-                            draft = ""
-                        }
-                    }
-                ) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.Send,
-                        contentDescription = stringResource(R.string.session_ask_send_cd)
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Render a single chat bubble from a [ChatMessageEntity]. USER
- * bubbles are right-aligned with `primaryContainer`; ASSISTANT
- * bubbles are left-aligned with `surfaceVariant`. Text is wrapped
- * in [SelectionContainer] so the user can long-press to copy.
- *
- * The bubble width is capped at ~80 % of the row so a long
- * answer does not run edge-to-edge on a tablet.
- */
-@Composable
-private fun ChatBubble(message: ChatMessageEntity) {
-    val isUser = message.role == MessageRole.USER
-    val bubbleColor = if (isUser) {
-        MaterialTheme.colorScheme.primaryContainer
+    if (AppTheme.largeText) {
+        PrimaryScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = AppTheme.spacing.s, tabs = content)
     } else {
-        MaterialTheme.colorScheme.surfaceVariant
-    }
-    val onBubble = if (isUser) {
-        MaterialTheme.colorScheme.onPrimaryContainer
-    } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
-    }
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
-        Surface(
-            color = bubbleColor,
-            contentColor = onBubble,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .widthIn(max = 320.dp)
-                .padding(0.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                SelectionContainer {
-                    Text(
-                        text = message.content,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = onBubble
-                    )
-                }
-            }
-        }
+        PrimaryTabRow(selectedTabIndex = selectedTab, tabs = content)
     }
 }

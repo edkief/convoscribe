@@ -3,6 +3,7 @@ package com.convoscribe.ui.session
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.R
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
@@ -13,6 +14,7 @@ import com.convoscribe.llm.LlmMessage
 import com.convoscribe.llm.PromptBuilder
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.ui.UiText
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
@@ -218,7 +220,7 @@ class SummaryViewModelTest {
         advanceUntilIdle()
 
         val state = vm.state.first { it.error != null && !it.running }
-        assertEquals("HTTP 500: x", state.error)
+        assertEquals(UiText.Plain("HTTP 500: x"), state.error)
         assertFalse(state.running)
         assertEquals("first", state.saved)
 
@@ -248,7 +250,7 @@ class SummaryViewModelTest {
         advanceUntilIdle()
 
         val state = vm.state.first { it.error != null && !it.running }
-        assertEquals("IllegalStateException: boom", state.error)
+        assertEquals(UiText.Plain("IllegalStateException: boom"), state.error)
     }
 
     @Test
@@ -268,7 +270,7 @@ class SummaryViewModelTest {
         advanceUntilIdle()
 
         val state = vm.state.first { it.error != null }
-        assertEquals("The transcript is empty.", state.error)
+        assertEquals(UiText.res(R.string.session_summary_empty_error), state.error)
         assertFalse(state.running)
         assertNull(state.saved)
         assertEquals(0, client.streamCalls.get())

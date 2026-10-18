@@ -1,5 +1,8 @@
 package com.convoscribe.audio
 
+import kotlin.math.log10
+import kotlin.math.sqrt
+
 /**
  * Conversions between raw PCM16 sample storage (16-bit signed `Short`
  * arrays) and the `FloatArray` shape the ASR and diarization
@@ -24,6 +27,29 @@ fun ShortArray.toFloatSamples(): FloatArray {
     }
     return out
 }
+
+/**
+ * Loudness of this buffer for a level meter, in `0f..1f`: the RMS in
+ * dBFS mapped linearly from [LEVEL_FLOOR_DB] (silence, 0) to 0 dBFS
+ * (full scale, 1). The dB scale makes normal speech, around -30 to
+ * -15 dBFS, fill half to three quarters of the meter. An empty or
+ * silent buffer is 0.
+ */
+fun ShortArray.inputLevel(): Float {
+    if (isEmpty()) return 0f
+    var sum = 0.0
+    for (sample in this) {
+        val v = sample / 32_768.0
+        sum += v * v
+    }
+    val rms = sqrt(sum / size)
+    if (rms <= 0.0) return 0f
+    val db = 20.0 * log10(rms)
+    return ((db - LEVEL_FLOOR_DB) / -LEVEL_FLOOR_DB).coerceIn(0.0, 1.0).toFloat()
+}
+
+/** dBFS shown as an empty level meter; anything quieter is silence. */
+const val LEVEL_FLOOR_DB = -60.0
 
 /**
  * Convert a sample count to milliseconds at [sampleRate] (defaults

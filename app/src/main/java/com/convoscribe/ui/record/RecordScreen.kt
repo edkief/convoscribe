@@ -6,28 +6,24 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -36,14 +32,11 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -52,11 +45,20 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.data.SessionStatus
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
+import com.convoscribe.ui.components.AppCard
+import com.convoscribe.ui.components.ErrorBanner
+import com.convoscribe.ui.components.NoticeText
+import com.convoscribe.ui.components.ProgressBlock
+import com.convoscribe.ui.components.ScreenScaffold
+import com.convoscribe.ui.components.SectionCard
+import com.convoscribe.ui.components.StatusBadge
+import com.convoscribe.ui.theme.AppTheme
 
 /**
  * Top-level destination entered from the home FAB to record a fresh
@@ -171,6 +173,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         },
         micDeniedMessage = micDeniedMessage,
         continuing = resumeSessionId != null,
+        inputLevel = state.inputLevel,
         options = options,
         enrolledNames = enrolledNames,
         optionActions = ConversationOptionActions(
@@ -220,8 +223,14 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
 /**
  * Render-only variant of [RecordScreen] for preview / testing.
  *
- * @param micDeniedMessage shown between the elapsed time and the
- *   final transcript when the user denied the runtime permission.
+ * Layout: while a new conversation is idle, its options in a section
+ * card; once started, the elapsed time, a recording badge, the input
+ * [InputLevelMeter] and the live transcript. The big round Start /
+ * Stop control sits at the bottom in every phase.
+ *
+ * @param inputLevel microphone level `0f..1f` while recording.
+ * @param micDeniedMessage shown above the control when the user denied
+ *   the runtime permission.
  * @param continuing `true` when appending to an existing session;
  *   changes the title and hides the new-conversation options.
  * @param busyMessage why Start is unavailable (another job holds the
@@ -229,7 +238,6 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
  * @param options the new conversation's options, shown while idle
  *   (see [ConversationOptionsForm]).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RecordBody(
     phase: RecordingPhase,
@@ -244,199 +252,235 @@ internal fun RecordBody(
     options: ConversationOptions? = null,
     enrolledNames: List<String> = emptyList(),
     optionActions: ConversationOptionActions = ConversationOptionActions(),
+    inputLevel: Float = 0f,
     onBack: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit
 ) {
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    val titleRes = if (continuing) R.string.record_title_continue else R.string.record_title
-                    Text(text = stringResource(titleRes))
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = stringResource(R.string.record_back)
-                        )
-                    }
-                }
-            )
-        }
+    val spacing = AppTheme.spacing
+    val showOptions = phase == RecordingPhase.IDLE && !continuing && options != null
+    ScreenScaffold(
+        title = stringResource(if (continuing) R.string.record_title_continue else R.string.record_title),
+        onBack = onBack
     ) { innerPadding: PaddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = formatElapsed(elapsedMs),
-                style = MaterialTheme.typography.displayMedium,
-                textAlign = TextAlign.Center
-            )
-
-            // Phase label: blank while IDLE, "Loading speech model…"
-            // during the brief LOADING window (or the longer
-            // "Preparing the NPU model…" message on the first NPU
-            // run), "Finishing…" during STOPPING. Keeping this off
-            // the IDLE branch keeps the home/start view visually
-            // quiet.
-            val phaseLabel = when (phase) {
-                RecordingPhase.LOADING -> stringResource(
-                    if (preparingNpu) {
-                        R.string.record_phase_preparing_npu
-                    } else {
-                        R.string.record_phase_loading
-                    }
-                )
-                RecordingPhase.STOPPING -> stringResource(R.string.record_phase_stopping)
-                RecordingPhase.IDLE, RecordingPhase.RECORDING -> null
-            }
-            if (phaseLabel != null) {
-                Text(
-                    text = phaseLabel,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-            }
-
-            if (phase == RecordingPhase.IDLE && !continuing && options != null) {
-                ConversationOptionsForm(
-                    options = options,
-                    enrolledNames = enrolledNames,
-                    onLanguageChange = optionActions.onLanguageChange,
-                    onNumSpeakersChange = optionActions.onNumSpeakersChange,
-                    onParticipantsChange = optionActions.onParticipantsChange,
-                    onTitleChange = optionActions.onTitleChange,
-                    onSaveAsDefault = optionActions.onSaveAsDefault
-                )
-            }
-
-            if (busyMessage != null && phase == RecordingPhase.IDLE) {
-                Text(
-                    text = busyMessage,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            if (micDeniedMessage != null) {
-                Text(
-                    text = micDeniedMessage,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            // Transcript column. The list grows monotonically for
-            // the lifetime of a session so a stable list-state
-            // `rememberLazyListState` plus a `LaunchedEffect` over
-            // the size is enough to keep the latest line in view.
-            val listState = rememberLazyListState()
-            val showPartial = phase == RecordingPhase.RECORDING &&
-                partialText.isNotBlank()
-            val itemCount = finalLines.size + (if (showPartial) 1 else 0)
-            LaunchedEffect(itemCount) {
-                if (itemCount > 0) {
-                    listState.animateScrollToItem(index = itemCount - 1)
-                }
-            }
-            LazyColumn(
-                state = listState,
+            Column(
                 modifier = Modifier
+                    .weight(1f)
                     .fillMaxWidth()
-                    .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = spacing.screen),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(spacing.m)
             ) {
-                items(finalLines) { line ->
-                    Text(
-                        text = line,
-                        style = MaterialTheme.typography.bodyLarge
+                if (showOptions && options != null) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                            .verticalScroll(rememberScrollState())
+                            .padding(vertical = spacing.s),
+                        verticalArrangement = Arrangement.spacedBy(spacing.m)
+                    ) {
+                        SectionCard(title = stringResource(R.string.record_section_conversation)) {
+                            ConversationOptionsForm(
+                                options = options,
+                                enrolledNames = enrolledNames,
+                                onLanguageChange = optionActions.onLanguageChange,
+                                onNumSpeakersChange = optionActions.onNumSpeakersChange,
+                                onParticipantsChange = optionActions.onParticipantsChange,
+                                onTitleChange = optionActions.onTitleChange,
+                                onSaveAsDefault = optionActions.onSaveAsDefault
+                            )
+                        }
+                    }
+                } else {
+                    LiveTranscript(
+                        phase = phase,
+                        preparingNpu = preparingNpu,
+                        elapsedMs = elapsedMs,
+                        inputLevel = inputLevel,
+                        finalLines = finalLines,
+                        partialText = partialText,
+                        modifier = Modifier
+                            .weight(1f)
+                            .widthIn(max = AppTheme.sizes.contentMaxWidth)
                     )
                 }
-                if (showPartial) {
-                    item {
-                        Text(
-                            text = partialText,
-                            style = MaterialTheme.typography.bodyLarge.copy(
-                                fontStyle = FontStyle.Italic
-                            ),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
+                if (busyMessage != null && phase == RecordingPhase.IDLE) {
+                    NoticeText(text = busyMessage, modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth))
                 }
+                micDeniedMessage?.let { ErrorBanner(message = it) }
+                error?.let { ErrorBanner(message = it) }
             }
+            RecordControl(
+                phase = phase,
+                canStart = phase == RecordingPhase.IDLE && busyMessage == null,
+                continuing = continuing,
+                onStart = onStart,
+                onStop = onStop
+            )
+        }
+    }
+}
 
-            if (error != null) {
-                Text(
-                    text = error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    textAlign = TextAlign.Center
+/**
+ * Timer, recording badge, level meter (or the loading / finishing
+ * message) and the live transcript, newest line kept in view.
+ */
+@Composable
+private fun LiveTranscript(
+    phase: RecordingPhase,
+    preparingNpu: Boolean,
+    elapsedMs: Long,
+    inputLevel: Float,
+    finalLines: List<String>,
+    partialText: String,
+    modifier: Modifier = Modifier
+) {
+    val spacing = AppTheme.spacing
+    Column(
+        modifier = modifier.padding(top = spacing.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.m)
+    ) {
+        Text(
+            text = formatElapsed(elapsedMs),
+            style = AppTheme.typography.timer,
+            textAlign = TextAlign.Center
+        )
+        when (phase) {
+            RecordingPhase.RECORDING -> {
+                StatusBadge(status = SessionStatus.RECORDING)
+                InputLevelMeter(level = inputLevel)
+            }
+            RecordingPhase.LOADING -> ProgressBlock(
+                message = stringResource(
+                    if (preparingNpu) R.string.record_phase_preparing_npu else R.string.record_phase_loading
                 )
-            }
+            )
+            RecordingPhase.STOPPING -> ProgressBlock(message = stringResource(R.string.record_phase_stopping))
+            RecordingPhase.IDLE -> Unit
+        }
 
-            // Big round Start/Stop button. Disabled during the
-            // LOADING window so the user cannot fire the start
-            // path twice while the recognizer is being built; the
-            // service already rejects concurrent starts but the
-            // disabling here gives clearer visual feedback.
-            // Not gated on the mic permission: tapping Start is what
-            // asks for it.
-            val showStart = phase == RecordingPhase.IDLE && busyMessage == null
-            val showStop = phase == RecordingPhase.RECORDING
-            // The round FAB is large (96dp) but it's structured as
-            // a `Button` (not `FloatingActionButton`) so its state
-            // can be disabled without pulling in two composables.
-            Box(
-                modifier = Modifier
-                    .size(96.dp)
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                when {
-                    showStart -> Button(
-                        onClick = onStart,
-                        modifier = Modifier.fillMaxSize(),
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_mic),
-                            contentDescription = stringResource(R.string.record_start),
-                            tint = Color.White
-                        )
-                    }
-                    showStop -> Button(
-                        onClick = onStop,
-                        modifier = Modifier.fillMaxSize(),
-                        shape = CircleShape,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_stop),
-                            contentDescription = stringResource(R.string.record_stop),
-                            tint = Color.White
-                        )
-                    }
-                    else -> Button(
-                        onClick = {},
-                        enabled = false,
-                        modifier = Modifier.fillMaxSize(),
-                        shape = CircleShape
-                    ) {}
+        // The list grows monotonically for the lifetime of a session,
+        // so a remembered list state plus an effect over the size keeps
+        // the latest line in view (a jump instead of a scroll on e-ink).
+        val listState = rememberLazyListState()
+        val showPartial = phase == RecordingPhase.RECORDING && partialText.isNotBlank()
+        val itemCount = finalLines.size + (if (showPartial) 1 else 0)
+        val reduceMotion = AppTheme.reduceMotion
+        LaunchedEffect(itemCount) {
+            if (itemCount > 0) {
+                if (reduceMotion) {
+                    listState.scrollToItem(
+                        itemCount - 1
+                    )
+                } else {
+                    listState.animateScrollToItem(itemCount - 1)
                 }
             }
         }
+        AppCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+        ) {
+            if (itemCount == 0) {
+                Text(
+                    text = stringResource(
+                        if (phase == RecordingPhase.RECORDING) {
+                            R.string.record_live_listening
+                        } else {
+                            R.string.record_live_idle
+                        }
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(spacing.l)
+                )
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(spacing.l),
+                    verticalArrangement = Arrangement.spacedBy(spacing.m)
+                ) {
+                    items(finalLines) { line ->
+                        Text(text = line, style = AppTheme.typography.transcript)
+                    }
+                    if (showPartial) {
+                        item {
+                            Text(
+                                text = partialText,
+                                style = AppTheme.typography.transcript.copy(fontStyle = FontStyle.Italic),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * The big round Start / Stop button with its caption. Disabled during
+ * LOADING / STOPPING (and while another job holds the recorder) so the
+ * start path cannot fire twice; the service rejects concurrent starts
+ * anyway, but this shows it. Not gated on the mic permission: tapping
+ * Start is what asks for it.
+ */
+@Composable
+private fun RecordControl(
+    phase: RecordingPhase,
+    canStart: Boolean,
+    continuing: Boolean,
+    onStart: () -> Unit,
+    onStop: () -> Unit
+) {
+    val spacing = AppTheme.spacing
+    val scheme = MaterialTheme.colorScheme
+    val recording = phase == RecordingPhase.RECORDING
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = spacing.l),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(spacing.s)
+    ) {
+        val enabled = recording || canStart
+        Button(
+            onClick = if (recording) onStop else onStart,
+            enabled = enabled,
+            modifier = Modifier.size(AppTheme.sizes.recordButton),
+            shape = CircleShape,
+            contentPadding = PaddingValues(),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = if (recording) scheme.error else scheme.primary,
+                contentColor = if (recording) scheme.onError else scheme.onPrimary
+            )
+        ) {
+            Icon(
+                painter = painterResource(if (recording) R.drawable.ic_stop else R.drawable.ic_mic),
+                contentDescription = stringResource(if (recording) R.string.record_stop else R.string.record_start),
+                modifier = Modifier.size(AppTheme.sizes.iconLarge)
+            )
+        }
+        val caption = when {
+            recording -> R.string.record_hint_stop
+            !canStart -> null
+            continuing -> R.string.record_hint_continue
+            else -> R.string.record_hint_start
+        }
+        Text(
+            text = caption?.let { stringResource(it) }.orEmpty(),
+            style = MaterialTheme.typography.labelLarge,
+            color = scheme.onSurfaceVariant
+        )
     }
 }
 

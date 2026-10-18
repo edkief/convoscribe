@@ -9,6 +9,7 @@ import com.convoscribe.llm.toUserMessage
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
 import com.convoscribe.settings.AppSettings
+import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +63,17 @@ data class SettingsForm(
 }
 
 /**
+ * Outcome of "Test connection". The screen words it; [Failed.message]
+ * is the client's own error text (see [com.convoscribe.llm.toUserMessage]).
+ */
+sealed interface ConnectionTestResult {
+    /** [count] models were listed; [models] holds the first few ids. */
+    data class Connected(val count: Int, val models: List<String>) : ConnectionTestResult
+
+    data class Failed(val message: String) : ConnectionTestResult
+}
+
+/**
  * Snapshot rendered by [SettingsScreen]. The form is mutable
  * (every keystroke produces a new one); the rest are status
  * fields the screen consumes verbatim.
@@ -78,9 +90,8 @@ data class SettingsForm(
  * @property testing `true` while [SettingsViewModel.testConnection]
  *   is in flight; the screen greys out the button and shows a
  *   spinner / "Testing…" line.
- * @property testResult last connection-test outcome, formatted
- *   for the UI: starts with `Connected – N models: …` on success
- *   or `Failed: …` on failure. `null` before the first test.
+ * @property testResult last connection-test outcome (see
+ *   [ConnectionTestResult]); `null` before the first test.
  * @property availableModels model ids returned by the most recent
  *   successful `listModels` call; the screen renders them as
  *   `SuggestionChip`s that fill the Model field on tap.
@@ -104,14 +115,17 @@ data class SettingsUiState(
     val asrEngine: String = "npu",
     val asrLanguage: String = "en",
     val testing: Boolean = false,
-    val testResult: String? = null,
+    val testResult: ConnectionTestResult? = null,
     val availableModels: List<String> = emptyList(),
     val saved: Boolean = false,
     val frenchModelInstalled: Boolean = false,
     val selectedLanguageModelInstalled: Boolean = true,
     val selectedLanguageModelMissingBytes: Long = 0L,
     /** Participants new conversations start with (saved by "Set as default"); `null` is anyone. */
-    val defaultParticipants: List<String>? = null
+    val defaultParticipants: List<String>? = null,
+    /** [com.convoscribe.settings.DisplayMode.key]; written immediately, like the engine. */
+    val displayMode: String = DisplayMode.AUTO.key,
+    val dynamicColor: Boolean = false
 )
 
 /**
@@ -328,11 +342,26 @@ class SettingsViewModel(
     }
 
     /**
+     * Persist the display mode ([DisplayMode.key]) immediately; the
+     * activity re-themes as soon as the setting changes. An unknown
+     * key is ignored.
+     */
+    fun setDisplayMode(key: String) {
+        if (DisplayMode.fromKey(key) == null) return
+        repo.update { it.copy(displayMode = key) }
+    }
+
+    /** Persist the "Use device colours" switch immediately. */
+    fun setDynamicColor(enabled: Boolean) {
+        repo.update { it.copy(dynamicColor = enabled) }
+    }
+
+    /**
      * Persist the current form, then call [ChatClient.listModels].
-     * Records the outcome as `"Connected – N models: a, b, c"`
-     * (first five ids, comma-separated) or `"Failed: <message>"`
-     * (see [com.convoscribe.llm.toUserMessage]) on the [SettingsUiState.testResult]
-     * field. `availableModels` is populated only on success.
+     * Records the outcome as [ConnectionTestResult.Connected] (with
+     * the first five ids) or [ConnectionTestResult.Failed] (see
+     * [com.convoscribe.llm.toUserMessage]) on [SettingsUiState.testResult].
+     * `availableModels` is populated only on success.
      *
      * The `saved` flag is not affected — connection-test is a
      * read.
@@ -347,12 +376,11 @@ class SettingsViewModel(
                 testing = false,
                 testResult = result.fold(
                     onSuccess = { models ->
-                        val first = models.take(5).joinToString(", ")
-                        "Connected – ${models.size} models: $first"
+                        ConnectionTestResult.Connected(count = models.size, models = models.take(5))
                     },
                     onFailure = { failure ->
                         Log.w(TAG, "settings: LLM connection test failed", failure)
-                        "Failed: ${failure.toUserMessage()}"
+                        ConnectionTestResult.Failed(failure.toUserMessage())
                     }
                 ),
                 availableModels = result.getOrDefault(emptyList())
@@ -387,6 +415,8 @@ class SettingsViewModel(
             asrEngine = current.asrEngine,
             asrLanguage = current.asrLanguage,
             defaultParticipants = current.defaultParticipants,
+            displayMode = current.displayMode,
+            dynamicColor = current.dynamicColor,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes

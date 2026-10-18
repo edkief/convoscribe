@@ -80,6 +80,19 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   demand with a progress dialog you can cancel.
 - **Share transcript** to any system share-sheet target (notes app,
   email, …) and rename sessions / speakers from the overflow menu.
+- **Designed for phones and e-ink.** A teal design system (colours,
+  type, shapes and spacing in `ui/theme/`) with light and dark
+  themes, and an **E-ink** display mode — black on white, flat
+  outlined surfaces, no animations or ripples, larger touch targets
+  and text. Settings → Appearance → *Display*: **Auto** (E-ink on an
+  Onyx Boox, Standard elsewhere), **Standard** or **E-ink**. On
+  Android 12+ Standard mode can take its colours from the wallpaper
+  (*Use device colours*).
+- **Session cards** on Home show the date, duration, number of
+  speakers and whether a session is recording, identifying speakers
+  or failed, with Delete in each card's menu. The Record screen shows
+  a live **microphone level** meter, and each speaker keeps one colour
+  on their chip and lines, also after a rename.
 
 ## Build
 
@@ -87,6 +100,17 @@ OpenAI-compatible endpoint for summaries and questions about the session.
 bash scripts/setup-toolchain.sh   # one-time, installs JDK, SDK, NDK and builds the sherpa-onnx native libs
 source scripts/env.sh
 ./gradlew ktlintCheck testDebugUnitTest lintDebug assembleDebug
+```
+
+### Screenshots
+
+`ScreenshotTest` renders every screen with fake data (phone light,
+dark and 200 % font, and the Boox in E-ink mode). A normal test run
+only composes the screens; to write PNGs to
+`app/build/outputs/roborazzi/`:
+
+```bash
+./gradlew testDebugUnitTest --tests '*ScreenshotTest*' -Proborazzi.test.record=true
 ```
 
 ## Install
@@ -128,11 +152,11 @@ Tested on a Boox Note Air 6C (Qualcomm QCS6690, Android 16):
 The agent loop cannot run on-device tests (the sherpa-onnx native
 library only loads on real hardware). The owner-side checklist
 that validates the PRD acceptance criteria is at
-[`docs/MANUAL_TEST.md`](docs/MANUAL_TEST.md) — 16 numbered checks
+[`docs/MANUAL_TEST.md`](docs/MANUAL_TEST.md) — numbered checks
 covering install, model download, both engines, recording,
 diarization, renaming, sharing, the LLM endpoint, summaries, Q&A,
-French, deletion, crash recovery, performance and engine
-switching. A troubleshooting section shows how to read
+French, deletion, crash recovery, performance, engine switching,
+per-conversation options and the display modes. A troubleshooting section shows how to read
 `adb logcat`, where models live on disk, and how to clear app
 data.
 

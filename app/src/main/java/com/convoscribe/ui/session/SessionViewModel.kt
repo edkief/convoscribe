@@ -3,6 +3,7 @@ package com.convoscribe.ui.session
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.convoscribe.R
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.AudioPlayer
 import com.convoscribe.audio.PlayerState
@@ -14,6 +15,7 @@ import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.diarization.EnrollFromSessionUseCase
+import com.convoscribe.ui.UiText
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -68,7 +70,10 @@ data class SessionUiState(
     val participants: List<String>? = null,
     /** Engine / model that transcribed the session; `null` when not recorded. */
     val asrEngine: String? = null,
-    val asrModel: String? = null
+    val asrModel: String? = null,
+    /** When the session was recorded, and its length (0 while recording). */
+    val createdAt: Long = 0L,
+    val durationMs: Long = 0L
 )
 
 /** State of an audio export (share or save); the screen shows a progress dialog while encoding. */
@@ -97,7 +102,7 @@ sealed interface ExportState {
  * state; the share button calls it on the main thread because
  * building the share intent has to happen there.
  *
- * [snackbar] is a one-shot `Flow<String>` that the screen
+ * [snackbar] is a one-shot `Flow<UiText>` that the screen
  * collects in a `LaunchedEffect` to surface transient feedback
  * (the "remember this voice" enrollment either succeeds silently
  * or surfaces its error). Backed by a buffered [Channel] so a
@@ -141,7 +146,9 @@ class SessionViewModel(
                         language = session.language,
                         participants = ParticipantsCodec.decode(session.participants),
                         asrEngine = session.asrEngine,
-                        asrModel = session.asrModel
+                        asrModel = session.asrModel,
+                        createdAt = session.createdAt,
+                        durationMs = session.durationMs
                     )
                 }
             }
@@ -205,10 +212,10 @@ class SessionViewModel(
      * [receiveAsFlow] guarantees each value is consumed exactly
      * once.
      */
-    private val _snackbar = Channel<String>(Channel.BUFFERED)
+    private val _snackbar = Channel<UiText>(Channel.BUFFERED)
 
     /** One-shot snackbar messages; the screen collects this in a [androidx.compose.runtime.LaunchedEffect]. */
-    val snackbar: Flow<String> = _snackbar.receiveAsFlow()
+    val snackbar: Flow<UiText> = _snackbar.receiveAsFlow()
 
     /**
      * Plain-text export of the current transcript. Reads the
@@ -286,9 +293,9 @@ class SessionViewModel(
         viewModelScope.launch {
             try {
                 useCase.run(sessionId = sessionId, speakerIndex = index, name = name)
-                _snackbar.trySend("Remembered \"${name.trim()}\" for future recordings")
+                _snackbar.trySend(UiText.res(R.string.session_voice_remembered, name.trim()))
             } catch (t: Throwable) {
-                _snackbar.trySend(t.message ?: t.javaClass.simpleName)
+                _snackbar.trySend(UiText.Plain(t.message ?: t.javaClass.simpleName))
             }
         }
     }
@@ -360,7 +367,7 @@ class SessionViewModel(
     /** Encode the recording to M4A and write it to the document the user picked at [target]. */
     fun saveAudio(target: Uri) = export { exporter, session, wav ->
         exporter.saveTo(target, sessionId, session.title, wav, ::reportProgress)
-        _snackbar.trySend("Audio saved")
+        _snackbar.trySend(UiText.res(R.string.session_audio_saved))
     }
 
     /** Abort the running export; nothing is shared or saved. */
@@ -384,7 +391,7 @@ class SessionViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _snackbar.trySend("Could not export the audio: ${e.message ?: e.javaClass.simpleName}")
+                _snackbar.trySend(UiText.res(R.string.session_audio_export_failed, e.message ?: e.javaClass.simpleName))
             } finally {
                 _exportState.value = ExportState.Idle
             }

@@ -298,4 +298,33 @@ class SettingsRepositoryTest {
         newRepository().update { it.copy(defaultParticipants = emptyList()) }
         assertNull(newRepository().settings.value.defaultParticipants)
     }
+
+    @Test
+    fun displayMode_defaultsToAutoWithBrandColours() {
+        val s = newRepository().settings.value
+        assertEquals("auto", s.displayMode)
+        assertFalse(s.dynamicColor)
+    }
+
+    @Test
+    fun displayMode_andDynamicColourPersist() {
+        newRepository().update { it.copy(displayMode = "eink", dynamicColor = true) }
+        val s = newRepository().settings.value
+        assertEquals("eink", s.displayMode)
+        assertTrue(s.dynamicColor)
+    }
+
+    @Test
+    fun displayMode_unknownValueKeepsPrevious() {
+        val repo = newRepository()
+        repo.update { it.copy(displayMode = "standard") }
+        repo.update { it.copy(displayMode = "sepia") }
+        assertEquals("standard", repo.settings.value.displayMode)
+    }
+
+    @Test
+    fun displayMode_unknownStoredValueLoadsAsAuto() {
+        prefs.edit().putString(SettingsRepository.KEY_DISPLAY_MODE, "sepia").apply()
+        assertEquals("auto", newRepository().settings.value.displayMode)
+    }
 }

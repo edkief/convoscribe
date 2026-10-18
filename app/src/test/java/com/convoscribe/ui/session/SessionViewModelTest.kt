@@ -3,11 +3,13 @@ package com.convoscribe.ui.session
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.R
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.FakeAudioPlayer
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.ui.UiText
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -432,7 +434,7 @@ class SessionViewModelTest {
 
         vm.saveAudio(android.net.Uri.parse("content://documents/x.m4a"))
 
-        assertEquals("Audio saved", vm.snackbar.first())
+        assertEquals(UiText.res(R.string.session_audio_saved), vm.snackbar.first())
         advanceUntilIdle()
         assertEquals(ExportState.Idle, vm.exportState.value)
     }
@@ -467,7 +469,7 @@ class SessionViewModelTest {
 
         vm.shareAudio()
 
-        assertEquals("Could not export the audio: disk full", vm.snackbar.first())
+        assertEquals(UiText.res(R.string.session_audio_export_failed, "disk full"), vm.snackbar.first())
         advanceUntilIdle()
         assertEquals(ExportState.Idle, vm.exportState.value)
     }

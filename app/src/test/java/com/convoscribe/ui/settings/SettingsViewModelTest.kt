@@ -171,7 +171,7 @@ class SettingsViewModelTest {
         advanceUntilIdle()
         val s = vm.state.value
         assertFalse(s.testing)
-        assertEquals("Connected – 2 models: m1, m2", s.testResult)
+        assertEquals(ConnectionTestResult.Connected(count = 2, models = listOf("m1", "m2")), s.testResult)
         assertEquals(listOf("m1", "m2"), s.availableModels)
     }
 
@@ -184,7 +184,7 @@ class SettingsViewModelTest {
         val s = vm.state.value
         assertFalse(s.testing)
         assertNotNull(s.testResult)
-        assertEquals("Failed: HTTP 401: x", s.testResult)
+        assertEquals(ConnectionTestResult.Failed("HTTP 401: x"), s.testResult)
         assertTrue(s.availableModels.isEmpty())
     }
 
@@ -194,7 +194,7 @@ class SettingsViewModelTest {
         val vm = newVm(repo = newRepo(), chatClient = fake)
         vm.testConnection()
         advanceUntilIdle()
-        assertEquals("Failed: IllegalStateException", vm.state.value.testResult)
+        assertEquals(ConnectionTestResult.Failed("IllegalStateException"), vm.state.value.testResult)
     }
 
     @Test
@@ -208,7 +208,7 @@ class SettingsViewModelTest {
         // The trailing slash was stripped before chatClient was
         // called; repo is the canonical source.
         assertEquals("http://example.test/v1", repo.settings.value.llmBaseUrl)
-        assertEquals("Connected – 1 models: m", vm.state.value.testResult)
+        assertEquals(ConnectionTestResult.Connected(count = 1, models = listOf("m")), vm.state.value.testResult)
     }
 
     @Test
@@ -366,6 +366,35 @@ class SettingsViewModelTest {
         vm.resetDefaultParticipants()
         assertNull(repo.settings.value.defaultParticipants)
         assertNull(vm.state.value.defaultParticipants)
+    }
+
+    @Test
+    fun displayMode_andDynamicColour_areWrittenImmediately() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertEquals("auto", vm.state.value.displayMode)
+
+        vm.setDisplayMode("eink")
+        vm.setDynamicColor(true)
+        advanceUntilIdle()
+
+        assertEquals("eink", repo.settings.value.displayMode)
+        assertTrue(repo.settings.value.dynamicColor)
+        assertEquals("eink", vm.state.value.displayMode)
+        assertTrue(vm.state.value.dynamicColor)
+
+        vm.setDisplayMode("sepia")
+        advanceUntilIdle()
+        assertEquals("eink", repo.settings.value.displayMode)
+    }
+
+    @Test
+    fun save_keepsTheDisplayMode() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        vm.setDisplayMode("standard")
+        vm.save()
+        assertEquals("standard", repo.settings.value.displayMode)
     }
 
     /**

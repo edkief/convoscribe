@@ -71,6 +71,32 @@ class TranscriptFormatterTest {
         assertEquals(3_000L, lines[1].startMs)
         assertEquals("Bob", lines[1].speaker)
         assertEquals("Hi", lines[1].text)
+        assertEquals(0, lines[0].speakerIndex)
+        assertEquals(1, lines[1].speakerIndex)
+    }
+
+    /**
+     * The speaker index (which keys the colour) is the same before and
+     * after a rename, so a chip and its lines keep matching (issue #4).
+     */
+    @Test
+    fun lines_speakerIndexSurvivesARename() {
+        val segments =
+            listOf(SegmentEntity(id = 1, sessionId = 42, startMs = 0, endMs = 1_000, text = "Hello", speakerIndex = 2))
+        val before = TranscriptFormatter.lines(segments, listOf(SpeakerEntity(42, 2, "Speaker 3")))
+        val after = TranscriptFormatter.lines(segments, listOf(SpeakerEntity(42, 2, "Carol")))
+        assertEquals("Carol", after[0].speaker)
+        assertEquals(before[0].speakerIndex, after[0].speakerIndex)
+        assertEquals(2, after[0].speakerIndex)
+    }
+
+    @Test
+    fun lines_indexWithoutSpeakerRowIsUnlabelled() {
+        val segments =
+            listOf(SegmentEntity(id = 1, sessionId = 42, startMs = 0, endMs = 1_000, text = "Hello", speakerIndex = 5))
+        val line = TranscriptFormatter.lines(segments, emptyList()).single()
+        assertNull(line.speaker)
+        assertNull(line.speakerIndex)
     }
 
     @Test

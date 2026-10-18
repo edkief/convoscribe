@@ -1,7 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ConvoScribe</string>
-    <string name="setup_title">Download speech models</string>
+    <string name="action_back">Back</string>
+    <string name="common_yes">Yes</string>
+    <string name="common_no">No</string>
+    <string name="unit_milliseconds">%1$d ms</string>
+    <string name="unit_gigabytes">%1$.1f GB</string>
+    <string name="status_recording">Recording</string>
+    <string name="status_diarizing">Identifying speakers</string>
+    <string name="status_failed">Speaker detection failed</string>
+    <string name="setup_title">Set up</string>
+    <string name="setup_heading">Download speech models</string>
+    <string name="setup_downloading">Downloading…</string>
     <string name="setup_body">About %1$d MB will be downloaded once and stored on this device.</string>
     <string name="setup_progress">%1$d MB / %2$d MB</string>
     <string name="setup_download">Download</string>
@@ -26,6 +36,13 @@
     <string name="record_start">Start</string>
     <string name="record_stop">Stop</string>
     <string name="record_error_unknown">Recording failed</string>
+    <string name="record_section_conversation">This conversation</string>
+    <string name="record_input_level">Microphone level</string>
+    <string name="record_hint_start">Tap to start recording</string>
+    <string name="record_hint_continue">Tap to continue recording</string>
+    <string name="record_hint_stop">Tap to stop</string>
+    <string name="record_live_listening">Listening… speech appears here as it is recognised.</string>
+    <string name="record_live_idle">The transcript appears here once you start.</string>
     <string name="record_busy_retranscribing">A session is being re-transcribed. You can record once it has finished.</string>
     <string name="conversation_language_label">Language</string>
     <string name="conversation_language_en">English</string>
@@ -42,8 +59,14 @@
     <string name="conversation_set_default">Set as default</string>
     <string name="conversation_set_default_done">Saved for new conversations</string>
     <string name="home_new_recording">New recording</string>
-    <string name="home_empty">No sessions yet</string>
-    <string name="home_empty_with_hint">No sessions yet. Tap New recording to start.</string>
+    <string name="home_empty_title">No recordings yet</string>
+    <string name="home_empty_body">Record a conversation and ConvoScribe transcribes it on this device and tells the speakers apart.</string>
+    <string name="home_more_options">More options</string>
+    <string name="home_session_more">More options for %1$s</string>
+    <plurals name="home_speaker_count">
+        <item quantity="one">%d speaker</item>
+        <item quantity="other">%d speakers</item>
+    </plurals>
     <string name="home_engine_check">Engine check</string>
     <string name="home_settings">Settings</string>
     <string name="home_delete_title">Delete this session?</string>
@@ -88,7 +111,11 @@
     <string name="settings_speakers_match_threshold_value">%1$.2f</string>
     <string name="settings_speakers_match_threshold_help">Higher = stricter name matching</string>
     <string name="settings_saved">Saved</string>
-    <string name="settings_test_connected">Connected – %1$d models: %2$s</string>
+    <plurals name="settings_test_connected">
+        <item quantity="one">Connected – %1$d model: %2$s</item>
+        <item quantity="other">Connected – %1$d models: %2$s</item>
+    </plurals>
+    <string name="settings_test_failed">Failed: %1$s</string>
     <string name="enginecheck_title">Engine check</string>
     <string name="enginecheck_device_title">Device</string>
     <string name="enginecheck_device_loading">Reading…</string>
@@ -100,6 +127,7 @@
     <string name="enginecheck_device_cdsp">CDSP library present</string>
     <string name="enginecheck_device_htp">HTP skel libraries</string>
     <string name="enginecheck_device_free_storage">Free storage</string>
+    <string name="enginecheck_checks_title">Speed check</string>
     <string name="enginecheck_check_npu">Check NPU</string>
     <string name="enginecheck_check_cpu">Check CPU</string>
     <string name="enginecheck_running">Running…</string>
@@ -116,6 +144,11 @@
     <string name="enginecheck_result_error">Error: %1$s</string>
     <string name="enginecheck_result_diagnostics_hint">The app kept running. Copy or share the report for the full diagnostics.</string>
     <string name="enginecheck_copy_report">Copy report</string>
+    <string name="enginecheck_storage_low">Less than 1.5 GB free: preparing the NPU model may fail. Free up storage first.</string>
+    <string name="enginecheck_verdict_failed">Failed</string>
+    <string name="enginecheck_verdict_ok">OK – fast enough for live transcription</string>
+    <string name="enginecheck_verdict_marginal">Marginal – may lag in long recordings</string>
+    <string name="enginecheck_verdict_too_slow">Too slow for live transcription</string>
     <string name="enginecheck_share_report">Share report</string>
     <string name="session_back">Back</string>
     <string name="session_share">Share transcript</string>
@@ -143,7 +176,6 @@
     <string name="session_status_diarizing">Identifying speakers…</string>
     <string name="session_status_diarization_failed">Speaker detection failed</string>
     <string name="session_transcript_empty">No speech was recognised.</string>
-    <string name="session_coming_soon">Coming soon</string>
     <string name="session_not_found">Session not found.</string>
     <string name="session_overflow">More</string>
     <string name="session_overflow_rename">Rename session</string>
@@ -156,7 +188,10 @@
     <string name="session_retranscribe_confirm">Re-transcribe</string>
     <string name="session_retranscribe_progress">Re-transcribing… %1$d%%</string>
     <string name="session_retranscribe_cancel">Cancel</string>
-    <string name="session_retranscribe_failed">Re-transcription failed; the previous transcript was kept.</string>
+    <string name="session_retranscribe_failed">Re-transcription failed; the previous transcript was kept. %1$s</string>
+    <string name="session_voice_remembered">Remembered “%1$s” for future recordings</string>
+    <string name="session_audio_saved">Audio saved</string>
+    <string name="session_audio_export_failed">Could not export the audio: %1$s</string>
     <string name="session_overflow_info">Session info</string>
     <string name="session_info_title">Session info</string>
     <string name="session_info_language">Language</string>
@@ -199,14 +234,24 @@
     <string name="session_ask_send">Send</string>
     <string name="session_ask_send_cd">Send question</string>
     <string name="session_ask_retry">Retry</string>
-    <string name="session_ask_empty">No questions yet. Ask anything about this conversation.</string>
+    <string name="session_ask_empty_title">Ask about this conversation</string>
+    <string name="session_ask_empty">Questions and answers about the transcript appear here.</string>
     <string name="session_ask_streaming">Generating answer…</string>
     <string name="session_overflow_clear_questions">Clear questions</string>
     <string name="session_ask_clear_title">Clear all questions?</string>
     <string name="session_ask_clear_message">This removes every question and answer for this session.</string>
     <string name="session_ask_clear_confirm">Clear</string>
     <string name="session_ask_clear_cancel">Cancel</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_display_mode_label">Display</string>
+    <string name="settings_display_mode_auto">Auto</string>
+    <string name="settings_display_mode_standard">Standard</string>
+    <string name="settings_display_mode_eink">E-ink</string>
+    <string name="settings_display_mode_help">Auto uses E-ink on Boox devices. E-ink is high-contrast and flat, with no animations and larger touch targets.</string>
+    <string name="settings_dynamic_color_label">Use device colours</string>
+    <string name="settings_dynamic_color_help">Take the app\'s colours from your wallpaper instead of the ConvoScribe ones.</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_about_source">Source</string>
     <string name="settings_about_nemotron_name">Nemotron Speech Streaming EN 0.6B</string>
     <string name="settings_about_nemotron_licence">NVIDIA Open Model License</string>
     <string name="settings_about_kroko_name">Kroko streaming EN/FR</string>
@@ -233,11 +278,13 @@
         <item quantity="other">%d voice samples</item>
     </plurals>
     <string name="speakers_name_label">Speaker name</string>
+    <string name="speakers_name_blank">Speaker name must not be blank</string>
     <string name="speakers_record">Record sample</string>
     <string name="speakers_cancel">Cancel</string>
     <string name="speakers_mic_required">Microphone permission is required to record a voice sample.</string>
     <string name="speakers_remaining">%1$d s remaining</string>
     <string name="speakers_processing">Processing…</string>
+    <string name="speakers_section_add">Add a known speaker</string>
     <string name="speakers_section_enrolled">Enrolled</string>
     <string name="speakers_empty">No enrolled speakers yet.</string>
     <string name="speakers_open_setup">Open setup</string>

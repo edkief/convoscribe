@@ -39,6 +39,9 @@ enum class RecordingPhase { IDLE, LOADING, RECORDING, STOPPING }
  * @property elapsedMs milliseconds of audio actually captured
  *   (derived from the WAV writer's `samplesWritten`, not wall-clock
  *   time, so a paused microphone doesn't inflate the counter).
+ * @property inputLevel loudness of the latest audio chunk in `0f..1f`
+ *   (see [com.convoscribe.audio.inputLevel]) for the Record screen's
+ *   level meter; 0 outside RECORDING.
  * @property partialText best-so-far hypothesis the ASR is holding
  *   for the current utterance. Replaced on every
  *   [com.convoscribe.asr.TranscriptEvent.Partial].
@@ -58,6 +61,7 @@ data class RecordingState(
     val preparingNpu: Boolean = false,
     val sessionId: Long? = null,
     val elapsedMs: Long = 0L,
+    val inputLevel: Float = 0f,
     val partialText: String = "",
     val finalLines: List<String> = emptyList(),
     val lastCompletedSessionId: Long? = null,

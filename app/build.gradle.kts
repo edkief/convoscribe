@@ -97,12 +97,19 @@ android {
         // budget for our test-suite size.
         unitTests.all { test ->
             test.maxParallelForks = 1
+            // `-Proborazzi.test.record=true` makes the screenshot tests
+            // write PNGs to build/outputs/roborazzi; without it they only
+            // compose each screen (no image capture, no golden files).
+            val record = project.findProperty("roborazzi.test.record")?.toString() ?: "false"
+            test.systemProperty("roborazzi.test.record", record)
         }
     }
 
     lint {
         abortOnError = true
         checkDependencies = false
+        // User-visible text belongs in strings.xml (issue #4).
+        error += "HardcodedText"
     }
 
     packaging {
@@ -147,4 +154,11 @@ dependencies {
     testImplementation(libs.turbine)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.room.testing)
+    // Screenshot tests (ui/screenshots): render screen bodies on the JVM.
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.compose.ui.test.junit4)
+    debugImplementation(libs.compose.ui.test.manifest)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.roborazzi.junit.rule)
 }

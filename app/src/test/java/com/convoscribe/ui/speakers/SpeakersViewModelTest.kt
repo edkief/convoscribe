@@ -1,5 +1,6 @@
 package com.convoscribe.ui.speakers
 
+import com.convoscribe.R
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.EnrolledSpeakerStore
@@ -7,6 +8,7 @@ import com.convoscribe.diarization.EnrollSpeakerUseCase
 import com.convoscribe.diarization.SpeakerEmbedder
 import com.convoscribe.diarization.SpeakerEmbedderFactory
 import com.convoscribe.diarization.SpeakerMatcher
+import com.convoscribe.ui.UiText
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.Dispatchers
@@ -293,7 +295,7 @@ class SpeakersViewModelTest {
 
         val state = fx.viewModel.state.value
         assertEquals(EnrollmentPhase.IDLE, state.phase)
-        assertEquals("Speaker name must not be blank", state.error)
+        assertEquals(UiText.res(R.string.speakers_name_blank), state.error)
         assertTrue(
             "no row should have been saved",
             fx.store.namesSnapshot().isEmpty()
@@ -318,7 +320,7 @@ class SpeakersViewModelTest {
 
         val state = fx.viewModel.state.value
         assertEquals(EnrollmentPhase.IDLE, state.phase)
-        assertEquals("Speaker name must not be blank", state.error)
+        assertEquals(UiText.res(R.string.speakers_name_blank), state.error)
         assertTrue(fx.store.namesSnapshot().isEmpty())
     }
 

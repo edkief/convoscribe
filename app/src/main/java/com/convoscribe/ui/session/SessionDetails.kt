@@ -21,10 +21,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.unit.dp
 import com.convoscribe.R
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.ui.components.InfoRow
 import com.convoscribe.ui.record.participantsSummary
+import com.convoscribe.ui.theme.AppTheme
 
 /**
  * What a session was set up and transcribed with (issue #6), for the
@@ -52,19 +53,19 @@ internal fun SessionInfoDialog(details: SessionDetails, onDismiss: () -> Unit) {
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.session_info_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                InfoRow(R.string.session_info_language, languageName(details.language))
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
+                InfoRow(stringResource(R.string.session_info_language), languageName(details.language))
                 InfoRow(
-                    R.string.session_info_speakers,
+                    stringResource(R.string.session_info_speakers),
                     if (details.numSpeakers <= 0) {
                         stringResource(R.string.session_reidentify_auto)
                     } else {
                         details.numSpeakers.toString()
                     }
                 )
-                InfoRow(R.string.session_info_participants, participantsSummary(details.participants))
-                InfoRow(R.string.session_info_engine, details.asrEngine ?: unknown)
-                InfoRow(R.string.session_info_model, details.asrModel ?: unknown)
+                InfoRow(stringResource(R.string.session_info_participants), participantsSummary(details.participants))
+                InfoRow(stringResource(R.string.session_info_engine), details.asrEngine ?: unknown)
+                InfoRow(stringResource(R.string.session_info_model), details.asrModel ?: unknown)
             }
         },
         confirmButton = {
@@ -73,12 +74,6 @@ internal fun SessionInfoDialog(details: SessionDetails, onDismiss: () -> Unit) {
             }
         }
     )
-}
-
-@Composable
-private fun InfoRow(labelRes: Int, value: String) {
-    Text(text = stringResource(labelRes), style = MaterialTheme.typography.labelMedium)
-    Text(text = value, style = MaterialTheme.typography.bodyMedium)
 }
 
 @Composable
@@ -129,8 +124,8 @@ internal fun RetranscribeBanner(progress: Float, onCancel: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+            .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.s),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -158,7 +153,7 @@ internal fun RetranscribeDialog(currentLanguage: String, onConfirm: (String) -> 
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.session_retranscribe_title)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
                 Text(text = stringResource(R.string.session_retranscribe_message))
                 listOf("en", "fr").forEach { code ->
                     Row(
@@ -168,7 +163,7 @@ internal fun RetranscribeDialog(currentLanguage: String, onConfirm: (String) -> 
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RadioButton(selected = code == selected, onClick = null)
-                        Text(text = languageName(code), modifier = Modifier.padding(start = 8.dp))
+                        Text(text = languageName(code), modifier = Modifier.padding(start = AppTheme.spacing.s))
                     }
                 }
                 Text(
