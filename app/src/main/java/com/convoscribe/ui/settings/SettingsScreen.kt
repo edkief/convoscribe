@@ -18,7 +18,6 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,9 +27,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SuggestionChip
 import androidx.compose.material3.Switch
@@ -62,10 +58,12 @@ import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.settings.DisplayMode
+import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.InlineProgress
 import com.convoscribe.ui.components.NoticeText
+import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
@@ -288,17 +286,11 @@ private fun AppearanceSection(
         title = stringResource(R.string.settings_section_appearance)
     ) {
         FieldLabel(text = stringResource(R.string.settings_display_mode_label))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            DISPLAY_MODES.forEachIndexed { index, (mode, label) ->
-                SegmentedButton(
-                    selected = displayMode == mode.key,
-                    onClick = { onDisplayModeChange(mode.key) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = DISPLAY_MODES.size)
-                ) {
-                    Text(text = stringResource(label))
-                }
-            }
-        }
+        ChoiceGroup(
+            options = DISPLAY_MODES.map { (mode, label) -> mode.key to stringResource(label) },
+            selected = displayMode,
+            onSelect = onDisplayModeChange
+        )
         SupportingText(text = stringResource(R.string.settings_display_mode_help))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !AppTheme.isEink) {
             Row(
@@ -480,23 +472,14 @@ private fun TranscriptionSection(
         title = stringResource(R.string.settings_section_transcription)
     ) {
         FieldLabel(text = stringResource(R.string.settings_transcription_engine))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            val npuSelected = engine == "npu"
-            SegmentedButton(
-                selected = npuSelected,
-                onClick = { onEngineChange("npu") },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-            ) {
-                Text(text = stringResource(R.string.settings_transcription_engine_npu))
-            }
-            SegmentedButton(
-                selected = !npuSelected,
-                onClick = { onEngineChange("cpu") },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-            ) {
-                Text(text = stringResource(R.string.settings_transcription_engine_cpu))
-            }
-        }
+        ChoiceGroup(
+            options = listOf(
+                "npu" to stringResource(R.string.settings_transcription_engine_npu),
+                "cpu" to stringResource(R.string.settings_transcription_engine_cpu)
+            ),
+            selected = if (engine == "npu") "npu" else "cpu",
+            onSelect = onEngineChange
+        )
         SupportingText(text = stringResource(R.string.settings_transcription_engine_help))
         if (language == "fr") {
             // French is only supported on the CPU engine today;
@@ -506,23 +489,14 @@ private fun TranscriptionSection(
         }
         FieldLabel(text = stringResource(R.string.settings_transcription_language_label))
         SupportingText(text = stringResource(R.string.settings_defaults_help))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            val englishSelected = language == "en"
-            SegmentedButton(
-                selected = englishSelected,
-                onClick = { onLanguageChange("en") },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-            ) {
-                Text(text = stringResource(R.string.settings_transcription_language_en))
-            }
-            SegmentedButton(
-                selected = !englishSelected,
-                onClick = { onLanguageChange("fr") },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-            ) {
-                Text(text = stringResource(R.string.settings_transcription_language_fr))
-            }
-        }
+        ChoiceGroup(
+            options = listOf(
+                "en" to stringResource(R.string.settings_transcription_language_en),
+                "fr" to stringResource(R.string.settings_transcription_language_fr)
+            ),
+            selected = if (language == "en") "en" else "fr",
+            onSelect = onLanguageChange
+        )
         if (selectedLanguageModelInstalled) {
             SupportingText(text = stringResource(R.string.settings_transcription_language_model_installed))
         } else {
@@ -604,43 +578,31 @@ private fun SpeakersSection(
         } else {
             stringResource(R.string.settings_speakers_count, numSpeakers)
         }
-        OutlinedButton(
-            onClick = { speakersExpanded = true },
-            modifier = Modifier.fillMaxWidth()
+        PickerField(
+            label = stringResource(R.string.settings_speakers_number_label),
+            value = speakersLabel,
+            onClick = { speakersExpanded = true }
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            DropdownMenu(
+                expanded = speakersExpanded,
+                onDismissRequest = { speakersExpanded = false }
             ) {
-                Text(
-                    text = stringResource(R.string.settings_speakers_number_label)
-                )
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = speakersLabel)
-                    Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
-                }
-            }
-        }
-        DropdownMenu(
-            expanded = speakersExpanded,
-            onDismissRequest = { speakersExpanded = false }
-        ) {
-            DropdownMenuItem(
-                text = { Text(text = stringResource(R.string.settings_speakers_automatic)) },
-                onClick = {
-                    onNumSpeakersChange(-1)
-                    speakersExpanded = false
-                }
-            )
-            (2..6).forEach { count ->
                 DropdownMenuItem(
-                    text = { Text(text = count.toString()) },
+                    text = { Text(text = stringResource(R.string.settings_speakers_automatic)) },
                     onClick = {
-                        onNumSpeakersChange(count)
+                        onNumSpeakersChange(-1)
                         speakersExpanded = false
                     }
                 )
+                (2..6).forEach { count ->
+                    DropdownMenuItem(
+                        text = { Text(text = count.toString()) },
+                        onClick = {
+                            onNumSpeakersChange(count)
+                            speakersExpanded = false
+                        }
+                    )
+                }
             }
         }
         FieldLabel(text = stringResource(R.string.settings_speakers_threshold_label))

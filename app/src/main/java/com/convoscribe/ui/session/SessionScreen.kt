@@ -23,6 +23,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
@@ -499,23 +500,7 @@ internal fun SessionBody(
             retranscribe.progress?.let { progress ->
                 RetranscribeBanner(progress = progress, onCancel = retranscribe.onCancel)
             }
-            PrimaryTabRow(selectedTabIndex = selectedTab) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text(text = stringResource(R.string.session_tab_transcript)) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text(text = stringResource(R.string.session_tab_summary)) }
-                )
-                Tab(
-                    selected = selectedTab == 2,
-                    onClick = { selectedTab = 2 },
-                    text = { Text(text = stringResource(R.string.session_tab_ask)) }
-                )
-            }
+            SessionTabs(selectedTab = selectedTab, onSelect = { selectedTab = it })
             // Finished sessions with a readable recording get the player;
             // it is not offered while the session is still being recorded.
             val canPlay = !notFound && status != SessionStatus.RECORDING && playerState.ready
@@ -714,5 +699,30 @@ private fun SessionHeader(
             modifier = Modifier.weight(1f)
         )
         if (status != null) StatusBadge(status = status)
+    }
+}
+
+/**
+ * Transcript / Summary / Ask. Fixed equal-width tabs normally; at large
+ * font scales scrollable tabs sized to their labels, so a label is
+ * never broken across lines.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SessionTabs(selectedTab: Int, onSelect: (Int) -> Unit) {
+    val tabs = listOf(R.string.session_tab_transcript, R.string.session_tab_summary, R.string.session_tab_ask)
+    val content: @Composable () -> Unit = {
+        tabs.forEachIndexed { index, label ->
+            Tab(
+                selected = selectedTab == index,
+                onClick = { onSelect(index) },
+                text = { Text(text = stringResource(label), maxLines = 1) }
+            )
+        }
+    }
+    if (AppTheme.largeText) {
+        PrimaryScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = AppTheme.spacing.s, tabs = content)
+    } else {
+        PrimaryTabRow(selectedTabIndex = selectedTab, tabs = content)
     }
 }

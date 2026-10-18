@@ -18,6 +18,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.node.DelegatableNode
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 
 internal val LocalSpacing = staticCompositionLocalOf { Spacing() }
 internal val LocalSizes = staticCompositionLocalOf { StandardSizes }
@@ -110,11 +111,22 @@ object AppTheme {
         @Composable @ReadOnlyComposable
         get() = LocalEink.current
 
+    /**
+     * `true` at large font scales (130 % and up), where controls that
+     * split the width into equal parts (segmented buttons, fixed tabs)
+     * switch to layouts that let their labels grow.
+     */
+    val largeText: Boolean
+        @Composable @ReadOnlyComposable
+        get() = LocalDensity.current.fontScale >= LARGE_FONT_SCALE
+
     /** `true` when screens should jump instead of animating (e-ink). */
     val reduceMotion: Boolean
         @Composable @ReadOnlyComposable
         get() = LocalEink.current
 }
+
+private const val LARGE_FONT_SCALE = 1.3f
 
 /** Indication that draws nothing, for e-ink. */
 private object NoIndication : IndicationNodeFactory {

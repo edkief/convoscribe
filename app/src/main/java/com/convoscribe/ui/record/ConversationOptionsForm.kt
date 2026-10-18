@@ -2,27 +2,18 @@ package com.convoscribe.ui.record
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,11 +26,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import com.convoscribe.R
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.recording.ConversationOptions
+import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.FieldLabel
+import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -69,20 +61,14 @@ fun ConversationOptionsForm(
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
         FieldLabel(text = stringResource(R.string.conversation_language_label))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            LANGUAGES.forEachIndexed { index, (code, label) ->
-                SegmentedButton(
-                    selected = options.language == code,
-                    onClick = {
-                        savedAsDefault = false
-                        onLanguageChange(code)
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = LANGUAGES.size)
-                ) {
-                    Text(text = stringResource(label))
-                }
+        ChoiceGroup(
+            options = LANGUAGES.map { (code, label) -> code to stringResource(label) },
+            selected = options.language,
+            onSelect = { code ->
+                savedAsDefault = false
+                onLanguageChange(code)
             }
-        }
+        )
 
         SpeakerCountPicker(
             numSpeakers = options.numSpeakers,
@@ -92,21 +78,11 @@ fun ConversationOptionsForm(
             }
         )
 
-        OutlinedButton(onClick = { participantsOpen = true }, modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = stringResource(R.string.conversation_participants_label))
-                Text(
-                    text = participantsSummary(options.participants),
-                    modifier = Modifier.padding(start = AppTheme.spacing.s),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-        }
+        PickerField(
+            label = stringResource(R.string.conversation_participants_label),
+            value = participantsSummary(options.participants),
+            onClick = { participantsOpen = true }
+        )
 
         OutlinedTextField(
             value = options.title,
@@ -160,26 +136,17 @@ internal fun participantsSummary(participants: List<String>?): String =
 @Composable
 private fun SpeakerCountPicker(numSpeakers: Int, onChange: (Int) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
-    Box {
-        OutlinedButton(onClick = { expanded = true }, modifier = Modifier.fillMaxWidth()) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(text = stringResource(R.string.conversation_speakers_label))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = if (numSpeakers <= 0) {
-                            stringResource(R.string.conversation_speakers_automatic)
-                        } else {
-                            numSpeakers.toString()
-                        }
-                    )
-                    Icon(imageVector = Icons.Filled.ArrowDropDown, contentDescription = null)
-                }
-            }
-        }
+    PickerField(
+        label = stringResource(R.string.conversation_speakers_label),
+        value = if (numSpeakers <= 0) {
+            stringResource(
+                R.string.conversation_speakers_automatic
+            )
+        } else {
+            numSpeakers.toString()
+        },
+        onClick = { expanded = true }
+    ) {
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text(text = stringResource(R.string.conversation_speakers_automatic)) },
