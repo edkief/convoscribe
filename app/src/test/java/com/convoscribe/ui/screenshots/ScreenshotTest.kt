@@ -1,10 +1,22 @@
 package com.convoscribe.ui.screenshots
 
 import android.app.Application
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.colorResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.unit.dp
+import com.convoscribe.R
 import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.EnrolledSpeakerEntity
@@ -290,6 +302,23 @@ class ScreenshotTest(private val variant: Variant) {
             onCopyReport = {},
             onShareReport = {}
         )
+    }
+
+    /** The adaptive icon's foreground on its background, in the launcher's circle mask. */
+    @Test
+    fun launcherIcon() = capture("launcher_icon") {
+        Box(
+            modifier = Modifier
+                .size(192.dp)
+                .clip(CircleShape)
+                .background(colorResource(R.color.ic_launcher_background))
+        ) {
+            Image(
+                painter = painterResource(R.drawable.ic_launcher_foreground),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 
     @Composable

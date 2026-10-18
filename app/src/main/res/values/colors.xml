@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FF3F51B5</color>
+    <!-- Brand teal (ui/theme LightColors.primary). -->
+    <color name="ic_launcher_background">#FF006A6A</color>
+    <!-- Window background until Compose draws: the theme's surface. -->
+    <color name="window_background">#FFF8FAF9</color>
 </resources>

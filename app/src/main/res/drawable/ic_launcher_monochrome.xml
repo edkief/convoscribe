@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- A speech bubble with a waveform cut out of it, inside the 66 dp safe zone. -->
+    <path
+        android:fillColor="#FF000000"
+        android:fillType="evenOdd"
+        android:pathData="M40,32H68A10,10 0 0 1 78,42V60A10,10 0 0 1 68,70H50L38,79V70A8,8 0 0 1 30,62V42A10,10 0 0 1 40,32ZM40,49A2,2 0 0 1 44,49V53A2,2 0 0 1 40,53ZM46,45A2,2 0 0 1 50,45V57A2,2 0 0 1 46,57ZM52,41A2,2 0 0 1 56,41V61A2,2 0 0 1 52,61ZM58,46A2,2 0 0 1 62,46V56A2,2 0 0 1 58,56ZM64,49A2,2 0 0 1 68,49V53A2,2 0 0 1 64,53Z" />
+</vector>
