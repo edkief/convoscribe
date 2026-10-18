@@ -365,6 +365,7 @@ private fun LiveTranscript(
                 )
             )
             RecordingPhase.STOPPING -> ProgressBlock(message = stringResource(R.string.record_phase_stopping))
+            RecordingPhase.PAUSED -> Unit
             RecordingPhase.IDLE -> Unit
         }
 

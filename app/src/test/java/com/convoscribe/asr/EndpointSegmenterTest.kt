@@ -27,11 +27,15 @@ class EndpointSegmenterTest {
         private var currentTextBacking: String = ""
         private var endpointBacking: Boolean = false
 
+        /** Sizes of every [acceptWaveform] call, in order. */
+        val accepted: MutableList<Int> = mutableListOf()
+
         /** Number of times the segmenter called [reset]. */
         var resetCount: Int = 0
             private set
 
         override fun acceptWaveform(samples: FloatArray) {
+            accepted += samples.size
             val next = responses.removeFirstOrNull()
             if (next != null) {
                 currentTextBacking = next.first
@@ -324,5 +328,55 @@ class EndpointSegmenterTest {
         // The second line started at 300 ms; its token times restart at 0.
         assertEquals(listOf(TimedToken(" there", 350), TimedToken("s", 390)), finals[1].tokens)
         assertEquals(300L, finals[1].startMs)
+    }
+
+    /**
+     * Pausing (issue #7): the pending text becomes a final ending at
+     * the audio recorded so far; the tail padding that decodes it
+     * reaches the backend but not the clock, and the next utterance
+     * starts at the pause point.
+     */
+    @Test
+    fun endUtterance_closesThePendingTextWithoutAdvancingTheClock() {
+        val be = backend(
+            "HELLO" to false,
+            "HELLO" to false,
+            // The padding decodes the last word.
+            "HELLO THERE" to false,
+            "AGAIN" to false,
+            "AGAIN" to true
+        )
+        EndpointSegmenter(be).use { seg ->
+            seg.accept(chunk())
+            seg.accept(chunk())
+
+            val events = seg.endUtterance()
+
+            assertEquals(
+                listOf(
+                    TranscriptEvent.Final(text = "Hello there", startMs = 0L, endMs = 200L),
+                    TranscriptEvent.Partial("")
+                ),
+                events
+            )
+            assertEquals(2L * AudioSpec.CHUNK_SAMPLES, seg.totalSamples)
+            assertEquals(AudioSpec.SAMPLE_RATE / 2, be.accepted.last())
+            assertEquals(1, be.resetCount)
+
+            seg.accept(chunk())
+            val next = seg.accept(chunk()).filterIsInstance<TranscriptEvent.Final>().single()
+            assertEquals(200L, next.startMs)
+            assertEquals(400L, next.endMs)
+        }
+    }
+
+    /** Nothing since the last reset: no padding, no final, only the empty partial. */
+    @Test
+    fun endUtterance_withNothingPending_emitsOnlyTheEmptyPartial() {
+        val be = backend()
+        EndpointSegmenter(be).use { seg ->
+            assertEquals(listOf(TranscriptEvent.Partial("")), seg.endUtterance())
+            assertTrue(be.accepted.isEmpty())
+        }
     }
 }

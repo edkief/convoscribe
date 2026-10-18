@@ -31,6 +31,17 @@ interface StreamingTranscriber : Closeable {
      * can clear its "listening" placeholder.
      */
     fun finish(): List<TranscriptEvent>
+
+    /**
+     * Close the current utterance without ending the stream: used
+     * when a recording is paused (issue #7), so the words before the
+     * pause become their own segment and the next [accept] starts a
+     * new one at the pause point. Unlike [finish], more audio may
+     * follow. Returns a [TranscriptEvent.Final] if any text was
+     * pending, then a `Partial("")`. The default does nothing, for
+     * transcribers that have no pending state.
+     */
+    fun endUtterance(): List<TranscriptEvent> = emptyList()
 }
 
 /**
@@ -127,6 +138,31 @@ class EndpointSegmenter(
         return events
     }
 
+    /**
+     * Push [TAIL_PADDING_MS] of silence to the backend only, so the
+     * last word before a pause is decoded, then emit the pending
+     * text and reset. The padding is not counted in [totalSamples]:
+     * it never reaches the WAV, so the transcriber's clock stays on
+     * the recorded audio. Nothing is padded when no audio arrived
+     * since the last reset.
+     */
+    override fun endUtterance(): List<TranscriptEvent> {
+        if (totalSamples > segmentStartSample) {
+            backend.acceptWaveform(FloatArray((sampleRate * TAIL_PADDING_MS / 1_000L).toInt()))
+            backend.decodeAvailable()
+        }
+        val text = TextNormalizer.normalize(backend.currentText())
+        val events = mutableListOf<TranscriptEvent>()
+        if (text.isNotBlank()) {
+            events += finalEvent(text)
+        }
+        backend.reset()
+        segmentStartSample = totalSamples
+        events += TranscriptEvent.Partial("")
+        lastPartialText = ""
+        return events
+    }
+
     override fun close() {
         backend.close()
     }
@@ -143,5 +179,10 @@ class EndpointSegmenter(
             endMs = samplesToMs(totalSamples, sampleRate),
             tokens = backend.currentTokens().map { it.copy(ms = it.ms + startMs) }
         )
+    }
+
+    private companion object {
+        /** Silence fed after the last chunk on [endUtterance]. */
+        const val TAIL_PADDING_MS = 500L
     }
 }
