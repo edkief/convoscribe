@@ -18,6 +18,9 @@ check(sherpaJar.exists() && sherpaJni.exists()) {
 android {
     namespace = "com.convoscribe"
     compileSdk = 35
+    // Matches setup-toolchain.sh (and so the release builder image); without
+    // it AGP falls back to its default 34.0.0 and downloads it on every CI run.
+    buildToolsVersion = "35.0.0"
 
     defaultConfig {
         applicationId = "com.convoscribe"
