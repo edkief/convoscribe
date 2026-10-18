@@ -9,7 +9,9 @@
     <string name="status_recording">Recording</string>
     <string name="status_diarizing">Identifying speakers</string>
     <string name="status_failed">Speaker detection failed</string>
-    <string name="setup_title">Download speech models</string>
+    <string name="setup_title">Set up</string>
+    <string name="setup_heading">Download speech models</string>
+    <string name="setup_downloading">Downloading…</string>
     <string name="setup_body">About %1$d MB will be downloaded once and stored on this device.</string>
     <string name="setup_progress">%1$d MB / %2$d MB</string>
     <string name="setup_download">Download</string>
@@ -125,6 +127,7 @@
     <string name="enginecheck_device_cdsp">CDSP library present</string>
     <string name="enginecheck_device_htp">HTP skel libraries</string>
     <string name="enginecheck_device_free_storage">Free storage</string>
+    <string name="enginecheck_checks_title">Speed check</string>
     <string name="enginecheck_check_npu">Check NPU</string>
     <string name="enginecheck_check_cpu">Check CPU</string>
     <string name="enginecheck_running">Running…</string>
@@ -248,6 +251,7 @@
     <string name="settings_dynamic_color_label">Use device colours</string>
     <string name="settings_dynamic_color_help">Take the app\'s colours from your wallpaper instead of the ConvoScribe ones.</string>
     <string name="settings_section_about">About</string>
+    <string name="settings_about_source">Source</string>
     <string name="settings_about_nemotron_name">Nemotron Speech Streaming EN 0.6B</string>
     <string name="settings_about_nemotron_licence">NVIDIA Open Model License</string>
     <string name="settings_about_kroko_name">Kroko streaming EN/FR</string>
@@ -280,6 +284,7 @@
     <string name="speakers_mic_required">Microphone permission is required to record a voice sample.</string>
     <string name="speakers_remaining">%1$d s remaining</string>
     <string name="speakers_processing">Processing…</string>
+    <string name="speakers_section_add">Add a known speaker</string>
     <string name="speakers_section_enrolled">Enrolled</string>
     <string name="speakers_empty">No enrolled speakers yet.</string>
     <string name="speakers_open_setup">Open setup</string>
