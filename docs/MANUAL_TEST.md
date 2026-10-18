@@ -407,6 +407,65 @@ disabled while a re-transcription runs.
 compared with the previous build (recording, diarization, playback,
 summaries and questions work as in checks 4–20).
 
+---
+
+## 22. Import audio (issue #3)
+
+Prepare, on the device (e.g. in `Download/`), a few minutes of
+two-person speech in each of: **MP3**, **M4A** (AAC), **OGG/Opus**
+(a messenger voice note), **FLAC**, and **stereo WAV at 44.1 kHz**
+and **at 48 kHz**. Also a corrupt file (rename a `.txt` to `.mp3`)
+and a video-free file with no audio track if you have one.
+
+```bash
+# e.g. from one source file, with ffmpeg on the host:
+ffmpeg -i talk.wav -ac 2 -ar 44100 talk-44k.wav
+ffmpeg -i talk.wav -ac 2 -ar 48000 talk-48k.wav
+ffmpeg -i talk.wav talk.mp3 && ffmpeg -i talk.wav -c:a aac talk.m4a
+ffmpeg -i talk.wav -c:a libopus talk.ogg && ffmpeg -i talk.wav talk.flac
+adb push talk-44k.wav talk-48k.wav talk.mp3 talk.m4a talk.ogg talk.flac /sdcard/Download/
+```
+
+**Steps**
+
+1. Home → ⋮ → **Import audio…**, pick `talk.mp3`. Watch the banner
+   (*Reading the file…*, *Decoding the audio…*, *Transcribing… N %*)
+   and the notification.
+2. Repeat step 1 for the M4A, OGG/Opus, FLAC and both WAV files.
+3. From a file manager, long-press a file → **Open with** →
+   ConvoScribe. From a messenger (or the Files app), **Share** a voice
+   note → ConvoScribe.
+4. Start a long import, turn the screen off for a minute, then come
+   back.
+5. Start another import and tap **Cancel** (banner or notification)
+   while it is transcribing.
+6. Import the corrupt file, and the file without audio.
+7. Start a recording, then share a file to ConvoScribe. Then start an
+   import and open **New recording**.
+8. Switch the language to Français in Settings with the French model
+   not downloaded, then import a file.
+
+**Expected**
+
+- Steps 1–3: each import opens a new session titled after the file
+  name (renamable), with playback, a transcript with sensible text
+  and line timings (tap a line: playback starts at that point), and
+  speakers identified afterwards. Rename, *Re-identify speakers…*,
+  Summary and Ask work as for a recording; *Session info* shows the
+  Settings language and the engine.
+- Step 4: the import keeps going with the screen off and the app in
+  the background; progress resumes on screen.
+- Step 5: the import stops; no new session appears and
+  `files/recordings/` has no new WAV (`cache/imports/` is empty).
+- Step 6: a snackbar says the file can't be read / has no audio; no
+  session is created.
+- Step 7: the share is refused with *Something is already recording
+  or importing…*; during the import the Record screen's Start is
+  disabled with *An audio file is being imported…*.
+- Step 8: the app opens setup for the French model; after the
+  download it returns to Home and the import starts. Backing out of
+  setup instead shows *Importing needs the transcription models…*.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

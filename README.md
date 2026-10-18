@@ -51,6 +51,13 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   stored audio is transcribed again in the background, with progress
   and Cancel, and speakers are re-identified. Cancelling or a failure
   keeps the previous transcript.
+- **Import an audio file** as a session: *Import audio…* on Home, or
+  share a voice note to ConvoScribe / *Open with* it from a file
+  manager. Any format Android can decode (MP3, M4A/AAC, OGG/Opus,
+  FLAC, AMR, WAV…) is converted to 16 kHz mono, stored as the
+  session's recording and transcribed in the Settings language, then
+  speakers are identified. It runs in the background with progress and
+  Cancel; a cancelled or unreadable import leaves nothing behind.
 - **Continue a recording** from its session screen (mic button). The
   audio and transcript are appended to the same session, in its own
   language.
