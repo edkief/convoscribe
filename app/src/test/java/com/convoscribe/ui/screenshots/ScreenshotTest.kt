@@ -21,7 +21,6 @@ import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
 import com.convoscribe.ui.home.SessionRow
-import com.convoscribe.ui.home.sessionSubtitle
 import com.convoscribe.ui.record.RecordBody
 import com.convoscribe.ui.session.AskUiState
 import com.convoscribe.ui.session.ExportState
@@ -38,7 +37,6 @@ import com.convoscribe.ui.speakers.EnrollmentPhase
 import com.convoscribe.ui.speakers.SpeakersBody
 import com.convoscribe.ui.theme.ConvoScribeTheme
 import com.github.takahirom.roborazzi.captureRoboImage
-import java.time.ZoneOffset
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -357,20 +355,24 @@ class ScreenshotTest(private val variant: Variant) {
             createdAt: Long,
             durationMs: Long,
             status: SessionStatus,
-            language: String = "en"
+            language: String = "en",
+            speakers: Int = 0
         ) = SessionRow(
             id = id,
             title = title,
-            subtitle = sessionSubtitle(createdAt, durationMs, status, language, ZoneOffset.UTC),
-            status = status
+            createdAt = createdAt,
+            durationMs = durationMs,
+            status = status,
+            language = language,
+            speakerCount = speakers
         )
 
         private val SESSIONS = listOf(
             row(5, "Recording #5", T0 + 3 * DAY, 0L, SessionStatus.RECORDING),
             row(4, "Weekly sync", T0 + 2 * DAY, 754_000L, SessionStatus.DIARIZING),
-            row(3, "Réunion budget", T0 + DAY, 1_932_000L, SessionStatus.DIARIZED, language = "fr"),
+            row(3, "Réunion budget", T0 + DAY, 1_932_000L, SessionStatus.DIARIZED, language = "fr", speakers = 4),
             row(2, "Interview with Carol", T0, 3_725_000L, SessionStatus.DIARIZATION_FAILED),
-            row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.TRANSCRIBED)
+            row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.DIARIZED, speakers = 2)
         )
 
         private val LIVE_LINES = listOf(

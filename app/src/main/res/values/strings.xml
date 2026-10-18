@@ -50,8 +50,14 @@
     <string name="conversation_set_default">Set as default</string>
     <string name="conversation_set_default_done">Saved for new conversations</string>
     <string name="home_new_recording">New recording</string>
-    <string name="home_empty">No sessions yet</string>
-    <string name="home_empty_with_hint">No sessions yet. Tap New recording to start.</string>
+    <string name="home_empty_title">No recordings yet</string>
+    <string name="home_empty_body">Record a conversation and ConvoScribe transcribes it on this device and tells the speakers apart.</string>
+    <string name="home_more_options">More options</string>
+    <string name="home_session_more">More options for %1$s</string>
+    <plurals name="home_speaker_count">
+        <item quantity="one">%d speaker</item>
+        <item quantity="other">%d speakers</item>
+    </plurals>
     <string name="home_engine_check">Engine check</string>
     <string name="home_settings">Settings</string>
     <string name="home_delete_title">Delete this session?</string>

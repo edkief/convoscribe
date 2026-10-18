@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.SpeakerEntity
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -18,7 +19,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -96,25 +96,38 @@ class HomeViewModelTest {
         assertEquals("newest", rows[0].title)
         assertEquals("middle", rows[1].title)
         assertEquals("older", rows[2].title)
-        // Every row has a non-empty subtitle (the date/duration
-        // formatter always emits something).
-        rows.forEach {
-            assertTrue("subtitle for ${it.id} should be non-empty", it.subtitle.isNotEmpty())
-        }
+        // Nothing is diarized yet, so no row has speakers.
+        rows.forEach { assertEquals(0, it.speakerCount) }
     }
 
     @Test
-    fun sessions_inFlightHaveRecordingSuffix() = runTest(dispatcher) {
-        repo.createSession(title = "live", language = "en")
+    fun sessions_inFlightCarryTheRecordingStatusAndLanguage() = runTest(dispatcher) {
+        repo.createSession(title = "live", language = "fr")
         val vm = HomeViewModel(repo)
 
         val rows = vm.sessions.first { it.size == 1 }
         assertEquals(1, rows.size)
         assertEquals(SessionStatus.RECORDING, rows[0].status)
-        assertTrue(
-            "subtitle should end with the recording suffix, was '${rows[0].subtitle}'",
-            rows[0].subtitle.endsWith("Recording…")
+        assertEquals("fr", rows[0].language)
+        assertEquals(0L, rows[0].durationMs)
+    }
+
+    @Test
+    fun sessions_carryTheirSpeakerCount() = runTest(dispatcher) {
+        val diarized = repo.createSession(title = "diarized", language = "en")
+        val plain = repo.createSession(title = "plain", language = "en")
+        db.speakerDao().upsert(
+            listOf(
+                SpeakerEntity(sessionId = diarized, speakerIndex = 0, label = "Alice"),
+                SpeakerEntity(sessionId = diarized, speakerIndex = 1, label = "Speaker 2"),
+                SpeakerEntity(sessionId = diarized, speakerIndex = 2, label = "Speaker 3")
+            )
         )
+        val vm = HomeViewModel(repo)
+
+        val rows = vm.sessions.first { list -> list.size == 2 && list.any { it.speakerCount > 0 } }
+        assertEquals(3, rows.single { it.id == diarized }.speakerCount)
+        assertEquals(0, rows.single { it.id == plain }.speakerCount)
     }
 
     @Test

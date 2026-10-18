@@ -25,6 +25,10 @@ interface SpeakerDao {
     @Query("SELECT * FROM speakers WHERE sessionId = :sessionId ORDER BY speakerIndex ASC")
     suspend fun getForSession(sessionId: Long): List<SpeakerEntity>
 
+    /** How many speakers each diarized session has; sessions without speakers are absent. */
+    @Query("SELECT sessionId, COUNT(*) AS count FROM speakers GROUP BY sessionId")
+    fun observeCounts(): Flow<List<SpeakerCount>>
+
     @Query("DELETE FROM speakers WHERE sessionId = :sessionId")
     suspend fun deleteForSession(sessionId: Long)
 
@@ -38,3 +42,6 @@ interface SpeakerDao {
     )
     suspend fun rename(sessionId: Long, speakerIndex: Int, label: String)
 }
+
+/** Row of [SpeakerDao.observeCounts]. */
+data class SpeakerCount(val sessionId: Long, val count: Int)

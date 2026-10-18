@@ -5,6 +5,7 @@ import com.convoscribe.asr.TimedToken
 import com.convoscribe.recording.RecordingStore
 import java.io.File
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 /**
  * Façade over [AppDatabase] for the rest of the app. Callers do not
@@ -158,6 +159,10 @@ class SessionRepository(
     suspend fun getSegments(sessionId: Long): List<SegmentEntity> = segmentDao.getForSession(sessionId)
 
     fun observeSpeakers(sessionId: Long): Flow<List<SpeakerEntity>> = speakerDao.observeForSession(sessionId)
+
+    /** Detected speakers per session id, for the session list; undiarized sessions are absent. */
+    fun observeSpeakerCounts(): Flow<Map<Long, Int>> =
+        speakerDao.observeCounts().map { rows -> rows.associate { it.sessionId to it.count } }
 
     suspend fun getSpeakers(sessionId: Long): List<SpeakerEntity> = speakerDao.getForSession(sessionId)
 
