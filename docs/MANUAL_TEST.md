@@ -239,9 +239,11 @@ context (no "I don't have context for this question" error).
 
 **Steps**
 
-1. Open **Settings** → **Transcription** → **Language** → **Français**.
-2. Confirm the model download (the French bundle is ~71 MB).
-3. Start a recording, speak French for ~30 s.
+1. Tap **New recording**, pick **Français** under **Language** (the
+   default comes from **Settings** → **Transcription**).
+2. Tap Start; if the French bundle (~71 MB) is missing, setup opens,
+   downloads it and returns to the Record screen. Tap Start again.
+3. Speak French for ~30 s.
 
 **Expected** — the CPU engine is used (the selector shows
 "French uses the CPU engine" hint); partial text appears within
@@ -307,6 +309,67 @@ saturate the CPU.
 NPU sessions after the first one are fast to start (the QNN
 context binaries are cached next to the encoder/decoder/joiner
 shared libraries).
+
+## 17. Per-conversation options
+
+**Steps**
+
+1. Tap **New recording**: Language, Number of speakers, Expected
+   participants and Title show the Settings defaults.
+2. Pick **Français**, 2 speakers, a title; record ~20 s, stop.
+3. Tap **New recording** again: the defaults are back (English,
+   Automatic, no title). Record ~20 s in English, stop.
+4. Open Settings: language and speaker count are unchanged.
+5. Tap **New recording**, choose Français and 3 speakers, tap
+   **Set as default**, then go back. Open **New recording** again.
+
+**Expected** — no visit to Settings is needed for steps 2–3; each
+session keeps its own language (overflow → **Session info**) and
+title. After step 5 the Record screen and Settings both start from
+Français / 3. *Continue recording* on the French session stays in
+French, and *Re-identify speakers…* preselects 2.
+
+## 18. Expected participants
+
+**Steps**
+
+1. Enroll two people (Settings → Speakers), e.g. Alice and Bob.
+2. Start a recording with only **Alice** expected; have Bob speak.
+3. After diarization, overflow → **Participants…**, tick Bob too,
+   Save, accept **Re-identify speakers now?**.
+
+**Expected** — in step 2 Bob's voice is never labelled "Bob" (it is
+"Alice" only if it matches her, else "Speaker N"). After step 3 Bob
+is matched. **Session info** lists the participants.
+
+## 19. Session info on older sessions
+
+**Steps**
+
+1. Install this build over a build from before issue #6 that has
+   existing sessions; open an old session → overflow → **Session info**.
+
+**Expected** — language and speaker count are as before; engine and
+model show "unknown". New sessions show e.g. `cpu` /
+`asr-en-kroko-2025-08-06`.
+
+## 20. Re-transcribe in another language
+
+**Steps**
+
+1. Open an English session with a summary, overflow → **Re-transcribe
+   in another language…**, pick Français (download it first if asked),
+   confirm.
+2. Watch the banner and notification progress; leave the app.
+3. Repeat on another session and tap **Cancel** halfway (banner or
+   notification).
+
+**Expected** — the dialog warns that the summary and questions were
+based on the old transcript. Step 1 replaces the transcript with a
+French one, speakers are identified again, and names you typed are
+kept. After the cancel in step 3 the previous transcript, language
+and speakers are unchanged. **Start** on the Record screen is
+disabled while a re-transcription runs.
 
 ---
 
