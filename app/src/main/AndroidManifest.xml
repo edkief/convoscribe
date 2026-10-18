@@ -4,9 +4,17 @@
     <!--
         The model downloader fetches ASR, segmentation and embedding
         weights from Hugging Face / GitHub Releases over HTTPS on first
-        run; no other network calls live in the app today.
+        run (resuming with Range requests, issue #10), and the LLM client
+        calls the user's own endpoint; no other network calls live in the
+        app today.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!--
+        A model download that loses the network waits for it to come
+        back before it resumes (`models.NetworkWaiter`, issue #10).
+    -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <!--
         Required by `audio.MicAudioSource` (TASK-9). The runtime
@@ -115,6 +123,17 @@
             android:name=".service.RecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone|dataSync" />
+        <!--
+            Model downloads (issue #10): a `dataSync` foreground service
+            so a first-run download survives the screen turning off or
+            the user switching apps. Its own notification, separate from
+            the recording service. Not exported: started by the setup
+            screen and the notification's Cancel action only.
+        -->
+        <service
+            android:name=".service.ModelDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <!--
             "ConvoScribe" Quick Settings tile (issue #7): start a
             recording from anywhere, pause / resume an open one. Exported

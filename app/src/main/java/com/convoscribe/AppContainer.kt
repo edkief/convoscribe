@@ -21,8 +21,10 @@ import com.convoscribe.enginecheck.NpuAvailability
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.OpenAiChatClient
+import com.convoscribe.models.ModelDownloadManager
 import com.convoscribe.models.ModelDownloader
 import com.convoscribe.models.ModelStore
+import com.convoscribe.models.NetworkWaiter
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportAudioUseCase
 import com.convoscribe.recording.PendingImport
@@ -62,9 +64,23 @@ class AppContainer(val context: Context) {
     /**
      * Downloads the model bundles the user picked in Settings. Bound
      * to [modelStore] so the files land in the same directory the
-     * recognizer and diarizer read from.
+     * recognizer and diarizer read from. A transient failure waits for
+     * the network to come back before it resumes (issue #10).
      */
-    val modelDownloader = ModelDownloader(httpClient, modelStore)
+    val modelDownloader = ModelDownloader(
+        client = httpClient,
+        store = modelStore,
+        awaitNetwork = NetworkWaiter(context)::awaitNetwork
+    )
+
+    /**
+     * The one model download that runs at a time, outside any screen
+     * (issue #10). Started through
+     * [com.convoscribe.service.ModelDownloadService]; its
+     * [ModelDownloadManager.state] drives the setup screen and the
+     * service notification.
+     */
+    val modelDownloadManager = ModelDownloadManager(modelDownloader, applicationScope)
 
     /**
      * What the NPU probe has seen on this device: a verified NPU, or

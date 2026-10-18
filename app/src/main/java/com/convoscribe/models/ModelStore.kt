@@ -50,5 +50,28 @@ class ModelStore(private val root: File) {
         if (dir.exists()) {
             dir.deleteRecursively()
         }
+        archivePartFor(bundle).delete()
     }
+
+    /**
+     * Where [bundle]'s [ModelArchive] is downloaded before it is
+     * extracted (issue #10): next to the bundle directory, so a resumed
+     * download finds it and extraction never sees it as a model file.
+     */
+    fun archivePartFor(bundle: ModelBundle): File = File(root, "${bundle.id}.archive.part")
+
+    /**
+     * Delete what an interrupted download of [bundle] kept to resume
+     * from: its archive and every `.part` file in its directory.
+     * Installed files stay.
+     */
+    fun discardPartial(bundle: ModelBundle) {
+        archivePartFor(bundle).delete()
+        bundleDir(bundle).walkBottomUp()
+            .filter { it.isFile && it.name.endsWith(".part") }
+            .forEach { it.delete() }
+    }
+
+    /** Bytes free for new files on the volume holding the store. */
+    fun usableSpace(): Long = root.apply { mkdirs() }.usableSpace
 }
