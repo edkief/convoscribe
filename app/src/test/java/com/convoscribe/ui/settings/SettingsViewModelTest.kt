@@ -415,6 +415,20 @@ class SettingsViewModelTest {
         assertFalse(repo.settings.value.updateCheckAuto)
     }
 
+    @Test
+    fun speakerIdMode_isWrittenImmediately_andMirroredInTheState() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertEquals("auto", vm.state.value.speakerIdMode)
+        vm.setSpeakerIdMode("charging")
+        advanceUntilIdle()
+        assertEquals("charging", repo.settings.value.speakerIdMode)
+        assertEquals("charging", vm.state.value.speakerIdMode)
+        // Save does not undo it.
+        vm.save()
+        assertEquals("charging", repo.settings.value.speakerIdMode)
+    }
+
     /**
      * Trivial in-memory [ChatClient] for tests. Returns the
      * configured `models` list, or throws the configured `error`

@@ -280,6 +280,16 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun sessionSpeakersPending() = capture("session_speakers_pending") {
+        session(
+            status = SessionStatus.DIARIZATION_PENDING,
+            speakers = emptyList(),
+            lines = TRANSCRIPT.map { it.copy(speaker = null, speakerIndex = null) },
+            waitingForCharger = true
+        )
+    }
+
+    @Test
     fun sessionEmpty() = capture("session_empty") {
         session(lines = emptyList(), speakers = emptyList())
     }
@@ -419,7 +429,8 @@ class ScreenshotTest(private val variant: Variant) {
         speakers: List<SpeakerEntity> = SPEAKERS,
         playing: Boolean = false,
         tab: Int = 0,
-        summary: SummaryUiState = SummaryUiState()
+        summary: SummaryUiState = SummaryUiState(),
+        waitingForCharger: Boolean = false
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -461,7 +472,8 @@ class ScreenshotTest(private val variant: Variant) {
             onRetryAsk = {},
             onCancelAsk = {},
             onClearQuestions = {},
-            onOpenSettings = {}
+            onOpenSettings = {},
+            waitingForCharger = waitingForCharger
         )
     }
 

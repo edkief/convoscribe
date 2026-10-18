@@ -71,7 +71,8 @@ class SherpaDiarizer(
         samples: FloatArray,
         numSpeakers: Int,
         threshold: Float,
-        onProgress: (Float) -> Unit
+        onProgress: (Float) -> Unit,
+        isCancelled: () -> Boolean
     ): List<SpeakerTurn> {
         // sherpa-onnx re-clusters on every process() call using
         // whatever's currently in the config — push the
@@ -89,10 +90,11 @@ class SherpaDiarizer(
                 )
             )
         )
-        // The callback must return 0 to continue (any other value
-        // asks sherpa-onnx to abort the run); we always return 0
-        // and only forward a normalised 0f..1f progress fraction.
-        val raw = sd.processWithCallback(samples, callback = ProgressCallback(onProgress))
+        // The callback must return 0 to continue; any other value
+        // asks sherpa-onnx to abort the run, which we do once the
+        // caller is cancelled. It also forwards a normalised 0f..1f
+        // progress fraction.
+        val raw = sd.processWithCallback(samples, callback = ProgressCallback(onProgress, isCancelled))
         return raw.map { seg ->
             SpeakerTurn(
                 startMs = (seg.start * 1000f).toLong(),
@@ -117,9 +119,11 @@ class SherpaDiarizer(
      * `invoke(int, int, long): Integer` the native side expects.
      */
     private class ProgressCallback(
-        private val onProgress: (Float) -> Unit
+        private val onProgress: (Float) -> Unit,
+        private val isCancelled: () -> Boolean
     ) : (Int, Int, Long) -> Int {
         override fun invoke(done: Int, total: Int, arg: Long): Int {
+            if (isCancelled()) return 1
             onProgress(if (total <= 0) 0f else done.toFloat() / total)
             return 0
         }

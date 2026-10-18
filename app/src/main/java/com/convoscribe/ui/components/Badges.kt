@@ -23,7 +23,8 @@ import com.convoscribe.ui.theme.AppTheme
 
 /**
  * Pill showing a session that is not simply finished: recording,
- * identifying speakers, or speaker detection failed. Draws nothing for
+ * identifying speakers, speakers still to identify, or speaker
+ * detection failed. Draws nothing for
  * finished sessions. The text carries the meaning; colour only
  * reinforces it (and is reduced to an outline on e-ink).
  */
@@ -36,7 +37,12 @@ fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier) {
         SessionStatus.DIARIZATION_FAILED -> scheme.errorContainer to scheme.onErrorContainer
         else -> scheme.tertiaryContainer to scheme.onTertiaryContainer
     }
-    val dotColor = if (status == SessionStatus.DIARIZING) content else scheme.error
+    val dotColor = when (status) {
+        SessionStatus.DIARIZING -> content
+        // Waiting, not wrong: a neutral dot (issue #11).
+        SessionStatus.DIARIZATION_PENDING -> scheme.outline
+        else -> scheme.error
+    }
     Pill(label = label, container = container, content = content, dotColor = dotColor, modifier = modifier)
 }
 
@@ -85,6 +91,7 @@ private fun Pill(label: String, container: Color, content: Color, dotColor: Colo
 fun statusLabel(status: SessionStatus): String? = when (status) {
     SessionStatus.RECORDING -> stringResource(R.string.status_recording)
     SessionStatus.DIARIZING -> stringResource(R.string.status_diarizing)
+    SessionStatus.DIARIZATION_PENDING -> stringResource(R.string.status_pending)
     SessionStatus.DIARIZATION_FAILED -> stringResource(R.string.status_failed)
     SessionStatus.TRANSCRIBED, SessionStatus.DIARIZED -> null
 }

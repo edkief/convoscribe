@@ -107,23 +107,26 @@ class RetranscribeUseCaseTest {
     private fun useCase(factory: TranscriberFactory) = RetranscribeUseCase(
         repository = repo,
         transcriberFactory = factory,
-        diarize = DiarizeSessionUseCase(
-            repository = repo,
-            diarizerFactory = DiarizerFactory {
-                object : Diarizer {
-                    override fun diarize(
-                        samples: FloatArray,
-                        numSpeakers: Int,
-                        threshold: Float,
-                        onProgress: (Float) -> Unit
-                    ) = listOf(SpeakerTurn(startMs = 0, endMs = 2_000, speaker = 4))
-                    override fun close() = Unit
-                }
-            },
-            settings = settings,
-            readSamples = { FloatArray(2 * 16_000) }
-        ),
+        diarize = diarizer(),
         asrDispatcher = Dispatchers.Unconfined
+    )
+
+    private fun diarizer() = DiarizeSessionUseCase(
+        repository = repo,
+        diarizerFactory = DiarizerFactory {
+            object : Diarizer {
+                override fun diarize(
+                    samples: FloatArray,
+                    numSpeakers: Int,
+                    threshold: Float,
+                    onProgress: (Float) -> Unit,
+                    isCancelled: () -> Boolean
+                ) = listOf(SpeakerTurn(startMs = 0, endMs = 2_000, speaker = 4))
+                override fun close() = Unit
+            }
+        },
+        settings = settings,
+        readSamples = { FloatArray(2 * 16_000) }
     )
 
     @Test
@@ -144,6 +147,25 @@ class RetranscribeUseCaseTest {
         // Alice's name carried over through the new diarization.
         assertEquals(listOf("Alice"), repo.getSpeakers(id).map { it.label })
         assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun onDemand_leavesTheNewTranscriptPending_andNamesCarryOverOnceDiarized() = runTest {
+        settings.update { it.copy(speakerIdMode = "manual") }
+        val id = englishSession()
+
+        assertTrue(useCase(factory { FrenchTranscriber() }).run(id, "fr"))
+
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        // The new lines keep the old speaker until speakers are identified.
+        assertEquals(listOf("un", "deux"), repo.getSegments(id).map { it.text })
+        assertEquals(listOf(0, 0), repo.getSegments(id).map { it.speakerIndex })
+        assertEquals(listOf("Alice"), repo.getSpeakers(id).map { it.label })
+
+        diarizer().run(id)
+
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertEquals(listOf("Alice"), repo.getSpeakers(id).map { it.label })
     }
 
     @Test

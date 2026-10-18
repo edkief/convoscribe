@@ -349,4 +349,28 @@ class SettingsRepositoryTest {
         prefs.edit().putString(SettingsRepository.KEY_DISPLAY_MODE, "sepia").apply()
         assertEquals("auto", newRepository().settings.value.displayMode)
     }
+
+    @Test
+    fun speakerIdMode_defaultsToAutoAndPersists() {
+        val repo = newRepository()
+        assertEquals("auto", repo.settings.value.speakerIdMode)
+        repo.update { it.copy(speakerIdMode = "charging") }
+        assertEquals("charging", newRepository().settings.value.speakerIdMode)
+        repo.update { it.copy(speakerIdMode = "manual") }
+        assertEquals("manual", newRepository().settings.value.speakerIdMode)
+    }
+
+    @Test
+    fun speakerIdMode_unknownValueKeepsPrevious() {
+        val repo = newRepository()
+        repo.update { it.copy(speakerIdMode = "manual") }
+        repo.update { it.copy(speakerIdMode = "sometimes") }
+        assertEquals("manual", repo.settings.value.speakerIdMode)
+    }
+
+    @Test
+    fun speakerIdMode_unknownStoredValueLoadsAsAuto() {
+        prefs.edit().putString(SettingsRepository.KEY_SPEAKER_ID_MODE, "sometimes").apply()
+        assertEquals("auto", newRepository().settings.value.speakerIdMode)
+    }
 }

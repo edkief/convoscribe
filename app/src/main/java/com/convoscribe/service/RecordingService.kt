@@ -283,7 +283,9 @@ class RecordingService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
             if (completedId != null) {
-                diarizerUseCase().run(completedId)
+                // Now, or left pending for the charger / the user
+                // (Settings › Identify speakers, issue #11).
+                diarizerUseCase().runOrDefer(completedId)
             }
             // Diarization is done (or there was nothing to
             // diarize). Release the wake lock first so we don't
@@ -643,26 +645,7 @@ class RecordingService : Service() {
         }
     }
 
-    private fun ensureNotificationChannel() {
-        val nm = getSystemService<NotificationManager>() ?: return
-        // `getNotificationChannel` returns the existing channel if
-        // already created — re-creating would be wasted work but
-        // not an error. We still guard against duplicates.
-        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            // Name shown in system Settings → Apps → ConvoScribe →
-            // Notifications. Lowercased to match Material guidance;
-            // the label sits next to the description and does not
-            // need to scream.
-            getString(R.string.notification_channel_recording),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.notification_channel_recording_description)
-            setShowBadge(false)
-        }
-        nm.createNotificationChannel(channel)
-    }
+    private fun ensureNotificationChannel() = ensureChannel(this)
 
     /**
      * The recording notification: elapsed recorded time, and Pause or
@@ -775,11 +758,36 @@ class RecordingService : Service() {
     }
 
     companion object {
+        /** Create the `Recording` notification channel if it does not exist yet. */
+        fun ensureChannel(context: Context) {
+            val nm = context.getSystemService<NotificationManager>() ?: return
+            // `getNotificationChannel` returns the existing channel if
+            // already created — re-creating would be wasted work but
+            // not an error. We still guard against duplicates.
+            if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                // Name shown in system Settings → Apps → ConvoScribe →
+                // Notifications. Lowercased to match Material guidance;
+                // the label sits next to the description and does not
+                // need to scream.
+                context.getString(R.string.notification_channel_recording),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = context.getString(R.string.notification_channel_recording_description)
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+        }
+
         /** Notification id used for the foreground notification. */
         private const val NOTIFICATION_ID = 1
 
-        /** Notification channel id for the `Recording` channel. */
-        private const val CHANNEL_ID = "recording"
+        /**
+         * Notification channel id for the `Recording` channel; also used
+         * by the charging job's notice ([DiarizationJobService]).
+         */
+        const val CHANNEL_ID = "recording"
 
         /** `requestCode` for the content (open-app) pending intent. */
         private const val REQUEST_OPEN = 1001

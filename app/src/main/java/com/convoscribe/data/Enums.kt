@@ -5,13 +5,18 @@ package com.convoscribe.data
  * "the speakers are labelled". A failed diarization lands on
  * [DIARIZATION_FAILED] so the UI can still show the transcript and
  * a Retry button without blocking the rest of the session.
+ * [DIARIZATION_PENDING] is a transcript whose speakers are still to
+ * be identified: put off by the *Identify speakers* setting, or an
+ * interrupted run (issue #11). Stored by name, so new values need no
+ * migration.
  */
 enum class SessionStatus {
     RECORDING,
     TRANSCRIBED,
     DIARIZING,
     DIARIZED,
-    DIARIZATION_FAILED
+    DIARIZATION_FAILED,
+    DIARIZATION_PENDING
 }
 
 /**

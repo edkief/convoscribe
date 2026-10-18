@@ -131,6 +131,16 @@ class ImportAudioUseCase(
             cleanUp()
         }
         _createdSessionId.value = id
+        // Speakers wait for the charger / the user under the
+        // *Identify speakers* setting (issue #11).
+        if (!diarize.runsNow()) {
+            try {
+                diarize.defer(id)
+            } finally {
+                _state.value = ImportState.Idle
+            }
+            return id
+        }
         _state.value = ImportState.Running(name, ImportStep.IDENTIFYING_SPEAKERS, 0f, sessionId = id)
         try {
             diarize.run(id, onProgress = { p ->

@@ -189,6 +189,9 @@ notification stops the session.
 
 ## 6. Post-stop diarization
 
+With Settings → Speakers → *Identify speakers* on **Auto** (the
+default). The other modes are covered in §25.
+
 **Steps**
 
 1. Tap **Stop** on the recording screen.
@@ -671,6 +674,69 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
   reinstall message (this is the #16 path).
 - Steps 10–11: no requests with the automatic check off; failures are
   silent on start and reported on the manual check.
+
+## 25. Identify speakers while charging / on demand (issue #11)
+
+Charging can be simulated over adb instead of using a cable.
+`dumpsys battery unplug` makes the device report it is on battery;
+`dumpsys battery set ac 1` makes it report it is plugged in;
+`dumpsys battery reset` returns to the real state. The charging job
+can be forced to run with `adb shell cmd jobscheduler run -f
+com.convoscribe 1101`, and `adb shell dumpsys jobscheduler | grep -A5
+com.convoscribe` shows whether it is scheduled. Follow `adb logcat -s
+ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
+`charging job:` and `diarization interrupted` lines.
+
+**Steps**
+
+1. Settings → Speakers → *Identify speakers* → **On demand**. Record
+   ~30 s and tap **Stop**. Also import a file (§22) and re-transcribe a
+   session (§20).
+2. On the session screen, tap **Identify speakers now**.
+3. *Identify speakers* → **Charging**, `adb shell dumpsys battery
+   unplug`. Record two short sessions and stop each one.
+4. Swipe ConvoScribe away from Recents (or `adb shell am kill
+   com.convoscribe`), then `adb shell dumpsys battery set ac 1` (or
+   plug in a real charger with the screen off and wait).
+5. Still in **Charging**, while plugged in: record and stop.
+6. Record a session of 10+ minutes in **Charging**, unplugged. Plug in,
+   wait for `charging job: identifying speakers` in logcat, then
+   unplug (or `dumpsys battery unplug`).
+7. Start identifying speakers on a long session, then force-stop the
+   app (`adb shell am force-stop com.convoscribe`) while the session
+   shows *Identifying speakers…*. Reopen the app.
+8. With a session pending, switch to **Auto**. Nothing should start.
+   Plug in.
+9. Android 14+: a session of an hour or more in **Charging**,
+   unplugged, then plug in and leave it.
+
+**Expected**
+
+- Step 1: each one ends with the transcript, a *Speakers pending* badge
+  in the list and *Speakers not identified yet* on the session; no
+  *Identifying speakers* notification. A re-transcribed session keeps
+  its old speaker names on the new lines.
+- Step 2: speakers are identified as usual (the
+  *Identifying speakers* notification appears); a re-transcribed
+  session keeps the names typed before.
+- Step 3: the banner also says *Waiting for the charger*; the job is
+  scheduled.
+- Step 4: with the app closed, both sessions are identified one after
+  the other, oldest first; opening the app shows them labelled.
+  **Write down the device, Android version and how long it took.**
+- Step 5: identified straight away, as in **Auto**.
+- Step 6: the session goes back to *Speakers pending* within a few
+  seconds of unplugging (not *Speaker detection failed*, not stuck on
+  *Identifying speakers*) and is done on the next charge. **Write down
+  how long the stop took.**
+- Step 7: on reopening, the session is *Speakers pending*, and it is
+  identified on the next charge.
+- Step 8: no work starts on the switch; pending sessions are
+  identified once plugged in.
+- Step 9: if the job is stopped after about 10 minutes, a notification
+  *Speakers not identified yet* appears; tapping it opens the app,
+  where **Identify speakers now** finishes it. **Write down whether it
+  happened and how long the session was.**
 
 ## Troubleshooting
 

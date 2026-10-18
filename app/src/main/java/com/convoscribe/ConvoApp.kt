@@ -32,14 +32,20 @@ class ConvoApp : Application() {
         // already in flight (e.g. a foreground service restarted
         // the process); the active session already has the right
         // status and `recover()` would step on it.
+        // Then the charging job is scheduled if a session waits for its
+        // speakers (issue #11); it also waits for recovery to finish.
         if (container.recordingController.state.value.phase == RecordingPhase.IDLE) {
             val recovery = SessionRecovery(container.sessionRepository)
             container.applicationScope.launch {
                 runCatching { recovery.recover() }
+                container.recoveryDone.complete(Unit)
                 // Files of an import the previous process died in; no
                 // session was created for it.
                 runCatching { container.importAudioUseCase.cleanUp() }
+                container.pendingDiarizationScheduler.sync()
             }
+        } else {
+            container.recoveryDone.complete(Unit)
         }
     }
 }

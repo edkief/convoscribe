@@ -34,8 +34,19 @@ interface Diarizer : Closeable {
      * be called from any thread the engine uses. Implementations
      * are expected to forward the progress and ultimately return
      * the full sorted list of [SpeakerTurn]s.
+     *
+     * [isCancelled] is polled at each progress step; once it returns
+     * `true` an implementation should stop as soon as it can (the
+     * result is then discarded), so unplugging the charger or the
+     * system stopping the work does not leave the CPU busy (issue #11).
      */
-    fun diarize(samples: FloatArray, numSpeakers: Int, threshold: Float, onProgress: (Float) -> Unit): List<SpeakerTurn>
+    fun diarize(
+        samples: FloatArray,
+        numSpeakers: Int,
+        threshold: Float,
+        onProgress: (Float) -> Unit,
+        isCancelled: () -> Boolean
+    ): List<SpeakerTurn>
 }
 
 /**

@@ -13,8 +13,15 @@ import com.convoscribe.settings.SettingsRepository
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -108,7 +115,8 @@ class DiarizeSessionUseCaseTest {
             samples: FloatArray,
             numSpeakers: Int,
             threshold: Float,
-            onProgress: (Float) -> Unit
+            onProgress: (Float) -> Unit,
+            isCancelled: () -> Boolean
         ): List<SpeakerTurn> {
             diarizeCount += 1
             lastNumSpeakers = numSpeakers
@@ -144,7 +152,8 @@ class DiarizeSessionUseCaseTest {
             samples: FloatArray,
             numSpeakers: Int,
             threshold: Float,
-            onProgress: (Float) -> Unit
+            onProgress: (Float) -> Unit,
+            isCancelled: () -> Boolean
         ): List<SpeakerTurn> = throw IllegalStateException(message)
 
         override fun close() {
@@ -677,6 +686,133 @@ class DiarizeSessionUseCaseTest {
             readSamples = { FloatArray(16_000) }
         ).run(id)
         assertEquals(2, diarizer.lastNumSpeakers)
+    }
+
+    private suspend fun twoLineSession(): Long {
+        val id = repo.createSession(title = "Test", language = "en")
+        repo.addSegment(id, startMs = 0L, endMs = 1000L, text = "first")
+        repo.addSegment(id, startMs = 1000L, endMs = 2000L, text = "second")
+        repo.finishRecording(id, 2_000L)
+        return id
+    }
+
+    private fun twoSpeakerUseCase(
+        factory: DiarizerFactory = ScriptedDiarizerFactory(
+            ScriptedDiarizer(listOf(SpeakerTurn(0L, 1000L, 0), SpeakerTurn(1000L, 2000L, 1)))
+        ),
+        charging: Boolean = false,
+        pendingCalls: AtomicInteger = AtomicInteger()
+    ) = DiarizeSessionUseCase(
+        repository = repo,
+        diarizerFactory = factory,
+        settings = settings,
+        readSamples = { FloatArray(16_000) },
+        isCharging = { charging },
+        onPending = { pendingCalls.incrementAndGet() }
+    )
+
+    /** Automatically (the default) diarizes at once, charging or not (issue #11). */
+    @Test
+    fun runOrDefer_automatically_runsOnBattery() = runTest {
+        val id = twoLineSession()
+        val pending = AtomicInteger()
+
+        assertTrue(twoSpeakerUseCase(charging = false, pendingCalls = pending).runOrDefer(id))
+
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertEquals(0, pending.get())
+    }
+
+    @Test
+    fun runOrDefer_whileCharging_defersOnBattery_andRunsWhenCharging() = runTest {
+        settings.update { it.copy(speakerIdMode = "charging") }
+        val onBattery = twoLineSession()
+        val factory = ScriptedDiarizerFactory(ScriptedDiarizer(listOf(SpeakerTurn(0L, 2000L, 0))))
+        val pending = AtomicInteger()
+
+        assertFalse(twoSpeakerUseCase(factory, charging = false, pendingCalls = pending).runOrDefer(onBattery))
+
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(onBattery)!!.status)
+        assertEquals(listOf(null, null), repo.getSegments(onBattery).map { it.speakerIndex })
+        assertEquals(0, factory.created)
+        assertEquals(1, pending.get())
+
+        val charging = twoLineSession()
+        assertTrue(twoSpeakerUseCase(factory, charging = true, pendingCalls = pending).runOrDefer(charging))
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(charging)!!.status)
+        assertEquals(1, pending.get())
+    }
+
+    @Test
+    fun runOrDefer_onDemand_defersEvenWhileCharging_butRunStillWorks() = runTest {
+        settings.update { it.copy(speakerIdMode = "manual") }
+        val id = twoLineSession()
+        val useCase = twoSpeakerUseCase(charging = true)
+
+        assertFalse(useCase.runOrDefer(id))
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+
+        // The manual action ("Identify speakers now") ignores the setting.
+        useCase.run(id)
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+    }
+
+    /**
+     * Cancelling a run (the charger unplugged) stops the engine at its
+     * next progress step and leaves the session pending, not failed or
+     * stuck in DIARIZING.
+     */
+    @Test
+    fun run_cancelled_stopsTheEngine_andLeavesTheSessionPending() = runBlocking {
+        val id = twoLineSession()
+        val started = CompletableDeferred<Unit>()
+        val sawCancel = AtomicBoolean(false)
+        val blocking = object : Diarizer {
+            override fun diarize(
+                samples: FloatArray,
+                numSpeakers: Int,
+                threshold: Float,
+                onProgress: (Float) -> Unit,
+                isCancelled: () -> Boolean
+            ): List<SpeakerTurn> {
+                started.complete(Unit)
+                while (!isCancelled()) Thread.sleep(5)
+                sawCancel.set(true)
+                return emptyList()
+            }
+
+            override fun close() = Unit
+        }
+        val pending = AtomicInteger()
+        val useCase = twoSpeakerUseCase(ScriptedDiarizerFactory(blocking), pendingCalls = pending)
+
+        val job = launch(Dispatchers.Default) { useCase.run(id) }
+        started.await()
+        assertEquals(SessionStatus.DIARIZING, repo.getSession(id)!!.status)
+        job.cancelAndJoin()
+
+        assertTrue(sawCancel.get())
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        assertEquals(1, pending.get())
+    }
+
+    /** The charging job's entry point leaves alone a session that is no longer pending. */
+    @Test
+    fun runIfPending_runsOnlyPendingSessions() = runTest {
+        val diarized = twoLineSession()
+        val factory = ScriptedDiarizerFactory(ScriptedDiarizer(listOf(SpeakerTurn(0L, 2000L, 0))))
+        val useCase = twoSpeakerUseCase(factory)
+        useCase.run(diarized)
+        assertEquals(1, factory.created)
+
+        assertFalse(useCase.runIfPending(diarized))
+        assertEquals(1, factory.created)
+
+        val pending = twoLineSession()
+        useCase.defer(pending)
+        assertTrue(useCase.runIfPending(pending))
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(pending)!!.status)
+        assertEquals(2, factory.created)
     }
 }
 
