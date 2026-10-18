@@ -72,6 +72,8 @@ class SettingsRepository(
             putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
             putBoolean(KEY_FLOATING_CONTROL, next.floatingControl)
             putBoolean(KEY_OVERLAY_PROMPT_SHOWN, next.overlayPromptShown)
+            putBoolean(KEY_UPDATE_CHECK_AUTO, next.updateCheckAuto)
+            putBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, next.updateIncludePrereleases)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
             if (participants == null) {
                 remove(
@@ -118,7 +120,9 @@ class SettingsRepository(
             displayMode = prefs.getString(KEY_DISPLAY_MODE, null) ?: DisplayMode.AUTO.key,
             dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
             floatingControl = prefs.getBoolean(KEY_FLOATING_CONTROL, true),
-            overlayPromptShown = prefs.getBoolean(KEY_OVERLAY_PROMPT_SHOWN, false)
+            overlayPromptShown = prefs.getBoolean(KEY_OVERLAY_PROMPT_SHOWN, false),
+            updateCheckAuto = prefs.getBoolean(KEY_UPDATE_CHECK_AUTO, true),
+            updateIncludePrereleases = prefs.getBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, false)
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -181,6 +185,8 @@ class SettingsRepository(
         const val KEY_DYNAMIC_COLOR = "dynamicColor"
         const val KEY_FLOATING_CONTROL = "floatingControl"
         const val KEY_OVERLAY_PROMPT_SHOWN = "overlayPromptShown"
+        const val KEY_UPDATE_CHECK_AUTO = "updateCheckAuto"
+        const val KEY_UPDATE_INCLUDE_PRERELEASES = "updateIncludePrereleases"
     }
 }
 

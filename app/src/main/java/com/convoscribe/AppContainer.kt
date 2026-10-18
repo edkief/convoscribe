@@ -29,9 +29,14 @@ import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportAudioUseCase
 import com.convoscribe.recording.PendingImport
 import com.convoscribe.recording.RecordingController
+import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.update.GitHubReleases
+import com.convoscribe.update.InstalledApp
+import com.convoscribe.update.PrefsUpdateStore
+import com.convoscribe.update.UpdateManager
 import java.io.File
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
@@ -385,4 +390,36 @@ class AppContainer(val context: Context) {
             model = s.llmModel
         )
     }
+
+    /**
+     * The installed version, from the package manager (`buildConfig`
+     * is off). Robolectric has no versionName; the update check then
+     * finds nothing to compare against and offers nothing.
+     */
+    val installedApp: InstalledApp by lazy {
+        val info = runCatching { context.packageManager.getPackageInfo(context.packageName, 0) }.getOrNull()
+        InstalledApp(
+            versionName = info?.versionName.orEmpty(),
+            versionCode = info?.longVersionCode ?: 0L
+        )
+    }
+
+    /**
+     * Looks for a newer GitHub release on start and from Settings ›
+     * About (issue #15). Never checks automatically while a session is
+     * open or an import / re-transcription runs.
+     */
+    val updateManager = UpdateManager(
+        source = GitHubReleases(httpClient, userAgent = "ConvoScribe/${installedApp.versionName}"),
+        store = PrefsUpdateStore(context.getSharedPreferences(PrefsUpdateStore.PREFS_NAME, Context.MODE_PRIVATE)),
+        installed = { installedApp },
+        autoCheck = { settingsRepository.settings.value.updateCheckAuto },
+        includePrereleases = { settingsRepository.settings.value.updateIncludePrereleases },
+        isBusy = {
+            recordingController.state.value.phase != RecordingPhase.IDLE ||
+                importAudioUseCase.isRunning ||
+                retranscribeUseCase.isRunning
+        },
+        scope = applicationScope
+    )
 }

@@ -49,6 +49,17 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun updateSettings_autoCheckOnAndPreReleasesOff_andPersist() {
+        val repo = newRepository()
+        assertEquals(true, repo.settings.value.updateCheckAuto)
+        assertEquals(false, repo.settings.value.updateIncludePrereleases)
+        repo.update { it.copy(updateCheckAuto = false, updateIncludePrereleases = true) }
+        val reloaded = newRepository().settings.value
+        assertEquals(false, reloaded.updateCheckAuto)
+        assertEquals(true, reloaded.updateIncludePrereleases)
+    }
+
+    @Test
     fun defaults_areReturnedOnEmptyPrefs() {
         val repo = newRepository()
         val s = repo.settings.value
