@@ -34,6 +34,13 @@
     <string name="record_start">Start</string>
     <string name="record_stop">Stop</string>
     <string name="record_error_unknown">Recording failed</string>
+    <string name="record_section_conversation">This conversation</string>
+    <string name="record_input_level">Microphone level</string>
+    <string name="record_hint_start">Tap to start recording</string>
+    <string name="record_hint_continue">Tap to continue recording</string>
+    <string name="record_hint_stop">Tap to stop</string>
+    <string name="record_live_listening">Listening… speech appears here as it is recognised.</string>
+    <string name="record_live_idle">The transcript appears here once you start.</string>
     <string name="record_busy_retranscribing">A session is being re-transcribed. You can record once it has finished.</string>
     <string name="conversation_language_label">Language</string>
     <string name="conversation_language_en">English</string>

@@ -158,6 +158,7 @@ class ScreenshotTest(private val variant: Variant) {
             partialText = "and then we can ship it on",
             error = null,
             micDeniedMessage = null,
+            inputLevel = 0.55f,
             onBack = {},
             onStart = {},
             onStop = {}

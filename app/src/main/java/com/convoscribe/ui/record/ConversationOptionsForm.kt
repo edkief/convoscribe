@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -34,10 +35,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.style.TextOverflow
 import com.convoscribe.R
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.recording.ConversationOptions
+import com.convoscribe.ui.components.FieldLabel
+import com.convoscribe.ui.theme.AppTheme
 
 /**
  * The options a new conversation is set up with (issue #6): language,
@@ -64,8 +67,8 @@ fun ConversationOptionsForm(
     var participantsOpen by remember { mutableStateOf(false) }
     var savedAsDefault by rememberSaveable { mutableStateOf(false) }
 
-    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text(text = stringResource(R.string.conversation_language_label), style = MaterialTheme.typography.titleSmall)
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
+        FieldLabel(text = stringResource(R.string.conversation_language_label))
         SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
             LANGUAGES.forEachIndexed { index, (code, label) ->
                 SegmentedButton(
@@ -96,7 +99,12 @@ fun ConversationOptionsForm(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(text = stringResource(R.string.conversation_participants_label))
-                Text(text = participantsSummary(options.participants))
+                Text(
+                    text = participantsSummary(options.participants),
+                    modifier = Modifier.padding(start = AppTheme.spacing.s),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
         }
 
