@@ -152,8 +152,8 @@ class SessionRepository(
 
     /**
      * Recording finished. Stamp the duration and move the session
-     * to [SessionStatus.TRANSCRIBED] so the diarization worker picks
-     * it up.
+     * to [SessionStatus.TRANSCRIBED]; the service then diarizes it or
+     * leaves it pending.
      */
     override suspend fun finishRecording(sessionId: Long, durationMs: Long) {
         sessionDao.get(sessionId)?.let { row ->

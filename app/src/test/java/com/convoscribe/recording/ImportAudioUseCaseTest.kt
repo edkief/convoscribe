@@ -148,7 +148,8 @@ class ImportAudioUseCaseTest {
                             samples: FloatArray,
                             numSpeakers: Int,
                             threshold: Float,
-                            onProgress: (Float) -> Unit
+                            onProgress: (Float) -> Unit,
+                            isCancelled: () -> Boolean
                         ) = listOf(SpeakerTurn(startMs = 0, endMs = 3_000, speaker = 0))
                         override fun close() = Unit
                     }
@@ -205,6 +206,20 @@ class ImportAudioUseCaseTest {
         assertEquals(ImportState.Idle, uc.state.value)
         uc.consumeCreated()
         assertNull(uc.createdSessionId.value)
+    }
+
+    @Test
+    fun import_onDemand_leavesSpeakersPending() = runTest {
+        settings.update { it.copy(speakerIdMode = "manual") }
+        val uc = useCase(ToneDecoder(), factory { SoundTranscriber() })
+
+        val id = uc.run(source())!!
+
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        assertEquals(listOf("tone"), repo.getSegments(id).map { it.text })
+        assertEquals(listOf(null), repo.getSegments(id).map { it.speakerIndex })
+        assertTrue(repo.getSpeakers(id).isEmpty())
+        assertEquals(ImportState.Idle, uc.state.value)
     }
 
     @Test

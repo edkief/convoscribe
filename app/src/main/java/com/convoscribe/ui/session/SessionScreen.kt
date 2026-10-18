@@ -88,7 +88,8 @@ import kotlinx.coroutines.flow.map
 private val CONTINUABLE_STATUSES = setOf(
     SessionStatus.TRANSCRIBED,
     SessionStatus.DIARIZED,
-    SessionStatus.DIARIZATION_FAILED
+    SessionStatus.DIARIZATION_FAILED,
+    SessionStatus.DIARIZATION_PENDING
 )
 
 /**

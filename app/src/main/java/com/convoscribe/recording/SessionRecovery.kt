@@ -25,8 +25,8 @@ import java.io.File
  *   row and the post-record pipeline can pick it up if the user
  *   hits retry.
  * * **DIARIZING**: the process died mid-diarization. The WAV is
- *   already valid; the session row is just bumped to `TRANSCRIBED`
- *   so a future re-run can pick it up.
+ *   already valid; the session row is set to `DIARIZATION_PENDING`
+ *   so the charging job (or the user) picks it up again (issue #11).
  *
  * Recovery never throws: missing or unreadable WAV files are
  * logged on the caller side (or simply skipped, see the caller)
@@ -39,7 +39,7 @@ class SessionRecovery(private val repository: SessionRepository) {
 
     /**
      * Walk every session in `RECORDING` or `DIARIZING` and patch
-     * it to `TRANSCRIBED`. Returns when the loop has nothing left
+     * it to `TRANSCRIBED` or `DIARIZATION_PENDING`. Returns when the loop has nothing left
      * to do; safe to call repeatedly because the next pass will
      * find an empty list.
      *
@@ -74,7 +74,7 @@ class SessionRecovery(private val repository: SessionRepository) {
             // recording finished, the diarizer held the session in
             // its native memory only for the duration of the
             // process that died.
-            repository.setStatus(session.id, SessionStatus.TRANSCRIBED)
+            repository.setStatus(session.id, SessionStatus.DIARIZATION_PENDING)
         }
     }
 

@@ -20,6 +20,7 @@
     <string name="overlay_permission_not_now">Not now</string>
     <string name="status_diarizing">Identifying speakers</string>
     <string name="status_failed">Speaker detection failed</string>
+    <string name="status_pending">Speakers pending</string>
     <string name="setup_title">Set up</string>
     <string name="setup_heading">Download speech models</string>
     <string name="setup_downloading">Downloading…</string>

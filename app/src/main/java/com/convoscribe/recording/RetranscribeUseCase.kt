@@ -31,7 +31,8 @@ sealed interface RetranscribeState {
 
 /**
  * Transcribe a session's stored audio again in another language
- * (issue #6), then re-identify its speakers.
+ * (issue #6), then re-identify its speakers, or leave them pending,
+ * as the *Identify speakers* setting says (issue #11).
  *
  * The new transcript is built in memory and only swapped in, together
  * with the new language and engine, in one transaction
@@ -58,8 +59,8 @@ class RetranscribeUseCase(
 
     /**
      * Re-transcribe [sessionId] in [language]. Returns `true` when the
-     * transcript was replaced (diarization then runs and reports
-     * through the session status as usual). Rethrows cancellation
+     * transcript was replaced (diarization then runs, or is left
+     * pending, and reports through the session status as usual). Rethrows cancellation
      * after resetting [state].
      */
     suspend fun run(sessionId: Long, language: String): Boolean {
@@ -98,7 +99,7 @@ class RetranscribeUseCase(
             _state.value = RetranscribeState.Failed(sessionId, t.message ?: t.javaClass.simpleName)
             return false
         }
-        diarize.run(sessionId)
+        diarize.runOrDefer(sessionId)
         return true
     }
 

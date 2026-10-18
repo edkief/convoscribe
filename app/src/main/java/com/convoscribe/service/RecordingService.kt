@@ -283,7 +283,9 @@ class RecordingService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
             if (completedId != null) {
-                diarizerUseCase().run(completedId)
+                // Now, or left pending for the charger / the user
+                // (Settings › Identify speakers, issue #11).
+                diarizerUseCase().runOrDefer(completedId)
             }
             // Diarization is done (or there was nothing to
             // diarize). Release the wake lock first so we don't

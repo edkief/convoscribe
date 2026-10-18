@@ -145,7 +145,7 @@ class SessionRecoveryTest {
      * the file (no `repairHeader` call is needed).
      */
     @Test
-    fun recover_diarizingSession_withClosedWav_becomesTranscribed() = runTest {
+    fun recover_diarizingSession_withClosedWav_becomesPending() = runTest {
         val id = repo.createSession(title = "Test", language = "en")
         // Lay out a fully-closed WAV so the recovery loop should
         // leave the file alone.
@@ -160,8 +160,9 @@ class SessionRecoveryTest {
 
         recovery.recover()
 
+        // Pending, so the charging job identifies its speakers (issue #11).
         val session = repo.getSession(id)!!
-        assertEquals(SessionStatus.TRANSCRIBED, session.status)
+        assertEquals(SessionStatus.DIARIZATION_PENDING, session.status)
         // The WAV file was not touched: same length, same first
         // 44 bytes (header already valid before recovery).
         assertEquals(sizeAfterClose, audio.length())

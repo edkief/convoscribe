@@ -10,9 +10,17 @@ import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.TokenTimingCodec
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.settings.SpeakerIdMode
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -24,9 +32,20 @@ import kotlinx.coroutines.withContext
  * [SessionRepository.applyDiarization]).
  *
  * Wiring lives at [com.convoscribe.AppContainer.diarizeSessionUseCase];
- * the post-record pipeline (`RecordingService` after `controller.stop()`)
- * and the crash-recovery boot path both go through this class so
- * a session only ever has one diarization rule.
+ * the post-record pipeline (`RecordingService` after `controller.stop()`),
+ * import, re-transcription, the manual *Identify speakers* actions and
+ * the charging job all go through this class so a session only ever
+ * has one diarization rule.
+ *
+ * ## When it runs (issue #11)
+ *
+ * The automatic paths call [runOrDefer], which follows the
+ * *Identify speakers* setting ([SpeakerIdMode]): it diarizes now, or
+ * leaves the session [SessionStatus.DIARIZATION_PENDING] and calls
+ * [onPending] so the charging job is scheduled. The manual actions call
+ * [run], and the charging job [runIfPending]. One run at a time: the
+ * engine keeps its models in native memory, so two at once could run
+ * out of memory.
  *
  * ## Threading
  *
@@ -39,7 +58,12 @@ import kotlinx.coroutines.withContext
  *
  * ## Failure handling
  *
- * Any throwable except [CancellationException] is swallowed: the
+ * A cancelled run (the charger unplugged, the system stopping the
+ * job or the service) leaves the session
+ * [SessionStatus.DIARIZATION_PENDING], unless it already had a result,
+ * and rethrows. The engine is asked to stop at its next progress step.
+ *
+ * Any other throwable is swallowed: the
  * session status is moved to [SessionStatus.DIARIZATION_FAILED]
  * and the exception is logged with `Log.w` so the recording
  * service can stop foreground cleanly and the user can still see
@@ -69,6 +93,10 @@ import kotlinx.coroutines.withContext
  *   defaults to [WavReader.readMono16k]. Injected so tests can
  *   skip the WAV header parsing and feed the engine a
  *   `FloatArray(16000)` directly.
+ * @property isCharging whether the device is charging now, for
+ *   [SpeakerIdMode.CHARGING].
+ * @property onPending called after a session became pending, so the
+ *   charging job is scheduled.
  */
 class DiarizeSessionUseCase(
     private val repository: SessionRepository,
@@ -78,8 +106,54 @@ class DiarizeSessionUseCase(
         error("Embedder factory not configured")
     },
     private val enrolled: EnrolledSpeakerStore = EmptyEnrolledStore,
-    private val readSamples: (File) -> FloatArray = WavReader::readMono16k
+    private val readSamples: (File) -> FloatArray = WavReader::readMono16k,
+    private val isCharging: () -> Boolean = { true },
+    private val onPending: () -> Unit = {}
 ) {
+    private val lock = Mutex()
+
+    /**
+     * Whether a transcript finished now should be diarized straight
+     * away under the current *Identify speakers* setting, rather than
+     * left pending ([defer]).
+     */
+    fun runsNow(): Boolean = SpeakerIdMode.of(settings.settings.value.speakerIdMode).runsNow(isCharging())
+
+    /**
+     * Diarize [sessionId] now if the setting allows it ([runsNow]),
+     * otherwise [defer] it. Returns `true` when it ran. The automatic
+     * entry point: after Stop, an import and a re-transcription.
+     */
+    suspend fun runOrDefer(sessionId: Long, onProgress: (Float) -> Unit = {}): Boolean {
+        if (!runsNow()) {
+            defer(sessionId)
+            return false
+        }
+        run(sessionId, onProgress)
+        return true
+    }
+
+    /** Leave [sessionId] waiting for speaker identification and schedule the charging job. */
+    suspend fun defer(sessionId: Long) {
+        repository.setStatus(sessionId, SessionStatus.DIARIZATION_PENDING)
+        Log.i(TAG, "diarization deferred session=$sessionId mode=${settings.settings.value.speakerIdMode}")
+        onPending()
+    }
+
+    /**
+     * Diarize [sessionId] if it is still pending once no other run
+     * holds the engine; `false` when it was not (the user identified
+     * its speakers meanwhile, or deleted it). The charging job's entry
+     * point.
+     */
+    suspend fun runIfPending(sessionId: Long, onProgress: (Float) -> Unit = {}): Boolean = guarded(sessionId) {
+        if (repository.getSession(sessionId)?.status != SessionStatus.DIARIZATION_PENDING) {
+            false
+        } else {
+            diarize(sessionId, onProgress, numSpeakers = null)
+            true
+        }
+    }
 
     /**
      * Diarize the session identified by [sessionId]. [onProgress] is
@@ -114,9 +188,36 @@ class DiarizeSessionUseCase(
      * [numSpeakers], when given, is saved as the session's speaker
      * count first ("Re-identify speakers"). The count used is the
      * session's, else the Settings default.
+     *
+     * Runs whatever the *Identify speakers* setting says: this is
+     * also the manual entry point. Waits for a run in progress.
      */
     suspend fun run(sessionId: Long, onProgress: (Float) -> Unit = {}, numSpeakers: Int? = null) {
+        guarded(sessionId) { diarize(sessionId, onProgress, numSpeakers) }
+    }
+
+    /**
+     * Run [block] holding the engine [lock]. On cancellation, while
+     * waiting or running, the session goes back to pending unless it
+     * already has a result, and [onPending] is called.
+     */
+    private suspend fun <T> guarded(sessionId: Long, block: suspend () -> T): T = try {
+        lock.withLock { block() }
+    } catch (ce: CancellationException) {
+        withContext(NonCancellable) {
+            val status = repository.getSession(sessionId)?.status
+            if (status in INTERRUPTIBLE) {
+                repository.setStatus(sessionId, SessionStatus.DIARIZATION_PENDING)
+                Log.i(TAG, "diarization interrupted session=$sessionId; pending again")
+                onPending()
+            }
+        }
+        throw ce
+    }
+
+    private suspend fun diarize(sessionId: Long, onProgress: (Float) -> Unit, numSpeakers: Int?) {
         val startedNanos = System.nanoTime()
+        val job = currentCoroutineContext()[Job]
         try {
             if (numSpeakers != null) repository.setSessionSpeakerCount(sessionId, numSpeakers)
             repository.setStatus(sessionId, SessionStatus.DIARIZING)
@@ -148,10 +249,12 @@ class DiarizeSessionUseCase(
                         samples = samples,
                         numSpeakers = session.numSpeakers ?: speakerSettings.numSpeakers,
                         threshold = speakerSettings.clusterThreshold,
-                        onProgress = onProgress
+                        onProgress = onProgress,
+                        isCancelled = { job?.isActive == false }
                     )
                 }
             }
+            currentCoroutineContext().ensureActive()
             // Split lines at speaker changes (where token times exist),
             // then number speakers by first appearance.
             val split = segments.map { segment ->
@@ -221,12 +324,13 @@ class DiarizeSessionUseCase(
             )
         } catch (ce: CancellationException) {
             // Cooperative cancellation: re-throw so structured
-            // concurrency still sees the cancel and the service
-            // shutdown path stays clean. Do not flip status to
-            // DIARIZATION_FAILED — the recorder / recovery loop
-            // will pick the session up again on next start.
+            // concurrency still sees the cancel; [guarded] puts the
+            // session back to pending, not DIARIZATION_FAILED.
             throw ce
         } catch (t: Throwable) {
+            // An engine aborted through isCancelled may throw its own
+            // error; that is still a cancellation.
+            if (!currentCoroutineContext().isActive) throw CancellationException("diarization cancelled", t)
             Log.w(TAG, "Diarization failed for session $sessionId", t)
             repository.setStatus(sessionId, SessionStatus.DIARIZATION_FAILED)
         }
@@ -297,6 +401,15 @@ class DiarizeSessionUseCase(
      * an empty list every time so the embedding pass short-
      * circuits and never instantiates an embedder.
      */
+    private companion object {
+        /** Statuses a cancelled run moves back to pending: those with no speaker result yet. */
+        val INTERRUPTIBLE = setOf(
+            SessionStatus.TRANSCRIBED,
+            SessionStatus.DIARIZING,
+            SessionStatus.DIARIZATION_PENDING
+        )
+    }
+
     private object EmptyEnrolledStore : EnrolledSpeakerStore {
         override fun observeAll() = kotlinx.coroutines.flow.flowOf(
             emptyList<com.convoscribe.data.EnrolledSpeakerEntity>()

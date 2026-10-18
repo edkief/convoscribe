@@ -23,7 +23,8 @@ import com.convoscribe.ui.theme.AppTheme
 
 /**
  * Pill showing a session that is not simply finished: recording,
- * identifying speakers, or speaker detection failed. Draws nothing for
+ * identifying speakers, speakers still to identify, or speaker
+ * detection failed. Draws nothing for
  * finished sessions. The text carries the meaning; colour only
  * reinforces it (and is reduced to an outline on e-ink).
  */
@@ -85,6 +86,7 @@ private fun Pill(label: String, container: Color, content: Color, dotColor: Colo
 fun statusLabel(status: SessionStatus): String? = when (status) {
     SessionStatus.RECORDING -> stringResource(R.string.status_recording)
     SessionStatus.DIARIZING -> stringResource(R.string.status_diarizing)
+    SessionStatus.DIARIZATION_PENDING -> stringResource(R.string.status_pending)
     SessionStatus.DIARIZATION_FAILED -> stringResource(R.string.status_failed)
     SessionStatus.TRANSCRIBED, SessionStatus.DIARIZED -> null
 }

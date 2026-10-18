@@ -36,10 +36,11 @@ interface SessionDao {
     suspend fun delete(id: Long)
 
     /**
-     * Sessions in a given status. Used by the diarization retry
-     * loop to find sessions that ended in [SessionStatus.DIARIZATION_FAILED].
+     * Sessions in a given status, oldest first. Used by crash
+     * recovery and by the charging job, which identifies the speakers
+     * of [SessionStatus.DIARIZATION_PENDING] sessions oldest first.
      */
-    @Query("SELECT * FROM sessions WHERE status = :status")
+    @Query("SELECT * FROM sessions WHERE status = :status ORDER BY createdAt, id")
     suspend fun findByStatus(status: SessionStatus): List<SessionEntity>
 
     @Query("UPDATE sessions SET status = :status WHERE id = :id")
