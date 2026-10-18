@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.audio.AudioExporter
+import com.convoscribe.audio.MediaCodecAudioDecoder
 import com.convoscribe.audio.MicAudioSource
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
@@ -23,6 +24,7 @@ import com.convoscribe.llm.OpenAiChatClient
 import com.convoscribe.models.ModelDownloader
 import com.convoscribe.models.ModelStore
 import com.convoscribe.recording.ConversationOptions
+import com.convoscribe.recording.ImportAudioUseCase
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.settings.EncryptedSecretStore
@@ -261,6 +263,22 @@ class AppContainer(val context: Context) {
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
         diarize = diarizeSessionUseCase
+    )
+
+    /**
+     * Imports an audio file as a new session (issue #3): decodes it
+     * with the platform codecs, transcribes it in the Settings
+     * language and identifies speakers. Run by the foreground
+     * service; its [ImportAudioUseCase.state] drives the home screen's
+     * progress banner. Work files live in `cacheDir/imports/`.
+     */
+    val importAudioUseCase = ImportAudioUseCase(
+        repository = sessionRepository,
+        transcriberFactory = transcriberFactory,
+        diarize = diarizeSessionUseCase,
+        decoder = MediaCodecAudioDecoder(),
+        workDir = File(context.cacheDir, "imports"),
+        defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) }
     )
 
     /**

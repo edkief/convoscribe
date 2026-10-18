@@ -61,6 +61,57 @@ class SessionRepository(
         return id
     }
 
+    /**
+     * Create a finished session from an imported file (issue #3) in
+     * one transaction: the row (already `TRANSCRIBED`, with
+     * [durationMs] and the [engine]/[model] that transcribed it), its
+     * [segments], and [audio] moved to `<recordingsDir>/<id>.wav` as
+     * the last step. Until this returns no row exists, so an import
+     * that fails or is cancelled earlier leaves nothing behind; if the
+     * move fails the row is rolled back. Options are normalised as in
+     * [createSession].
+     */
+    suspend fun createImportedSession(
+        title: String,
+        language: String,
+        numSpeakers: Int?,
+        participants: List<String>?,
+        durationMs: Long,
+        engine: String,
+        model: String,
+        segments: List<SegmentPiece>,
+        audio: File
+    ): Long = db.withTransaction {
+        val row = SessionEntity(
+            title = title,
+            createdAt = System.currentTimeMillis(),
+            durationMs = durationMs,
+            language = language,
+            status = SessionStatus.TRANSCRIBED,
+            numSpeakers = normaliseSpeakerCount(numSpeakers),
+            participants = ParticipantsCodec.encode(participants),
+            asrEngine = engine,
+            asrModel = model
+        )
+        val id = sessionDao.insert(row)
+        val target = File(recordingsDir, "$id.wav")
+        sessionDao.update(row.copy(id = id, audioPath = target.absolutePath))
+        for (piece in segments) {
+            segmentDao.insert(
+                SegmentEntity(
+                    sessionId = id,
+                    startMs = piece.startMs,
+                    endMs = piece.endMs,
+                    text = piece.text,
+                    speakerIndex = piece.speakerIndex,
+                    tokens = TokenTimingCodec.encode(piece.tokens)
+                )
+            )
+        }
+        moveFile(audio, target)
+        id
+    }
+
     override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) {
         val row = sessionDao.get(sessionId) ?: return
         sessionDao.setEngine(
@@ -402,6 +453,22 @@ class SessionRepository(
     }
 
     companion object {
+        /**
+         * Move [from] to [to]: a rename when both are on one file
+         * system, otherwise copy then delete. A failed copy removes the
+         * partial [to] and rethrows.
+         */
+        internal fun moveFile(from: File, to: File) {
+            if (from.renameTo(to)) return
+            try {
+                from.copyTo(to, overwrite = true)
+            } catch (e: Exception) {
+                to.delete()
+                throw e
+            }
+            from.delete()
+        }
+
         /** `-1` automatic, `1..10` fixed, `null` kept (follow Settings). */
         internal fun normaliseSpeakerCount(numSpeakers: Int?): Int? =
             numSpeakers?.let { if (it < 1) -1 else it.coerceAtMost(10) }
