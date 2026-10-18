@@ -373,6 +373,40 @@ disabled while a re-transcription runs.
 
 ---
 
+## 21. Display mode and the new design (issue #4)
+
+**Steps**
+
+1. On a phone, open the app: Home shows session cards (date,
+   duration, speakers, a status badge while recording / identifying
+   speakers / failed) and a teal **New recording** button. Delete a
+   session from its card's ⋮ menu; long-press still works.
+2. Settings → **Appearance**: switch **Display** between Auto,
+   Standard and E-ink. The app re-themes at once, without a restart.
+3. On the **Boox Note Air 6C**, with Display on **Auto**: the app is
+   black on white with outlined cards, no ripple on taps and no
+   scrolling animation (the live transcript and the playing line
+   jump). Standard turns the colours back on; E-ink works on a phone
+   too.
+4. On Android 12+, Standard mode: turn **Use device colours** on and
+   off; the colours follow the wallpaper, then return to teal. The
+   switch is hidden in E-ink.
+5. Record ~30 s: the timer, the **Recording** badge and the
+   microphone level meter move while you speak and the meter drops
+   when you are silent.
+6. Open a diarized session, rename *Speaker 2* (chip or line): the
+   chip's dot and that speaker's lines keep the same colour.
+7. System dark mode on (Standard): every screen is dark and readable.
+8. System font size at the largest setting (200 %): Record, Session
+   and Settings stay usable; choices become radio lists, the session
+   tabs scroll, nothing is cut off mid-word.
+9. With TalkBack, the icon buttons (Settings, ⋮, share, mic, send,
+   delete) announce what they do.
+
+**Expected** — as described in each step; no behaviour changed
+compared with the previous build (recording, diarization, playback,
+summaries and questions work as in checks 4–20).
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
