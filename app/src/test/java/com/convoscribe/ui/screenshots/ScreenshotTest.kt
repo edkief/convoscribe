@@ -76,7 +76,8 @@ class ScreenshotTest(private val variant: Variant) {
         val size: String,
         val density: String,
         val dark: Boolean = false,
-        val fontScale: Float = 1f
+        val fontScale: Float = 1f,
+        val eink: Boolean = false
     ) {
         val qualifiers: String get() = "$size-${if (dark) "night" else "notnight"}-$density"
 
@@ -100,7 +101,7 @@ class ScreenshotTest(private val variant: Variant) {
 
     private fun capture(screen: String, content: @Composable () -> Unit) {
         compose.setContent {
-            ConvoScribeTheme(darkTheme = variant.dark) {
+            ConvoScribeTheme(darkTheme = variant.dark, eink = variant.eink) {
                 content()
             }
         }
@@ -342,7 +343,8 @@ class ScreenshotTest(private val variant: Variant) {
             Variant(name = "phone_light", size = PHONE, density = "xxhdpi"),
             Variant(name = "phone_dark", size = PHONE, density = "xxhdpi", dark = true),
             Variant(name = "phone_font200", size = PHONE, density = "xxhdpi", fontScale = 2f),
-            Variant(name = "boox", size = BOOX, density = "xhdpi")
+            // Auto display mode picks e-ink on a Boox.
+            Variant(name = "boox", size = BOOX, density = "xhdpi", eink = true)
         ).map { arrayOf(it) }
 
         // 2025-03-14 09:30 UTC and a day later.
