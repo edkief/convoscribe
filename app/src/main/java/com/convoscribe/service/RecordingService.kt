@@ -20,6 +20,7 @@ import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.recording.RetranscribeState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -109,6 +110,23 @@ class RecordingService : Service() {
                     handleDiarize(id, count.takeIf { it != NUM_SPEAKERS_UNSET })
                 }
             }
+            ACTION_RETRANSCRIBE -> {
+                val id = intent.getLongExtra(EXTRA_SESSION_ID, -1L)
+                val language = intent.getStringExtra(EXTRA_LANGUAGE)
+                if (id > 0L && language != null) {
+                    handleRetranscribe(id, language)
+                } else if (controller().state.value.phase == RecordingPhase.IDLE && retranscribeJob == null) {
+                    stopSelf()
+                }
+            }
+            ACTION_CANCEL_RETRANSCRIBE -> {
+                val job = retranscribeJob
+                if (job != null) {
+                    job.cancel()
+                } else if (controller().state.value.phase == RecordingPhase.IDLE) {
+                    stopSelf()
+                }
+            }
             // Defensive: an intent with an unknown action is a
             // client bug. Don't crash; just stay in foreground if
             // we already are, otherwise exit cleanly.
@@ -134,6 +152,10 @@ class RecordingService : Service() {
         // nothing else. The controller's `start` is also idempotent
         // (it no-ops unless phase is IDLE).
         val controller = controller()
+        // One heavy job at a time: a re-transcription keeps the
+        // foreground (and the CPU) until it ends. The Record screen
+        // disables Start meanwhile; this guards a stray intent.
+        if (retranscribeJob != null) return
         ensureNotificationChannel()
         val notification = buildNotification(elapsedMs = 0L)
         // ServiceCompat ignores the foregroundServiceType argument
@@ -209,6 +231,97 @@ class RecordingService : Service() {
             ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
         }
+    }
+
+    /** The running re-transcription, so [ACTION_CANCEL_RETRANSCRIBE] can stop it. */
+    private var retranscribeJob: Job? = null
+
+    /**
+     * Re-transcribe [sessionId] in [language], then re-identify its
+     * speakers, in a `dataSync` foreground with a progress
+     * notification and a Cancel action. Refused while a recording or
+     * another re-transcription runs (the service is already in the
+     * foreground then). Cancel or failure keeps the old transcript.
+     */
+    private fun handleRetranscribe(sessionId: Long, language: String) {
+        val useCase = (application as ConvoApp).container.retranscribeUseCase
+        val busy = controller().state.value.phase != RecordingPhase.IDLE || retranscribeJob != null
+        if (busy || useCase.isRunning) return
+        ensureNotificationChannel()
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildRetranscribeNotification(0f),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+        acquireWakeLock()
+        retranscribeJob = scope.launch {
+            val progress = useCase.state
+                .onEach { state ->
+                    if (state is RetranscribeState.Running) maybeRefreshRetranscribeNotification(state.progress)
+                }
+                .launchIn(this)
+            try {
+                useCase.run(sessionId, language)
+            } finally {
+                progress.cancel()
+                retranscribeJob = null
+                releaseWakeLock()
+                // A recording started meanwhile owns the foreground now.
+                if (controller().state.value.phase == RecordingPhase.IDLE) {
+                    ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+        }
+    }
+
+    private fun maybeRefreshRetranscribeNotification(progress: Float) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
+        lastNotificationUpdateMs = now
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildRetranscribeNotification(progress),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+    }
+
+    private fun buildRetranscribeNotification(progress: Float): android.app.Notification {
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            REQUEST_OPEN,
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val cancelIntent = PendingIntent.getService(
+            this,
+            REQUEST_CANCEL_RETRANSCRIBE,
+            cancelRetranscribeIntent(this),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val percent = (progress * 100).toInt().coerceIn(0, 100)
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(getString(R.string.notification_retranscribe_title))
+            .setContentText(getString(R.string.notification_retranscribe_text, percent))
+            .setProgress(100, percent, false)
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(
+                NotificationCompat.Action.Builder(
+                    R.drawable.ic_launcher_foreground,
+                    getString(R.string.notification_retranscribe_cancel),
+                    cancelIntent
+                ).build()
+            )
+            .build()
     }
 
     private fun startStateObserver() {
@@ -395,6 +508,9 @@ class RecordingService : Service() {
         /** `requestCode` for the stop pending intent. */
         private const val REQUEST_STOP = 1002
 
+        /** `requestCode` for the cancel-re-transcription pending intent. */
+        private const val REQUEST_CANCEL_RETRANSCRIBE = 1003
+
         /** Upper bound on the wake-lock acquired for one session. */
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
@@ -418,8 +534,17 @@ class RecordingService : Service() {
         const val ACTION_DIARIZE = "com.convoscribe.DIARIZE"
 
         /**
+         * Action to re-transcribe [EXTRA_SESSION_ID]'s audio in the
+         * language in [EXTRA_LANGUAGE], then re-identify speakers.
+         */
+        const val ACTION_RETRANSCRIBE = "com.convoscribe.RETRANSCRIBE"
+
+        /** Action to cancel a running [ACTION_RETRANSCRIBE]; the old transcript is kept. */
+        const val ACTION_CANCEL_RETRANSCRIBE = "com.convoscribe.CANCEL_RETRANSCRIBE"
+
+        /**
          * Long extra key for the session id: required by
-         * [ACTION_DIARIZE]; optional on [ACTION_START], where it
+         * [ACTION_DIARIZE] and [ACTION_RETRANSCRIBE]; optional on [ACTION_START], where it
          * names a finished session to continue recording into.
          */
         const val EXTRA_SESSION_ID = "com.convoscribe.EXTRA_SESSION_ID"
@@ -473,6 +598,20 @@ class RecordingService : Service() {
                         putExtra(EXTRA_TITLE, options.title)
                     }
                 }
+
+        /**
+         * Build an [Intent] that re-transcribes [sessionId] in
+         * [language]. Send it with `startForegroundService`.
+         */
+        fun retranscribeIntent(context: Context, sessionId: Long, language: String): Intent =
+            Intent(context, RecordingService::class.java)
+                .setAction(ACTION_RETRANSCRIBE)
+                .putExtra(EXTRA_SESSION_ID, sessionId)
+                .putExtra(EXTRA_LANGUAGE, language)
+
+        /** Build an [Intent] that cancels a running re-transcription; plain `startService`. */
+        fun cancelRetranscribeIntent(context: Context): Intent =
+            Intent(context, RecordingService::class.java).setAction(ACTION_CANCEL_RETRANSCRIBE)
 
         /**
          * Build an [Intent] that, when sent to [RecordingService],

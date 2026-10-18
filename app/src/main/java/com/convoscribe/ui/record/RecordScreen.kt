@@ -55,6 +55,7 @@ import com.convoscribe.R
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
 
 /**
@@ -110,6 +111,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val state by vm.state.collectAsStateWithLifecycle()
     val options by vm.options.collectAsStateWithLifecycle()
     val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
+    val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
     val startOptions = options.takeIf { resumeSessionId == null }
 
@@ -162,6 +164,11 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         finalLines = state.finalLines,
         partialText = state.partialText,
         error = state.error,
+        busyMessage = if (retranscribeState is RetranscribeState.Running) {
+            stringResource(R.string.record_busy_retranscribing)
+        } else {
+            null
+        },
         micDeniedMessage = micDeniedMessage,
         continuing = resumeSessionId != null,
         options = options,
@@ -217,6 +224,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
  *   final transcript when the user denied the runtime permission.
  * @param continuing `true` when appending to an existing session;
  *   changes the title and hides the new-conversation options.
+ * @param busyMessage why Start is unavailable (another job holds the
+ *   recorder), or `null`.
  * @param options the new conversation's options, shown while idle
  *   (see [ConversationOptionsForm]).
  */
@@ -229,6 +238,7 @@ internal fun RecordBody(
     finalLines: List<String>,
     partialText: String,
     error: String?,
+    busyMessage: String? = null,
     micDeniedMessage: String?,
     continuing: Boolean = false,
     options: ConversationOptions? = null,
@@ -306,6 +316,14 @@ internal fun RecordBody(
                 )
             }
 
+            if (busyMessage != null && phase == RecordingPhase.IDLE) {
+                Text(
+                    text = busyMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+
             if (micDeniedMessage != null) {
                 Text(
                     text = micDeniedMessage,
@@ -370,7 +388,7 @@ internal fun RecordBody(
             // disabling here gives clearer visual feedback.
             // Not gated on the mic permission: tapping Start is what
             // asks for it.
-            val showStart = phase == RecordingPhase.IDLE
+            val showStart = phase == RecordingPhase.IDLE && busyMessage == null
             val showStop = phase == RecordingPhase.RECORDING
             // The round FAB is large (96dp) but it's structured as
             // a `Button` (not `FloatingActionButton`) so its state

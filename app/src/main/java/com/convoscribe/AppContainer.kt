@@ -24,6 +24,7 @@ import com.convoscribe.models.ModelDownloader
 import com.convoscribe.models.ModelStore
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
+import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
@@ -248,6 +249,18 @@ class AppContainer(val context: Context) {
         settings = settingsRepository,
         embedderFactory = speakerEmbedderFactory,
         enrolled = enrolledSpeakers
+    )
+
+    /**
+     * Re-transcribes a session's stored audio in another language and
+     * re-identifies its speakers (issue #6). Run by the foreground
+     * service; its [RetranscribeUseCase.state] drives the session
+     * screen's progress banner.
+     */
+    val retranscribeUseCase = RetranscribeUseCase(
+        repository = sessionRepository,
+        transcriberFactory = transcriberFactory,
+        diarize = diarizeSessionUseCase
     )
 
     /**

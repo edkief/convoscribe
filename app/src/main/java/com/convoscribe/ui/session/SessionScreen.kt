@@ -110,7 +110,9 @@ import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
 import com.convoscribe.ui.record.ParticipantsDialog
 import kotlinx.coroutines.flow.map
@@ -257,6 +259,18 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         container.enrolledSpeakers.observeAll().map { rows -> rows.map { it.name }.distinct() }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
     val effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers
+    val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
+    val retranscribing = retranscribeState is RetranscribeState.Running
+    val retranscribeFailedMessage = stringResource(R.string.session_retranscribe_failed)
+    LaunchedEffect(retranscribeState) {
+        val failed = retranscribeState as? RetranscribeState.Failed ?: return@LaunchedEffect
+        if (failed.sessionId != sessionId) return@LaunchedEffect
+        container.retranscribeUseCase.acknowledgeFailure()
+        snackbarHostState.showSnackbar(
+            message = "$retranscribeFailedMessage ${failed.message}",
+            duration = SnackbarDuration.Long
+        )
+    }
     val reidentify: (Int) -> Unit = { count ->
         // Hand off to the foreground service, which saves the
         // count on the session and promotes itself to
@@ -298,6 +312,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         snackbarHostState = snackbarHostState,
         canContinueRecording = !state.notFound &&
             recorderState.phase == RecordingPhase.IDLE &&
+            !retranscribing &&
             state.status in CONTINUABLE_STATUSES,
         onContinueRecording = { navController.navigate("record/resume/$sessionId") },
         onBack = { navController.popBackStack() },
@@ -332,6 +347,30 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         ),
         enrolledNames = enrolledNames,
         onSetParticipants = { vm.setParticipants(it) },
+        retranscribe = RetranscribeUi(
+            progress = (retranscribeState as? RetranscribeState.Running)
+                ?.takeIf { it.sessionId == sessionId }
+                ?.progress,
+            enabled = !state.notFound &&
+                recorderState.phase == RecordingPhase.IDLE &&
+                !retranscribing &&
+                state.status in CONTINUABLE_STATUSES,
+            onStart = { language ->
+                val engine = appSettings.asrEngine
+                val missing = container.modelStore.missing(ModelCatalog.requiredFor(language, engine))
+                if (missing.isNotEmpty()) {
+                    // Download first; setup pops back here and the user starts again.
+                    navController.navigate("setup?engine=$engine&language=$language&back=true")
+                } else {
+                    vm.stopPlayback()
+                    ContextCompat.startForegroundService(
+                        context,
+                        RecordingService.retranscribeIntent(context, sessionId, language)
+                    )
+                }
+            },
+            onCancel = { context.startService(RecordingService.cancelRetranscribeIntent(context)) }
+        ),
         onSummarise = { summaryVm.summarise() },
         onCancelSummary = { summaryVm.cancel() },
         onAsk = { question -> askVm.ask(question) },
@@ -385,7 +424,8 @@ internal fun SessionBody(
     onOpenSettings: () -> Unit,
     details: SessionDetails = SessionDetails(),
     enrolledNames: List<String> = emptyList(),
-    onSetParticipants: (List<String>?) -> Unit = {}
+    onSetParticipants: (List<String>?) -> Unit = {},
+    retranscribe: RetranscribeUi = RetranscribeUi()
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -400,6 +440,7 @@ internal fun SessionBody(
     var participantsOpen by remember { mutableStateOf(false) }
     var reidentifyAfterParticipants by remember { mutableStateOf(false) }
     var infoOpen by remember { mutableStateOf(false) }
+    var retranscribeOpen by remember { mutableStateOf(false) }
     Scaffold(
         snackbarHost = {
             // One-line snackbar with a short duration: the
@@ -469,13 +510,23 @@ internal fun SessionBody(
                                 onSaveAudio()
                             }
                         )
-                        val canDiarize = status != SessionStatus.DIARIZING && status != SessionStatus.RECORDING
+                        val canDiarize = status != SessionStatus.DIARIZING &&
+                            status != SessionStatus.RECORDING &&
+                            retranscribe.progress == null
                         DropdownMenuItem(
                             text = { Text(text = stringResource(R.string.session_overflow_reidentify)) },
                             enabled = canDiarize,
                             onClick = {
                                 overflowExpanded = false
                                 reidentifyOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.session_overflow_retranscribe)) },
+                            enabled = retranscribe.enabled,
+                            onClick = {
+                                overflowExpanded = false
+                                retranscribeOpen = true
                             }
                         )
                         DropdownMenuItem(
@@ -512,6 +563,9 @@ internal fun SessionBody(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            retranscribe.progress?.let { progress ->
+                RetranscribeBanner(progress = progress, onCancel = retranscribe.onCancel)
+            }
             PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
@@ -660,6 +714,16 @@ internal fun SessionBody(
     }
     if (infoOpen) {
         SessionInfoDialog(details = details, onDismiss = { infoOpen = false })
+    }
+    if (retranscribeOpen) {
+        RetranscribeDialog(
+            currentLanguage = details.language,
+            onConfirm = { language ->
+                retranscribeOpen = false
+                retranscribe.onStart(language)
+            },
+            onDismiss = { retranscribeOpen = false }
+        )
     }
     // Clear-questions confirmation. The action itself is gated on
     // `messages.isNotEmpty()` already, so the dialog only opens
