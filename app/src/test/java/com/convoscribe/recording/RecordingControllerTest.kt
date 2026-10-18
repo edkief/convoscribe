@@ -6,11 +6,14 @@ import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.audio.AudioSpec
+import com.convoscribe.audio.WavWriter
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -147,7 +150,13 @@ class RecordingControllerTest {
      * flow, just like a real `AudioRecord` would on a stop.
      */
     private class ChannelAudioSource(val channel: Channel<ShortArray>) : AudioSource {
+        /** Collectors currently attached: 1 while the "microphone" is open. */
+        var collectors: Int = 0
+            private set
+
         override fun chunks(): Flow<ShortArray> = channel.receiveAsFlow()
+            .onStart { collectors += 1 }
+            .onCompletion { collectors -= 1 }
     }
 
     /**
@@ -158,23 +167,34 @@ class RecordingControllerTest {
      * align with the chunk cadence (`startMs = (n-3)*100`,
      * `endMs = n*100`) so a bug in `samplesToMs` shows up here.
      *
-     * Tracks [acceptCount], [finishCount] and [closed] so tests
-     * can assert on what the controller actually called.
+     * [endUtterance] closes whatever is pending as "tail-<n>", and
+     * the three-chunk cadence restarts from there, like a real
+     * recognizer after a reset.
+     *
+     * Tracks [acceptCount], [finishCount], [endUtteranceCount] and
+     * [closed] so tests can assert on what the controller actually
+     * called.
      */
     private class EveryThirdChunkTranscriber : StreamingTranscriber {
         var acceptCount: Int = 0
             private set
         var finishCount: Int = 0
             private set
+        var endUtteranceCount: Int = 0
+            private set
         var closed: Boolean = false
             private set
 
+        /** [acceptCount] at the end of the last utterance. */
+        private var boundary: Int = 0
+
         override fun accept(samples: FloatArray): List<TranscriptEvent> {
             acceptCount += 1
-            if (acceptCount % 3 == 0) {
+            if (acceptCount - boundary == 3) {
                 val n = acceptCount
-                val startMs = ((n - 3) * 100L)
+                val startMs = (boundary * 100L)
                 val endMs = (n * 100L)
+                boundary = n
                 return listOf(
                     TranscriptEvent.Final(
                         text = "line-$n",
@@ -190,6 +210,18 @@ class RecordingControllerTest {
         override fun finish(): List<TranscriptEvent> {
             finishCount += 1
             return emptyList()
+        }
+
+        override fun endUtterance(): List<TranscriptEvent> {
+            endUtteranceCount += 1
+            if (acceptCount == boundary) return listOf(TranscriptEvent.Partial(""))
+            val final = TranscriptEvent.Final(
+                text = "tail-$acceptCount",
+                startMs = boundary * 100L,
+                endMs = acceptCount * 100L
+            )
+            boundary = acceptCount
+            return listOf(final, TranscriptEvent.Partial(""))
         }
 
         override fun close() {
@@ -603,5 +635,126 @@ class RecordingControllerTest {
         assertTrue(store.createCalls.isEmpty())
         assertEquals(listOf(FakeRecordingStore.Engine(7L, "cpu", "asr-fr", true)), store.engineCalls)
         h.controller.stop()
+    }
+
+    @Test
+    fun pause_releasesTheSource_closesTheUtterance_andKeepsTheSessionOpen() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+        assertEquals(1, h.audio.collectors)
+        repeat(2) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        h.controller.pause()
+        advanceUntilIdle()
+
+        val state = h.controller.state.value
+        assertEquals(RecordingPhase.PAUSED, state.phase)
+        assertEquals(0, h.audio.collectors)
+        assertEquals(1, h.transcriber.endUtteranceCount)
+        assertEquals(listOf("tail-2"), h.store.segments.map { it.text })
+        assertEquals(listOf("tail-2"), state.finalLines)
+        assertEquals("", state.partialText)
+        assertEquals(0f, state.inputLevel, 0f)
+        assertEquals(200L, state.elapsedMs)
+        // Not finished, not closed: the session is still open.
+        assertTrue(h.store.finishCalls.isEmpty())
+        assertEquals(0, h.transcriber.finishCount)
+        assertEquals(false, h.transcriber.closed)
+
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun resume_continuesTheSameSession_withSegmentTimesAlignedToTheAudio() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId
+        repeat(2) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+        h.controller.pause()
+        advanceUntilIdle()
+
+        h.controller.resume(this)
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.RECORDING, h.controller.state.value.phase)
+        assertEquals(1, h.audio.collectors)
+        repeat(3) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        // One session, one recognizer; the segment after the pause
+        // starts where the recorded audio left off (200 ms), not at
+        // the wall-clock time of the resume.
+        assertEquals(1, h.factory.createCount)
+        assertEquals(1, h.store.createCalls.size)
+        assertEquals(id, h.controller.state.value.sessionId)
+        assertEquals(
+            listOf(Triple(0L, 200L, "tail-2"), Triple(200L, 500L, "line-5")),
+            h.store.segments.map { Triple(it.startMs, it.endMs, it.text) }
+        )
+        assertTrue(h.store.segments.all { it.sessionId == id })
+        assertEquals(500L, h.controller.state.value.elapsedMs)
+
+        val stopped = h.controller.stop()!!
+        advanceUntilIdle()
+        assertEquals(id, stopped)
+        assertEquals(listOf(FakeRecordingStore.Finish(stopped, 500L)), h.store.finishCalls)
+        // The WAV holds exactly the recorded chunks: 5 x 100 ms.
+        assertEquals(
+            WavWriter.HEADER_SIZE + 5L * AudioSpec.CHUNK_SAMPLES * 2L,
+            File(h.store.audioPath(stopped)).length()
+        )
+    }
+
+    @Test
+    fun stop_whilePaused_finishesTheSession() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId!!
+        repeat(4) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+        h.controller.pause()
+        advanceUntilIdle()
+
+        val stopped = h.controller.stop()
+        advanceUntilIdle()
+
+        assertEquals(id, stopped)
+        assertEquals(RecordingPhase.IDLE, h.controller.state.value.phase)
+        assertEquals(id, h.controller.state.value.lastCompletedSessionId)
+        assertEquals(listOf(FakeRecordingStore.Finish(id, 400L)), h.store.finishCalls)
+        assertEquals(listOf("line-3", "tail-4"), h.store.segments.map { it.text })
+        assertTrue(h.transcriber.closed)
+    }
+
+    @Test
+    fun pauseAndResume_areNoOpsOutsideTheirPhase() = runTest {
+        val h = buildHarness()
+        // Idle: nothing to pause or resume.
+        h.controller.pause()
+        h.controller.resume(this)
+        assertEquals(RecordingPhase.IDLE, h.controller.state.value.phase)
+
+        h.controller.start(this)
+        advanceUntilIdle()
+        // Recording: resume does nothing.
+        h.controller.resume(this)
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.RECORDING, h.controller.state.value.phase)
+        assertEquals(1, h.audio.collectors)
+
+        h.controller.pause()
+        advanceUntilIdle()
+        // Paused twice: the utterance is only closed once.
+        h.controller.pause()
+        advanceUntilIdle()
+        assertEquals(1, h.transcriber.endUtteranceCount)
+
+        h.controller.stop()
+        advanceUntilIdle()
     }
 }

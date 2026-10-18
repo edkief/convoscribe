@@ -92,6 +92,20 @@ class RecordViewModel(
         }
     }
 
+    /**
+     * After a Start: whether to explain the floating control's "Display
+     * over other apps" permission now (issue #7). Only once ever, only
+     * while the floating control is on in Settings, and never when the
+     * permission is already [granted]. Answering `true` records that
+     * the user has been asked.
+     */
+    fun shouldAskForOverlay(granted: Boolean): Boolean {
+        val current = settings.settings.value
+        if (granted || !current.floatingControl || current.overlayPromptShown) return false
+        settings.update { it.copy(overlayPromptShown = true) }
+        return true
+    }
+
     /** Whether the chosen language still needs its models downloaded before Start. */
     fun modelsMissing(): Boolean = missingModels(_options.value.language)
 

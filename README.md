@@ -62,11 +62,28 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   audio and transcript are appended to the same session, in its own
   language.
 - **Foreground microphone service** keeps recording alive while the
-  screen is off or the app is in the background, with a
-  Stop action on the persistent notification.
+  screen is off or the app is in the background, with Pause / Resume
+  and Stop actions on the persistent notification.
+- **Pause and resume** a recording (Record screen, notification,
+  floating control or tile) without ending the session: the microphone
+  is released, nothing is recorded or transcribed while paused, and
+  the session is only diarized once you stop. The timer and the
+  transcript times follow the recorded audio, so they stay in step
+  with playback.
+- **Record from anywhere.** While a session is open and you switch to
+  another app, a small **floating control** shows *Recording* or
+  *Paused*, the time, Pause / Resume and Stop; drag it anywhere (it
+  rests against the nearest side edge and remembers where), tap it to
+  open the Record screen. It needs Android's *Display over other apps*
+  permission, which the app explains once (the first time you start a
+  recording, or when you turn it on in Settings → Recording); without
+  it, the notification is the control. A **Quick Settings tile**
+  (*ConvoScribe*) starts a new recording with the Settings defaults
+  from anywhere, and pauses or resumes an open one; it shows whether a
+  session is recording or paused.
 - **Crash-safe sessions** — sessions persist across restarts in a
-  Room database; a recording interrupted by an `am force-stop` is
-  recovered on next launch and lands in the session list with
+  Room database; a recording interrupted by an `am force-stop` (also
+  while paused) is recovered on next launch and lands in the session list with
   whatever transcript was already transcribed.
 - **Summaries and Q&A** through any
   OpenAI-compatible `/v1/chat/completions` endpoint (vLLM,

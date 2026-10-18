@@ -8,6 +8,7 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import java.io.File
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -116,6 +117,26 @@ class SessionRecoveryTest {
             ((after[43].toInt() and 0xFF) shl 24)
         assertEquals(36L + 3_200L, riffSize.toLong())
         assertEquals(3_200L, dataSize.toLong())
+    }
+
+    /**
+     * Issue #7: a session the process died in while paused is just a
+     * `RECORDING` row with an unclosed WAV and the segments persisted
+     * up to the pause. Recovery keeps that transcript and the audio
+     * recorded so far.
+     */
+    @Test
+    fun recover_sessionPausedWhenTheProcessDied_keepsTheTranscriptSoFar() = runTest {
+        val id = repo.createSession(title = "Paused", language = "en")
+        writeCrashRecoveredAudio(id, samples = 3_200)
+        repo.addSegment(id, startMs = 0L, endMs = 200L, text = "Before the pause", tokens = emptyList())
+
+        recovery.recover()
+
+        val session = repo.getSession(id)!!
+        assertEquals(SessionStatus.TRANSCRIBED, session.status)
+        assertEquals(200L, session.durationMs)
+        assertEquals(listOf("Before the pause"), repo.observeSegments(id).first().map { it.text })
     }
 
     /**

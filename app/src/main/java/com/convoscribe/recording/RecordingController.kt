@@ -15,12 +15,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 /**
@@ -38,7 +41,8 @@ import kotlinx.coroutines.withContext
  *
  * The class is intentionally not lifecycle-aware: it is owned by
  * the foreground service (TASK-13) and the recording screen
- * (TASK-12), which call [start] / [stop] at their convenience.
+ * (TASK-12), which call [start] / [pause] / [resume] / [stop] at
+ * their convenience.
  * Concurrent starts are a programming error and the controller
  * silently ignores them.
  *
@@ -79,6 +83,14 @@ class RecordingController(
      * transcriber and writer from outside.
      */
     private var sessionJob: Job? = null
+
+    /**
+     * Serialises [pause], [resume] and [stop]: each one swaps the
+     * capture job and touches the transcriber, so a Stop tapped while
+     * a pause is still flushing waits for it instead of closing the
+     * transcriber under it.
+     */
+    private val lifecycle = Mutex()
 
     /**
      * Start a new session, or continue [resumeSessionId]. No-op unless [RecordingState.phase] is
@@ -189,56 +201,130 @@ class RecordingController(
                     )
                 }
                 Log.i(TAG, "recording started session=$id lang=$lang resumed=${resumeSessionId != null}")
-                // Drain the audio source until the collector is
-                // cancelled (stop() / scope cancellation). Each
-                // emission is persisted twice: once to the WAV on
-                // the current scope's dispatcher (cheap), once to
-                // the recognizer on the ASR dispatcher (expensive).
-                audioSource.chunks().collect { chunk ->
-                    wav.write(chunk)
-                    val events = withContext(asrDispatcher) {
-                        transcriber.accept(chunk.toFloatSamples())
-                    }
-                    applyEvents(events)
-                    _state.update {
-                        it.copy(elapsedMs = samplesToMs(wav.samplesWritten), inputLevel = chunk.inputLevel())
-                    }
-                }
+                capture(transcriber, wav)
             } catch (ce: CancellationException) {
-                // Cooperative cancellation: stop() / scope cancel
-                // path. Do not call finishRecording here — stop()
-                // owns that and has already replaced the state with
-                // IDLE/STOPPING. Re-throw so structured concurrency
-                // still sees the cancel.
+                // Cooperative cancellation: stop() / pause() / scope
+                // cancel path. Do not call finishRecording here —
+                // stop() owns that and has already replaced the state
+                // with STOPPING, and a pause keeps the session open.
+                // Re-throw so structured concurrency still sees the
+                // cancel.
                 throw ce
             } catch (t: Throwable) {
-                // Best-effort cleanup. Any throwable here is
-                // swallowed because we are already on the error
-                // path and the original exception is more useful.
-                runCatching { transcriber?.close() }
-                runCatching { wav?.close() }
-                activeTranscriber = null
-                activeWav = null
-                val writtenMs = wav?.let { samplesToMs(it.samplesWritten) } ?: 0L
-                val id = sessionId
-                if (id != null) {
-                    runCatching { store.finishRecording(id, writtenMs) }
+                fail(t, transcriber, wav, sessionId)
+            }
+        }
+    }
+
+    /**
+     * Drain the audio source until the collector is cancelled
+     * (stop() / pause() / scope cancellation). Each emission is
+     * persisted twice: once to the WAV on the current scope's
+     * dispatcher (cheap), once to the recognizer on the ASR
+     * dispatcher (expensive). Collecting opens the microphone and
+     * cancelling releases it.
+     *
+     * A chunk is handled whole even when a pause or stop cancels the
+     * collector half-way: the recognizer may already have closed an
+     * utterance and reset on it, so dropping its events would lose
+     * that segment for good.
+     */
+    private suspend fun capture(transcriber: StreamingTranscriber, wav: WavWriter) {
+        audioSource.chunks().collect { chunk ->
+            withContext(NonCancellable) {
+                wav.write(chunk)
+                val events = withContext(asrDispatcher) {
+                    transcriber.accept(chunk.toFloatSamples())
                 }
+                applyEvents(events)
                 _state.update {
-                    RecordingState(
-                        phase = RecordingPhase.IDLE,
-                        lastCompletedSessionId = null,
-                        error = t.message ?: "Recording failed"
-                    )
+                    it.copy(elapsedMs = samplesToMs(wav.samplesWritten), inputLevel = chunk.inputLevel())
                 }
             }
         }
     }
 
     /**
+     * Error path of a session, from start-up or from capture: close
+     * the native handles, finish the DB row with what was recorded so
+     * the transcript is not lost, and surface [t] to the UI. Any
+     * throwable during cleanup is swallowed because the original
+     * exception is more useful.
+     */
+    private suspend fun fail(t: Throwable, transcriber: StreamingTranscriber?, wav: WavWriter?, sessionId: Long?) {
+        runCatching { transcriber?.close() }
+        runCatching { wav?.close() }
+        activeTranscriber = null
+        activeWav = null
+        val writtenMs = wav?.let { samplesToMs(it.samplesWritten) } ?: 0L
+        if (sessionId != null) {
+            runCatching { store.finishRecording(sessionId, writtenMs) }
+        }
+        _state.update {
+            RecordingState(
+                phase = RecordingPhase.IDLE,
+                lastCompletedSessionId = null,
+                error = t.message ?: "Recording failed"
+            )
+        }
+    }
+
+    /**
+     * Pause the active session (issue #7): stop capturing — the
+     * microphone is released — while the session, its transcriber
+     * and its WAV stay open. The utterance in progress is closed with
+     * [StreamingTranscriber.endUtterance] and persisted, so the
+     * transcript is complete up to the pause. No-op unless
+     * [RecordingPhase.RECORDING].
+     *
+     * Nothing is fed to the transcriber or the WAV while paused, so
+     * the recognizer's clock and the audio file advance together and
+     * segment times after [resume] stay aligned with the WAV. The
+     * session row stays `RECORDING`, which is what crash recovery
+     * ([SessionRecovery]) looks for.
+     */
+    suspend fun pause(): Unit = lifecycle.withLock {
+        if (_state.value.phase != RecordingPhase.RECORDING) return@withLock
+        _state.update { it.copy(phase = RecordingPhase.PAUSED) }
+        sessionJob?.cancelAndJoin()
+        sessionJob = null
+        _state.update { it.copy(inputLevel = 0f) }
+        val transcriber = activeTranscriber ?: return@withLock
+        val events = withContext(asrDispatcher) { transcriber.endUtterance() }
+        applyEvents(events)
+        Log.i(TAG, "recording paused session=${_state.value.sessionId}")
+    }
+
+    /**
+     * Resume a [pause]d session: capture starts again in [scope] on
+     * the same transcriber and WAV, so the session, its transcript and
+     * [RecordingState.elapsedMs] simply continue. No-op unless
+     * [RecordingPhase.PAUSED]. A capture error after resuming ends the
+     * session like any other.
+     */
+    suspend fun resume(scope: CoroutineScope): Unit = lifecycle.withLock {
+        if (_state.value.phase != RecordingPhase.PAUSED) return@withLock
+        val transcriber = activeTranscriber ?: return@withLock
+        val wav = activeWav ?: return@withLock
+        val id = _state.value.sessionId
+        _state.update { it.copy(phase = RecordingPhase.RECORDING) }
+        sessionJob = scope.launch {
+            try {
+                capture(transcriber, wav)
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                fail(t, transcriber, wav, id)
+            }
+        }
+        Log.i(TAG, "recording resumed session=$id")
+    }
+
+    /**
      * Stop the active session, if any. Returns the id of the
      * completed session or `null` if there was nothing to stop
-     * (already idle, or still loading).
+     * (already idle, or still loading). Works from
+     * [RecordingPhase.RECORDING] and [RecordingPhase.PAUSED].
      *
      * The cleanup sequence is:
      *  1. flip state to [RecordingPhase.STOPPING];
@@ -261,9 +347,9 @@ class RecordingController(
      * WAV writer are stashed into [controller] fields the launched
      * coroutine populates as it sets them up.
      */
-    suspend fun stop(): Long? {
-        if (_state.value.phase != RecordingPhase.RECORDING) return null
-        val id = _state.value.sessionId ?: return null
+    suspend fun stop(): Long? = lifecycle.withLock {
+        if (!_state.value.phase.active) return@withLock null
+        val id = _state.value.sessionId ?: return@withLock null
         _state.update { it.copy(phase = RecordingPhase.STOPPING, inputLevel = 0f) }
         sessionJob?.cancelAndJoin()
         val transcriber = activeTranscriber
@@ -287,7 +373,7 @@ class RecordingController(
         )
         sessionJob = null
         Log.i(TAG, "recording stopped session=$id durationMs=$durationMs")
-        return id
+        id
     }
 
     /**

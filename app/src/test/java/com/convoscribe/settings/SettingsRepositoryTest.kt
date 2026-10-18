@@ -38,6 +38,17 @@ class SettingsRepositoryTest {
     private fun newRepository(): SettingsRepository = SettingsRepository(prefs, secrets)
 
     @Test
+    fun floatingControlSettings_defaultOnAndNotAsked_andPersist() {
+        val repo = newRepository()
+        assertEquals(true, repo.settings.value.floatingControl)
+        assertEquals(false, repo.settings.value.overlayPromptShown)
+        repo.update { it.copy(floatingControl = false, overlayPromptShown = true) }
+        val reloaded = newRepository().settings.value
+        assertEquals(false, reloaded.floatingControl)
+        assertEquals(true, reloaded.overlayPromptShown)
+    }
+
+    @Test
     fun defaults_areReturnedOnEmptyPrefs() {
         val repo = newRepository()
         val s = repo.settings.value

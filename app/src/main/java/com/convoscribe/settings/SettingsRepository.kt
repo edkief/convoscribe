@@ -70,6 +70,8 @@ class SettingsRepository(
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
             putString(KEY_DISPLAY_MODE, next.displayMode)
             putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
+            putBoolean(KEY_FLOATING_CONTROL, next.floatingControl)
+            putBoolean(KEY_OVERLAY_PROMPT_SHOWN, next.overlayPromptShown)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
             if (participants == null) {
                 remove(
@@ -114,7 +116,9 @@ class SettingsRepository(
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
             defaultParticipants = ParticipantsCodec.decode(prefs.getString(KEY_DEFAULT_PARTICIPANTS, null)),
             displayMode = prefs.getString(KEY_DISPLAY_MODE, null) ?: DisplayMode.AUTO.key,
-            dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false)
+            dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
+            floatingControl = prefs.getBoolean(KEY_FLOATING_CONTROL, true),
+            overlayPromptShown = prefs.getBoolean(KEY_OVERLAY_PROMPT_SHOWN, false)
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -175,6 +179,8 @@ class SettingsRepository(
         const val KEY_DEFAULT_PARTICIPANTS = "defaultParticipants"
         const val KEY_DISPLAY_MODE = "displayMode"
         const val KEY_DYNAMIC_COLOR = "dynamicColor"
+        const val KEY_FLOATING_CONTROL = "floatingControl"
+        const val KEY_OVERLAY_PROMPT_SHOWN = "overlayPromptShown"
     }
 }
 

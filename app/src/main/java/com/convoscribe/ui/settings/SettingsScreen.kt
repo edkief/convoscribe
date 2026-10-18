@@ -50,6 +50,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -57,6 +58,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.overlay.OverlayPermission
+import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.ErrorBanner
@@ -156,8 +159,26 @@ fun SettingsScreen(navController: NavHostController) {
         vm.save()
         navController.popBackStack()
     }
+    // Re-checked on every resume: the permission is granted on a
+    // system page, outside the app.
+    var overlayGranted by remember { mutableStateOf(OverlayPermission.granted(context)) }
+    LifecycleResumeEffect(Unit) {
+        overlayGranted = OverlayPermission.granted(context)
+        onPauseOrDispose {}
+    }
+    var askOverlay by rememberSaveable { mutableStateOf(false) }
+    if (askOverlay) {
+        OverlayPermissionDialog(
+            onAllow = {
+                askOverlay = false
+                context.startActivity(OverlayPermission.settingsIntent(context))
+            },
+            onDismiss = { askOverlay = false }
+        )
+    }
     SettingsBody(
         state = state,
+        overlayGranted = overlayGranted,
         actions = SettingsActions(
             onBack = leave,
             onSave = leave,
@@ -170,7 +191,12 @@ fun SettingsScreen(navController: NavHostController) {
             onResetDefaultParticipants = vm::resetDefaultParticipants,
             onOpenKnownSpeakers = { navController.navigate("speakers") },
             onDisplayModeChange = vm::setDisplayMode,
-            onDynamicColorChange = vm::setDynamicColor
+            onDynamicColorChange = vm::setDynamicColor,
+            onFloatingControlChange = { enabled ->
+                vm.setFloatingControl(enabled)
+                if (enabled && !overlayGranted) askOverlay = true
+            },
+            onAllowOverlay = { context.startActivity(OverlayPermission.settingsIntent(context)) }
         )
     )
 }
@@ -188,13 +214,18 @@ internal class SettingsActions(
     val onResetDefaultParticipants: () -> Unit = {},
     val onOpenKnownSpeakers: () -> Unit = {},
     val onDisplayModeChange: (String) -> Unit = {},
-    val onDynamicColorChange: (Boolean) -> Unit = {}
+    val onDynamicColorChange: (Boolean) -> Unit = {},
+    val onFloatingControlChange: (Boolean) -> Unit = {},
+    val onAllowOverlay: () -> Unit = {}
 )
 
-/** Render-only body of [SettingsScreen] for previews and screenshot tests. */
+/**
+ * Render-only body of [SettingsScreen] for previews and screenshot tests.
+ * [overlayGranted] is whether "Display over other apps" is allowed.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions) {
+internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions, overlayGranted: Boolean = true) {
     ScreenScaffold(
         title = stringResource(R.string.settings_title),
         onBack = actions.onBack,
@@ -221,6 +252,12 @@ internal fun SettingsBody(state: SettingsUiState, actions: SettingsActions) {
                 dynamicColor = state.dynamicColor,
                 onDisplayModeChange = actions.onDisplayModeChange,
                 onDynamicColorChange = actions.onDynamicColorChange
+            )
+            RecordingSection(
+                floatingControl = state.floatingControl,
+                overlayGranted = overlayGranted,
+                onFloatingControlChange = actions.onFloatingControlChange,
+                onAllowOverlay = actions.onAllowOverlay
             )
             LanguageModelSection(
                 form = state.form,
@@ -308,6 +345,47 @@ private fun AppearanceSection(
                     SupportingText(text = stringResource(R.string.settings_dynamic_color_help))
                 }
                 Switch(checked = dynamicColor, onCheckedChange = null)
+            }
+        }
+    }
+}
+
+/**
+ * "Recording" section: the floating control over other apps (issue
+ * #7). While it is on but the permission is missing, says so and
+ * offers to open the system page.
+ */
+@Composable
+private fun RecordingSection(
+    floatingControl: Boolean,
+    overlayGranted: Boolean,
+    onFloatingControlChange: (Boolean) -> Unit,
+    onAllowOverlay: () -> Unit
+) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_recording)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(value = floatingControl, role = Role.Switch, onValueChange = onFloatingControlChange),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_floating_control_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                SupportingText(text = stringResource(R.string.settings_floating_control_help))
+            }
+            Switch(checked = floatingControl, onCheckedChange = null)
+        }
+        if (floatingControl && !overlayGranted) {
+            NoticeText(text = stringResource(R.string.settings_floating_control_needs_permission))
+            TextButton(onClick = onAllowOverlay) {
+                Text(text = stringResource(R.string.settings_floating_control_allow))
             }
         }
     }

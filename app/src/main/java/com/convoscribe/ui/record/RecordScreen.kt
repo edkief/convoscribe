@@ -6,8 +6,11 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -21,6 +24,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -47,6 +51,8 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.models.ModelCatalog
+import com.convoscribe.overlay.OverlayPermission
+import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
@@ -55,6 +61,7 @@ import com.convoscribe.service.RecordingService
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.NoticeText
+import com.convoscribe.ui.components.PausedBadge
 import com.convoscribe.ui.components.ProgressBlock
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
@@ -122,6 +129,15 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     // `rememberSaveable` keeps the denial message around process
     // death so a transient blank does not make it vanish.
     var micDeniedMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    // The one-time explanation of the floating control's permission.
+    var askOverlay by rememberSaveable { mutableStateOf(false) }
+    val startRecording: () -> Unit = {
+        ContextCompat.startForegroundService(
+            context,
+            RecordingService.startIntent(context, resumeSessionId, startOptions)
+        )
+        if (vm.shouldAskForOverlay(OverlayPermission.granted(context))) askOverlay = true
+    }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -135,12 +151,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             // notification just stays invisible.
             context.getString(R.string.record_error_mic_required)
         }
-        if (micOk) {
-            ContextCompat.startForegroundService(
-                context,
-                RecordingService.startIntent(context, resumeSessionId, startOptions)
-            )
-        }
+        if (micOk) startRecording()
     }
 
     // Pop the screen when the session has been acknowledged by the
@@ -207,10 +218,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                 launcher.launch(requiredPermissions())
                 return@RecordBody
             }
-            ContextCompat.startForegroundService(
-                context,
-                RecordingService.startIntent(context, resumeSessionId, startOptions)
-            )
+            startRecording()
         },
         onStop = {
             // Plain startService is intentional: we are sending the
@@ -218,8 +226,20 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             // already been promoted to a foreground microphone
             // service, so the regular start path is correct.
             context.startService(RecordingService.stopIntent(context))
-        }
+        },
+        onPause = { context.startService(RecordingService.pauseIntent(context)) },
+        onResume = { context.startService(RecordingService.resumeIntent(context)) }
     )
+
+    if (askOverlay) {
+        OverlayPermissionDialog(
+            onAllow = {
+                askOverlay = false
+                context.startActivity(OverlayPermission.settingsIntent(context))
+            },
+            onDismiss = { askOverlay = false }
+        )
+    }
 }
 
 /**
@@ -228,7 +248,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
  * Layout: while a new conversation is idle, its options in a section
  * card; once started, the elapsed time, a recording badge, the input
  * [InputLevelMeter] and the live transcript. The big round Start /
- * Stop control sits at the bottom in every phase.
+ * Stop control sits at the bottom in every phase, with Pause / Resume
+ * next to Stop while a session is open (issue #7).
  *
  * @param inputLevel microphone level `0f..1f` while recording.
  * @param micDeniedMessage shown above the control when the user denied
@@ -257,7 +278,9 @@ internal fun RecordBody(
     inputLevel: Float = 0f,
     onBack: () -> Unit,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onPause: () -> Unit = {},
+    onResume: () -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
     val showOptions = phase == RecordingPhase.IDLE && !continuing && options != null
@@ -323,7 +346,9 @@ internal fun RecordBody(
                 canStart = phase == RecordingPhase.IDLE && busyMessage == null,
                 continuing = continuing,
                 onStart = onStart,
-                onStop = onStop
+                onStop = onStop,
+                onPause = onPause,
+                onResume = onResume
             )
         }
     }
@@ -365,6 +390,7 @@ private fun LiveTranscript(
                 )
             )
             RecordingPhase.STOPPING -> ProgressBlock(message = stringResource(R.string.record_phase_stopping))
+            RecordingPhase.PAUSED -> PausedBadge()
             RecordingPhase.IDLE -> Unit
         }
 
@@ -394,10 +420,10 @@ private fun LiveTranscript(
             if (itemCount == 0) {
                 Text(
                     text = stringResource(
-                        if (phase == RecordingPhase.RECORDING) {
-                            R.string.record_live_listening
-                        } else {
-                            R.string.record_live_idle
+                        when (phase) {
+                            RecordingPhase.RECORDING -> R.string.record_live_listening
+                            RecordingPhase.PAUSED -> R.string.record_live_paused
+                            else -> R.string.record_live_idle
                         }
                     ),
                     style = MaterialTheme.typography.bodyMedium,
@@ -434,7 +460,9 @@ private fun LiveTranscript(
  * LOADING / STOPPING (and while another job holds the recorder) so the
  * start path cannot fire twice; the service rejects concurrent starts
  * anyway, but this shows it. Not gated on the mic permission: tapping
- * Start is what asks for it.
+ * Start is what asks for it. While a session is open a smaller Pause /
+ * Resume button sits to the left of Stop, balanced by an empty slot
+ * on the right so Stop stays centred.
  */
 @Composable
 private fun RecordControl(
@@ -442,11 +470,16 @@ private fun RecordControl(
     canStart: Boolean,
     continuing: Boolean,
     onStart: () -> Unit,
-    onStop: () -> Unit
+    onStop: () -> Unit,
+    onPause: () -> Unit,
+    onResume: () -> Unit
 ) {
     val spacing = AppTheme.spacing
     val scheme = MaterialTheme.colorScheme
-    val recording = phase == RecordingPhase.RECORDING
+    // "Recording" for the big button means a session is open, paused
+    // or not: it is the Stop button then.
+    val recording = phase.active
+    val paused = phase == RecordingPhase.PAUSED
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -455,24 +488,30 @@ private fun RecordControl(
         verticalArrangement = Arrangement.spacedBy(spacing.s)
     ) {
         val enabled = recording || canStart
-        Button(
-            onClick = if (recording) onStop else onStart,
-            enabled = enabled,
-            modifier = Modifier.size(AppTheme.sizes.recordButton),
-            shape = CircleShape,
-            contentPadding = PaddingValues(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = if (recording) scheme.error else scheme.primary,
-                contentColor = if (recording) scheme.onError else scheme.onPrimary
-            )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(spacing.xl)
         ) {
-            Icon(
-                painter = painterResource(if (recording) R.drawable.ic_stop else R.drawable.ic_mic),
-                contentDescription = stringResource(if (recording) R.string.record_stop else R.string.record_start),
-                modifier = Modifier.size(AppTheme.sizes.iconLarge)
-            )
+            Box(modifier = Modifier.size(AppTheme.sizes.touchTarget + spacing.l)) {
+                if (recording) {
+                    val label = stringResource(if (paused) R.string.record_resume else R.string.record_pause)
+                    FilledTonalIconButton(
+                        onClick = if (paused) onResume else onPause,
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        Icon(
+                            painter = painterResource(if (paused) R.drawable.ic_play else R.drawable.ic_pause),
+                            contentDescription = label,
+                            modifier = Modifier.size(AppTheme.sizes.icon)
+                        )
+                    }
+                }
+            }
+            MainRecordButton(recording = recording, enabled = enabled, onStart = onStart, onStop = onStop)
+            Spacer(modifier = Modifier.size(AppTheme.sizes.touchTarget + spacing.l))
         }
         val caption = when {
+            paused -> R.string.record_hint_paused
             recording -> R.string.record_hint_stop
             !canStart -> null
             continuing -> R.string.record_hint_continue
@@ -482,6 +521,29 @@ private fun RecordControl(
             text = caption?.let { stringResource(it) }.orEmpty(),
             style = MaterialTheme.typography.labelLarge,
             color = scheme.onSurfaceVariant
+        )
+    }
+}
+
+/** The big round button: Start while idle, Stop while a session is open. */
+@Composable
+private fun MainRecordButton(recording: Boolean, enabled: Boolean, onStart: () -> Unit, onStop: () -> Unit) {
+    val scheme = MaterialTheme.colorScheme
+    Button(
+        onClick = if (recording) onStop else onStart,
+        enabled = enabled,
+        modifier = Modifier.size(AppTheme.sizes.recordButton),
+        shape = CircleShape,
+        contentPadding = PaddingValues(),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (recording) scheme.error else scheme.primary,
+            contentColor = if (recording) scheme.onError else scheme.onPrimary
+        )
+    ) {
+        Icon(
+            painter = painterResource(if (recording) R.drawable.ic_stop else R.drawable.ic_mic),
+            contentDescription = stringResource(if (recording) R.string.record_stop else R.string.record_start),
+            modifier = Modifier.size(AppTheme.sizes.iconLarge)
         )
     }
 }

@@ -2,22 +2,35 @@ package com.convoscribe.recording
 
 /**
  * High-level phase of a recording session, observable through
- * [RecordingState.phase]. Transitions follow the linear path
+ * [RecordingState.phase]. Transitions follow the path
  *
- *  IDLE → LOADING → RECORDING → STOPPING → IDLE
+ *  IDLE → LOADING → RECORDING ⇄ PAUSED → STOPPING → IDLE
  *
+ * (`STOPPING` is reachable from both `RECORDING` and `PAUSED`.)
  * `IDLE` is the only state from which [RecordingController.start]
  * accepts a new session; `LOADING` covers the brief window in which
  * the ASR model is being instantiated and the session row is being
  * created in Room. `RECORDING` is the steady state of an active
- * session. `STOPPING` is set the moment [RecordingController.stop]
+ * session. `PAUSED` (issue #7) keeps the session open with the
+ * microphone released: nothing is captured, transcribed or written
+ * until [RecordingController.resume], and the session is not
+ * diarized. `STOPPING` is set the moment [RecordingController.stop]
  * is called and lasts until the WAV writer is closed and
  * `finishRecording` has stamped the duration.
  *
  * Any error during start or collection jumps back to `IDLE` with
  * [RecordingState.error] populated.
  */
-enum class RecordingPhase { IDLE, LOADING, RECORDING, STOPPING }
+enum class RecordingPhase {
+    IDLE,
+    LOADING,
+    RECORDING,
+    PAUSED,
+    STOPPING;
+
+    /** A session is open: recording or paused. */
+    val active: Boolean get() = this == RECORDING || this == PAUSED
+}
 
 /**
  * Immutable snapshot of everything the UI needs to render the
@@ -41,7 +54,7 @@ enum class RecordingPhase { IDLE, LOADING, RECORDING, STOPPING }
  *   time, so a paused microphone doesn't inflate the counter).
  * @property inputLevel loudness of the latest audio chunk in `0f..1f`
  *   (see [com.convoscribe.audio.inputLevel]) for the Record screen's
- *   level meter; 0 outside RECORDING.
+ *   level meter; 0 outside RECORDING (so also while PAUSED).
  * @property partialText best-so-far hypothesis the ASR is holding
  *   for the current utterance. Replaced on every
  *   [com.convoscribe.asr.TranscriptEvent.Partial].

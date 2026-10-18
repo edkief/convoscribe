@@ -290,6 +290,20 @@ class AppContainer(val context: Context) {
     val pendingImport = MutableStateFlow<PendingImport?>(null)
 
     /**
+     * `true` while one of the app's activities is visible (from
+     * `ProcessLifecycleOwner`, set in [ConvoApp]). The floating
+     * recording control hides then (issue #7).
+     */
+    val appInForeground = MutableStateFlow(false)
+
+    /**
+     * `true` when the floating control or the Quick Settings tile asked
+     * MainActivity to show the Record screen; the navigation graph
+     * consumes it.
+     */
+    val pendingOpenRecord = MutableStateFlow(false)
+
+    /**
      * Use case that records a voice sample and enrolls it as a
      * named speaker, so a fresh recording can label matched
      * voices with the user's name in the diarized transcript

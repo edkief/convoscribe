@@ -125,7 +125,9 @@ data class SettingsUiState(
     val defaultParticipants: List<String>? = null,
     /** [com.convoscribe.settings.DisplayMode.key]; written immediately, like the engine. */
     val displayMode: String = DisplayMode.AUTO.key,
-    val dynamicColor: Boolean = false
+    val dynamicColor: Boolean = false,
+    /** The floating recording control over other apps (issue #7); written immediately. */
+    val floatingControl: Boolean = true
 )
 
 /**
@@ -357,6 +359,15 @@ class SettingsViewModel(
     }
 
     /**
+     * Persist the floating control switch immediately. Turning it on
+     * here is where the user meets the permission explanation, so the
+     * Record screen does not ask again.
+     */
+    fun setFloatingControl(enabled: Boolean) {
+        repo.update { it.copy(floatingControl = enabled, overlayPromptShown = it.overlayPromptShown || enabled) }
+    }
+
+    /**
      * Persist the current form, then call [ChatClient.listModels].
      * Records the outcome as [ConnectionTestResult.Connected] (with
      * the first five ids) or [ConnectionTestResult.Failed] (see
@@ -417,6 +428,7 @@ class SettingsViewModel(
             defaultParticipants = current.defaultParticipants,
             displayMode = current.displayMode,
             dynamicColor = current.dynamicColor,
+            floatingControl = current.floatingControl,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes

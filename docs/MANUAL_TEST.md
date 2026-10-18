@@ -466,6 +466,86 @@ adb push talk-44k.wav talk-48k.wav talk.mp3 talk.m4a talk.ogg talk.flac /sdcard/
   download it returns to Home and the import starts. Backing out of
   setup instead shows *Importing needs the transcription models…*.
 
+## 23. Record from anywhere (issue #7)
+
+Run this on an **Android 14+** phone and on the **Boox**. Add the
+tile first: pull down Quick Settings twice → edit (pencil) → drag
+**ConvoScribe** into the active tiles. For the permission-denied
+path, revoke *Display over other apps* first:
+
+```bash
+adb shell appops set com.convoscribe SYSTEM_ALERT_WINDOW deny
+```
+
+**Steps**
+
+1. Fresh install (or *Clear data*). New recording → Start. Read the
+   *Control recordings from other apps?* dialog and tap **Not now**.
+   Speak for ~20 s, then switch to another app.
+2. Back in ConvoScribe, tap **Pause** on the Record screen; wait 30 s
+   while speaking; tap **Resume** and speak another ~20 s. Stop.
+3. Start another recording, switch to another app and use the
+   notification: **Pause**, wait, **Resume**, **Stop**.
+4. Grant the permission: Settings → Recording → **Allow display over
+   other apps** (or `adb shell appops set com.convoscribe
+   SYSTEM_ALERT_WINDOW allow`). Start a recording and switch to
+   another app.
+5. On the floating control: **Pause**, wait 30 s, **Resume**; drag it
+   to the other side and to the bottom, release; tap its time to open
+   the Record screen; leave again; **Stop** from the control.
+6. Turn Settings → Recording → *Floating control over other apps* off,
+   start a recording, switch to another app. Turn it back on.
+7. Force-stop ConvoScribe (`adb shell am force-stop com.convoscribe`)
+   or swipe it from Recents. Open another app, pull down Quick
+   Settings and tap **ConvoScribe**. Speak, then tap the tile twice
+   (pause, resume), then Stop from the notification.
+8. Repeat step 7 with the screen locked (tile from the lock screen).
+   Repeat once with the microphone permission revoked
+   (`adb shell pm revoke com.convoscribe android.permission.RECORD_AUDIO`).
+9. Start a recording, Pause, then `adb shell am force-stop
+   com.convoscribe`. Open the app.
+10. Pause a recording and leave it paused for more than an hour (or as
+    long as practical) with the screen off.
+
+**Expected**
+
+- Step 1: the dialog appears once; after *Not now* it never appears
+  again on later Starts. No floating control appears (no permission);
+  the notification shows *Recording – mm:ss* with **Pause** and
+  **Stop**.
+- Step 2: while paused the badge says *Paused*, the timer stops, the
+  level meter is gone, the status-bar mic indicator turns off and the
+  notification says *Paused – mm:ss* with **Resume**. After resuming,
+  the timer continues from where it stopped. The session has one
+  recording (no second *Identifying speakers* run before Stop); the
+  words before the pause end their line; on playback the speech after
+  the pause follows straight on, and tapping a line after the pause
+  plays that line (times are aligned with the audio).
+- Step 3: the notification actions work from another app; the
+  service stays in the foreground while paused.
+- Steps 4–5: the control appears over the other app within a second,
+  shows *Recording* / *Paused* and the time, and follows the session
+  from any of the three places. It follows the finger, rests against
+  the nearest side edge, and comes back at the same place next time;
+  it hides while ConvoScribe is in front and disappears on Stop. On
+  the Boox (e-ink mode) it is outlined with no shadow and nothing
+  animates.
+- Step 6: no control while switched off; the notification still works.
+- Step 7: a recording starts with the Settings defaults without
+  opening the app (a blink at most). The tile shows *Recording*, then
+  *Paused*, then *Recording*, then goes back to *Record* after Stop.
+  **Write down whether this works on Android 14+ and on the Boox; if
+  the start or a resume from the background fails (no audio, or a
+  `ForegroundServiceStartNotAllowedException` / `SecurityException`
+  in logcat), note the Android version and the exact message.**
+- Step 8: from the lock screen the tile asks to unlock first, then
+  starts. Without the mic permission the tile opens the Record screen,
+  whose Start asks for the permission.
+- Step 9: the session is in the list as a finished session, with its
+  transcript up to the pause and its audio playable.
+- Step 10: the session is still paused, the notification is still
+  visible, and Resume records again.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
