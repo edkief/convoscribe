@@ -25,6 +25,7 @@ import com.convoscribe.models.ModelDownloader
 import com.convoscribe.models.ModelStore
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportAudioUseCase
+import com.convoscribe.recording.PendingImport
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.settings.EncryptedSecretStore
@@ -34,6 +35,7 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
 
 class AppContainer(val context: Context) {
@@ -280,6 +282,12 @@ class AppContainer(val context: Context) {
         workDir = File(context.cacheDir, "imports"),
         defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) }
     )
+
+    /**
+     * Audio file handed to the app (share sheet, Open with, the home
+     * screen's picker) and not yet started; the home screen consumes it.
+     */
+    val pendingImport = MutableStateFlow<PendingImport?>(null)
 
     /**
      * Use case that records a voice sample and enrolls it as a

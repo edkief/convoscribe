@@ -1,6 +1,8 @@
 package com.convoscribe
 
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -14,8 +16,10 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.createLifecycleAwareWindowRecomposer
+import androidx.core.content.IntentCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.convoscribe.models.ModelCatalog
+import com.convoscribe.recording.PendingImport
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.ui.AppNavHost
 import com.convoscribe.ui.theme.AppMotionScale
@@ -33,6 +37,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val container = (applicationContext as ConvoApp).container
+        // A share / Open with intent, unless this is a re-creation that
+        // already took it.
+        if (savedInstanceState == null) takeImport(intent)
         // The active language and ASR engine are settings; if every
         // required bundle for that combination is already on disk we
         // can skip the first-run download screen and go straight to
@@ -74,5 +81,26 @@ class MainActivity : ComponentActivity() {
                 AppNavHost(startDestination = startDestination)
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        takeImport(intent)
+    }
+
+    /**
+     * Queue the audio file of a `SEND` (share sheet) or `VIEW` (Open
+     * with) [intent] for import; the home screen starts it. The read
+     * grant that came with the intent lasts while this activity lives,
+     * and the service gets its own when the import starts.
+     */
+    private fun takeImport(intent: Intent?) {
+        val uri = when (intent?.action) {
+            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+                ?: intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri
+            Intent.ACTION_VIEW -> intent.data
+            else -> null
+        } ?: return
+        (applicationContext as ConvoApp).container.pendingImport.value = PendingImport(uri)
     }
 }

@@ -65,6 +65,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.models.ModelCatalog
+import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
@@ -198,6 +199,9 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
     val effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val retranscribing = retranscribeState is RetranscribeState.Running
+    // An import holds the recorder and the ASR engine too.
+    val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
+    val importing = importState is ImportState.Running
     LaunchedEffect(retranscribeState) {
         val failed = retranscribeState as? RetranscribeState.Failed ?: return@LaunchedEffect
         if (failed.sessionId != sessionId) return@LaunchedEffect
@@ -251,6 +255,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         canContinueRecording = !state.notFound &&
             recorderState.phase == RecordingPhase.IDLE &&
             !retranscribing &&
+            !importing &&
             state.status in CONTINUABLE_STATUSES,
         onContinueRecording = { navController.navigate("record/resume/$sessionId") },
         onBack = { navController.popBackStack() },
@@ -292,6 +297,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
             enabled = !state.notFound &&
                 recorderState.phase == RecordingPhase.IDLE &&
                 !retranscribing &&
+                !importing &&
                 state.status in CONTINUABLE_STATUSES,
             onStart = { language ->
                 val engine = appSettings.asrEngine

@@ -28,6 +28,8 @@ import com.convoscribe.data.TranscriptLine
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.recording.ConversationOptions
+import com.convoscribe.recording.ImportState
+import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
@@ -122,6 +124,19 @@ class ScreenshotTest(private val variant: Variant) {
     fun home() = capture("home") {
         HomeBody(
             sessions = SESSIONS,
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeImporting() = capture("home_importing") {
+        HomeBody(
+            sessions = SESSIONS,
+            importing = ImportState.Running("Voice note 2026-10-18.m4a", ImportStep.TRANSCRIBING, 0.42f),
             onNewRecording = {},
             onOpenSession = {},
             onDelete = {},

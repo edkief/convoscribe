@@ -48,6 +48,7 @@ import com.convoscribe.R
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ConversationOptions
+import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
@@ -114,6 +115,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val options by vm.options.collectAsStateWithLifecycle()
     val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
+    val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
     val startOptions = options.takeIf { resumeSessionId == null }
 
@@ -166,10 +168,10 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         finalLines = state.finalLines,
         partialText = state.partialText,
         error = state.error,
-        busyMessage = if (retranscribeState is RetranscribeState.Running) {
-            stringResource(R.string.record_busy_retranscribing)
-        } else {
-            null
+        busyMessage = when {
+            retranscribeState is RetranscribeState.Running -> stringResource(R.string.record_busy_retranscribing)
+            importState is ImportState.Running -> stringResource(R.string.record_busy_importing)
+            else -> null
         },
         micDeniedMessage = micDeniedMessage,
         continuing = resumeSessionId != null,
