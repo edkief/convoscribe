@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.AudioPlayer
 import com.convoscribe.audio.PlayerState
+import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
@@ -60,7 +61,14 @@ data class SessionUiState(
     /** Speaker count chosen for this session; `null` follows Settings. */
     val numSpeakers: Int? = null,
     /** Path of the session's WAV recording; blank until the session row has one. */
-    val audioPath: String = ""
+    val audioPath: String = "",
+    /** ASR language the transcript is in. */
+    val language: String = "",
+    /** Expected enrolled participants; `null` anyone. */
+    val participants: List<String>? = null,
+    /** Engine / model that transcribed the session; `null` when not recorded. */
+    val asrEngine: String? = null,
+    val asrModel: String? = null
 )
 
 /** State of an audio export (share or save); the screen shows a progress dialog while encoding. */
@@ -129,7 +137,11 @@ class SessionViewModel(
                         lines = TranscriptFormatter.lines(segments, speakers),
                         speakers = speakers,
                         numSpeakers = session.numSpeakers,
-                        audioPath = session.audioPath
+                        audioPath = session.audioPath,
+                        language = session.language,
+                        participants = ParticipantsCodec.decode(session.participants),
+                        asrEngine = session.asrEngine,
+                        asrModel = session.asrModel
                     )
                 }
             }
@@ -236,6 +248,16 @@ class SessionViewModel(
     fun renameSession(title: String) {
         viewModelScope.launch {
             repository.renameSession(sessionId = sessionId, title = title)
+        }
+    }
+
+    /**
+     * Change who is expected in this session (`null` anyone). Takes
+     * effect on the next diarization; the screen offers to run one.
+     */
+    fun setParticipants(participants: List<String>?) {
+        viewModelScope.launch {
+            repository.setParticipants(sessionId, participants)
         }
     }
 
