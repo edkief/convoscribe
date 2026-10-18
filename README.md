@@ -31,6 +31,17 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   number of people (2, 3, 4 or automatic). The count chosen before
   recording, or here, is kept with the session, and names you typed
   are kept.
+- **Identify speakers when it suits you.** Settings → Speakers →
+  *Identify speakers*: **Auto** (straight after the transcript, the
+  default), **Charging** (at once if plugged in, otherwise the next time
+  the device charges, even with the app closed) or **On demand**. A
+  session that waits shows *Speakers pending*, and *Identify speakers
+  now* on the session screen runs it whatever the setting. The setting
+  covers Stop, import and re-transcription. Unplugging stops the run
+  and the session waits for the next charge. A session interrupted by
+  a crash also waits. Android 14+ gives a background job about 10
+  minutes, so a very long session may not finish in the background; a
+  notification then asks you to start it from the app.
 - **Known voices.** Enroll people in Settings → Speakers, or use
   *Remember this voice* when renaming a speaker. Each enrollment adds a
   voice sample (up to 5 per person); new recordings label matching
@@ -339,10 +350,11 @@ one package per concern:
   `TranscriptEvent` (Partial / Final), `EndpointSegmenter`,
   `TextNormalizer`.
 - `diarization/` — post-record diarization pipeline:
-  `DiarizeSessionUseCase` (single rule, called from the
-  foreground service after `controller.stop()` and from the
-  crash-recovery boot pass), `Diarizer`, `SpeakerTurn`,
-  `SpeakerAssigner`.
+  `DiarizeSessionUseCase` (single rule: `runOrDefer` after Stop,
+  import and re-transcription follows the *Identify speakers* setting
+  and may leave the session `DIARIZATION_PENDING`; a cancelled run goes
+  back to pending), `PendingDiarizationRunner` (the charging job's
+  loop, oldest first), `Diarizer`, `SpeakerTurn`, `SpeakerAssigner`.
 - `engine/sherpa/` — the only package that ever imports
   `com.k2fsa.sherpa.onnx`: `SherpaRecognizerBackend`,
   `SherpaTranscriberFactory`, `SherpaDiarizer`,
@@ -362,7 +374,10 @@ one package per concern:
   crash-recovery boot pass).
 - `service/` — `RecordingService` (foreground microphone service),
   `ModelDownloadService` and `UpdateDownloadService` (`dataSync`
-  download services sharing `DownloadLocks`), notification text helper.
+  download services sharing `DownloadLocks`), `DiarizationJobService`
+  and `PendingDiarizationScheduler` (the persisted JobScheduler job that
+  identifies pending speakers while charging, #11), notification text
+  helper.
 - `update/` — in-app updates (#15): `GitHubReleases` (the releases
   API), `SemVer`, `UpdateSelector` (which release to offer),
   `UpdateDownloader` (`ResumableFetch` + sha256), `ApkVerifier`
