@@ -193,6 +193,22 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun recordPaused() = capture("record_paused") {
+        RecordBody(
+            phase = RecordingPhase.PAUSED,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    @Test
     fun sessionTranscript() = capture("session_transcript") {
         session(playing = true)
     }

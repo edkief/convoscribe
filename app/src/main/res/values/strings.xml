@@ -7,6 +7,7 @@
     <string name="unit_milliseconds">%1$d ms</string>
     <string name="unit_gigabytes">%1$.1f GB</string>
     <string name="status_recording">Recording</string>
+    <string name="status_paused">Paused</string>
     <string name="status_diarizing">Identifying speakers</string>
     <string name="status_failed">Speaker detection failed</string>
     <string name="setup_title">Set up</string>
@@ -50,6 +51,10 @@
     <string name="record_hint_start">Tap to start recording</string>
     <string name="record_hint_continue">Tap to continue recording</string>
     <string name="record_hint_stop">Tap to stop</string>
+    <string name="record_hint_paused">Paused. Resume to keep recording, or stop.</string>
+    <string name="record_pause">Pause</string>
+    <string name="record_resume">Resume</string>
+    <string name="record_live_paused">Paused. Nothing is recorded until you resume.</string>
     <string name="record_live_listening">Listening… speech appears here as it is recognised.</string>
     <string name="record_live_idle">The transcript appears here once you start.</string>
     <string name="record_busy_retranscribing">A session is being re-transcribed. You can record once it has finished.</string>

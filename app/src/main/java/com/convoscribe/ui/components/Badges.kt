@@ -36,8 +36,32 @@ fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier) {
         SessionStatus.DIARIZATION_FAILED -> scheme.errorContainer to scheme.onErrorContainer
         else -> scheme.tertiaryContainer to scheme.onTertiaryContainer
     }
-    val eink = AppTheme.isEink
     val dotColor = if (status == SessionStatus.DIARIZING) content else scheme.error
+    Pill(label = label, container = container, content = content, dotColor = dotColor, modifier = modifier)
+}
+
+/**
+ * Pill for a recording that is paused (issue #7): the session is
+ * still open but nothing is being captured. Neutral colours with a
+ * hollow-looking dot, so it reads differently from Recording.
+ */
+@Composable
+fun PausedBadge(modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Pill(
+        label = stringResource(R.string.status_paused),
+        container = scheme.secondaryContainer,
+        content = scheme.onSecondaryContainer,
+        dotColor = scheme.outline,
+        modifier = modifier
+    )
+}
+
+/** The status pill: a dot and a label, outlined instead of filled on e-ink. */
+@Composable
+private fun Pill(label: String, container: Color, content: Color, dotColor: Color, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val eink = AppTheme.isEink
     Surface(
         modifier = modifier,
         shape = CircleShape,
