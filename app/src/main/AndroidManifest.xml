@@ -135,6 +135,16 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <!--
+            App update downloads (issue #15): the same `dataSync`
+            foreground service pattern as the model download, with its own
+            notification. Not exported: started by the Update tap and the
+            notification's Cancel action only.
+        -->
+        <service
+            android:name=".service.UpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!--
             "ConvoScribe" Quick Settings tile (issue #7): start a
             recording from anywhere, pause / resume an open one. Exported
             for System UI only, through the bind permission.

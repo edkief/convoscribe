@@ -62,6 +62,21 @@
     <string name="notification_download_done_text">ConvoScribe is ready to record.</string>
     <string name="notification_download_failed_title">Model download failed</string>
     <string name="download_timeout">Android paused the download. Tap Retry to resume where it stopped.</string>
+
+    <!-- In-app update (issue #15) -->
+    <string name="notification_update_title">Downloading ConvoScribe %1$s</string>
+    <string name="notification_update_title_generic">Downloading the ConvoScribe update</string>
+    <string name="notification_update_ready_title">ConvoScribe %1$s is ready to install</string>
+    <string name="notification_update_ready_text">Tap to open ConvoScribe and install it.</string>
+    <string name="notification_update_failed_title">Update failed</string>
+    <string name="update_failed_download">The download stopped: %1$s</string>
+    <string name="update_failed_sha256">The downloaded file is damaged (its checksum does not match the release). It was deleted; try again.</string>
+    <string name="update_failed_unreadable">The downloaded file is not an app Android can read.</string>
+    <string name="update_failed_wrong_package">The downloaded app is not ConvoScribe, so it was not installed.</string>
+    <string name="update_failed_not_newer">The downloaded app is not newer than the installed one.</string>
+    <string name="update_failed_signature">This release is signed with a different key, so Android cannot install it over this copy. To update, uninstall ConvoScribe and install the release from its GitHub page (your sessions are deleted with it).</string>
+    <string name="update_failed_busy">Finish the open recording, import or re-transcription first: installing restarts ConvoScribe.</string>
+    <string name="update_failed_install">Android did not install the update: %1$s</string>
     <string name="record_title">New recording</string>
     <string name="record_title_continue">Continue recording</string>
     <string name="record_back">Back</string>

@@ -1,5 +1,8 @@
 package com.convoscribe.update
 
+import com.convoscribe.models.ModelDownloadException
+import java.io.File
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -9,7 +12,10 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** [UpdateManager]'s check: throttle, auto switch, busy guard, skip and the manual check. */
+/**
+ * [UpdateManager]: the check (throttle, auto switch, busy guard, skip,
+ * manual check) and the download (progress, verification, cancel).
+ */
 @OptIn(ExperimentalCoroutinesApi::class)
 class UpdateManagerTest {
 
@@ -39,6 +45,44 @@ class UpdateManagerTest {
         assets = listOf(ReleaseAsset("convoscribe-${tag.removePrefix("v")}.apk", "https://x/$tag.apk", 10L))
     )
 
+    /** Reports [progress], then waits for the test to [finish] it. */
+    private class FakeDownloads : UpdateDownloads {
+        var result = CompletableDeferred<File>()
+        var progress: Triple<Long, Long, Boolean>? = null
+        val discarded = mutableListOf<String>()
+        var cleanedUpFor: SemVer? = null
+        var calls = 0
+
+        override suspend fun download(
+            offer: UpdateOffer,
+            onProgress: suspend (bytesDone: Long, bytesTotal: Long, waiting: Boolean) -> Unit
+        ): File {
+            calls++
+            progress?.let { (done, total, waiting) -> onProgress(done, total, waiting) }
+            return result.await()
+        }
+
+        override fun discard(offer: UpdateOffer) {
+            discarded += offer.versionName
+        }
+
+        override fun cleanUp(installed: SemVer?) {
+            cleanedUpFor = installed
+        }
+    }
+
+    private class FakeInspector(var archive: ApkFacts?, var installed: ApkFacts) : ApkInspector {
+        override fun archive(path: String): ApkFacts? = archive
+        override fun installed(): ApkFacts = installed
+    }
+
+    private val downloads = FakeDownloads()
+    private val inspector = FakeInspector(
+        archive = ApkFacts("com.convoscribe", 4L, setOf("key")),
+        installed = ApkFacts("com.convoscribe", 3L, setOf("key"))
+    )
+    private val apk = File("/tmp/updates/0.3.0/convoscribe-0.3.0.apk")
+
     private val source = FakeSource(listOf(release("v0.3.0"), release("v0.2.1")))
     private val store = MemoryStore()
     private var now = 10L * UpdateManager.CHECK_INTERVAL_MS
@@ -49,13 +93,23 @@ class UpdateManagerTest {
     private fun manager() = UpdateManager(
         source = source,
         store = store,
+        downloads = downloads,
+        inspector = inspector,
         installed = { installed },
         autoCheck = { auto },
         includePrereleases = { false },
         isBusy = { busy },
         scope = scope,
-        clock = { now }
+        clock = { now },
+        ioDispatcher = dispatcher
     )
+
+    /** A manager holding the 0.3.0 offer. */
+    private fun offered(): UpdateManager = manager().also {
+        it.checkNow()
+        scope.runCurrent()
+        check(it.state.value is UpdateState.Available)
+    }
 
     private fun offeredVersion(manager: UpdateManager): String? =
         (manager.state.value as? UpdateState.Available)?.offer?.versionName
@@ -228,5 +282,124 @@ class UpdateManagerTest {
         manager.checkNow()
         scope.runCurrent()
         assertEquals(1, source.calls)
+    }
+
+    @Test
+    fun startCheck_cleansUpDownloadsOfTheInstalledVersion() {
+        manager().checkOnStart()
+        scope.runCurrent()
+        assertEquals(SemVer(0, 2, 1), downloads.cleanedUpFor)
+    }
+
+    @Test
+    fun download_reportsProgress_thenReadyOnceVerified() {
+        val manager = offered()
+        downloads.progress = Triple(400L, 1_000L, true)
+        assertTrue(manager.download())
+        scope.runCurrent()
+        val running = manager.state.value as UpdateState.Downloading
+        assertEquals(400L, running.bytesDone)
+        assertTrue(running.waiting)
+        assertTrue(manager.isDownloading)
+        // A second tap attaches to the running download.
+        assertFalse(manager.download())
+
+        downloads.result.complete(apk)
+        scope.runCurrent()
+        val ready = manager.state.value as UpdateState.ReadyToInstall
+        assertEquals("0.3.0", ready.offer.versionName)
+        assertEquals(apk, ready.apk)
+    }
+
+    @Test
+    fun download_withoutAnOffer_doesNothing() {
+        assertFalse(manager().download())
+        assertEquals(0, downloads.calls)
+    }
+
+    @Test
+    fun download_refusesAnotherSigningKey_andDeletesTheApk() {
+        inspector.archive = ApkFacts("com.convoscribe", 4L, setOf("release-key"))
+        val manager = offered()
+        manager.download()
+        downloads.result.complete(apk)
+        scope.runCurrent()
+        val failed = manager.state.value as UpdateState.Failed
+        assertEquals(UpdateFailure.SIGNATURE_MISMATCH, failed.reason)
+        assertEquals(listOf("0.3.0"), downloads.discarded)
+    }
+
+    @Test
+    fun download_refusesAnotherPackageOrAnOlderVersionCode() {
+        inspector.archive = ApkFacts("com.example", 4L, setOf("key"))
+        offered().let {
+            it.download()
+            downloads.result.complete(apk)
+            scope.runCurrent()
+            assertEquals(UpdateFailure.WRONG_PACKAGE, (it.state.value as UpdateState.Failed).reason)
+        }
+        inspector.archive = ApkFacts("com.convoscribe", 3L, setOf("key"))
+        downloads.result = CompletableDeferred()
+        offered().let {
+            it.download()
+            downloads.result.complete(apk)
+            scope.runCurrent()
+            assertEquals(UpdateFailure.NOT_NEWER, (it.state.value as UpdateState.Failed).reason)
+        }
+    }
+
+    @Test
+    fun download_sha256Mismatch_andNetworkFailure_areReported_andRetryable() {
+        val manager = offered()
+        manager.download()
+        downloads.result.completeExceptionally(Sha256MismatchException("bad"))
+        scope.runCurrent()
+        assertEquals(UpdateFailure.SHA256_MISMATCH, (manager.state.value as UpdateState.Failed).reason)
+
+        downloads.result = CompletableDeferred()
+        assertTrue(manager.download())
+        downloads.result.completeExceptionally(ModelDownloadException("Network error", transient = true))
+        scope.runCurrent()
+        val failed = manager.state.value as UpdateState.Failed
+        assertEquals(UpdateFailure.DOWNLOAD, failed.reason)
+        assertEquals("Network error", failed.detail)
+    }
+
+    @Test
+    fun cancel_deletesWhatWasFetched_andKeepsTheOffer() {
+        val manager = offered()
+        manager.download()
+        scope.runCurrent()
+        manager.cancel()
+        assertTrue(manager.state.value is UpdateState.Available)
+        scope.runCurrent()
+        assertEquals(listOf("0.3.0"), downloads.discarded)
+        // A late result of the cancelled download is dropped.
+        downloads.result.complete(apk)
+        scope.runCurrent()
+        assertTrue(manager.state.value is UpdateState.Available)
+    }
+
+    @Test
+    fun interrupt_keepsTheDownloadForARetry() {
+        val manager = offered()
+        manager.download()
+        scope.runCurrent()
+        manager.interrupt("time limit")
+        val failed = manager.state.value as UpdateState.Failed
+        assertEquals("time limit", failed.detail)
+        scope.runCurrent()
+        assertTrue(downloads.discarded.isEmpty())
+    }
+
+    @Test
+    fun noCheckWhileDownloading() {
+        val manager = offered()
+        manager.download()
+        scope.runCurrent()
+        manager.checkNow()
+        scope.runCurrent()
+        assertEquals(1, source.calls)
+        assertTrue(manager.isDownloading)
     }
 }

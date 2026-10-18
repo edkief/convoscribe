@@ -35,7 +35,9 @@ import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.update.GitHubReleases
 import com.convoscribe.update.InstalledApp
+import com.convoscribe.update.PackageApkInspector
 import com.convoscribe.update.PrefsUpdateStore
+import com.convoscribe.update.UpdateDownloader
 import com.convoscribe.update.UpdateManager
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -406,12 +408,20 @@ class AppContainer(val context: Context) {
 
     /**
      * Looks for a newer GitHub release on start and from Settings ›
-     * About (issue #15). Never checks automatically while a session is
-     * open or an import / re-transcription runs.
+     * About, and downloads it to `filesDir/updates/<version>/` with the
+     * model downloader's resume and retries (issue #15). Never checks
+     * automatically while a session is open or an import /
+     * re-transcription runs.
      */
     val updateManager = UpdateManager(
         source = GitHubReleases(httpClient, userAgent = "ConvoScribe/${installedApp.versionName}"),
         store = PrefsUpdateStore(context.getSharedPreferences(PrefsUpdateStore.PREFS_NAME, Context.MODE_PRIVATE)),
+        downloads = UpdateDownloader(
+            client = httpClient,
+            dir = File(context.filesDir, "updates"),
+            awaitNetwork = NetworkWaiter(context)::awaitNetwork
+        ),
+        inspector = PackageApkInspector(context),
         installed = { installedApp },
         autoCheck = { settingsRepository.settings.value.updateCheckAuto },
         includePrereleases = { settingsRepository.settings.value.updateIncludePrereleases },
