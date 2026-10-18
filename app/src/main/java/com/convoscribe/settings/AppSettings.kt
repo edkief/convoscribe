@@ -30,6 +30,11 @@ package com.convoscribe.settings
  * over other apps" permission. [overlayPromptShown] is `true` once the
  * user has been asked for that permission, so they are asked only once.
  *
+ * [updateCheckAuto] lets the app ask GitHub for a newer release on
+ * start, at most once a day (issue #15); with it off the app makes no
+ * update request unless the user taps *Check for updates*.
+ * [updateIncludePrereleases] also offers releases marked pre-release.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -52,5 +57,7 @@ data class AppSettings(
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,
-    val overlayPromptShown: Boolean = false
+    val overlayPromptShown: Boolean = false,
+    val updateCheckAuto: Boolean = true,
+    val updateIncludePrereleases: Boolean = false
 )

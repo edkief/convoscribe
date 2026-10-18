@@ -5,8 +5,10 @@
         The model downloader fetches ASR, segmentation and embedding
         weights from Hugging Face / GitHub Releases over HTTPS on first
         run (resuming with Range requests, issue #10), and the LLM client
-        calls the user's own endpoint; no other network calls live in the
-        app today.
+        calls the user's own endpoint. The update check (issue #15) asks
+        the GitHub API for the app's releases at most once a day (or when
+        the user taps Check for updates) and downloads the APK the user
+        chose to install. No other network calls live in the app.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -49,6 +51,15 @@
         control's tap bring ConvoScribe forward from the background.
     -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!--
+        In-app updates (issue #15): hand a downloaded release APK to the
+        system installer (`update.PackageUpdateInstaller`). A special
+        access ("Install unknown apps") the user grants in system
+        Settings, explained before the first install; the user confirms
+        every install on the system prompt.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:name=".ConvoApp"
@@ -134,6 +145,38 @@
             android:name=".service.ModelDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!--
+            App update downloads (issue #15): the same `dataSync`
+            foreground service pattern as the model download, with its own
+            notification. Not exported: started by the Update tap and the
+            notification's Cancel action only.
+        -->
+        <service
+            android:name=".service.UpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!--
+            Result of an update's install session (issue #15): shows the
+            system's confirmation prompt and reports failures. Not
+            exported: only the session's PendingIntent reaches it.
+        -->
+        <receiver
+            android:name=".update.UpdateInstallReceiver"
+            android:exported="false" />
+        <!--
+            After an update (issue #15): deletes the installed APK and
+            posts "Updated to X.Y.Z, tap to open", since Android does not
+            let the app reopen itself. Not exported: the system still
+            delivers MY_PACKAGE_REPLACED, which it sends to the updated
+            app only.
+        -->
+        <receiver
+            android:name=".update.UpdatedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <!--
             "ConvoScribe" Quick Settings tile (issue #7): start a
             recording from anywhere, pause / resume an open one. Exported

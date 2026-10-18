@@ -397,6 +397,24 @@ class SettingsViewModelTest {
         assertEquals("standard", repo.settings.value.displayMode)
     }
 
+    @Test
+    fun updateSwitches_areWrittenImmediately_andMirroredInTheState() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertTrue(vm.state.value.updateCheckAuto)
+        assertFalse(vm.state.value.updateIncludePrereleases)
+        vm.setUpdateCheckAuto(false)
+        vm.setUpdateIncludePrereleases(true)
+        advanceUntilIdle()
+        assertFalse(repo.settings.value.updateCheckAuto)
+        assertTrue(repo.settings.value.updateIncludePrereleases)
+        assertFalse(vm.state.value.updateCheckAuto)
+        assertTrue(vm.state.value.updateIncludePrereleases)
+        // Save does not undo them.
+        vm.save()
+        assertFalse(repo.settings.value.updateCheckAuto)
+    }
+
     /**
      * Trivial in-memory [ChatClient] for tests. Returns the
      * configured `models` list, or throws the configured `error`

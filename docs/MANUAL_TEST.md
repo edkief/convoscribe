@@ -579,6 +579,99 @@ adb shell appops set com.convoscribe SYSTEM_ALERT_WINDOW deny
 - Step 10: the session is still paused, the notification is still
   visible, and Resume records again.
 
+## 24. In-app update (issue #15)
+
+The app checks `api.github.com/repos/edkief/convoscribe/releases` and
+offers a release newer than its own `versionName`. To have something
+to update to, install a build that is **older than the latest
+release**. Build it with a lower version, without committing the
+change (the shared `app/debug.keystore` signs it like the releases):
+
+```bash
+sed -i 's/versionCode = .*/versionCode = 1/; s/versionName = ".*"/versionName = "0.0.1"/' app/build.gradle.kts
+./gradlew installDebug
+git checkout app/build.gradle.kts
+```
+
+To publish a test release instead, use `scripts/release.sh publish
+--draft` on a throwaway tag (a draft is not offered; publish it in the
+GitHub UI for the test and delete it after) or a pre-release (offered
+only with *Include pre-releases* on).
+
+The automatic check runs at most once a day. To make it run again on
+the next start:
+
+```bash
+adb shell run-as com.convoscribe rm shared_prefs/updates.xml
+adb shell am force-stop com.convoscribe
+```
+
+Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
+`update check:` / `update install status=`).
+
+**Steps**
+
+1. Start ConvoScribe (old build). Within a few seconds Home shows
+   *ConvoScribe X.Y.Z is available*. Tap **View notes**: the release
+   notes appear; close them.
+2. Tap **Not now**: the banner goes. Settings → About shows
+   *Version 0.0.1 (1)* and the same offer. Force-stop and reopen: no
+   banner (checked less than a day ago).
+3. Clear the throttle (above), reopen, tap **Skip this version**.
+   Clear the throttle again and reopen: no banner. Settings → About →
+   **Check for updates** still offers it (a manual check ignores the
+   skip).
+4. Tap **Update**. A *Downloading ConvoScribe X.Y.Z* notification
+   with progress and Cancel appears. Turn the screen off for a minute,
+   then switch to another app; come back: the download kept going.
+5. Tap **Cancel** in the notification: it stops, and `adb shell
+   run-as com.convoscribe ls files/updates` is empty. Tap **Update**
+   again; force-stop mid-way, reopen, **Update**: logcat shows
+   `resuming convoscribe-X.Y.Z.apk from byte N`.
+6. When done, the notification says *ready to install*. Start a
+   recording, go back to Home and tap **Install**: a message says to
+   finish the recording first. Stop it.
+7. Fresh install only (or after turning the access off in system
+   Settings → Apps → ConvoScribe → *Install unknown apps*): tap
+   **Install**. A dialog explains the access; **Open settings**, turn
+   it on, press Back: the system install prompt appears. Tap
+   **Cancel** on it: the banner shows **Install** again.
+8. **Install** → confirm. ConvoScribe closes; a notification says
+   *ConvoScribe updated to X.Y.Z*. Tap it: the app opens on the new
+   version (Settings → About), every session is still there and plays.
+   `files/updates` is empty.
+9. Signature mismatch: build the old version with a different key
+   (move `app/debug.keystore` aside for the build so the per-machine
+   debug key signs it, `adb uninstall com.convoscribe`, then
+   `./gradlew installDebug`; put the keystore back). Run steps 1 and
+   4: after the download the banner says the release is signed with a
+   different key and offers **Open release page**; nothing is
+   installed and `files/updates` is empty.
+10. Settings → About → turn *Check for updates automatically* off,
+    clear the throttle and reopen: logcat shows no `update check:`
+    line. **Check for updates** still works. With *Include
+    pre-releases* on, a pre-release newer than the installed version is
+    offered too.
+11. Offline (airplane mode) with the throttle cleared: no banner, no
+    error. **Check for updates** says it could not reach GitHub.
+
+**Expected**
+
+- Steps 1–3: the banner and About follow the offer, the throttle and
+  the skip as described; app start is not delayed (the list shows at
+  once, the banner appears later).
+- Step 4: the download survives screen-off and app switching.
+- Steps 5–6: Cancel deletes the part file; a force-stop resumes; no
+  install while a recording is open.
+- Steps 7–8: the access is explained once; the system prompt always
+  appears; the new version starts with all sessions. **Write down the
+  device and Android version, and whether the post-update notification
+  appeared.**
+- Step 9: the certificate check refuses the update with the
+  reinstall message (this is the #16 path).
+- Steps 10–11: no requests with the automatic check off; failures are
+  silent on start and reported on the manual check.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

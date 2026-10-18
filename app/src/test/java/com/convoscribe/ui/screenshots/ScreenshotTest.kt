@@ -54,6 +54,12 @@ import com.convoscribe.ui.setup.SetupUiState
 import com.convoscribe.ui.speakers.EnrollmentPhase
 import com.convoscribe.ui.speakers.SpeakersBody
 import com.convoscribe.ui.theme.ConvoScribeTheme
+import com.convoscribe.update.Release
+import com.convoscribe.update.ReleaseAsset
+import com.convoscribe.update.SemVer
+import com.convoscribe.update.UpdateFailure
+import com.convoscribe.update.UpdateOffer
+import com.convoscribe.update.UpdateState
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Rule
 import org.junit.Test
@@ -141,6 +147,45 @@ class ScreenshotTest(private val variant: Variant) {
         HomeBody(
             sessions = SESSIONS,
             importing = ImportState.Running("Voice note 2026-10-18.m4a", ImportStep.TRANSCRIBING, 0.42f),
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeUpdateAvailable() = capture("home_update_available") {
+        HomeBody(
+            sessions = SESSIONS,
+            update = UpdateState.Available(UPDATE),
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeUpdateDownloading() = capture("home_update_downloading") {
+        HomeBody(
+            sessions = SESSIONS,
+            update = UpdateState.Downloading(UPDATE, 38_000_000L, 89_400_330L),
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeUpdateSignatureMismatch() = capture("home_update_signature_mismatch") {
+        HomeBody(
+            sessions = SESSIONS,
+            update = UpdateState.Failed(UPDATE, UpdateFailure.SIGNATURE_MISMATCH),
             onNewRecording = {},
             onOpenSession = {},
             onDelete = {},
@@ -258,7 +303,10 @@ class ScreenshotTest(private val variant: Variant) {
                 asrLanguage = "en",
                 defaultParticipants = listOf("Alice")
             ),
-            actions = SettingsActions()
+            actions = SettingsActions(),
+            installedVersion = "0.2.1",
+            installedVersionCode = 3L,
+            update = UpdateState.ReadyToInstall(UPDATE, java.io.File("convoscribe-0.3.0.apk"))
         )
     }
 
@@ -453,6 +501,21 @@ class ScreenshotTest(private val variant: Variant) {
             status = status,
             language = language,
             speakerCount = speakers
+        )
+
+        private val UPDATE = UpdateOffer(
+            version = SemVer(0, 3, 0),
+            release = Release(
+                tag = "v0.3.0",
+                name = "ConvoScribe 0.3.0",
+                notes = "In-app updates.",
+                htmlUrl = "https://github.com/edkief/convoscribe/releases/tag/v0.3.0",
+                prerelease = false,
+                draft = false,
+                assets = emptyList()
+            ),
+            apk = ReleaseAsset("convoscribe-0.3.0.apk", "https://example.test/convoscribe-0.3.0.apk", 89_400_330L),
+            sha256 = null
         )
 
         private val SESSIONS = listOf(

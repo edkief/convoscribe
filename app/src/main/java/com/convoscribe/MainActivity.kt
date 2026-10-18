@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             takeImport(intent)
             takeOpenRecord(intent)
+            // At most once a day, in the background, never while recording (issue #15).
+            container.updateManager.checkOnStart()
         }
         // The active language and ASR engine are settings; if every
         // required bundle for that combination is already on disk we

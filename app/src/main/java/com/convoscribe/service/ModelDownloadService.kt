@@ -8,9 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.net.wifi.WifiManager
 import android.os.IBinder
-import android.os.PowerManager
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
@@ -46,8 +44,7 @@ class ModelDownloadService : Service() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var observer: Job? = null
-    private var wakeLock: PowerManager.WakeLock? = null
-    private var wifiLock: WifiManager.WifiLock? = null
+    private val locks = DownloadLocks(this, "ConvoScribe:modelDownload")
     private var lastNotificationUpdateMs = 0L
 
     private fun manager(): ModelDownloadManager = (application as ConvoApp).container.modelDownloadManager
@@ -78,13 +75,13 @@ class ModelDownloadService : Service() {
     }
 
     override fun onDestroy() {
-        releaseLocks()
+        locks.release()
         scope.cancel()
         super.onDestroy()
     }
 
     private fun handleStart(bundles: List<ModelBundle>) {
-        ensureNotificationChannel()
+        ensureDownloadsChannel(this)
         val manager = manager()
         // Attaches to a download already running instead of starting a second.
         manager.start(bundles)
@@ -94,7 +91,7 @@ class ModelDownloadService : Service() {
             buildProgressNotification(manager.state.value as? ModelDownloadState.Running),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
-        acquireLocks()
+        locks.acquire()
         if (observer?.isActive == true) return
         observer = scope.launch {
             manager.state.collect { state ->
@@ -111,7 +108,7 @@ class ModelDownloadService : Service() {
     private fun finish(state: ModelDownloadState) {
         observer?.cancel()
         observer = null
-        releaseLocks()
+        locks.release()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         buildResultNotification(state)?.let { notification ->
             getSystemService<NotificationManager>()?.notify(NOTIFICATION_ID, notification)
@@ -195,60 +192,30 @@ class ModelDownloadService : Service() {
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
     )
 
-    private fun ensureNotificationChannel() {
-        val nm = getSystemService<NotificationManager>() ?: return
-        if (nm.getNotificationChannel(CHANNEL_ID) != null) return
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            getString(R.string.notification_channel_downloads),
-            NotificationManager.IMPORTANCE_LOW
-        ).apply {
-            description = getString(R.string.notification_channel_downloads_description)
-            setShowBadge(false)
-        }
-        nm.createNotificationChannel(channel)
-    }
-
-    /**
-     * A partial wake lock keeps the CPU running with the screen off;
-     * the Wi-Fi lock keeps the radio awake (it does nothing on mobile
-     * data). Both time out as a safety net if [releaseLocks] is missed.
-     */
-    private fun acquireLocks() {
-        if (wakeLock?.isHeld != true) {
-            wakeLock = getSystemService<PowerManager>()
-                ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ConvoScribe:modelDownload")
-                ?.apply { acquire(LOCK_TIMEOUT_MS) }
-        }
-        if (wifiLock?.isHeld != true) {
-            @Suppress("DEPRECATION")
-            wifiLock = getSystemService<WifiManager>()
-                ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "ConvoScribe:modelDownload")
-                ?.apply {
-                    setReferenceCounted(false)
-                    acquire()
-                }
-        }
-    }
-
-    private fun releaseLocks() {
-        wakeLock?.let { if (it.isHeld) runCatching { it.release() } }
-        wakeLock = null
-        wifiLock?.let { if (it.isHeld) runCatching { it.release() } }
-        wifiLock = null
-    }
-
     companion object {
         /** Own id, so a download and a recording each keep their notification. */
         private const val NOTIFICATION_ID = 2
 
-        private const val CHANNEL_ID = "downloads"
+        /** "Downloads" channel, shared with [UpdateDownloadService]. */
+        const val CHANNEL_ID = "downloads"
+
+        /** Create the [CHANNEL_ID] channel unless it exists. */
+        fun ensureDownloadsChannel(context: Context) {
+            val nm = context.getSystemService<NotificationManager>() ?: return
+            if (nm.getNotificationChannel(CHANNEL_ID) != null) return
+            val channel = NotificationChannel(
+                CHANNEL_ID,
+                context.getString(R.string.notification_channel_downloads),
+                NotificationManager.IMPORTANCE_LOW
+            ).apply {
+                description = context.getString(R.string.notification_channel_downloads_description)
+                setShowBadge(false)
+            }
+            nm.createNotificationChannel(channel)
+        }
 
         private const val REQUEST_OPEN = 2001
         private const val REQUEST_CANCEL = 2002
-
-        /** Upper bound on the wake lock for one download. */
-        private const val LOCK_TIMEOUT_MS = 2L * 60L * 60L * 1_000L // 2 h
 
         private const val NOTIFICATION_REFRESH_PERIOD_MS = 1_000L
 
