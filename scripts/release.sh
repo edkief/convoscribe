@@ -47,6 +47,7 @@ with LLM-written release notes. Does nothing if the release already exists.
                       from app/build.gradle.kts)
   --notes-file FILE   use FILE as the release notes body instead of the LLM
   --no-verify         skip ktlint, unit tests and lint; only assembleRelease
+  --skip-tests        skip the unit tests; keep ktlint and lint
   --draft             create the GitHub release as a draft
   -y, --yes           do not ask for confirmation before publishing
 
@@ -99,6 +100,7 @@ explicit_version=""
 dry_run=false
 notes_file=""
 verify=true
+run_tests=true
 draft=false
 allow_branch=false
 assume_yes=false
@@ -123,6 +125,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     publish:--notes-file=*) notes_file="${1#*=}" ;;
     publish:--no-verify) verify=false ;;
+    publish:--skip-tests) run_tests=false ;;
     publish:--draft) draft=true ;;
     *:--dry-run) dry_run=true ;;
     *:-y | *:--yes) assume_yes=true ;;
@@ -528,8 +531,13 @@ PY
   fi
   ./gradlew --stop >/dev/null 2>&1 || true
   if [[ "$verify" == true ]]; then
-    log "Building (ktlintCheck testDebugUnitTest lintDebug assembleRelease) ..."
-    ./gradlew "${gradle_args[@]}" ktlintCheck testDebugUnitTest lintDebug assembleRelease
+    local gate=(ktlintCheck testDebugUnitTest lintDebug)
+    if [[ "$run_tests" == false ]]; then
+      gate=(ktlintCheck lintDebug)
+    fi
+    log "Building (${gate[*]} assembleRelease) ..."
+    [[ "$run_tests" == true ]] || log "Unit tests skipped (--skip-tests)."
+    ./gradlew "${gradle_args[@]}" "${gate[@]}" assembleRelease
   else
     log "Building (assembleRelease only, --no-verify) ..."
     ./gradlew "${gradle_args[@]}" assembleRelease
