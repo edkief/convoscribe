@@ -37,7 +37,12 @@ fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier) {
         SessionStatus.DIARIZATION_FAILED -> scheme.errorContainer to scheme.onErrorContainer
         else -> scheme.tertiaryContainer to scheme.onTertiaryContainer
     }
-    val dotColor = if (status == SessionStatus.DIARIZING) content else scheme.error
+    val dotColor = when (status) {
+        SessionStatus.DIARIZING -> content
+        // Waiting, not wrong: a neutral dot (issue #11).
+        SessionStatus.DIARIZATION_PENDING -> scheme.outline
+        else -> scheme.error
+    }
     Pill(label = label, container = container, content = content, dotColor = dotColor, modifier = modifier)
 }
 

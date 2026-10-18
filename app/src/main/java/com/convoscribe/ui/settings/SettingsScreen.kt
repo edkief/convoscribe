@@ -64,6 +64,7 @@ import com.convoscribe.R
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.settings.DisplayMode
+import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.FieldLabel
@@ -216,7 +217,8 @@ fun SettingsScreen(navController: NavHostController) {
             },
             onAllowOverlay = { context.startActivity(OverlayPermission.settingsIntent(context)) },
             onUpdateCheckAutoChange = vm::setUpdateCheckAuto,
-            onUpdateIncludePrereleasesChange = vm::setUpdateIncludePrereleases
+            onUpdateIncludePrereleasesChange = vm::setUpdateIncludePrereleases,
+            onSpeakerIdModeChange = vm::setSpeakerIdMode
         )
     )
 }
@@ -238,7 +240,8 @@ internal class SettingsActions(
     val onFloatingControlChange: (Boolean) -> Unit = {},
     val onAllowOverlay: () -> Unit = {},
     val onUpdateCheckAutoChange: (Boolean) -> Unit = {},
-    val onUpdateIncludePrereleasesChange: (Boolean) -> Unit = {}
+    val onUpdateIncludePrereleasesChange: (Boolean) -> Unit = {},
+    val onSpeakerIdModeChange: (String) -> Unit = {}
 )
 
 /**
@@ -316,6 +319,8 @@ internal fun SettingsBody(
                 onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
             SpeakersSection(
+                speakerIdMode = state.speakerIdMode,
+                onSpeakerIdModeChange = actions.onSpeakerIdModeChange,
                 numSpeakers = state.form.numSpeakers,
                 defaultParticipants = state.defaultParticipants,
                 onResetDefaultParticipants = actions.onResetDefaultParticipants,
@@ -432,6 +437,12 @@ private fun RecordingSection(
         }
     }
 }
+
+private val SPEAKER_ID_MODES = listOf(
+    SpeakerIdMode.AUTO to R.string.settings_speakers_id_mode_auto,
+    SpeakerIdMode.CHARGING to R.string.settings_speakers_id_mode_charging,
+    SpeakerIdMode.MANUAL to R.string.settings_speakers_id_mode_manual
+)
 
 private val DISPLAY_MODES = listOf(
     DisplayMode.AUTO to R.string.settings_display_mode_auto,
@@ -668,7 +679,8 @@ private fun TranscriptionSection(
 }
 
 /**
- * "Speakers" section: number-of-speakers dropdown (Automatic,
+ * "Speakers" section: when speakers are identified ([speakerIdMode],
+ * issue #11, written immediately), number-of-speakers dropdown (Automatic,
  * 2..6 — `-1` is the "automatic" sentinel persisted by the
  * repository) and a clustering threshold slider with the value
  * to two decimals and the "Lower = more speakers" helper text.
@@ -678,6 +690,8 @@ private fun TranscriptionSection(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SpeakersSection(
+    speakerIdMode: String,
+    onSpeakerIdModeChange: (String) -> Unit,
     numSpeakers: Int,
     defaultParticipants: List<String>?,
     onResetDefaultParticipants: () -> Unit,
@@ -693,6 +707,13 @@ private fun SpeakersSection(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_speakers)
     ) {
+        FieldLabel(text = stringResource(R.string.settings_speakers_id_mode_label))
+        ChoiceGroup(
+            options = SPEAKER_ID_MODES.map { (mode, label) -> mode.key to stringResource(label) },
+            selected = SpeakerIdMode.of(speakerIdMode).key,
+            onSelect = onSpeakerIdModeChange
+        )
+        SupportingText(text = stringResource(R.string.settings_speakers_id_mode_help))
         val speakersLabel = if (numSpeakers <= 0) {
             stringResource(R.string.settings_speakers_automatic)
         } else {

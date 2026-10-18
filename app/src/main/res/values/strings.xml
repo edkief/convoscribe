@@ -203,6 +203,11 @@
     <string name="settings_transcription_language_model_missing">Model not downloaded (%1$d MB) – it will be downloaded before your next recording</string>
     <string name="settings_transcription_language_delete_fr">Delete French model</string>
     <string name="settings_speakers_number_label">Default number of speakers</string>
+    <string name="settings_speakers_id_mode_label">Identify speakers</string>
+    <string name="settings_speakers_id_mode_auto">Auto</string>
+    <string name="settings_speakers_id_mode_charging">Charging</string>
+    <string name="settings_speakers_id_mode_manual">On demand</string>
+    <string name="settings_speakers_id_mode_help">Identifying speakers keeps the processor busy for a while and uses some battery. Auto: as soon as the transcript is done. Charging: at once if plugged in, otherwise the next time you charge, even with ConvoScribe closed. On demand: only when you tap Identify speakers now in a session.</string>
     <string name="settings_speakers_automatic">Automatic</string>
     <string name="settings_speakers_count">%1$d</string>
     <string name="settings_speakers_threshold_label">Clustering threshold</string>
@@ -276,6 +281,9 @@
     <string name="session_tab_ask">Ask</string>
     <string name="session_status_diarizing">Identifying speakers…</string>
     <string name="session_status_diarization_failed">Speaker detection failed</string>
+    <string name="session_status_pending">Speakers not identified yet</string>
+    <string name="session_status_pending_charger">Waiting for the charger</string>
+    <string name="session_identify_speakers_now">Identify speakers now</string>
     <string name="session_transcript_empty">No speech was recognised.</string>
     <string name="session_not_found">Session not found.</string>
     <string name="session_overflow">More</string>

@@ -8,6 +8,8 @@ import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -24,6 +26,7 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -32,7 +35,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -67,11 +73,13 @@ internal fun TranscriptTab(
     activeLineIndex: Int?,
     following: Boolean,
     playback: PlaybackActions,
-    onSpeakerChipTapped: (Int) -> Unit
+    onSpeakerChipTapped: (Int) -> Unit,
+    waitingForCharger: Boolean = false,
+    onIdentifySpeakersNow: (() -> Unit)? = null
 ) {
     val spacing = AppTheme.spacing
     Column(modifier = Modifier.fillMaxSize()) {
-        StatusBanner(status = status)
+        StatusBanner(status = status, waitingForCharger = waitingForCharger, onIdentifyNow = onIdentifySpeakersNow)
         if (speakers.isNotEmpty()) {
             SpeakerChipRow(speakers = speakers, onChipTapped = onSpeakerChipTapped)
         }
@@ -133,10 +141,12 @@ internal fun TranscriptTab(
 
 /**
  * Diarization status above the transcript: progress while speakers
- * are being identified, an error once it failed, nothing otherwise.
+ * are being identified, an error once it failed, a notice with
+ * *Identify speakers now* while they wait (issue #11), nothing
+ * otherwise. [onIdentifyNow] is `null` while the button cannot run.
  */
 @Composable
-private fun StatusBanner(status: SessionStatus?) {
+private fun StatusBanner(status: SessionStatus?, waitingForCharger: Boolean, onIdentifyNow: (() -> Unit)?) {
     val spacing = AppTheme.spacing
     val modifier = Modifier.padding(horizontal = spacing.screen, vertical = spacing.s)
     when (status) {
@@ -148,7 +158,48 @@ private fun StatusBanner(status: SessionStatus?) {
             message = stringResource(R.string.session_status_diarization_failed),
             modifier = modifier
         )
+        SessionStatus.DIARIZATION_PENDING -> PendingBanner(
+            waitingForCharger = waitingForCharger,
+            onIdentifyNow = onIdentifyNow,
+            modifier = modifier
+        )
         else -> Unit
+    }
+}
+
+/**
+ * "Speakers not identified yet" (and "Waiting for the charger"), with
+ * *Identify speakers now* beside it, or below it when the text is large.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun PendingBanner(waitingForCharger: Boolean, onIdentifyNow: (() -> Unit)?, modifier: Modifier = Modifier) {
+    FlowRow(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics { liveRegion = LiveRegionMode.Polite },
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.align(Alignment.CenterVertically)) {
+            Text(
+                text = stringResource(R.string.session_status_pending),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            if (waitingForCharger) {
+                Text(
+                    text = stringResource(R.string.session_status_pending_charger),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+        TextButton(
+            onClick = { onIdentifyNow?.invoke() },
+            enabled = onIdentifyNow != null,
+            modifier = Modifier.align(Alignment.CenterVertically)
+        ) {
+            Text(text = stringResource(R.string.session_identify_speakers_now))
+        }
     }
 }
 

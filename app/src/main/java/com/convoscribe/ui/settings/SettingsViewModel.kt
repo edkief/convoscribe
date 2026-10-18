@@ -11,6 +11,7 @@ import com.convoscribe.models.ModelStore
 import com.convoscribe.settings.AppSettings
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.settings.SpeakerIdMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -131,7 +132,9 @@ data class SettingsUiState(
     /** Check GitHub for a newer release on start (issue #15); written immediately. */
     val updateCheckAuto: Boolean = true,
     /** Offer pre-releases too (issue #15); written immediately. */
-    val updateIncludePrereleases: Boolean = false
+    val updateIncludePrereleases: Boolean = false,
+    /** [com.convoscribe.settings.SpeakerIdMode.key] (issue #11); written immediately. */
+    val speakerIdMode: String = SpeakerIdMode.AUTO.key
 )
 
 /**
@@ -371,6 +374,15 @@ class SettingsViewModel(
         repo.update { it.copy(floatingControl = enabled, overlayPromptShown = it.overlayPromptShown || enabled) }
     }
 
+    /**
+     * Persist *Identify speakers* immediately (issue #11). Switching
+     * starts no work at once: pending sessions wait for the next
+     * charge, or for the user.
+     */
+    fun setSpeakerIdMode(mode: String) {
+        repo.update { it.copy(speakerIdMode = mode) }
+    }
+
     /** Persist *Check for updates automatically* immediately (issue #15). */
     fun setUpdateCheckAuto(enabled: Boolean) {
         repo.update { it.copy(updateCheckAuto = enabled) }
@@ -445,6 +457,7 @@ class SettingsViewModel(
             floatingControl = current.floatingControl,
             updateCheckAuto = current.updateCheckAuto,
             updateIncludePrereleases = current.updateIncludePrereleases,
+            speakerIdMode = current.speakerIdMode,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes

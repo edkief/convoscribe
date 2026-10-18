@@ -69,6 +69,7 @@ import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
+import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.ui.asString
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
@@ -282,6 +283,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         onRenameSession = { title -> vm.renameSession(title) },
         effectiveSpeakerCount = effectiveSpeakerCount,
         onReidentifySpeakers = reidentify,
+        waitingForCharger = appSettings.speakerIdMode == SpeakerIdMode.CHARGING.key,
         details = SessionDetails(
             language = state.language,
             numSpeakers = effectiveSpeakerCount,
@@ -371,6 +373,7 @@ internal fun SessionBody(
     enrolledNames: List<String> = emptyList(),
     onSetParticipants: (List<String>?) -> Unit = {},
     retranscribe: RetranscribeUi = RetranscribeUi(),
+    waitingForCharger: Boolean = false,
     createdAt: Long = 0L,
     durationMs: Long = 0L,
     initialTab: Int = 0
@@ -529,7 +532,11 @@ internal fun SessionBody(
                     activeLineIndex = activeLineIndex,
                     following = following,
                     playback = playback,
-                    onSpeakerChipTapped = { index -> renameSpeakerIndex = index }
+                    onSpeakerChipTapped = { index -> renameSpeakerIndex = index },
+                    waitingForCharger = waitingForCharger,
+                    // The manual trigger works whatever the setting says.
+                    onIdentifySpeakersNow = { onReidentifySpeakers(effectiveSpeakerCount) }
+                        .takeIf { retranscribe.progress == null }
                 )
                 selectedTab == 1 -> SummaryTab(
                     state = summaryState,
