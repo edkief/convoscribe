@@ -88,6 +88,8 @@ class ModelSetupViewModelTest {
             callCount += 1
             return events.asSharedFlow()
         }
+
+        override fun discardPartial(bundles: List<ModelBundle>) = Unit
     }
 
     @Test
@@ -136,6 +138,8 @@ class ModelSetupViewModelTest {
     @Test
     fun start_exception_setsErrorAndStopsRunning_andSecondStartClearsIt() = runTest(dispatcher) {
         val downloads = object : ModelDownloads {
+            override fun discardPartial(bundles: List<ModelBundle>) = Unit
+
             var callCount: Int = 0
             override fun download(bundles: List<ModelBundle>): Flow<DownloadEvent> {
                 callCount += 1

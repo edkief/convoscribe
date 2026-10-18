@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream
@@ -488,13 +489,215 @@ class ModelDownloaderTest {
             )
         )
 
-        val done = downloader.download(listOf(bundle)).toList()
+        val progress = downloader.download(listOf(bundle)).toList()
             .filterIsInstance<DownloadEvent.Progress>()
-            .map { it.bytesDone }
+        val done = progress.map { it.bytesDone }
+        val unpacking = progress.mapNotNull { it.unpacking }
 
         val total = archive.size.toLong()
         assertEquals("progress must never go backwards: $done", done.sorted(), done)
         assertEquals(total, done.last())
-        assertTrue("expected several mid-extraction ticks: $done", done.count { it in 1L until total } >= 2)
+        assertTrue("expected several mid-download ticks: $done", done.count { it in 1L until total } >= 2)
+        // The archive is downloaded first, then extracted from disk.
+        assertEquals("unpacking must never go backwards: $unpacking", unpacking.sorted(), unpacking)
+        assertTrue("expected several mid-extraction ticks: $unpacking", unpacking.count { it > 0f && it < 1f } >= 2)
+        assertEquals(1f, unpacking.last())
+    }
+
+    /** A downloader that retries at once and never waits for the network. */
+    private fun retryingDownloader(
+        delays: List<Long> = listOf(0L, 0L, 0L),
+        network: suspend () -> Boolean = { true },
+        free: () -> Long = { Long.MAX_VALUE }
+    ) = ModelDownloader(OkHttpClient(), store, awaitNetwork = network, retryDelaysMs = delays, freeBytes = free)
+
+    private fun plainBundle(id: String, body: ByteArray) = ModelBundle(
+        id = id,
+        displayName = id,
+        kind = ModelKind.SEGMENTATION,
+        language = null,
+        files = listOf(ModelFile("f.bin", server.url("/f.bin").toString(), body.size.toLong()))
+    )
+
+    private fun archiveBundle(archive: ByteArray, files: List<ModelFile>) = ModelBundle(
+        id = "npu",
+        displayName = "NPU model",
+        kind = ModelKind.ASR,
+        language = "en",
+        files = files,
+        archive = ModelArchive(
+            url = server.url("/npu.tar.bz2").toString(),
+            sizeBytes = archive.size.toLong(),
+            rootDir = "root"
+        )
+    )
+
+    @Test
+    fun droppedConnection_isRetried_andResumesFromThePart() = runTest {
+        val body = ByteArray(600_000) { (it % 251).toByte() }
+        val bundle = plainBundle("resume", body)
+        val part = File(modelsRoot, "resume/f.bin.part")
+        // The second request must ask for the rest of the file.
+        server.dispatcher = object : okhttp3.mockwebserver.QueueDispatcher() {
+            override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                if (request.getHeader("Range") == null) return super.dispatch(request)
+                val from = request.getHeader("Range")!!.removePrefix("bytes=").removeSuffix("-").toInt()
+                return MockResponse().setResponseCode(206)
+                    .setHeader("Content-Range", "bytes $from-${body.size - 1}/${body.size}")
+                    .setBody(Buffer().write(body.copyOfRange(from, body.size)))
+            }
+        }.apply {
+            enqueueResponse(
+                MockResponse().setBody(Buffer().write(body))
+                    .setSocketPolicy(SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            )
+        }
+
+        val events = retryingDownloader().download(listOf(bundle)).toList()
+
+        assertEquals(DownloadEvent.Completed, events.last())
+        assertTrue(
+            "a waiting event is emitted before the retry",
+            events.any { it is DownloadEvent.Progress && it.waiting }
+        )
+        assertTrue(store.fileFor(bundle, "f.bin").readBytes().contentEquals(body))
+        assertTrue(!part.exists())
+        server.takeRequest()
+        val second = server.takeRequest()
+        assertNotNull("second request resumes with a Range header", second.getHeader("Range"))
+        assertTrue(second.getHeader("Range") != "bytes=0-")
+    }
+
+    @Test
+    fun http503_isRetried_thenSucceeds() = runTest {
+        val body = ByteArray(2_000) { (it % 251).toByte() }
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setResponseCode(503))
+        server.enqueue(MockResponse().setBody(Buffer().write(body)))
+
+        val events = retryingDownloader().download(listOf(plainBundle("flaky", body))).toList()
+
+        assertEquals(DownloadEvent.Completed, events.last())
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun http404_isNotRetried() {
+        server.enqueue(MockResponse().setResponseCode(404))
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                retryingDownloader().download(listOf(plainBundle("gone", ByteArray(100)))).toList()
+            }
+        }
+
+        assertEquals("HTTP 404 for f.bin", ex.message)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun transientFailures_giveUpAfterTheLastRetry_andKeepThePart() {
+        repeat(3) { server.enqueue(MockResponse().setResponseCode(503)) }
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                retryingDownloader(
+                    delays = listOf(0L, 0L)
+                ).download(listOf(plainBundle("down", ByteArray(100)))).toList()
+            }
+        }
+
+        assertEquals("HTTP 503 for f.bin", ex.message)
+        assertEquals(3, server.requestCount)
+    }
+
+    @Test
+    fun networkNotBack_failsWithTheLastError() {
+        server.enqueue(MockResponse().setResponseCode(503))
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                retryingDownloader(
+                    network = { false }
+                ).download(listOf(plainBundle("offline", ByteArray(100)))).toList()
+            }
+        }
+
+        assertEquals("HTTP 503 for f.bin", ex.message)
+        assertEquals(1, server.requestCount)
+    }
+
+    @Test
+    fun archive_resumesFromItsPartFile_thenExtracts_andDeletesTheArchive() = runTest {
+        val aBytes = ByteArray(1_000) { (it % 251).toByte() }
+        val archive = buildTarBz2("root", listOf("root/a.bin"), listOf(aBytes))
+        val bundle = archiveBundle(archive, listOf(ModelFile("a.bin", "", aBytes.size.toLong())))
+        val archivePart = store.archivePartFor(bundle)
+        archivePart.parentFile?.mkdirs()
+        val half = archive.size / 2
+        archivePart.writeBytes(archive.copyOfRange(0, half))
+        server.enqueue(
+            MockResponse().setResponseCode(206)
+                .setHeader("Content-Range", "bytes $half-${archive.size - 1}/${archive.size}")
+                .setBody(Buffer().write(archive.copyOfRange(half, archive.size)))
+        )
+
+        val events = downloader.download(listOf(bundle)).toList()
+
+        assertEquals(DownloadEvent.Completed, events.last())
+        assertEquals("bytes=$half-", server.takeRequest().getHeader("Range"))
+        assertTrue(store.fileFor(bundle, "a.bin").readBytes().contentEquals(aBytes))
+        assertTrue("archive deleted after extraction", !archivePart.exists())
+        assertTrue(
+            "extraction reports its progress",
+            events.any { it is DownloadEvent.Progress && it.unpacking == 1f }
+        )
+    }
+
+    @Test
+    fun archive_notEnoughFreeSpace_failsBeforeAnyRequest() {
+        val bundle = archiveBundle(
+            archive = ByteArray(3_000_000),
+            files = listOf(ModelFile("a.bin", "", 5_000_000L))
+        )
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking {
+                retryingDownloader(free = { 4_000_000L }).download(listOf(bundle)).toList()
+            }
+        }
+
+        assertEquals("Not enough free space for NPU model: need 8 MB, 4 MB free", ex.message)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test
+    fun corruptArchive_failsAndDeletesTheArchive() {
+        val garbage = ByteArray(2_000) { (it % 7).toByte() }
+        server.enqueue(MockResponse().setBody(Buffer().write(garbage)))
+        val bundle = archiveBundle(garbage, listOf(ModelFile("a.bin", "", 10L)))
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking { downloader.download(listOf(bundle)).toList() }
+        }
+
+        assertTrue(ex.message!!, ex.message!!.startsWith("IO error extracting root"))
+        assertTrue(!store.archivePartFor(bundle).exists())
+    }
+
+    @Test
+    fun discardPartial_deletesPartFilesAndTheArchive() {
+        val plain = plainBundle("p", ByteArray(10))
+        val plainPart = File(modelsRoot, "p/f.bin.part").apply {
+            parentFile?.mkdirs()
+            writeBytes(ByteArray(5))
+        }
+        val archived = archiveBundle(ByteArray(10), listOf(ModelFile("a.bin", "", 10L)))
+        val archivePart = store.archivePartFor(archived).apply { writeBytes(ByteArray(5)) }
+
+        downloader.discardPartial(listOf(plain, archived))
+
+        assertTrue(!plainPart.exists())
+        assertTrue(!archivePart.exists())
     }
 }
