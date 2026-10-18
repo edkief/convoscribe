@@ -50,6 +50,13 @@ android {
 
     buildTypes {
         release {
+            // Until a dedicated release key exists (issue #16), release
+            // builds (scripts/release.sh) are signed with the shared debug
+            // keystore so they upgrade in place over debug installs.
+            // Without app/debug.keystore the release APK is left unsigned.
+            if (sharedDebugKeystore.exists()) {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -1,0 +1,15 @@
+# Tekton build config (k8s-home: tekton/pipelines/README.md). This repo
+# builds no images on push; a vX.Y.Z tag (pushed by `release.sh prepare`)
+# runs `release.sh publish` in the Android builder image.
+version: 1
+scripts:
+  - name: release
+    # After a toolchain or sherpa pin change, rebuild with
+    # `bash scripts/build-images.sh --push builder` and update this tag to
+    # `bash scripts/build-images.sh --print-builder-image`.
+    image: registry.kieffer.me/convoscribe-android-builder:1.13.8-qnn2.40.0.251030-ort1.28.2-tc74fee02c31
+    command: bash scripts/release.sh publish --yes
+    git_tags: ['^v[0-9]+\.[0-9]+\.[0-9]+$']
+    # GH_TOKEN (fine-grained PAT, this repo, Contents: read and write) and
+    # LLM_API_KEY, in namespace builds.
+    secret: convoscribe-release

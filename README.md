@@ -151,6 +151,90 @@ Ollama at `http://<host>:11434/v1`) work without a custom
 `network_security_config`. Do not place a stricter network
 security config on the app — that would block the local endpoint.
 
+## Release
+
+`scripts/release.sh` cuts a GitHub release in two halves. You run the
+first; pushing the tag makes Tekton run the second.
+
+1. **`prepare`** (locally) bumps `versionName` (minor by default;
+   `--patch`, `--major` or `--version X.Y.Z`) and `versionCode` in
+   `app/build.gradle.kts`, commits `chore(release): vX.Y.Z`, tags it
+   `vX.Y.Z`, and pushes the branch and tag together. Releases come from
+   `main` with a clean tree that is not behind `origin`.
+2. **`publish`** (Tekton, on the `vX.Y.Z` tag push; see `.k8s-build.yaml`)
+   asks an OpenAI-compatible LLM to write release notes from the git log
+   since the previous `v*` tag, runs the verify gate and
+   `assembleRelease`, and runs `gh release create` with
+   `convoscribe-X.Y.Z.apk` and its `.sha256`. It does nothing if the
+   release already exists, so re-running the pipeline is safe.
+
+Release builds are signed with the shared `app/debug.keystore` for now,
+so they upgrade in place over debug installs (a dedicated release key is
+#16).
+
+```bash
+bash scripts/release.sh prepare                    # 0.1.0 -> 0.2.0, push v0.2.0
+bash scripts/release.sh prepare --patch --dry-run  # print the next version only
+# publish runs in CI; locally, on a checkout of the tag:
+LLM_API_KEY=... bash scripts/release.sh publish
+LLM_API_KEY=... bash scripts/release.sh publish --dry-run   # notes and APK into dist/, any HEAD
+bash scripts/release.sh publish --notes-file my-notes.md    # skip the LLM
+```
+
+The notes endpoint defaults to `http://llama-chat.llama:8080/v1`, model
+`llama-chat` (`LLM_BASE_URL`, `LLM_MODEL`). The script turns the model's
+thinking off with `chat_template_kwargs`. Set `LLM_DISABLE_THINKING=0`
+for servers that reject that field. In an interactive shell both halves
+ask before pushing or publishing (`--yes` skips the prompt).
+
+If `publish` fails in CI after the tag is pushed (a failing test, say),
+the tag stays without a release. Fix it and release the next patch with
+`prepare --patch`. Alternatively, delete the tag
+(`git push --delete origin vX.Y.Z && git tag -d vX.Y.Z`), revert the
+version bump, and prepare again. For a transient failure (LLM down,
+network), re-run the PipelineRun. To publish a tag again by hand, start
+`container-build-pipeline` with `git-branch=refs/tags/vX.Y.Z` and
+`git-revision` set to the tag's commit.
+
+### sherpa-onnx is prebuilt for releases
+
+The release never compiles sherpa-onnx. If its outputs are missing from
+`app/`, it copies them from `$CONVOSCRIBE_SHERPA_PREBUILT` or extracts
+them from the sherpa image with podman or docker. Two images
+(Containerfiles in `docker/`, build context the repo root) make this
+work in CI:
+
+- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>` is a
+  `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so` and
+  `/sherpa/libs/*.jar`. Its tag comes from the pins in
+  `scripts/build-sherpa-onnx.sh`, so you rebuild it only when a pin
+  changes.
+- `convoscribe-android-builder:<sherpa tag>-tc<hash>` has JDK 17, the
+  SDK (no NDK) and `gh`, with the sherpa outputs at `/opt/sherpa`.
+  Tekton runs `scripts/release.sh publish` in this image. The exact tag
+  is pinned in `.k8s-build.yaml`, so update it there after rebuilding.
+
+```bash
+buildah login registry.kieffer.me
+bash scripts/build-images.sh --push              # both; the sherpa build takes 10-30 min
+bash scripts/build-images.sh --push builder      # after a toolchain change only
+bash scripts/build-images.sh --print-builder-image   # the image the Tekton task should use
+# in-cluster plain-HTTP registry:
+bash scripts/build-images.sh --push --tls-verify=false --registry docker-registry.docker-registry:5000
+```
+
+`publish` in Tekton reads `GH_TOKEN` and `LLM_API_KEY` from the
+`convoscribe-release` Secret in the `builds` namespace. `GH_TOKEN` is a
+fine-grained PAT for this repo with **Contents: read and write**; CI
+never pushes to git, so that's only for `gh release create` and fetching
+history. The script unshallows Tekton's shallow clone itself.
+
+```bash
+kubectl -n builds create secret generic convoscribe-release \
+  --from-literal=GH_TOKEN=... --from-literal=LLM_API_KEY=... \
+  --dry-run=client -o yaml | kubeseal -o yaml > convoscribe-release-sealed.yaml
+```
+
 ## Boox / Onyx e-readers
 
 Tested on a Boox Note Air 6C (Qualcomm QCS6690, Android 16):
