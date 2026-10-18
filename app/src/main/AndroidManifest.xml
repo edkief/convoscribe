@@ -88,6 +88,19 @@
             </intent-filter>
         </activity>
         <!--
+            Starts a recording for the Quick Settings tile (issue #7):
+            an activity the user launched makes the app visible, which
+            Android 14+ requires before a microphone foreground service
+            may start. Invisible, own task, never in Recents.
+        -->
+        <activity
+            android:name=".RecordTrampolineActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!--
             Foreground recording service (TASK-12). `exported` is
             `false` because the only legitimate caller is our own
             app code, via the typed `start` / `stop` PendingIntents
@@ -102,6 +115,21 @@
             android:name=".service.RecordingService"
             android:exported="false"
             android:foregroundServiceType="microphone|dataSync" />
+        <!--
+            "ConvoScribe" Quick Settings tile (issue #7): start a
+            recording from anywhere, pause / resume an open one. Exported
+            for System UI only, through the bind permission.
+        -->
+        <service
+            android:name=".service.RecordTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_mic"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
         <!--
             NPU probe for the engine check. Runs in its own process
             because sherpa-onnx's QNN backend calls exit() when it

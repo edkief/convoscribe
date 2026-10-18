@@ -9,6 +9,11 @@
     <string name="status_recording">Recording</string>
     <string name="status_paused">Paused</string>
     <string name="overlay_open">Open the recording</string>
+    <string name="tile_label">ConvoScribe</string>
+    <string name="tile_subtitle_idle">Record</string>
+    <string name="tile_description_idle">Start a recording</string>
+    <string name="tile_description_recording">Recording. Tap to pause.</string>
+    <string name="tile_description_paused">Paused. Tap to resume.</string>
     <string name="overlay_permission_title">Control recordings from other apps?</string>
     <string name="overlay_permission_message">While a recording is open and you switch to another app, ConvoScribe can show a small control with the time, Pause and Stop. Android asks you to allow \"Display over other apps\" for that. Without it, use the notification. You can turn the control off in Settings.</string>
     <string name="overlay_permission_allow">Allow</string>
