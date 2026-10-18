@@ -297,6 +297,28 @@ class RecordingControllerTest {
         advanceUntilIdle()
     }
 
+    @Test
+    fun recording_reportsTheLatestChunksInputLevel_andStopResetsIt() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+        assertEquals(0f, h.controller.state.value.inputLevel, 0f)
+
+        h.audio.channel.trySend(ShortArray(AudioSpec.CHUNK_SAMPLES) { if (it % 2 == 0) 8_000 else -8_000 })
+        advanceUntilIdle()
+        assertTrue(h.controller.state.value.inputLevel > 0.5f)
+
+        h.audio.channel.trySend(silentChunk())
+        advanceUntilIdle()
+        assertEquals(0f, h.controller.state.value.inputLevel, 0f)
+
+        h.audio.channel.trySend(ShortArray(AudioSpec.CHUNK_SAMPLES) { 8_000 })
+        advanceUntilIdle()
+        h.controller.stop()
+        advanceUntilIdle()
+        assertEquals(0f, h.controller.state.value.inputLevel, 0f)
+    }
+
     /**
      * When the underlying factory reports `needsPreparation == true`
      * (the first NPU run that has to compile the `.so` models into
