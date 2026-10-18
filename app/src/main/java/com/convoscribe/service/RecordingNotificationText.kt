@@ -1,5 +1,8 @@
 package com.convoscribe.service
 
+import androidx.annotation.StringRes
+import com.convoscribe.R
+import com.convoscribe.recording.ImportStep
 import java.util.Locale
 import kotlin.math.max
 
@@ -35,4 +38,13 @@ fun recordingNotificationText(elapsedMs: Long): String {
         String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
     return "Recording – $body"
+}
+
+/** String resource for [step]'s progress line, `"Transcribing… 42%"` (takes the percent). */
+@StringRes
+fun importStepText(step: ImportStep): Int = when (step) {
+    ImportStep.COPYING -> R.string.import_step_copying
+    ImportStep.DECODING -> R.string.import_step_decoding
+    ImportStep.TRANSCRIBING -> R.string.import_step_transcribing
+    ImportStep.IDENTIFYING_SPEAKERS -> R.string.import_step_identifying
 }

@@ -24,6 +24,12 @@
     <string name="notification_retranscribe_title">Re-transcribing</string>
     <string name="notification_retranscribe_text">%1$d%% of the recording</string>
     <string name="notification_retranscribe_cancel">Cancel</string>
+    <string name="notification_import_title">Importing audio</string>
+    <string name="notification_import_cancel">Cancel</string>
+    <string name="import_step_copying">Reading the file… %1$d%%</string>
+    <string name="import_step_decoding">Decoding the audio… %1$d%%</string>
+    <string name="import_step_transcribing">Transcribing… %1$d%%</string>
+    <string name="import_step_identifying">Identifying speakers… %1$d%%</string>
     <string name="notification_diarizing_title">Identifying speakers</string>
     <string name="notification_diarizing_text">Identifying speakers…</string>
     <string name="record_title">New recording</string>
