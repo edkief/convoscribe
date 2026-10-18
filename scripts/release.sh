@@ -517,13 +517,22 @@ PY
   # -------------------------------------------------------------------------
   # Build. The version is already committed, so nothing in the tree changes.
   # -------------------------------------------------------------------------
+  # In CI the pod's memory limit covers every JVM. By default the Kotlin
+  # daemon inherits the Gradle daemon's -Xmx4g as a second heap, which with
+  # lint and the test JVM went past the 8Gi limit (OOMKilled). Compile
+  # in-process and cap parallel workers instead.
+  local gradle_args=()
+  if [[ "${CI:-}" == true ]]; then
+    gradle_args=(--max-workers=2 -Pkotlin.compiler.execution.strategy=in-process)
+    log "CI: ${gradle_args[*]}"
+  fi
   ./gradlew --stop >/dev/null 2>&1 || true
   if [[ "$verify" == true ]]; then
     log "Building (ktlintCheck testDebugUnitTest lintDebug assembleRelease) ..."
-    ./gradlew ktlintCheck testDebugUnitTest lintDebug assembleRelease
+    ./gradlew "${gradle_args[@]}" ktlintCheck testDebugUnitTest lintDebug assembleRelease
   else
     log "Building (assembleRelease only, --no-verify) ..."
-    ./gradlew assembleRelease
+    ./gradlew "${gradle_args[@]}" assembleRelease
   fi
   ./gradlew --stop >/dev/null 2>&1 || true
 
