@@ -54,21 +54,54 @@ model before).
 **Steps**
 
 1. Open ConvoScribe. On a fresh install the model setup screen
-   appears; tap **Download**.
-2. Observe the progress bar; on a slow link it takes ~5–10 minutes for
-   the NPU bundle (~450 MB compressed body, ≈610 MB extracted).
-3. Mid-download, swipe down and turn Wi-Fi off for ~10 s, then turn
-   it back on. Watch the bar.
+   appears; tap **Download**. On Android 13+ allow notifications when
+   asked (denying them does not stop the download).
+2. Observe the progress bar and the **Downloading speech models**
+   notification (MB done / total, Cancel); on a slow link it takes
+   ~5–10 minutes for the NPU bundle (~420 MB compressed body,
+   ≈610 MB extracted).
+3. Mid-download, turn on airplane mode for ~30 s, then turn it off.
+   Watch the bar and the notification.
 
-**Expected** — the progress bar freezes while Wi-Fi is down, then
-resumes without rebasing below the previously-reached byte count
-(no "start over" jump); once the bar reaches the total the screen
-pops to **Home**. The logcat line below appears once when the
-download completes:
+**Expected** — while the network is down, the screen and the
+notification say the download resumes when back online; once the
+network is back the bar continues from the byte count it had reached
+(no "start over" jump), for a plain file as well as for the NPU
+archive. After the download, the NPU bundle shows **Unpacking…** with
+a percentage. Once complete, the screen pops to **Home** and the
+notification changes to **Speech models downloaded**. The logcat line
+below appears once when the download completes:
 
 ```
 I ConvoScribe(12345): model download completed bytesDone=… bundles=…
 ```
+
+### 2a. Download in the background (issue #10)
+
+Run on the Samsung device and on the Boox, with a fresh install (or
+the models deleted in Settings).
+
+1. Tap **Download**, then turn the screen off for a few minutes.
+   Turn it on: the download has kept going (the bar is further on),
+   and it completes with the screen off.
+2. Start again; press Home and use another app for a while, then
+   come back: the setup screen shows the live progress.
+3. From Settings, open the model download for another language
+   (`back` route), tap **Download**, press Back, then reopen it: the
+   screen re-attaches to the running download instead of starting a
+   second one.
+4. Tap **Cancel** in the notification (or on the screen): the
+   download stops, the notification goes away and
+   `adb shell run-as com.convoscribe ls files/models` shows no
+   `.part` / `.archive.part` files left.
+5. Start again, then force-stop the app (`adb shell am force-stop
+   com.convoscribe`) mid-file. Reopen and tap **Download**: it
+   resumes from the partial file (logcat shows `resuming <file> from
+   byte N`, and the bar starts from the earlier byte count).
+6. Android 15+: after a long time in the background the system may
+   stop a `dataSync` service; the notification then says the download
+   failed with **Android paused the download**, and **Retry** resumes
+   it.
 
 ## 2b. Engine check — NPU
 

@@ -209,6 +209,15 @@ Models are downloaded on first run into
 section of `docs/MANUAL_TEST.md` for the exact path and how to
 inspect / clear it with `adb shell`.
 
+The download runs in a foreground service with a progress
+notification and a Cancel action, so it keeps going with the screen
+off or in another app, and leaving the setup screen does not stop it.
+A dropped connection is retried with backoff once the network is
+back, resuming each file (and the NPU archive, which is downloaded to
+`models/<bundleId>.archive.part` and extracted once complete) from
+where it stopped; Retry after a failure resumes the same way. The NPU
+archive needs about twice its size free while it is unpacked.
+
 ## Architecture
 
 Single-module Android app `:app`, Kotlin + Jetpack Compose,
@@ -218,8 +227,10 @@ one package per concern:
 - `audio/` — PCM16 16 kHz primitives: `WavWriter`, `WavReader`,
   `MicAudioSource` (a thin `AudioRecord` wrapper).
 - `models/` — `ModelCatalog` (the bundle table above),
-  `ModelDownloader` (HTTPS + tar.bz2 stream), `ModelStore` (the
-  on-disk layout and per-file presence check).
+  `ModelDownloader` (resumable HTTPS through `ResumableFetch`,
+  retries, tar.bz2 extraction), `ModelDownloadManager` (the one
+  app-wide download, run by `service/ModelDownloadService`),
+  `ModelStore` (the on-disk layout and per-file presence check).
 - `asr/` — engine-agnostic streaming interface:
   `StreamingTranscriber`, `TranscriberFactory`,
   `TranscriptEvent` (Partial / Final), `EndpointSegmenter`,
