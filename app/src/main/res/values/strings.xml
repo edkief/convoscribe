@@ -27,6 +27,11 @@
     <string name="setup_progress">%1$d MB / %2$d MB</string>
     <string name="setup_download">Download</string>
     <string name="setup_retry">Retry</string>
+    <string name="setup_cancel">Cancel</string>
+    <string name="setup_waiting_network">Connection lost, will resume when back online…</string>
+    <string name="setup_unpacking">Unpacking…</string>
+    <string name="setup_unpacking_progress">%1$d%%</string>
+    <string name="setup_background_hint">The download continues if you turn the screen off or switch apps.</string>
     <string name="notification_channel_recording">Recording</string>
     <string name="notification_channel_recording_description">Shows while ConvoScribe is capturing audio.</string>
     <string name="notification_recording_title">Recording</string>

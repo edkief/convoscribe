@@ -5,9 +5,11 @@ import com.convoscribe.models.DownloadEvent
 import com.convoscribe.models.ModelBundle
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelDownloadException
+import com.convoscribe.models.ModelDownloadManager
 import com.convoscribe.models.ModelDownloads
 import com.convoscribe.models.ModelStore
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -24,6 +26,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -31,9 +34,10 @@ import org.junit.rules.TemporaryFolder
 
 /**
  * Unit tests for [ModelSetupViewModel]. The downloader is faked
- * through [com.convoscribe.models.ModelDownloads] so we never touch
- * OkHttp or the filesystem (other than [ModelStore.missing] reading
- * the temp folder).
+ * through [com.convoscribe.models.ModelDownloads] behind a real
+ * [ModelDownloadManager], and the service start is the manager's own
+ * `start`, so we never touch OkHttp, the service or the filesystem
+ * (other than [ModelStore.missing] reading the temp folder).
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class ModelSetupViewModelTest {
@@ -73,6 +77,17 @@ class ModelSetupViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /** A view model over a fresh manager, as the setup screen builds it. */
+    private fun viewModel(
+        downloads: ModelDownloads,
+        bundles: List<ModelBundle> = listOf(bundle),
+        manager: ModelDownloadManager = ModelDownloadManager(downloads, CoroutineScope(dispatcher), dispatcher),
+        onStart: (List<ModelBundle>) -> Unit = {}
+    ): ModelSetupViewModel = ModelSetupViewModel(manager, store, bundles) { toFetch ->
+        onStart(toFetch)
+        manager.start(toFetch)
+    }
+
     /**
      * Records every call to [download] and lets the test push events
      * through a [MutableSharedFlow]. The first collector wins for a
@@ -96,7 +111,7 @@ class ModelSetupViewModelTest {
     fun start_emitsProgress_thenFinished_andFlagsRunningFalse() = runTest(dispatcher) {
         val events = MutableSharedFlow<DownloadEvent>(replay = Int.MAX_VALUE)
         val downloads = RecordingDownloads(events)
-        val vm = ModelSetupViewModel(downloads, store, listOf(bundle))
+        val vm = viewModel(downloads)
 
         // Initial state: totalBytes set, not running, not finished.
         assertEquals(100L, vm.state.value.totalBytes)
@@ -151,27 +166,28 @@ class ModelSetupViewModelTest {
                 }
             }
         }
-        val vm = ModelSetupViewModel(downloads, store, listOf(bundle))
+        val vm = viewModel(downloads)
 
         vm.state.test {
             awaitItem() // initial
 
+            // The Running state in between may be conflated: the
+            // failing download can end before the screen collects it.
             vm.start()
-            val errored = awaitItem()
-            assertEquals(true, errored.running)
-            // After the throw is observed: error set, finished still false.
-            val withError = awaitItem()
+            var withError = awaitItem()
+            while (withError.error == null) withError = awaitItem()
             assertEquals(false, withError.running)
             assertEquals("HTTP 500 for x", withError.error)
             assertEquals(false, withError.finished)
 
-            // Second start: error is cleared, running is set again, then completed.
+            // Second start: error is cleared, then completed.
             vm.start()
-            val cleared = awaitItem()
-            assertEquals(true, cleared.running)
-            assertNull(cleared.error)
-            val finished = awaitItem()
-            assertEquals(true, finished.finished)
+            var finished = awaitItem()
+            while (!finished.finished) {
+                assertNull(finished.error)
+                finished = awaitItem()
+            }
+            assertNull(finished.error)
             assertEquals(false, finished.running)
             cancelAndIgnoreRemainingEvents()
         }
@@ -183,7 +199,7 @@ class ModelSetupViewModelTest {
     fun start_calledTwiceWhileRunning_doesNotInvokeDownloaderTwice() = runTest(dispatcher) {
         val events = MutableSharedFlow<DownloadEvent>(replay = Int.MAX_VALUE)
         val downloads = RecordingDownloads(events)
-        val vm = ModelSetupViewModel(downloads, store, listOf(bundle))
+        val vm = viewModel(downloads)
 
         vm.state.test {
             awaitItem() // initial
@@ -245,7 +261,7 @@ class ModelSetupViewModelTest {
 
         val events = MutableSharedFlow<DownloadEvent>(replay = Int.MAX_VALUE)
         val downloads = RecordingDownloads(events)
-        val vm = ModelSetupViewModel(downloads, store, bundles)
+        val vm = viewModel(downloads, bundles)
 
         // Acceptance criterion #1: the UI's advertised total
         // matches the bundle's file-sum, not the (zero for an
@@ -271,5 +287,46 @@ class ModelSetupViewModelTest {
         // only the French bundle (the two English-agnostic
         // models are skipped because they are already installed).
         assertEquals(1, downloads.callCount)
+    }
+
+    /**
+     * Issue #10: the download outlives the screen. A view model built
+     * while a download runs shows its live progress at once, and its
+     * Download does not start a second one.
+     */
+    @Test
+    fun newViewModel_attachesToTheRunningDownload() = runTest(dispatcher) {
+        val events = MutableSharedFlow<DownloadEvent>(replay = Int.MAX_VALUE)
+        val downloads = RecordingDownloads(events)
+        val manager = ModelDownloadManager(downloads, CoroutineScope(dispatcher), dispatcher)
+        manager.start(listOf(bundle))
+        events.tryEmit(
+            DownloadEvent.Progress(bytesDone = 30L, bytesTotal = 100L, currentFile = "b.bin", waiting = true)
+        )
+        advanceUntilIdle()
+
+        var serviceStarts = 0
+        val vm = viewModel(downloads, manager = manager, onStart = { serviceStarts++ })
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.running)
+        assertEquals(30L, vm.state.value.doneBytes)
+        assertTrue(vm.state.value.waitingForNetwork)
+        vm.start()
+        advanceUntilIdle()
+        assertEquals(0, serviceStarts)
+        assertEquals(1, downloads.callCount)
+    }
+
+    /**
+     * The bar follows the bytes on the wire: for an archive bundle
+     * those are the compressed body, smaller than [SetupUiState.totalBytes].
+     */
+    @Test
+    fun progress_usesDownloadBytes_andUnpackingWhileExtracting() {
+        val downloading = SetupUiState(totalBytes = 600L, doneBytes = 200L, running = true, downloadTotalBytes = 400L)
+        assertEquals(0.5f, downloading.progress)
+        assertEquals(0.25f, downloading.copy(unpacking = 0.25f).progress)
+        assertEquals(0.5f, SetupUiState(totalBytes = 100L, doneBytes = 50L).progress)
     }
 }

@@ -1,5 +1,7 @@
 package com.convoscribe.models
 
+import android.util.Log
+import com.convoscribe.TAG
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -47,7 +49,10 @@ class ResumableFetch(private val client: OkHttpClient) {
             return
         }
         val request = Request.Builder().url(url).apply {
-            if (offset > 0) header("Range", "bytes=$offset-")
+            if (offset > 0) {
+                Log.i(TAG, "resuming $label from byte $offset")
+                header("Range", "bytes=$offset-")
+            }
         }.build()
         val call = client.newCall(request)
         // Cancelling the coroutine aborts a read blocked on a stalled
