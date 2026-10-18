@@ -27,6 +27,9 @@ class ConvoApp : Application() {
             val recovery = SessionRecovery(container.sessionRepository)
             container.applicationScope.launch {
                 runCatching { recovery.recover() }
+                // Files of an import the previous process died in; no
+                // session was created for it.
+                runCatching { container.importAudioUseCase.cleanUp() }
             }
         }
     }

@@ -1,5 +1,8 @@
 package com.convoscribe.ui.home
 
+import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -23,12 +26,19 @@ import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,14 +48,24 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.currentStateAsState
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.audio.AudioImportException
 import com.convoscribe.models.ModelCatalog
+import com.convoscribe.recording.ImportState
+import com.convoscribe.recording.PendingImport
+import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.service.RecordingService
+import com.convoscribe.service.importStepText
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
@@ -53,12 +73,22 @@ import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.StatusBadge
 import com.convoscribe.ui.components.statusLabel
 import com.convoscribe.ui.theme.AppTheme
+import kotlinx.coroutines.launch
 
 /**
  * Landing screen: the session list and the "New recording" action,
  * which goes to the `record` route — or to `setup` when a model bundle
  * the configured language and engine need is missing, so it works both
  * on first run and in steady state.
+ *
+ * Audio import (issue #3) starts here too: *Import audio…* picks a
+ * file, and a file shared or opened with ConvoScribe arrives through
+ * `AppContainer.pendingImport`. Either way the screen refuses it while
+ * a recording, re-transcription or import runs, sends the user to
+ * setup first when the models are missing (and resumes on the way
+ * back), then hands it to the foreground service. A banner shows the
+ * import's progress with Cancel, a failure is a snackbar, and the new
+ * session opens as soon as it exists.
  *
  * The top bar has Settings and an overflow menu with Engine check. Each
  * session is a card (title, date, duration, speakers, language and a
@@ -92,8 +122,73 @@ fun HomeScreen(navController: NavHostController) {
         navController.navigate(target)
     }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
+    val importer = container.importAudioUseCase
+    val importState by importer.state.collectAsStateWithLifecycle()
+    val createdSessionId by importer.createdSessionId.collectAsStateWithLifecycle()
+    val pendingImport by container.pendingImport.collectAsStateWithLifecycle()
+    val lifecycleState by LocalLifecycleOwner.current.lifecycle.currentStateAsState()
+    val resumed = lifecycleState.isAtLeast(Lifecycle.State.RESUMED)
+    val snackbarHostState = remember { SnackbarHostState() }
+    // Messages outlive the effects below, which end as soon as they
+    // clear the request or the failure they are about.
+    val messageScope = rememberCoroutineScope()
+    val showMessage: (String) -> Unit = { message ->
+        messageScope.launch { snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Long) }
+    }
+    val pickAudio = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) container.pendingImport.value = PendingImport(uri)
+    }
+
+    // Only while this screen is in front: on the way to setup it is
+    // not, so marking the request as sent there does not re-trigger it.
+    LaunchedEffect(pendingImport, resumed) {
+        val request = pendingImport ?: return@LaunchedEffect
+        if (!resumed) return@LaunchedEffect
+        val busy = container.recordingController.state.value.phase != RecordingPhase.IDLE ||
+            container.retranscribeUseCase.isRunning ||
+            importer.isRunning
+        if (busy) {
+            container.pendingImport.value = null
+            showMessage(context.getString(R.string.home_import_busy))
+            return@LaunchedEffect
+        }
+        val settings = container.settingsRepository.settings.value
+        val missing = container.modelStore.missing(
+            ModelCatalog.requiredFor(settings.asrLanguage, settings.asrEngine)
+        )
+        if (missing.isNotEmpty()) {
+            if (request.sentToSetup) {
+                container.pendingImport.value = null
+                showMessage(context.getString(R.string.home_import_models_missing))
+            } else {
+                container.pendingImport.value = request.copy(sentToSetup = true)
+                navController.navigate(
+                    "setup?engine=${settings.asrEngine}&language=${settings.asrLanguage}&back=true"
+                )
+            }
+            return@LaunchedEffect
+        }
+        container.pendingImport.value = null
+        ContextCompat.startForegroundService(context, RecordingService.importIntent(context, request.uri))
+    }
+    LaunchedEffect(createdSessionId, resumed) {
+        val id = createdSessionId ?: return@LaunchedEffect
+        if (!resumed) return@LaunchedEffect
+        importer.consumeCreated()
+        navController.navigate("session/$id")
+    }
+    LaunchedEffect(importState) {
+        val failed = importState as? ImportState.Failed ?: return@LaunchedEffect
+        importer.acknowledgeFailure()
+        showMessage(context.getString(R.string.home_import_failed, importErrorText(context, failed)))
+    }
+
     HomeBody(
         sessions = sessions,
+        importing = importState as? ImportState.Running,
+        snackbarHostState = snackbarHostState,
+        onImport = { pickAudio.launch(IMPORT_MIME_TYPES) },
+        onCancelImport = { context.startService(RecordingService.cancelImportIntent(context)) },
         onNewRecording = onNewRecording,
         onOpenSession = { id -> navController.navigate("session/$id") },
         onDelete = vm::delete,
@@ -110,6 +205,10 @@ fun HomeScreen(navController: NavHostController) {
 @Composable
 internal fun HomeBody(
     sessions: List<SessionRow>,
+    importing: ImportState.Running? = null,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
+    onImport: () -> Unit = {},
+    onCancelImport: () -> Unit = {},
     onNewRecording: () -> Unit,
     onOpenSession: (Long) -> Unit,
     onDelete: (Long) -> Unit,
@@ -140,6 +239,13 @@ internal fun HomeBody(
                     onDismissRequest = { overflowExpanded = false }
                 ) {
                     DropdownMenuItem(
+                        text = { Text(text = stringResource(R.string.home_import_audio_menu)) },
+                        onClick = {
+                            overflowExpanded = false
+                            onImport()
+                        }
+                    )
+                    DropdownMenuItem(
                         text = { Text(text = stringResource(R.string.home_engine_check)) },
                         onClick = {
                             overflowExpanded = false
@@ -152,42 +258,22 @@ internal fun HomeBody(
         floatingActionButton = {
             // Hidden while the list is empty: the empty state carries the same action.
             if (sessions.isNotEmpty()) NewRecordingButton(onClick = onNewRecording)
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
-        if (sessions.isEmpty()) {
-            EmptyState(
-                icon = painterResource(R.drawable.ic_conversation),
-                title = stringResource(R.string.home_empty_title),
-                body = stringResource(R.string.home_empty_body),
-                actionLabel = stringResource(R.string.home_new_recording),
-                onAction = onNewRecording,
-                modifier = Modifier.padding(innerPadding)
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+        ) {
+            importing?.let { ImportBanner(state = it, onCancel = onCancelImport) }
+            SessionList(
+                sessions = sessions,
+                onNewRecording = onNewRecording,
+                onImport = onImport,
+                onOpenSession = onOpenSession,
+                onRequestDelete = { pendingDeleteId = it }
             )
-        } else {
-            val spacing = AppTheme.spacing
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(
-                    start = spacing.screen,
-                    end = spacing.screen,
-                    top = spacing.s,
-                    // Keep the last card clear of the floating button.
-                    bottom = AppTheme.sizes.recordButton + spacing.xl
-                ),
-                verticalArrangement = Arrangement.spacedBy(spacing.m),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                items(items = sessions, key = { it.id }) { row ->
-                    SessionCard(
-                        row = row,
-                        onOpen = { onOpenSession(row.id) },
-                        onRequestDelete = { pendingDeleteId = row.id },
-                        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
-                    )
-                }
-            }
         }
     }
 
@@ -205,6 +291,100 @@ internal fun HomeBody(
             onDismiss = { pendingDeleteId = null }
         )
     }
+}
+
+/** The session cards, or the empty state with New recording and Import audio. */
+@Composable
+private fun SessionList(
+    sessions: List<SessionRow>,
+    onNewRecording: () -> Unit,
+    onImport: () -> Unit,
+    onOpenSession: (Long) -> Unit,
+    onRequestDelete: (Long) -> Unit
+) {
+    if (sessions.isEmpty()) {
+        EmptyState(
+            icon = painterResource(R.drawable.ic_conversation),
+            title = stringResource(R.string.home_empty_title),
+            body = stringResource(R.string.home_empty_body),
+            actionLabel = stringResource(R.string.home_new_recording),
+            onAction = onNewRecording,
+            secondaryActionLabel = stringResource(R.string.home_import_audio),
+            onSecondaryAction = onImport
+        )
+    } else {
+        val spacing = AppTheme.spacing
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = spacing.screen,
+                end = spacing.screen,
+                top = spacing.s,
+                // Keep the last card clear of the floating button.
+                bottom = AppTheme.sizes.recordButton + spacing.xl
+            ),
+            verticalArrangement = Arrangement.spacedBy(spacing.m),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            items(items = sessions, key = { it.id }) { row ->
+                SessionCard(
+                    row = row,
+                    onOpen = { onOpenSession(row.id) },
+                    onRequestDelete = { onRequestDelete(row.id) },
+                    modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * "Importing <file>", the step with its percentage, a progress bar and
+ * Cancel (until the session exists), above the session list.
+ */
+@Composable
+private fun ImportBanner(state: ImportState.Running, onCancel: () -> Unit) {
+    val spacing = AppTheme.spacing
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.screen, vertical = spacing.s),
+        verticalArrangement = Arrangement.spacedBy(spacing.xs)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = state.name ?: stringResource(R.string.notification_import_title),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = stringResource(importStepText(state.step), (state.progress * 100).toInt()),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (state.cancellable) {
+                TextButton(onClick = onCancel) {
+                    Text(text = stringResource(R.string.home_import_cancel))
+                }
+            }
+        }
+        LinearProgressIndicator(progress = { state.progress }, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+/** Mime types the import picker offers; see the manifest's intent filters. */
+private val IMPORT_MIME_TYPES = arrayOf("audio/*", "application/ogg")
+
+/** Why [failed] failed, as a sentence. */
+private fun importErrorText(context: Context, failed: ImportState.Failed): String = when (failed.reason) {
+    AudioImportException.Reason.UNREADABLE -> context.getString(R.string.import_error_unreadable)
+    AudioImportException.Reason.NO_AUDIO_TRACK -> context.getString(R.string.import_error_no_audio_track)
+    AudioImportException.Reason.UNSUPPORTED_FORMAT -> context.getString(R.string.import_error_unsupported)
+    AudioImportException.Reason.EMPTY -> context.getString(R.string.import_error_empty)
+    null -> failed.message.orEmpty()
 }
 
 /** The primary action. Flat (no shadow) on e-ink, where it is solid black. */

@@ -1,6 +1,7 @@
 package com.convoscribe.audio
 
 import kotlin.math.log10
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /**
@@ -26,6 +27,15 @@ fun ShortArray.toFloatSamples(): FloatArray {
         out[i] = this[i] / 32_768f
     }
     return out
+}
+
+/**
+ * Convert floats in `[-1.0, 1.0]` back to signed 16-bit PCM (times
+ * 32 768, rounded; values outside the range are clipped). The inverse
+ * of [toFloatSamples] for the WAV writer.
+ */
+fun FloatArray.toPcm16Samples(): ShortArray = ShortArray(size) { i ->
+    (this[i] * 32_768f).roundToInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
 }
 
 /**

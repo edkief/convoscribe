@@ -7,9 +7,11 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
+import android.net.Uri
 import android.os.IBinder
 import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.OpenableColumns
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.getSystemService
@@ -18,9 +20,13 @@ import com.convoscribe.MainActivity
 import com.convoscribe.R
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.recording.ConversationOptions
+import com.convoscribe.recording.ImportSource
+import com.convoscribe.recording.ImportState
+import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
+import java.io.FileNotFoundException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -104,7 +110,7 @@ class RecordingService : Service() {
                 if (id <= 0L) {
                     // Defensive: a malformed intent must not crash
                     // the service. Bail out cleanly.
-                    if (controller().state.value.phase == RecordingPhase.IDLE) stopSelf()
+                    if (idle()) stopSelf()
                 } else {
                     val count = intent.getIntExtra(EXTRA_NUM_SPEAKERS, NUM_SPEAKERS_UNSET)
                     handleDiarize(id, count.takeIf { it != NUM_SPEAKERS_UNSET })
@@ -115,7 +121,7 @@ class RecordingService : Service() {
                 val language = intent.getStringExtra(EXTRA_LANGUAGE)
                 if (id > 0L && language != null) {
                     handleRetranscribe(id, language)
-                } else if (controller().state.value.phase == RecordingPhase.IDLE && retranscribeJob == null) {
+                } else if (idle()) {
                     stopSelf()
                 }
             }
@@ -123,14 +129,31 @@ class RecordingService : Service() {
                 val job = retranscribeJob
                 if (job != null) {
                     job.cancel()
-                } else if (controller().state.value.phase == RecordingPhase.IDLE) {
+                } else if (idle()) {
+                    stopSelf()
+                }
+            }
+            ACTION_IMPORT -> {
+                val uri = intent.data
+                if (uri != null) {
+                    handleImport(uri)
+                } else if (idle()) {
+                    stopSelf()
+                }
+            }
+            ACTION_CANCEL_IMPORT -> {
+                val job = importJob
+                val state = (application as ConvoApp).container.importAudioUseCase.state.value
+                if (job != null && (state as? ImportState.Running)?.cancellable != false) {
+                    job.cancel()
+                } else if (idle()) {
                     stopSelf()
                 }
             }
             // Defensive: an intent with an unknown action is a
             // client bug. Don't crash; just stay in foreground if
             // we already are, otherwise exit cleanly.
-            else -> if (controller().state.value.phase == RecordingPhase.IDLE) stopSelf()
+            else -> if (idle()) stopSelf()
         }
         return START_NOT_STICKY
     }
@@ -155,7 +178,7 @@ class RecordingService : Service() {
         // One heavy job at a time: a re-transcription keeps the
         // foreground (and the CPU) until it ends. The Record screen
         // disables Start meanwhile; this guards a stray intent.
-        if (retranscribeJob != null) return
+        if (retranscribeJob != null || importJob != null) return
         ensureNotificationChannel()
         val notification = buildNotification(elapsedMs = 0L)
         // ServiceCompat ignores the foregroundServiceType argument
@@ -203,9 +226,12 @@ class RecordingService : Service() {
             // tear down the foreground state in one go so we don't
             // briefly leave a stale "Identifying…" notification
             // behind.
-            releaseWakeLock()
-            ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            // An import started meanwhile owns the foreground now.
+            if (importJob == null) {
+                releaseWakeLock()
+                ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
@@ -228,8 +254,10 @@ class RecordingService : Service() {
         )
         scope.launch {
             diarizerUseCase().run(sessionId, numSpeakers = numSpeakers)
-            ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            if (idle()) {
+                ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
@@ -245,8 +273,7 @@ class RecordingService : Service() {
      */
     private fun handleRetranscribe(sessionId: Long, language: String) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
-        val busy = controller().state.value.phase != RecordingPhase.IDLE || retranscribeJob != null
-        if (busy || useCase.isRunning) return
+        if (!idle() || useCase.isRunning) return
         ensureNotificationChannel()
         ServiceCompat.startForeground(
             this,
@@ -268,12 +295,131 @@ class RecordingService : Service() {
                 retranscribeJob = null
                 releaseWakeLock()
                 // A recording started meanwhile owns the foreground now.
-                if (controller().state.value.phase == RecordingPhase.IDLE) {
+                if (idle()) {
                     ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 }
             }
         }
+    }
+
+    /** The running import, so [ACTION_CANCEL_IMPORT] can stop it. */
+    private var importJob: Job? = null
+
+    /**
+     * No recording, re-transcription or import holds the service; it
+     * may leave the foreground.
+     */
+    private fun idle(): Boolean =
+        controller().state.value.phase == RecordingPhase.IDLE && retranscribeJob == null && importJob == null
+
+    /**
+     * Import the audio file at [uri] as a new session (issue #3), in a
+     * `dataSync` foreground with a progress notification and a Cancel
+     * action. Refused while a recording, a re-transcription or another
+     * import runs; the UI checks first and says so. The intent carries
+     * a read grant for [uri], which the use case uses to copy the file
+     * before anything else.
+     */
+    private fun handleImport(uri: Uri) {
+        val useCase = (application as ConvoApp).container.importAudioUseCase
+        if (!idle() || useCase.isRunning) return
+        ensureNotificationChannel()
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildImportNotification(ImportState.Running(null, ImportStep.COPYING, 0f)),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+        acquireWakeLock()
+        val source = importSource(uri)
+        importJob = scope.launch {
+            val progress = useCase.state
+                .onEach { state -> if (state is ImportState.Running) maybeRefreshImportNotification(state) }
+                .launchIn(this)
+            try {
+                useCase.run(source)
+            } finally {
+                progress.cancel()
+                importJob = null
+                releaseWakeLock()
+                if (idle()) {
+                    ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }
+        }
+    }
+
+    /** [uri] as an [ImportSource]: its display name and size from the provider, if it has them. */
+    private fun importSource(uri: Uri): ImportSource {
+        var name: String? = null
+        var size: Long? = null
+        runCatching {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)
+                ?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                        val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+                        if (nameIndex >= 0 && !cursor.isNull(nameIndex)) name = cursor.getString(nameIndex)
+                        if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) size = cursor.getLong(sizeIndex)
+                    }
+                }
+        }
+        val fallbackName = name ?: uri.lastPathSegment?.substringAfterLast('/')
+        return ImportSource(fallbackName, size) {
+            contentResolver.openInputStream(uri) ?: throw FileNotFoundException(uri.toString())
+        }
+    }
+
+    private fun maybeRefreshImportNotification(state: ImportState.Running) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
+        lastNotificationUpdateMs = now
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildImportNotification(state),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+    }
+
+    private fun buildImportNotification(state: ImportState.Running): android.app.Notification {
+        val contentIntent = PendingIntent.getActivity(
+            this,
+            REQUEST_OPEN,
+            Intent(this, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val percent = (state.progress * 100).toInt().coerceIn(0, 100)
+        val builder = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setContentTitle(state.name ?: getString(R.string.notification_import_title))
+            .setContentText(getString(importStepText(state.step), percent))
+            .setProgress(100, percent, false)
+            .setContentIntent(contentIntent)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+        if (state.cancellable) {
+            val cancelIntent = PendingIntent.getService(
+                this,
+                REQUEST_CANCEL_IMPORT,
+                cancelImportIntent(this),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            builder.addAction(
+                NotificationCompat.Action.Builder(
+                    R.drawable.ic_launcher_foreground,
+                    getString(R.string.notification_import_cancel),
+                    cancelIntent
+                ).build()
+            )
+        }
+        return builder.build()
     }
 
     private fun maybeRefreshRetranscribeNotification(progress: Float) {
@@ -511,6 +657,9 @@ class RecordingService : Service() {
         /** `requestCode` for the cancel-re-transcription pending intent. */
         private const val REQUEST_CANCEL_RETRANSCRIBE = 1003
 
+        /** `requestCode` for the cancel-import pending intent. */
+        private const val REQUEST_CANCEL_IMPORT = 1004
+
         /** Upper bound on the wake-lock acquired for one session. */
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
@@ -538,6 +687,15 @@ class RecordingService : Service() {
          * language in [EXTRA_LANGUAGE], then re-identify speakers.
          */
         const val ACTION_RETRANSCRIBE = "com.convoscribe.RETRANSCRIBE"
+
+        /**
+         * Action to import the audio file in the intent's data URI as a
+         * new session (issue #3); the intent must grant read access.
+         */
+        const val ACTION_IMPORT = "com.convoscribe.IMPORT"
+
+        /** Action to cancel a running [ACTION_IMPORT] before its session exists. */
+        const val ACTION_CANCEL_IMPORT = "com.convoscribe.CANCEL_IMPORT"
 
         /** Action to cancel a running [ACTION_RETRANSCRIBE]; the old transcript is kept. */
         const val ACTION_CANCEL_RETRANSCRIBE = "com.convoscribe.CANCEL_RETRANSCRIBE"
@@ -608,6 +766,20 @@ class RecordingService : Service() {
                 .setAction(ACTION_RETRANSCRIBE)
                 .putExtra(EXTRA_SESSION_ID, sessionId)
                 .putExtra(EXTRA_LANGUAGE, language)
+
+        /**
+         * Build an [Intent] that imports [uri] as a new session, passing
+         * on the caller's read grant. Send it with
+         * `startForegroundService`.
+         */
+        fun importIntent(context: Context, uri: Uri): Intent = Intent(context, RecordingService::class.java)
+            .setAction(ACTION_IMPORT)
+            .setData(uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+
+        /** Build an [Intent] that cancels a running import; plain `startService`. */
+        fun cancelImportIntent(context: Context): Intent =
+            Intent(context, RecordingService::class.java).setAction(ACTION_CANCEL_IMPORT)
 
         /** Build an [Intent] that cancels a running re-transcription; plain `startService`. */
         fun cancelRetranscribeIntent(context: Context): Intent =

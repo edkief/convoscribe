@@ -388,4 +388,46 @@ class SessionRepositoryTest {
         // Speaker rows survive so the next diarization can carry "Alice" over.
         assertEquals(listOf("Alice"), repo.getSpeakers(id).map { it.label })
     }
+
+    @Test
+    fun createImportedSession_insertsTranscribedRowWithSegmentsAndMovesTheAudio() = runTest {
+        val audio = File(context.cacheDir, "import-${System.nanoTime()}.wav").apply { writeBytes(ByteArray(64)) }
+        val id = repo.createImportedSession(
+            title = "Voice note",
+            language = "fr",
+            numSpeakers = 0,
+            participants = listOf("Alice"),
+            durationMs = 2_000,
+            engine = "cpu",
+            model = "asr-fr",
+            segments = listOf(
+                SegmentPiece(0, 1_000, "un", emptyList(), speakerIndex = null),
+                SegmentPiece(1_000, 2_000, "deux", emptyList(), speakerIndex = null)
+            ),
+            audio = audio
+        )
+
+        val row = repo.getSession(id)!!
+        assertEquals("Voice note", row.title)
+        assertEquals(SessionStatus.TRANSCRIBED, row.status)
+        assertEquals(2_000L, row.durationMs)
+        assertEquals(-1, row.numSpeakers)
+        assertEquals("cpu", row.asrEngine)
+        assertEquals("asr-fr", row.asrModel)
+        assertEquals(File(recordingsDir, "$id.wav").absolutePath, row.audioPath)
+        assertTrue(File(row.audioPath).exists())
+        assertFalse(audio.exists())
+        assertEquals(listOf("un", "deux"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun createImportedSession_rollsBackWhenTheAudioCannotBeMoved() = runTest {
+        val missing = File(context.cacheDir, "missing-${System.nanoTime()}.wav")
+        try {
+            repo.createImportedSession("t", "en", null, null, 0, "cpu", "m", emptyList(), missing)
+            org.junit.Assert.fail("expected the move to fail")
+        } catch (_: Exception) {
+        }
+        assertTrue(repo.observeAllSessions().first().isEmpty())
+    }
 }

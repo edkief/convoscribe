@@ -17,6 +17,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -38,7 +39,8 @@ import com.convoscribe.ui.theme.AppTheme
 
 /**
  * Centred placeholder for an empty list or tab: an icon, a title, a
- * line of explanation and an optional primary action.
+ * line of explanation, an optional primary action and an optional
+ * secondary (outlined) one below it.
  */
 @Composable
 fun EmptyState(
@@ -47,7 +49,9 @@ fun EmptyState(
     modifier: Modifier = Modifier,
     body: String? = null,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: (() -> Unit)? = null
 ) {
     Box(modifier = modifier.fillMaxSize().padding(AppTheme.spacing.xl), contentAlignment = Alignment.Center) {
         Column(
@@ -77,6 +81,11 @@ fun EmptyState(
             if (actionLabel != null && onAction != null) {
                 Button(onClick = onAction, modifier = Modifier.padding(top = AppTheme.spacing.s)) {
                     Text(text = actionLabel)
+                }
+            }
+            if (secondaryActionLabel != null && onSecondaryAction != null) {
+                OutlinedButton(onClick = onSecondaryAction) {
+                    Text(text = secondaryActionLabel)
                 }
             }
         }
@@ -129,7 +138,9 @@ fun ErrorBanner(
     message: String,
     modifier: Modifier = Modifier,
     actionLabel: String? = null,
-    onAction: (() -> Unit)? = null
+    onAction: (() -> Unit)? = null,
+    secondaryActionLabel: String? = null,
+    onSecondaryAction: (() -> Unit)? = null
 ) {
     val eink = AppTheme.isEink
     Surface(
