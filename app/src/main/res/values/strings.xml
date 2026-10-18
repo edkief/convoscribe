@@ -52,6 +52,8 @@
     <string name="import_step_identifying">Identifying speakers… %1$d%%</string>
     <string name="notification_diarizing_title">Identifying speakers</string>
     <string name="notification_diarizing_text">Identifying speakers…</string>
+    <string name="notification_speakers_pending_title">Speakers not identified yet</string>
+    <string name="notification_speakers_pending_text">This session is too long to identify speakers in the background. Open ConvoScribe and tap Identify speakers now.</string>
     <string name="notification_channel_downloads">Downloads</string>
     <string name="notification_channel_downloads_description">Shows while ConvoScribe downloads speech models.</string>
     <string name="notification_download_title">Downloading speech models</string>

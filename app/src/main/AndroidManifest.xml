@@ -61,6 +61,13 @@
     -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
+    <!--
+        The charging job that identifies the speakers of pending sessions
+        (issue #11, `service.DiarizationJobService`) is persisted, so it
+        survives a reboot; JobScheduler requires this permission for that.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <application
         android:name=".ConvoApp"
         android:label="@string/app_name"
@@ -155,6 +162,15 @@
             android:name=".service.UpdateDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+        <!--
+            Identifies the speakers of pending sessions while the device
+            is charging (issue #11), started by JobScheduler even when the
+            app is not running. Only the system may bind it.
+        -->
+        <service
+            android:name=".service.DiarizationJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
         <!--
             Result of an update's install session (issue #15): shows the
             system's confirmation prompt and reports failures. Not

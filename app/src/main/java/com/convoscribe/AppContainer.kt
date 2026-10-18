@@ -1,6 +1,9 @@
 package com.convoscribe
 
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.os.BatteryManager
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.audio.AudioExporter
@@ -13,6 +16,7 @@ import com.convoscribe.data.SessionRepository
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
+import com.convoscribe.diarization.PendingDiarizationRunner
 import com.convoscribe.diarization.SpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
@@ -31,6 +35,7 @@ import com.convoscribe.recording.PendingImport
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeUseCase
+import com.convoscribe.service.PendingDiarizationScheduler
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.update.GitHubReleases
@@ -42,10 +47,16 @@ import com.convoscribe.update.UpdateDownloader
 import com.convoscribe.update.UpdateManager
 import java.io.File
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.launchIn
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import okhttp3.OkHttpClient
 
 class AppContainer(val context: Context) {
@@ -270,14 +281,27 @@ class AppContainer(val context: Context) {
      * done here so production keeps the embedder model resident
      * for the duration of one diarization but never across
      * multiple sessions.
+     *
+     * The *Identify speakers* setting (issue #11) reads whether the
+     * device is plugged in, and a session left pending schedules the
+     * charging job through [pendingDiarizationScheduler].
      */
-    val diarizeSessionUseCase = DiarizeSessionUseCase(
+    val diarizeSessionUseCase: DiarizeSessionUseCase = DiarizeSessionUseCase(
         repository = sessionRepository,
         diarizerFactory = diarizerFactory,
         settings = settingsRepository,
         embedderFactory = speakerEmbedderFactory,
-        enrolled = enrolledSpeakers
+        enrolled = enrolledSpeakers,
+        isCharging = ::isPluggedIn,
+        onPending = { pendingDiarizationScheduler.sync() }
     )
+
+    /**
+     * Completed once the app-start crash recovery has run (or was
+     * skipped), see [ConvoApp]. The charging job waits for it, so
+     * recovery cannot reset a session the job has just started.
+     */
+    val recoveryDone = CompletableDeferred<Unit>()
 
     /**
      * Re-transcribes a session's stored audio in another language and
@@ -285,7 +309,7 @@ class AppContainer(val context: Context) {
      * service; its [RetranscribeUseCase.state] drives the session
      * screen's progress banner.
      */
-    val retranscribeUseCase = RetranscribeUseCase(
+    val retranscribeUseCase: RetranscribeUseCase = RetranscribeUseCase(
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
         diarize = diarizeSessionUseCase
@@ -298,7 +322,7 @@ class AppContainer(val context: Context) {
      * service; its [ImportAudioUseCase.state] drives the home screen's
      * progress banner. Work files live in `cacheDir/imports/`.
      */
-    val importAudioUseCase = ImportAudioUseCase(
+    val importAudioUseCase: ImportAudioUseCase = ImportAudioUseCase(
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
         diarize = diarizeSessionUseCase,
@@ -306,6 +330,41 @@ class AppContainer(val context: Context) {
         workDir = File(context.cacheDir, "imports"),
         defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) }
     )
+
+    /**
+     * The charging job's work (issue #11): pending sessions, oldest
+     * first. Gives way to a recording, import or re-transcription.
+     */
+    val pendingDiarizationRunner: PendingDiarizationRunner = PendingDiarizationRunner(
+        repository = sessionRepository,
+        diarize = diarizeSessionUseCase,
+        settings = settingsRepository,
+        awaitRecovery = { recoveryDone.await() },
+        busy = {
+            recordingController.state.value.phase != RecordingPhase.IDLE ||
+                retranscribeUseCase.isRunning ||
+                importAudioUseCase.isRunning
+        }
+    )
+
+    /**
+     * Keeps the charging job scheduled while a session is pending
+     * (issue #11); re-synced whenever the *Identify speakers* setting
+     * changes.
+     */
+    val pendingDiarizationScheduler: PendingDiarizationScheduler = PendingDiarizationScheduler(
+        context = context,
+        settings = settingsRepository,
+        runner = { pendingDiarizationRunner },
+        scope = applicationScope
+    ).also { scheduler ->
+        settingsRepository.settings
+            .map { it.speakerIdMode }
+            .distinctUntilChanged()
+            .drop(1)
+            .onEach { scheduler.sync() }
+            .launchIn(applicationScope)
+    }
 
     /**
      * Audio file handed to the app (share sheet, Open with, the home
@@ -437,4 +496,14 @@ class AppContainer(val context: Context) {
         },
         scope = applicationScope
     )
+
+    /**
+     * Whether the device is plugged in, from the sticky battery
+     * broadcast (no receiver is registered). Plugged in with a full
+     * battery counts, as it does for JobScheduler's charging constraint.
+     */
+    private fun isPluggedIn(): Boolean {
+        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
+        return battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+    }
 }
