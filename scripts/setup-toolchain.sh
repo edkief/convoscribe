@@ -120,7 +120,7 @@ done
 
 if [[ "$NEED_INSTALL" -eq 1 ]]; then
   echo "Installing Android SDK packages..."
-  yes | sdkmanager --sdk_root="$ANDROID_HOME" \
+  { yes || true; } | sdkmanager --sdk_root="$ANDROID_HOME" \
     "$ANDROID_PLATFORM_TOOLS" \
     "platforms;android-${ANDROID_PLATFORM}" \
     "build-tools;${ANDROID_BUILD_TOOLS}" \
