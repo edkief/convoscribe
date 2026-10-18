@@ -67,14 +67,14 @@
     <string name="settings_transcription_engine_help">NPU uses the Qualcomm Hexagon processor; CPU is slower to start but works everywhere.</string>
     <string name="settings_transcription_engine_check">Engine check</string>
     <string name="settings_transcription_threads_label">CPU threads</string>
-    <string name="settings_transcription_language_label">Language</string>
+    <string name="settings_transcription_language_label">Default language for new conversations</string>
     <string name="settings_transcription_language_en">English</string>
     <string name="settings_transcription_language_fr">Français</string>
     <string name="settings_transcription_french_uses_cpu">French uses the CPU engine.</string>
     <string name="settings_transcription_language_model_installed">Model installed</string>
     <string name="settings_transcription_language_model_missing">Model not downloaded (%1$d MB) – it will be downloaded before your next recording</string>
     <string name="settings_transcription_language_delete_fr">Delete French model</string>
-    <string name="settings_speakers_number_label">Number of speakers</string>
+    <string name="settings_speakers_number_label">Default number of speakers</string>
     <string name="settings_speakers_automatic">Automatic</string>
     <string name="settings_speakers_count">%1$d</string>
     <string name="settings_speakers_threshold_label">Clustering threshold</string>
@@ -197,6 +197,10 @@
     <string name="settings_about_qnn_licence">Qualcomm licence (redistributed by sherpa-onnx)</string>
     <string name="settings_speakers_known_row">Known speakers</string>
     <string name="settings_speakers_known_button">Manage</string>
+    <string name="settings_speakers_default_participants">Default participants: %1$s</string>
+    <string name="settings_speakers_default_participants_anyone">anyone</string>
+    <string name="settings_speakers_default_participants_reset">Reset</string>
+    <string name="settings_defaults_help">These are the defaults a new conversation starts with. You can change them for each conversation before you start recording.</string>
     <string name="speakers_title">Known speakers</string>
     <string name="speakers_back">Back</string>
     <string name="speakers_explanation">Record about 15 seconds of one person speaking normally. ConvoScribe will then recognise their voice in new recordings. Recording the same name again adds another sample, which helps in different rooms.</string>

@@ -109,7 +109,9 @@ data class SettingsUiState(
     val saved: Boolean = false,
     val frenchModelInstalled: Boolean = false,
     val selectedLanguageModelInstalled: Boolean = true,
-    val selectedLanguageModelMissingBytes: Long = 0L
+    val selectedLanguageModelMissingBytes: Long = 0L,
+    /** Participants new conversations start with (saved by "Set as default"); `null` is anyone. */
+    val defaultParticipants: List<String>? = null
 )
 
 /**
@@ -287,6 +289,12 @@ class SettingsViewModel(
         repo.update { previous -> previous.copy(asrLanguage = language) }
     }
 
+    /** Back to "anyone" for new conversations' expected participants. */
+    fun resetDefaultParticipants() {
+        repo.update { it.copy(defaultParticipants = null) }
+        _state.value = _state.value.copy(defaultParticipants = null)
+    }
+
     /**
      * Remove the French ASR bundle from disk. Called from the
      * "Delete French model" text button in Settings when the
@@ -378,6 +386,7 @@ class SettingsViewModel(
         return base.copy(
             asrEngine = current.asrEngine,
             asrLanguage = current.asrLanguage,
+            defaultParticipants = current.defaultParticipants,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes

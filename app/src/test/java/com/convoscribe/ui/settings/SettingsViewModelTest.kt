@@ -23,6 +23,7 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -350,6 +351,21 @@ class SettingsViewModelTest {
         assertEquals("en", vm.state.value.asrLanguage)
         assertTrue(vm.state.value.selectedLanguageModelInstalled)
         assertFalse(vm.state.value.frenchModelInstalled)
+    }
+
+    @Test
+    fun defaultParticipants_areShownKeptOnSaveAndReset() {
+        val repo = newRepo()
+        repo.update { it.copy(defaultParticipants = listOf("Alice")) }
+        val vm = newVm(repo = repo)
+        assertEquals(listOf("Alice"), vm.state.value.defaultParticipants)
+
+        vm.save()
+        assertEquals(listOf("Alice"), repo.settings.value.defaultParticipants)
+
+        vm.resetDefaultParticipants()
+        assertNull(repo.settings.value.defaultParticipants)
+        assertNull(vm.state.value.defaultParticipants)
     }
 
     /**
