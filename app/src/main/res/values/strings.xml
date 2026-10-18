@@ -2,6 +2,10 @@
 <resources>
     <string name="app_name">ConvoScribe</string>
     <string name="action_back">Back</string>
+    <string name="common_yes">Yes</string>
+    <string name="common_no">No</string>
+    <string name="unit_milliseconds">%1$d ms</string>
+    <string name="unit_gigabytes">%1$.1f GB</string>
     <string name="status_recording">Recording</string>
     <string name="status_diarizing">Identifying speakers</string>
     <string name="status_failed">Speaker detection failed</string>
@@ -92,7 +96,11 @@
     <string name="settings_speakers_match_threshold_value">%1$.2f</string>
     <string name="settings_speakers_match_threshold_help">Higher = stricter name matching</string>
     <string name="settings_saved">Saved</string>
-    <string name="settings_test_connected">Connected – %1$d models: %2$s</string>
+    <plurals name="settings_test_connected">
+        <item quantity="one">Connected – %1$d model: %2$s</item>
+        <item quantity="other">Connected – %1$d models: %2$s</item>
+    </plurals>
+    <string name="settings_test_failed">Failed: %1$s</string>
     <string name="enginecheck_title">Engine check</string>
     <string name="enginecheck_device_title">Device</string>
     <string name="enginecheck_device_loading">Reading…</string>
@@ -120,6 +128,11 @@
     <string name="enginecheck_result_error">Error: %1$s</string>
     <string name="enginecheck_result_diagnostics_hint">The app kept running. Copy or share the report for the full diagnostics.</string>
     <string name="enginecheck_copy_report">Copy report</string>
+    <string name="enginecheck_storage_low">Less than 1.5 GB free: preparing the NPU model may fail. Free up storage first.</string>
+    <string name="enginecheck_verdict_failed">Failed</string>
+    <string name="enginecheck_verdict_ok">OK – fast enough for live transcription</string>
+    <string name="enginecheck_verdict_marginal">Marginal – may lag in long recordings</string>
+    <string name="enginecheck_verdict_too_slow">Too slow for live transcription</string>
     <string name="enginecheck_share_report">Share report</string>
     <string name="session_back">Back</string>
     <string name="session_share">Share transcript</string>
@@ -160,7 +173,10 @@
     <string name="session_retranscribe_confirm">Re-transcribe</string>
     <string name="session_retranscribe_progress">Re-transcribing… %1$d%%</string>
     <string name="session_retranscribe_cancel">Cancel</string>
-    <string name="session_retranscribe_failed">Re-transcription failed; the previous transcript was kept.</string>
+    <string name="session_retranscribe_failed">Re-transcription failed; the previous transcript was kept. %1$s</string>
+    <string name="session_voice_remembered">Remembered “%1$s” for future recordings</string>
+    <string name="session_audio_saved">Audio saved</string>
+    <string name="session_audio_export_failed">Could not export the audio: %1$s</string>
     <string name="session_overflow_info">Session info</string>
     <string name="session_info_title">Session info</string>
     <string name="session_info_language">Language</string>
@@ -245,6 +261,7 @@
         <item quantity="other">%d voice samples</item>
     </plurals>
     <string name="speakers_name_label">Speaker name</string>
+    <string name="speakers_name_blank">Speaker name must not be blank</string>
     <string name="speakers_record">Record sample</string>
     <string name="speakers_cancel">Cancel</string>
     <string name="speakers_mic_required">Microphone permission is required to record a voice sample.</string>

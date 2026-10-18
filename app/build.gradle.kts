@@ -108,6 +108,8 @@ android {
     lint {
         abortOnError = true
         checkDependencies = false
+        // User-visible text belongs in strings.xml (issue #4).
+        error += "HardcodedText"
     }
 
     packaging {

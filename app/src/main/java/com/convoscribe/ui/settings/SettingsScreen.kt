@@ -50,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
@@ -354,7 +355,7 @@ private val DISPLAY_MODES = listOf(
 private fun LanguageModelSection(
     form: SettingsForm,
     testing: Boolean,
-    testResult: String?,
+    testResult: ConnectionTestResult?,
     availableModels: List<String>,
     onFormChange: (SettingsForm) -> Unit,
     onTestConnection: () -> Unit
@@ -425,9 +426,17 @@ private fun LanguageModelSection(
     }
     if (testResult != null) {
         Text(
-            text = testResult,
+            text = when (testResult) {
+                is ConnectionTestResult.Connected -> pluralStringResource(
+                    R.plurals.settings_test_connected,
+                    testResult.count,
+                    testResult.count,
+                    testResult.models.joinToString(", ")
+                )
+                is ConnectionTestResult.Failed -> stringResource(R.string.settings_test_failed, testResult.message)
+            },
             style = MaterialTheme.typography.bodyMedium,
-            color = if (testResult.startsWith("Failed")) {
+            color = if (testResult is ConnectionTestResult.Failed) {
                 MaterialTheme.colorScheme.error
             } else {
                 MaterialTheme.colorScheme.onSurface

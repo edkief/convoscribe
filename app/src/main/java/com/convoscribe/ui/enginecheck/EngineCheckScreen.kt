@@ -45,7 +45,6 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.NpuProbeClient
-import com.convoscribe.enginecheck.verdict
 
 /**
  * Diagnostics screen that lets the owner confirm the NPU works,
@@ -101,7 +100,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
 
     EngineCheckBody(
         state = state,
-        storageWarning = vm.storageWarningText,
+        storageLow = vm.storageLow,
         onBack = { navController.popBackStack() },
         onRunCheck = vm::runCheck,
         onOpenSetup = { engine -> navController.navigate("setup?engine=$engine") },
@@ -115,7 +114,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
 @Composable
 internal fun EngineCheckBody(
     state: EngineCheckUiState,
-    storageWarning: String?,
+    storageLow: Boolean,
     onBack: () -> Unit,
     onRunCheck: (String) -> Unit,
     onOpenSetup: (String) -> Unit,
@@ -150,10 +149,9 @@ internal fun EngineCheckBody(
                 info = state.deviceInfo,
                 htpSkelCount = state.deviceInfo?.htpSkelLibs?.size ?: 0
             )
-            val warning = storageWarning
-            if (warning != null) {
+            if (storageLow) {
                 Text(
-                    text = warning,
+                    text = stringResource(R.string.enginecheck_storage_low),
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -268,7 +266,7 @@ private fun DeviceInfoCard(info: com.convoscribe.enginecheck.DeviceInfo?, htpSke
                 InfoLine(stringResource(R.string.enginecheck_device_android), info.androidVersion)
                 InfoLine(
                     stringResource(R.string.enginecheck_device_cdsp),
-                    if (info.cdspLibraryPresent) "yes" else "no"
+                    yesNo(info.cdspLibraryPresent)
                 )
                 InfoLine(
                     stringResource(R.string.enginecheck_device_htp),
@@ -276,7 +274,7 @@ private fun DeviceInfoCard(info: com.convoscribe.enginecheck.DeviceInfo?, htpSke
                 )
                 InfoLine(
                     stringResource(R.string.enginecheck_device_free_storage),
-                    "%.1f GB".format(info.freeStorageBytes / 1_000_000_000.0)
+                    stringResource(R.string.unit_gigabytes, info.freeStorageBytes / 1_000_000_000.0)
                 )
             }
         }
@@ -312,7 +310,7 @@ private fun ResultCard(result: EngineCheckResult) {
                 fontWeight = FontWeight.SemiBold
             )
             Text(
-                text = verdict(result),
+                text = verdictText(result),
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = when {
@@ -324,19 +322,19 @@ private fun ResultCard(result: EngineCheckResult) {
             )
             InfoLine(
                 stringResource(R.string.enginecheck_result_first_run),
-                if (result.firstRun) "yes" else "no"
+                yesNo(result.firstRun)
             )
             InfoLine(
                 stringResource(R.string.enginecheck_result_init),
-                "${result.initMs} ms"
+                stringResource(R.string.unit_milliseconds, result.initMs)
             )
             InfoLine(
                 stringResource(R.string.enginecheck_result_audio),
-                "${result.audioMs} ms"
+                stringResource(R.string.unit_milliseconds, result.audioMs)
             )
             InfoLine(
                 stringResource(R.string.enginecheck_result_process),
-                "${result.processMs} ms"
+                stringResource(R.string.unit_milliseconds, result.processMs)
             )
             InfoLine(
                 stringResource(R.string.enginecheck_result_rtf),
@@ -364,6 +362,20 @@ private fun ResultCard(result: EngineCheckResult) {
     }
 }
 
+@Composable
+private fun yesNo(value: Boolean): String = stringResource(if (value) R.string.common_yes else R.string.common_no)
+
+/** The verdict headline in the UI language; the copied report keeps [verdict]'s English. */
+@Composable
+private fun verdictText(result: EngineCheckResult): String = stringResource(
+    when {
+        result.error != null -> R.string.enginecheck_verdict_failed
+        result.realTimeFactor < 0.5 -> R.string.enginecheck_verdict_ok
+        result.realTimeFactor < 1.0 -> R.string.enginecheck_verdict_marginal
+        else -> R.string.enginecheck_verdict_too_slow
+    }
+)
+
 /** Copy + share buttons. Disabled when no check has run yet. */
 @Composable
 private fun ActionRow(enabled: Boolean, onCopy: () -> Unit, onShare: () -> Unit) {
@@ -387,7 +399,7 @@ private fun ActionRow(enabled: Boolean, onCopy: () -> Unit, onShare: () -> Unit)
 /** Clipboard helper: copies [text] into the system clipboard. */
 private fun copyToClipboard(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    cm.setPrimaryClip(ClipData.newPlainText("Engine check report", text))
+    cm.setPrimaryClip(ClipData.newPlainText(context.getString(R.string.enginecheck_copy_report), text))
 }
 
 /** Share helper: fires an `ACTION_SEND` chooser for [text]. */

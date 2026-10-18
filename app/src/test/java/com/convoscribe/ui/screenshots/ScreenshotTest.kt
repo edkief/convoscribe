@@ -274,7 +274,7 @@ class ScreenshotTest(private val variant: Variant) {
                     )
                 )
             ),
-            storageWarning = null,
+            storageLow = false,
             onBack = {},
             onRunCheck = {},
             onOpenSetup = {},

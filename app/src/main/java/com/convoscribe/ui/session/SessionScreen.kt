@@ -114,6 +114,7 @@ import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
+import com.convoscribe.ui.asString
 import com.convoscribe.ui.record.ParticipantsDialog
 import kotlinx.coroutines.flow.map
 
@@ -247,7 +248,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         // consumed exactly once, so a configuration change does
         // not double-fire the snackbar.
         vm.snackbar.collect { message ->
-            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+            snackbarHostState.showSnackbar(message = message.asString(context), duration = SnackbarDuration.Short)
         }
     }
 
@@ -261,13 +262,12 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
     val effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val retranscribing = retranscribeState is RetranscribeState.Running
-    val retranscribeFailedMessage = stringResource(R.string.session_retranscribe_failed)
     LaunchedEffect(retranscribeState) {
         val failed = retranscribeState as? RetranscribeState.Failed ?: return@LaunchedEffect
         if (failed.sessionId != sessionId) return@LaunchedEffect
         container.retranscribeUseCase.acknowledgeFailure()
         snackbarHostState.showSnackbar(
-            message = "$retranscribeFailedMessage ${failed.message}",
+            message = context.getString(R.string.session_retranscribe_failed, failed.message),
             duration = SnackbarDuration.Long
         )
     }
@@ -1267,7 +1267,7 @@ private fun SummaryTab(
         }
         state.error?.let { message ->
             Text(
-                text = message,
+                text = message.asString(),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.error
             )

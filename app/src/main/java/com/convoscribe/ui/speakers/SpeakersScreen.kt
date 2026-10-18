@@ -56,6 +56,7 @@ import com.convoscribe.R
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
+import com.convoscribe.ui.asString
 import kotlin.math.roundToLong
 
 /**
@@ -157,7 +158,7 @@ fun SpeakersScreen(navController: NavHostController) {
         phase = state.phase,
         progress = state.progress,
         embeddingModelInstalled = state.embeddingModelInstalled,
-        error = state.error,
+        error = state.error?.asString(),
         micGranted = micGranted,
         onBack = { navController.popBackStack() },
         onEnrollNameChange = vm::setEnrollName,

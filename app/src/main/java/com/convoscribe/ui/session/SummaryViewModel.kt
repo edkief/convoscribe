@@ -3,6 +3,7 @@ package com.convoscribe.ui.session
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.convoscribe.R
 import com.convoscribe.TAG
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
@@ -12,6 +13,7 @@ import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.PromptBuilder
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.ui.UiText
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,7 +44,7 @@ data class SummaryUiState(
     val saved: String? = null,
     val streaming: String = "",
     val running: Boolean = false,
-    val error: String? = null,
+    val error: UiText? = null,
     val configured: Boolean = true
 )
 
@@ -59,7 +61,7 @@ data class SummaryUiState(
  *  - [summarise] ignores the request when `running == true`.
  *  - The transcript is built from the persisted segments and
  *    speakers through [TranscriptFormatter]. When the rendered
- *    text is blank, `error` is set to `"The transcript is empty."`
+ *    text is blank, `error` is set to the "transcript is empty" text
  *    and the LLM client is **not** called.
  *  - Otherwise the LLM is called with
  *    `PromptBuilder.summary(text, settings.maxTranscriptChars)`.
@@ -151,7 +153,7 @@ class SummaryViewModel(
         job = viewModelScope.launch {
             val transcript = buildTranscript()
             if (transcript.isBlank()) {
-                _state.value = _state.value.copy(error = "The transcript is empty.")
+                _state.value = _state.value.copy(error = UiText.res(R.string.session_summary_empty_error))
                 return@launch
             }
             val maxChars = settings.settings.value.maxTranscriptChars
@@ -182,7 +184,7 @@ class SummaryViewModel(
                         _state.value = _state.value.copy(
                             running = false,
                             streaming = "",
-                            error = failure.toUserMessage()
+                            error = UiText.Plain(failure.toUserMessage())
                         )
                     }
                     .collect()

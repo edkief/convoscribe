@@ -63,6 +63,17 @@ data class SettingsForm(
 }
 
 /**
+ * Outcome of "Test connection". The screen words it; [Failed.message]
+ * is the client's own error text (see [com.convoscribe.llm.toUserMessage]).
+ */
+sealed interface ConnectionTestResult {
+    /** [count] models were listed; [models] holds the first few ids. */
+    data class Connected(val count: Int, val models: List<String>) : ConnectionTestResult
+
+    data class Failed(val message: String) : ConnectionTestResult
+}
+
+/**
  * Snapshot rendered by [SettingsScreen]. The form is mutable
  * (every keystroke produces a new one); the rest are status
  * fields the screen consumes verbatim.
@@ -79,9 +90,8 @@ data class SettingsForm(
  * @property testing `true` while [SettingsViewModel.testConnection]
  *   is in flight; the screen greys out the button and shows a
  *   spinner / "Testing…" line.
- * @property testResult last connection-test outcome, formatted
- *   for the UI: starts with `Connected – N models: …` on success
- *   or `Failed: …` on failure. `null` before the first test.
+ * @property testResult last connection-test outcome (see
+ *   [ConnectionTestResult]); `null` before the first test.
  * @property availableModels model ids returned by the most recent
  *   successful `listModels` call; the screen renders them as
  *   `SuggestionChip`s that fill the Model field on tap.
@@ -105,7 +115,7 @@ data class SettingsUiState(
     val asrEngine: String = "npu",
     val asrLanguage: String = "en",
     val testing: Boolean = false,
-    val testResult: String? = null,
+    val testResult: ConnectionTestResult? = null,
     val availableModels: List<String> = emptyList(),
     val saved: Boolean = false,
     val frenchModelInstalled: Boolean = false,
@@ -348,10 +358,10 @@ class SettingsViewModel(
 
     /**
      * Persist the current form, then call [ChatClient.listModels].
-     * Records the outcome as `"Connected – N models: a, b, c"`
-     * (first five ids, comma-separated) or `"Failed: <message>"`
-     * (see [com.convoscribe.llm.toUserMessage]) on the [SettingsUiState.testResult]
-     * field. `availableModels` is populated only on success.
+     * Records the outcome as [ConnectionTestResult.Connected] (with
+     * the first five ids) or [ConnectionTestResult.Failed] (see
+     * [com.convoscribe.llm.toUserMessage]) on [SettingsUiState.testResult].
+     * `availableModels` is populated only on success.
      *
      * The `saved` flag is not affected — connection-test is a
      * read.
@@ -366,12 +376,11 @@ class SettingsViewModel(
                 testing = false,
                 testResult = result.fold(
                     onSuccess = { models ->
-                        val first = models.take(5).joinToString(", ")
-                        "Connected – ${models.size} models: $first"
+                        ConnectionTestResult.Connected(count = models.size, models = models.take(5))
                     },
                     onFailure = { failure ->
                         Log.w(TAG, "settings: LLM connection test failed", failure)
-                        "Failed: ${failure.toUserMessage()}"
+                        ConnectionTestResult.Failed(failure.toUserMessage())
                     }
                 ),
                 availableModels = result.getOrDefault(emptyList())
