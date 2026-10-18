@@ -6,8 +6,10 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.ui.graphics.Color
 
 /*
- * Brand colours: a deep teal primary, a warm amber secondary and a
- * muted indigo tertiary over teal-tinted neutrals. Every text/background
+ * Brand colours: a deep teal primary, a quiet teal-grey secondary
+ * (selected segments, tonal buttons, slider tracks) and a muted indigo
+ * tertiary over teal-tinted neutrals; warm amber appears only in the
+ * speaker palette. Every text/background
  * pair a screen uses meets WCAG AA (4.5:1); ContrastTest checks them.
  */
 
@@ -17,10 +19,10 @@ internal val LightColors: ColorScheme = lightColorScheme(
     primaryContainer = Color(0xFF9CF1F0),
     onPrimaryContainer = Color(0xFF002020),
     inversePrimary = Color(0xFF80D5D4),
-    secondary = Color(0xFF7C5800),
+    secondary = Color(0xFF4A6363),
     onSecondary = Color(0xFFFFFFFF),
-    secondaryContainer = Color(0xFFFFDEA6),
-    onSecondaryContainer = Color(0xFF271900),
+    secondaryContainer = Color(0xFFCCE8E7),
+    onSecondaryContainer = Color(0xFF051F1F),
     tertiary = Color(0xFF4A5C92),
     onTertiary = Color(0xFFFFFFFF),
     tertiaryContainer = Color(0xFFDAE2FF),
@@ -56,10 +58,10 @@ internal val DarkColors: ColorScheme = darkColorScheme(
     primaryContainer = Color(0xFF004F50),
     onPrimaryContainer = Color(0xFF9CF1F0),
     inversePrimary = Color(0xFF006A6A),
-    secondary = Color(0xFFF7BD48),
-    onSecondary = Color(0xFF412D00),
-    secondaryContainer = Color(0xFF5E4200),
-    onSecondaryContainer = Color(0xFFFFDEA6),
+    secondary = Color(0xFFB0CCCB),
+    onSecondary = Color(0xFF1B3534),
+    secondaryContainer = Color(0xFF324B4B),
+    onSecondaryContainer = Color(0xFFCCE8E7),
     tertiary = Color(0xFFB3C5FF),
     onTertiary = Color(0xFF1A2D60),
     tertiaryContainer = Color(0xFF324478),

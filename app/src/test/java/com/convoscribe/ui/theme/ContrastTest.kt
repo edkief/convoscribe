@@ -43,6 +43,13 @@ class ContrastTest {
             palette.colors.forEachIndexed { index, color ->
                 assertContrast("$name speaker $index/surface", color, scheme.surface, AA_TEXT)
                 assertContrast("$name speaker $index/surfaceContainerLow", color, scheme.surfaceContainerLow, AA_TEXT)
+                // The playing transcript line is highlighted with this tone.
+                assertContrast(
+                    "$name speaker $index/surfaceContainerHighest",
+                    color,
+                    scheme.surfaceContainerHighest,
+                    AA_TEXT
+                )
             }
         }
     }
@@ -55,6 +62,8 @@ class ContrastTest {
         "onBackground/background" to (s.onBackground to s.background),
         "onSurface/surface" to (s.onSurface to s.surface),
         "onSurface/surfaceContainerHighest" to (s.onSurface to s.surfaceContainerHighest),
+        "onSurface/surfaceContainerHigh" to (s.onSurface to s.surfaceContainerHigh),
+        "primary/surfaceContainerHighest" to (s.primary to s.surfaceContainerHighest),
         "onSurfaceVariant/surface" to (s.onSurfaceVariant to s.surface),
         "onSurfaceVariant/surfaceVariant" to (s.onSurfaceVariant to s.surfaceVariant),
         "onSurfaceVariant/surfaceContainerLow" to (s.onSurfaceVariant to s.surfaceContainerLow),

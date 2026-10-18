@@ -173,7 +173,6 @@
     <string name="session_status_diarizing">Identifying speakers…</string>
     <string name="session_status_diarization_failed">Speaker detection failed</string>
     <string name="session_transcript_empty">No speech was recognised.</string>
-    <string name="session_coming_soon">Coming soon</string>
     <string name="session_not_found">Session not found.</string>
     <string name="session_overflow">More</string>
     <string name="session_overflow_rename">Rename session</string>
@@ -232,7 +231,8 @@
     <string name="session_ask_send">Send</string>
     <string name="session_ask_send_cd">Send question</string>
     <string name="session_ask_retry">Retry</string>
-    <string name="session_ask_empty">No questions yet. Ask anything about this conversation.</string>
+    <string name="session_ask_empty_title">Ask about this conversation</string>
+    <string name="session_ask_empty">Questions and answers about the transcript appear here.</string>
     <string name="session_ask_streaming">Generating answer…</string>
     <string name="session_overflow_clear_questions">Clear questions</string>
     <string name="session_ask_clear_title">Clear all questions?</string>

@@ -70,7 +70,10 @@ data class SessionUiState(
     val participants: List<String>? = null,
     /** Engine / model that transcribed the session; `null` when not recorded. */
     val asrEngine: String? = null,
-    val asrModel: String? = null
+    val asrModel: String? = null,
+    /** When the session was recorded, and its length (0 while recording). */
+    val createdAt: Long = 0L,
+    val durationMs: Long = 0L
 )
 
 /** State of an audio export (share or save); the screen shows a progress dialog while encoding. */
@@ -143,7 +146,9 @@ class SessionViewModel(
                         language = session.language,
                         participants = ParticipantsCodec.decode(session.participants),
                         asrEngine = session.asrEngine,
-                        asrModel = session.asrModel
+                        asrModel = session.asrModel,
+                        createdAt = session.createdAt,
+                        durationMs = session.durationMs
                     )
                 }
             }

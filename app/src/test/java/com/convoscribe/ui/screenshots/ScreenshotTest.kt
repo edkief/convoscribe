@@ -185,6 +185,16 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun sessionSummary() = capture("session_summary") {
+        session(tab = 1, summary = SummaryUiState(saved = SUMMARY))
+    }
+
+    @Test
+    fun sessionAsk() = capture("session_ask") {
+        session(tab = 2)
+    }
+
+    @Test
     fun settings() = capture("settings") {
         SettingsBody(
             state = SettingsUiState(
@@ -287,15 +297,20 @@ class ScreenshotTest(private val variant: Variant) {
         status: SessionStatus = SessionStatus.DIARIZED,
         lines: List<TranscriptLine> = TRANSCRIPT,
         speakers: List<SpeakerEntity> = SPEAKERS,
-        playing: Boolean = false
+        playing: Boolean = false,
+        tab: Int = 0,
+        summary: SummaryUiState = SummaryUiState()
     ) {
         SessionBody(
+            createdAt = T0 + 2 * DAY,
+            durationMs = 754_000L,
             title = "Weekly sync",
             status = status,
             lines = lines,
             speakers = speakers,
             notFound = false,
-            summaryState = SummaryUiState(),
+            summaryState = summary,
+            initialTab = tab,
             askState = AskUiState(messages = CHAT),
             playerState = PlayerState(
                 ready = true,
@@ -431,6 +446,10 @@ class ScreenshotTest(private val variant: Variant) {
                     "by about ten percent."
             )
         )
+
+        private val SUMMARY = "The team moved the release to the first week of next month so QA can test " +
+            "the Boox build for another week. The e-ink mode is in scope for the release.\n\n" +
+            "Budget: spending is about ten percent under plan; the numbers are in the shared sheet."
 
         private val CHAT = listOf(
             ChatMessageEntity(
