@@ -1,19 +1,24 @@
 package com.convoscribe.ui.session
 
 import android.content.Context
+import androidx.lifecycle.viewModelScope
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.R
 import com.convoscribe.audio.AudioExporter
+import com.convoscribe.audio.AudioPlayer
 import com.convoscribe.audio.FakeAudioPlayer
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.ui.UiText
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -38,6 +43,13 @@ import org.robolectric.RobolectricTestRunner
  * The `stateIn(WhileSubscribed)` flow only emits once a collector
  * subscribes — `vm.uiState.first { condition }` waits for the
  * real Room snapshot and skips the `SessionUiState()` initial.
+ *
+ * Build view models with [viewModel] so [tearDown] can stop them: their
+ * coroutines run on `viewModelScope`, outside `runTest`, and Room and
+ * the exporter resume them onto `Dispatchers.Main` from their own
+ * threads. Left running, one lands while `resetMain()` is swapping Main
+ * out and fails the test ("Dispatchers.Main is used concurrently with
+ * setting it").
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 @RunWith(RobolectricTestRunner::class)
@@ -49,6 +61,7 @@ class SessionViewModelTest {
     private lateinit var db: AppDatabase
     private lateinit var recordingsDir: File
     private lateinit var repo: SessionRepository
+    private val viewModels = mutableListOf<SessionViewModel>()
 
     @Before
     fun setUp() {
@@ -64,17 +77,40 @@ class SessionViewModelTest {
 
     @After
     fun tearDown() {
-        db.close()
+        clearViewModels()
+        if (::db.isInitialized) db.close()
         Dispatchers.resetMain()
         if (recordingsDir.exists()) {
             recordingsDir.deleteRecursively()
         }
     }
 
+    private fun viewModel(
+        id: Long,
+        playerFactory: ((CoroutineScope) -> AudioPlayer)? = null,
+        audioExporter: AudioExporter? = null
+    ) = SessionViewModel(
+        sessionId = id,
+        repository = repo,
+        playerFactory = playerFactory,
+        audioExporter = audioExporter
+    ).also { viewModels += it }
+
+    /**
+     * Cancel every view model's scope and wait until its coroutines have
+     * finished, while Main is still the test dispatcher. `runTest` drives
+     * the dispatcher and waits for the background threads to hand back.
+     */
+    private fun clearViewModels() = runTest(dispatcher) {
+        val jobs = viewModels.map { it.viewModelScope.coroutineContext.job }
+        jobs.forEach { it.cancel() }
+        jobs.joinAll()
+    }
+
     @Test
     fun unknownSessionId_yieldsNotFound() = runTest(dispatcher) {
         // No sessions inserted — the id `9999` is unknown.
-        val vm = SessionViewModel(sessionId = 9999L, repository = repo)
+        val vm = viewModel(9999L)
 
         val state = vm.uiState.first { it.notFound }
         assertTrue(state.notFound)
@@ -99,7 +135,7 @@ class SessionViewModelTest {
             speakerCount = 2
         )
 
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
         val state = vm.uiState.first { it.lines.size == 2 }
         assertEquals("demo", state.title)
         assertEquals(SessionStatus.DIARIZED, state.status)
@@ -117,7 +153,7 @@ class SessionViewModelTest {
     fun uiState_exposesLanguageParticipantsAndEngine_andSetParticipantsSavesThem() = runTest(dispatcher) {
         val id = repo.createSession(title = "info", language = "fr", numSpeakers = 2, participants = listOf("Alice"))
         repo.recordEngine(id, engine = "cpu", model = "asr-fr")
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
 
         val state = vm.uiState.first { it.title == "info" && it.asrEngine != null }
         assertEquals("fr", state.language)
@@ -134,7 +170,7 @@ class SessionViewModelTest {
     @Test
     fun transcriptLinesAreEmptyWhenSessionHasNoSegments() = runTest(dispatcher) {
         val id = repo.createSession(title = "empty", language = "en")
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
 
         val state = vm.uiState.first { it.title == "empty" && !it.notFound }
         assertEquals("empty", state.title)
@@ -152,7 +188,7 @@ class SessionViewModelTest {
             speakerCount = 1
         )
 
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
         // First emission carries the default label "Speaker 1".
         val before = vm.uiState.first { it.lines.size == 1 && it.lines[0].speaker == "Speaker 1" }
         assertEquals("Speaker 1", before.lines[0].speaker)
@@ -174,7 +210,7 @@ class SessionViewModelTest {
         repo.addSegment(sessionId = id, startMs = 0, endMs = 1_000, text = "Hello")
         // Deliberately do not run diarization — `speakerIndex` stays
         // null on the only segment.
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
 
         val state = vm.uiState.first { it.lines.size == 1 }
         assertNull(state.lines[0].speaker)
@@ -187,7 +223,7 @@ class SessionViewModelTest {
         val id = repo.createSession(title = "share", language = "en")
         repo.addSegment(sessionId = id, startMs = 0, endMs = 1_000, text = "Hello")
         repo.addSegment(sessionId = id, startMs = 3_000, endMs = 4_000, text = "Hi")
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
         // Wait for the lines to be available before reading the
         // cached value.
         vm.uiState.first { it.lines.size == 2 }
@@ -208,14 +244,14 @@ class SessionViewModelTest {
         // `status`, so we only need the session row to land.
         val diarizingId = repo.createSession(title = "running", language = "en")
         repo.setStatus(diarizingId, SessionStatus.DIARIZING)
-        val diarizingVm = SessionViewModel(sessionId = diarizingId, repository = repo)
+        val diarizingVm = viewModel(diarizingId)
         val diarizingState = diarizingVm.uiState.first { it.status == SessionStatus.DIARIZING }
         assertEquals(SessionStatus.DIARIZING, diarizingState.status)
 
         // DIARIZATION_FAILED: status flips after a diarizer error.
         val failedId = repo.createSession(title = "failed", language = "en")
         repo.setStatus(failedId, SessionStatus.DIARIZATION_FAILED)
-        val failedVm = SessionViewModel(sessionId = failedId, repository = repo)
+        val failedVm = viewModel(failedId)
         val failedState = failedVm.uiState.first { it.status == SessionStatus.DIARIZATION_FAILED }
         assertEquals(SessionStatus.DIARIZATION_FAILED, failedState.status)
     }
@@ -231,7 +267,7 @@ class SessionViewModelTest {
             speakerCount = 1
         )
 
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
         // Wait for the default label to land.
         vm.uiState.first { it.lines.size == 1 && it.lines[0].speaker == "Speaker 1" }
 
@@ -254,7 +290,7 @@ class SessionViewModelTest {
             speakerCount = 1
         )
 
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
         vm.uiState.first { it.title == "before" }
 
         // Same trim rule as the repository — the ViewModel
@@ -275,8 +311,7 @@ class SessionViewModelTest {
         return id
     }
 
-    private fun playbackVm(id: Long, player: FakeAudioPlayer) =
-        SessionViewModel(sessionId = id, repository = repo, playerFactory = { player })
+    private fun playbackVm(id: Long, player: FakeAudioPlayer) = viewModel(id, playerFactory = { player })
 
     @Test
     fun playback_opensTheRecordingOnceTheSessionIsFinished() = runTest(dispatcher) {
@@ -389,7 +424,7 @@ class SessionViewModelTest {
     @Test
     fun playback_isNoopWithoutAPlayer() = runTest(dispatcher) {
         val id = finishedSessionWithLines()
-        val vm = SessionViewModel(sessionId = id, repository = repo)
+        val vm = viewModel(id)
 
         vm.togglePlayback()
         vm.seekTo(1_000)
@@ -400,9 +435,8 @@ class SessionViewModelTest {
 
     // ---- audio export ---------------------------------------------
 
-    private fun exportVm(id: Long, encode: (File, File, (Float) -> Unit, () -> Unit) -> Unit) = SessionViewModel(
-        sessionId = id,
-        repository = repo,
+    private fun exportVm(id: Long, encode: (File, File, (Float) -> Unit, () -> Unit) -> Unit) = viewModel(
+        id,
         audioExporter = AudioExporter(
             exportDir = File(recordingsDir, "exports"),
             encode = encode,
