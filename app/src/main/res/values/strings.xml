@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">ConvoScribe</string>
+    <string name="action_back">Back</string>
+    <string name="status_recording">Recording</string>
+    <string name="status_diarizing">Identifying speakers</string>
+    <string name="status_failed">Speaker detection failed</string>
     <string name="setup_title">Download speech models</string>
     <string name="setup_body">About %1$d MB will be downloaded once and stored on this device.</string>
     <string name="setup_progress">%1$d MB / %2$d MB</string>
