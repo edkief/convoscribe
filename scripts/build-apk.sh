@@ -54,6 +54,26 @@ cd "$REPO_ROOT"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/env.sh"
 
+# The Gradle check in app/build.gradle.kts only tests that the sherpa-onnx
+# outputs exist, so empty placeholders (enough for unit tests) still yield
+# an APK that crashes on first transcription. Require the real files here.
+SHERPA_FILES=(
+  app/libs/sherpa-onnx-classes-1.13.8.jar
+  app/src/main/jniLibs/arm64-v8a/libsherpa-onnx-jni.so
+  app/src/main/jniLibs/arm64-v8a/libonnxruntime.so
+  app/src/main/jniLibs/arm64-v8a/libQnnHtp.so
+)
+missing=()
+for f in "${SHERPA_FILES[@]}"; do
+  [[ -s "$f" ]] || missing+=("$f")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+  echo "build-apk: sherpa-onnx native build is missing or empty:" >&2
+  printf '    %s\n' "${missing[@]}" >&2
+  echo "Run: bash scripts/build-sherpa-onnx.sh" >&2
+  exit 1
+fi
+
 if [[ "$install" == true ]] && ! command -v adb >/dev/null 2>&1; then
   echo "build-apk: --install needs adb, which is not on PATH (expected in \$ANDROID_HOME/platform-tools)." >&2
   exit 1

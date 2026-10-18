@@ -1,6 +1,7 @@
 package com.convoscribe.engine.sherpa
 
 import com.convoscribe.asr.EndpointSegmenter
+import com.convoscribe.asr.EngineInfo
 import com.convoscribe.asr.StreamingTranscriber
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.models.ModelCatalog
@@ -129,6 +130,14 @@ class SherpaTranscriberFactory(
      * model…" to a longer message explaining the multi-minute
      * first-run cost.
      */
+    override fun describe(language: String): EngineInfo {
+        val engine = selectedEngine()
+        return EngineInfo(
+            engine = ModelCatalog.effectiveEngine(language, engine),
+            model = ModelCatalog.asrFor(language, engine).id
+        )
+    }
+
     override fun needsPreparation(language: String): Boolean {
         val engine = selectedEngine()
         val effective = ModelCatalog.effectiveEngine(language, engine)

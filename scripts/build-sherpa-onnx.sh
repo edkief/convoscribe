@@ -64,9 +64,9 @@ if [[ "$FORCE" -eq 1 ]]; then
 fi
 
 # Skip the whole pipeline if every expected artifact is already in place.
-if [[ -f "$OUT/libsherpa-onnx-jni.so" \
-   && -f "$OUT/libQnnHtp.so" \
-   && -f "$JAR" ]]; then
+if [[ -s "$OUT/libsherpa-onnx-jni.so" \
+   && -s "$OUT/libQnnHtp.so" \
+   && -s "$JAR" ]]; then
   log "sherpa-onnx native libs OK"
   exit 0
 fi

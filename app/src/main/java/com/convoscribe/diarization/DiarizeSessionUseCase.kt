@@ -4,6 +4,7 @@ import android.util.Log
 import com.convoscribe.TAG
 import com.convoscribe.audio.WavReader
 import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SegmentPiece
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
@@ -192,7 +193,8 @@ class DiarizeSessionUseCase(
                 turns = turns,
                 rawToIndex = rawToIndex,
                 speakerCount = speakerCount,
-                settings = speakerSettings
+                settings = speakerSettings,
+                participants = ParticipantsCodec.decode(session.participants)
             )
             // Names typed on an earlier diarization survive the re-run;
             // a match against an enrolled voice still wins.
@@ -235,11 +237,15 @@ class DiarizeSessionUseCase(
      * windows per detected speaker, embed them, and match the
      * resulting vectors against the user's enrolled speakers.
      *
+     * Only the session's expected [participants] are matched
+     * against (`null` = every enrolled person), so a voice is never
+     * named after someone who was not there.
+     *
      * Skips the entire pass when:
      *  * the session has zero speakers (no audio to embed);
-     *  * the user has no enrolled speakers (nothing to match
-     *    against — building the embedder would just waste
-     *    native memory).
+     *  * no enrolled speaker is left to match against (none
+     *    enrolled, or none of the participants) — building the
+     *    embedder would just waste native memory.
      *
      * Embedding failures are caught and logged with `Log.w`
      * because they must not fail the diarization: a broken
@@ -253,10 +259,11 @@ class DiarizeSessionUseCase(
         turns: List<SpeakerTurn>,
         rawToIndex: Map<Int, Int>,
         speakerCount: Int,
-        settings: com.convoscribe.settings.AppSettings
+        settings: com.convoscribe.settings.AppSettings,
+        participants: List<String>?
     ): Map<Int, String> {
         if (speakerCount == 0) return emptyMap()
-        val enrolledSpeakers = enrolled.getAll()
+        val enrolledSpeakers = enrolled.getAll().filter { participants == null || it.name in participants }
         if (enrolledSpeakers.isEmpty()) return emptyMap()
 
         return try {

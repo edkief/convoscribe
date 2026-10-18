@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Idempotent installer for JDK 17, Gradle, and Android command-line tools.
-# Nothing here uses sudo or apt; everything installs under $HOME.
+# Nothing here uses sudo or apt; everything installs under $CONVOSCRIBE_TOOLCHAIN
+# (default /workspace/toolchain), the same root scripts/env.sh points at.
 
 set -euo pipefail
 
-TOOLS="$HOME/.local/share/convoscribe-toolchain"
-ANDROID_HOME="$HOME/Android/Sdk"
+TOOLS="${CONVOSCRIBE_TOOLCHAIN:-/workspace/toolchain}"
+ANDROID_HOME="$TOOLS/Android/Sdk"
 ANDROID_NDK_VERSION="27.2.12479018"
 GRADLE_VERSION="8.11.1"
 JDK_VERSION="17"
@@ -119,7 +120,7 @@ done
 
 if [[ "$NEED_INSTALL" -eq 1 ]]; then
   echo "Installing Android SDK packages..."
-  yes | sdkmanager --sdk_root="$ANDROID_HOME" \
+  { yes || true; } | sdkmanager --sdk_root="$ANDROID_HOME" \
     "$ANDROID_PLATFORM_TOOLS" \
     "platforms;android-${ANDROID_PLATFORM}" \
     "build-tools;${ANDROID_BUILD_TOOLS}" \

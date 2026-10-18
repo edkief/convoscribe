@@ -32,4 +32,21 @@ fun interface TranscriberFactory {
      * disk; the CPU path is always `false`.
      */
     fun needsPreparation(language: String): Boolean = false
+
+    /**
+     * The engine and model the next [create] for [language] will
+     * use, recorded on the session so its info view can say what
+     * produced the transcript. Default: unknown.
+     */
+    fun describe(language: String): EngineInfo = EngineInfo.UNKNOWN
+}
+
+/**
+ * Which ASR [engine] (`"cpu"` / `"npu"`, after the French → CPU
+ * fallback) and [model] (bundle id) transcribe a session.
+ */
+data class EngineInfo(val engine: String, val model: String) {
+    companion object {
+        val UNKNOWN = EngineInfo("unknown", "unknown")
+    }
 }

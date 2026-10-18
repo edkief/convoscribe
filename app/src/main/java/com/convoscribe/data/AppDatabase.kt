@@ -9,7 +9,7 @@ import androidx.room.TypeConverters
  * Room database holding the five entity families that survive an
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, and (v2) enrolled speakers. The current
- * version is 3; the generated JSON for every version is committed
+ * version is 4; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -26,6 +26,11 @@ import androidx.room.TypeConverters
  * name index made non-unique so a person can keep several voice
  * samples.
  *
+ * The 3 → 4 migration (issue #6) is automatic: nullable
+ * `sessions.participants`, `sessions.asrEngine` and
+ * `sessions.asrModel` columns. Existing rows keep their language and
+ * speaker count, and show the engine as unknown.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -37,11 +42,12 @@ import androidx.room.TypeConverters
         ChatMessageEntity::class,
         EnrolledSpeakerEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
-        AutoMigration(from = 2, to = 3)
+        AutoMigration(from = 2, to = 3),
+        AutoMigration(from = 3, to = 4)
     ]
 )
 @TypeConverters(Converters::class)

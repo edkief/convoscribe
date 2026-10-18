@@ -40,6 +40,10 @@ import com.convoscribe.models.ModelCatalog
  * - Error: a `Retry` button with the error text in
  *   `MaterialTheme.colorScheme.error`.
  *
+ * [initialEngine] / [initialLanguage] pick the bundles to fetch
+ * instead of the Settings engine and language (the Record screen
+ * passes the new conversation's language).
+ *
  * When [SetupUiState.finished] becomes true, [onFinished] runs once
  * so the caller can navigate (with `popUpTo("setup") { inclusive =
  * true }`) and the screen is not reachable after a successful
@@ -47,7 +51,7 @@ import com.convoscribe.models.ModelCatalog
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun ModelSetupScreen(onFinished: () -> Unit, initialEngine: String? = null) {
+fun ModelSetupScreen(onFinished: () -> Unit, initialEngine: String? = null, initialLanguage: String? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
     val vm: ModelSetupViewModel = viewModel(
@@ -58,10 +62,14 @@ fun ModelSetupScreen(onFinished: () -> Unit, initialEngine: String? = null) {
                     "npu", "cpu" -> initialEngine
                     else -> settings.asrEngine
                 }
+                val language = when (initialLanguage) {
+                    "en", "fr" -> initialLanguage
+                    else -> settings.asrLanguage
+                }
                 ModelSetupViewModel(
                     downloader = container.modelDownloader,
                     store = container.modelStore,
-                    bundles = ModelCatalog.requiredFor(settings.asrLanguage, engine)
+                    bundles = ModelCatalog.requiredFor(language, engine)
                 )
             }
         }

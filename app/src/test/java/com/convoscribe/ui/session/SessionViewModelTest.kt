@@ -112,6 +112,24 @@ class SessionViewModelTest {
     }
 
     @Test
+    fun uiState_exposesLanguageParticipantsAndEngine_andSetParticipantsSavesThem() = runTest(dispatcher) {
+        val id = repo.createSession(title = "info", language = "fr", numSpeakers = 2, participants = listOf("Alice"))
+        repo.recordEngine(id, engine = "cpu", model = "asr-fr")
+        val vm = SessionViewModel(sessionId = id, repository = repo)
+
+        val state = vm.uiState.first { it.title == "info" && it.asrEngine != null }
+        assertEquals("fr", state.language)
+        assertEquals(2, state.numSpeakers)
+        assertEquals(listOf("Alice"), state.participants)
+        assertEquals("asr-fr", state.asrModel)
+
+        vm.setParticipants(listOf("Alice", "Bob"))
+        assertEquals(listOf("Alice", "Bob"), vm.uiState.first { it.participants?.size == 2 }.participants)
+        vm.setParticipants(null)
+        assertNull(vm.uiState.first { it.participants == null }.participants)
+    }
+
+    @Test
     fun transcriptLinesAreEmptyWhenSessionHasNoSegments() = runTest(dispatcher) {
         val id = repo.createSession(title = "empty", language = "en")
         val vm = SessionViewModel(sessionId = id, repository = repo)

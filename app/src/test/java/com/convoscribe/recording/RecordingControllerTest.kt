@@ -1,5 +1,6 @@
 package com.convoscribe.recording
 
+import com.convoscribe.asr.EngineInfo
 import com.convoscribe.asr.StreamingTranscriber
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
@@ -88,12 +89,36 @@ class RecordingControllerTest {
             reopenCalls += sessionId
         }
 
-        override suspend fun createSession(title: String, language: String): Long {
+        /** A call to [createSession], in order. */
+        data class Create(
+            val title: String,
+            val language: String,
+            val numSpeakers: Int?,
+            val participants: List<String>?
+        )
+
+        /** A call to [recordEngine], in order. */
+        data class Engine(val sessionId: Long, val engine: String, val model: String, val continued: Boolean)
+
+        val createCalls: MutableList<Create> = mutableListOf()
+        val engineCalls: MutableList<Engine> = mutableListOf()
+
+        override suspend fun createSession(
+            title: String,
+            language: String,
+            numSpeakers: Int?,
+            participants: List<String>?
+        ): Long {
+            createCalls += Create(title, language, numSpeakers, participants)
             val id = nextId.incrementAndGet()
             // Match the production `SessionRepository`: a file at
             // <root>/<id>.wav that the WAV writer will overwrite.
             File(root, "$id.wav")
             return id
+        }
+
+        override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) {
+            engineCalls += Engine(sessionId, engine, model, continued)
         }
 
         override suspend fun audioPath(sessionId: Long): String = File(root, "$sessionId.wav").absolutePath
@@ -196,6 +221,7 @@ class RecordingControllerTest {
             return transcriber
         }
         override fun needsPreparation(language: String): Boolean = needsPreparation
+        override fun describe(language: String): EngineInfo = EngineInfo("cpu", "asr-$language")
     }
 
     /**
@@ -231,7 +257,7 @@ class RecordingControllerTest {
             audioSource = audio,
             transcriberFactory = factory,
             store = store,
-            language = { "en" },
+            defaultOptions = { ConversationOptions(language = "en", numSpeakers = 3) },
             asrDispatcher = StandardTestDispatcher(testScheduler),
             clock = clock
         )
@@ -504,5 +530,56 @@ class RecordingControllerTest {
         assertTrue(store.reopenCalls.isEmpty())
         assertTrue(store.finishCalls.isEmpty())
         assertEquals(bytesBefore, wav.length())
+    }
+
+    @Test
+    fun start_withOptions_createsTheSessionWithThemAndRecordsTheEngine() = runTest {
+        val h = buildHarness()
+        h.controller.start(
+            this,
+            options = ConversationOptions(
+                language = "fr",
+                numSpeakers = 2,
+                participants = listOf("Alice"),
+                title = "  Interview  "
+            )
+        )
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf(FakeRecordingStore.Create("Interview", "fr", 2, listOf("Alice"))),
+            h.store.createCalls
+        )
+        assertEquals("fr", h.factory.lastLanguage)
+        val id = h.controller.state.value.sessionId!!
+        assertEquals(listOf(FakeRecordingStore.Engine(id, "cpu", "asr-fr", false)), h.store.engineCalls)
+        h.controller.stop()
+    }
+
+    @Test
+    fun start_withoutOptions_usesTheDefaultsAndADateTitle() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+
+        val create = h.store.createCalls.single()
+        assertEquals("en", create.language)
+        assertEquals(3, create.numSpeakers)
+        assertTrue(create.title, create.title.startsWith("Recording "))
+        h.controller.stop()
+    }
+
+    @Test
+    fun start_resume_recordsTheEngineAsAContinuation() = runTest {
+        val store = FakeRecordingStore(tmp.root)
+        existingRecording(store, sessionId = 7L, ms = 600, language = "fr")
+        val h = buildHarness(store = store)
+
+        h.controller.start(this, resumeSessionId = 7L, options = ConversationOptions(language = "en"))
+        advanceUntilIdle()
+
+        assertTrue(store.createCalls.isEmpty())
+        assertEquals(listOf(FakeRecordingStore.Engine(7L, "cpu", "asr-fr", true)), store.engineCalls)
+        h.controller.stop()
     }
 }

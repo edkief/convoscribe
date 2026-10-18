@@ -16,7 +16,7 @@ import com.convoscribe.ui.speakers.SpeakersScreen
 
 private const val ROUTE_HOME = "home"
 private const val ROUTE_SETUP = "setup"
-private const val ROUTE_SETUP_WITH_ENGINE = "setup?engine={engine}"
+private const val ROUTE_SETUP_WITH_ENGINE = "setup?engine={engine}&language={language}&back={back}"
 private const val ROUTE_RECORD = "record"
 private const val ROUTE_RECORD_RESUME = "record/resume/{id}"
 private const val ROUTE_SESSION_DETAIL = "session/{id}"
@@ -35,7 +35,10 @@ private const val ROUTE_SPEAKERS = "speakers"
  *  - `home` — landing screen with the "New recording" FAB and
  *    session list;
  *  - `setup` — first-run model download (also reachable with
- *    `?engine=npu|cpu` to scope the download to one engine);
+ *    `?engine=npu|cpu` to scope the download to one engine, and
+ *    `&language=en|fr` for another language than Settings'; with
+ *    `&back=true` it pops back to the caller when done, which is how
+ *    the Record screen gets a new conversation's models);
  *  - `record` — live-transcript screen reached from the FAB;
  *  - `record/resume/{id}` — the same screen, continuing session
  *    `id` (reached from the session screen's mic button); stopping
@@ -78,15 +81,30 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
                     type = NavType.StringType
                     nullable = true
                     defaultValue = null
+                },
+                navArgument("language") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                },
+                navArgument("back") {
+                    type = NavType.BoolType
+                    defaultValue = false
                 }
             )
         ) { backStackEntry ->
-            val engine = backStackEntry.arguments?.getString("engine")
+            val args = backStackEntry.arguments
+            val back = args?.getBoolean("back") == true
             ModelSetupScreen(
-                initialEngine = engine,
+                initialEngine = args?.getString("engine"),
+                initialLanguage = args?.getString("language"),
                 onFinished = {
-                    navController.navigate(ROUTE_HOME) {
-                        popUpTo(ROUTE_SETUP) { inclusive = true }
+                    if (back) {
+                        navController.popBackStack()
+                    } else {
+                        navController.navigate(ROUTE_HOME) {
+                            popUpTo(ROUTE_SETUP) { inclusive = true }
+                        }
                     }
                 }
             )

@@ -210,6 +210,8 @@ fun SettingsScreen(navController: NavHostController) {
             )
             SpeakersSection(
                 numSpeakers = state.form.numSpeakers,
+                defaultParticipants = state.defaultParticipants,
+                onResetDefaultParticipants = vm::resetDefaultParticipants,
                 threshold = state.form.clusterThreshold,
                 matchThreshold = state.form.speakerMatchThreshold,
                 onNumSpeakersChange = { count ->
@@ -416,6 +418,11 @@ private fun TranscriptionSection(
         text = stringResource(R.string.settings_transcription_language_label),
         style = MaterialTheme.typography.titleSmall
     )
+    Text(
+        text = stringResource(R.string.settings_defaults_help),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant
+    )
     SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
         val englishSelected = language == "en"
         SegmentedButton(
@@ -497,11 +504,15 @@ private fun TranscriptionSection(
  * 2..6 — `-1` is the "automatic" sentinel persisted by the
  * repository) and a clustering threshold slider with the value
  * to two decimals and the "Lower = more speakers" helper text.
+ * The speaker count and [defaultParticipants] are only the defaults
+ * of a new conversation, which the Record screen can change.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SpeakersSection(
     numSpeakers: Int,
+    defaultParticipants: List<String>?,
+    onResetDefaultParticipants: () -> Unit,
     threshold: Float,
     matchThreshold: Float,
     onNumSpeakersChange: (Int) -> Unit,
@@ -614,6 +625,26 @@ private fun SpeakersSection(
         )
         OutlinedButton(onClick = onOpenKnownSpeakers) {
             Text(text = stringResource(R.string.settings_speakers_known_button))
+        }
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = stringResource(
+                R.string.settings_speakers_default_participants,
+                defaultParticipants?.joinToString(", ")
+                    ?: stringResource(R.string.settings_speakers_default_participants_anyone)
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        if (defaultParticipants != null) {
+            TextButton(onClick = onResetDefaultParticipants) {
+                Text(text = stringResource(R.string.settings_speakers_default_participants_reset))
+            }
         }
     }
 }

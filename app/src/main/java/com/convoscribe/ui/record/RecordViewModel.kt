@@ -1,11 +1,22 @@
 package com.convoscribe.ui.record
 
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingState
+import com.convoscribe.settings.SettingsRepository
 import java.util.Locale
 import kotlin.math.max
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 
 /**
  * Thin ViewModel over [RecordingController] for the recording screen.
@@ -18,23 +29,71 @@ import kotlinx.coroutines.flow.StateFlow
  *    controller);
  *  - the [onNavigatedToSession] callback that clears
  *    [RecordingState.lastCompletedSessionId] once the navigation
- *    has fired.
- *
- * Kept deliberately narrow — no business logic, no coroutines,
- * just the bits the screen calls. Constructed by
+ *    has fired;
+ *  - the new conversation's [options] (issue #6), pre-filled from
+ *    the Settings defaults. Editing them never touches Settings;
+ *    [saveAsDefault] writes them back. [enrolledNames] feeds the
+ *    participants picker, and [modelsMissing] tells the screen to
+ *    send the user to setup before Start.
+ * Constructed by
  * [com.convoscribe.ui.AppNavHost]'s `viewModelFactory` reading
  * `AppContainer.recordingController` so the singleton lives across
  * configuration changes (and is the same instance the service
  * drives).
  */
 class RecordViewModel(
-    controller: RecordingController
+    controller: RecordingController,
+    private val settings: SettingsRepository,
+    enrolled: EnrolledSpeakerStore,
+    private val missingModels: (language: String) -> Boolean = { false }
 ) : ViewModel() {
 
     private val recordingController = controller
 
     /** Latest state snapshot of the active recording session. */
     val state: StateFlow<RecordingState> = controller.state
+
+    private val _options = MutableStateFlow(ConversationOptions.fromSettings(settings.settings.value))
+
+    /** Options the next Start uses; seeded from the Settings defaults. */
+    val options: StateFlow<ConversationOptions> = _options.asStateFlow()
+
+    /** Distinct enrolled names, for the participants picker. */
+    val enrolledNames: StateFlow<List<String>> = enrolled.observeAll()
+        .map { rows -> rows.map { it.name }.distinct() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setLanguage(language: String) {
+        if (language == "en" || language == "fr") _options.update { it.copy(language = language) }
+    }
+
+    fun setNumSpeakers(count: Int) {
+        _options.update { it.copy(numSpeakers = if (count < 1) -1 else count.coerceAtMost(10)) }
+    }
+
+    /** `null` (or an empty list) means anyone. */
+    fun setParticipants(names: List<String>?) {
+        _options.update { it.copy(participants = ParticipantsCodec.normalise(names)) }
+    }
+
+    fun setTitle(title: String) {
+        _options.update { it.copy(title = title) }
+    }
+
+    /** Save the language, speaker count and participants as the defaults for future conversations. */
+    fun saveAsDefault() {
+        val chosen = _options.value
+        settings.update {
+            it.copy(
+                asrLanguage = chosen.language,
+                numSpeakers = chosen.numSpeakers,
+                defaultParticipants = chosen.participants
+            )
+        }
+    }
+
+    /** Whether the chosen language still needs its models downloaded before Start. */
+    fun modelsMissing(): Boolean = missingModels(_options.value.language)
 
     /**
      * Run after navigation has consumed

@@ -25,6 +25,22 @@ data class SessionEntity(
     /**
      * Speaker count chosen for this session ("Re-identify speakers"):
      * `null` follows Settings, `-1` is automatic, `1..10` fixed.
+     * New sessions always store the count chosen before Start;
+     * `null` only remains on sessions from before issue #6.
      */
-    val numSpeakers: Int? = null
+    val numSpeakers: Int? = null,
+    /**
+     * Enrolled people expected in this conversation, one name per
+     * line (see [ParticipantsCodec]); only they are considered when
+     * matching known voices. `null` means anyone.
+     */
+    val participants: String? = null,
+    /**
+     * ASR engine (`"cpu"` / `"npu"`) and model bundle id that produced
+     * the transcript; `null` on sessions recorded before this was
+     * kept. A continuation with a different engine or model stores
+     * both, joined by `" + "`.
+     */
+    val asrEngine: String? = null,
+    val asrModel: String? = null
 )

@@ -1,6 +1,7 @@
 package com.convoscribe.settings
 
 import android.content.SharedPreferences
+import com.convoscribe.data.ParticipantsCodec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,6 +42,8 @@ class SettingsRepository(
      *    becomes -1
      *  - thresholds clamped to 0.05..0.95
      *  - `llmBaseUrl` trimmed and trailing `/` removed
+     *  - `defaultParticipants` trimmed and de-duplicated; empty
+     *    becomes `null` (anyone)
      *  - `asrLanguage` must be "en" or "fr"; anything else keeps
      *    the previous value (no exception, no overwrite)
      *  - `asrEngine` must be "npu" or "cpu"; anything else keeps
@@ -63,6 +66,14 @@ class SettingsRepository(
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
+            val participants = ParticipantsCodec.encode(next.defaultParticipants)
+            if (participants == null) {
+                remove(
+                    KEY_DEFAULT_PARTICIPANTS
+                )
+            } else {
+                putString(KEY_DEFAULT_PARTICIPANTS, participants)
+            }
         }.apply()
         _settings.value = next
     }
@@ -96,7 +107,8 @@ class SettingsRepository(
             numThreads = prefs.getInt(KEY_NUM_THREADS, 4),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
-            speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f)
+            speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
+            defaultParticipants = ParticipantsCodec.decode(prefs.getString(KEY_DEFAULT_PARTICIPANTS, null))
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -148,6 +160,7 @@ class SettingsRepository(
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
         const val KEY_SPEAKER_MATCH_THRESHOLD = "speakerMatchThreshold"
+        const val KEY_DEFAULT_PARTICIPANTS = "defaultParticipants"
     }
 }
 
@@ -163,6 +176,7 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val engine = if (asrEngine == "npu" || asrEngine == "cpu") asrEngine else previous.asrEngine
     return this.normaliseNumeric().copy(
         llmBaseUrl = llmBaseUrl.trim().trimEnd('/'),
+        defaultParticipants = ParticipantsCodec.normalise(defaultParticipants),
         asrLanguage = lang,
         asrEngine = engine,
         // Changing the engine through update() is a choice; saving

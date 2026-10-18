@@ -28,14 +28,32 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   that contains a speaker change is split there, using the recognizer's
   per-word timings. Rename a speaker (e.g. `Speaker 1` → `Alice`), or use
   *Re-identify speakers…* in the session menu to re-run it with a fixed
-  number of people (2, 3, 4 or automatic). The count is remembered for
-  the session, and names you typed are kept.
+  number of people (2, 3, 4 or automatic). The count chosen before
+  recording, or here, is kept with the session, and names you typed
+  are kept.
 - **Known voices.** Enroll people in Settings → Speakers, or use
   *Remember this voice* when renaming a speaker. Each enrollment adds a
   voice sample (up to 5 per person); new recordings label matching
   speakers by name.
+- **Per-conversation options.** Before tapping Start, pick the
+  language (English / Français), the number of speakers, the expected
+  participants and an optional title. They start from the Settings
+  defaults and are kept with the session; *Set as default* saves them
+  as the new defaults. A language whose model is missing is downloaded
+  first.
+- **Expected participants.** Known voices are only matched against the
+  people expected in the conversation (or anyone). Edit them later from
+  the session menu (*Participants…*), which offers to re-identify
+  speakers.
+- **Session info** shows the language, speaker count, participants and
+  the engine and model that produced the transcript.
+- **Re-transcribe in another language** from the session menu: the
+  stored audio is transcribed again in the background, with progress
+  and Cancel, and speakers are re-identified. Cancelling or a failure
+  keeps the previous transcript.
 - **Continue a recording** from its session screen (mic button). The
-  audio and transcript are appended to the same session.
+  audio and transcript are appended to the same session, in its own
+  language.
 - **Foreground microphone service** keeps recording alive while the
   screen is off or the app is in the background, with a
   Stop action on the persistent notification.
@@ -47,10 +65,10 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   OpenAI-compatible `/v1/chat/completions` endpoint (vLLM,
   llama.cpp server, Ollama with `http://<host>:11434/v1`, OpenAI,
   …); answers stream token-by-token and are saved with the session.
-- **Switchable language** — switch to Français in Settings to
-  download the French model (~71 MB) and transcribe French speech
-  with the CPU engine. Each language has an explicit model status
-  caption ("installed" / "missing").
+- **English and French** — pick Français for a conversation (or as
+  the default in Settings) to download the French model (~71 MB) and
+  transcribe French speech with the CPU engine. Settings shows each
+  language's model status ("installed" / "missing").
 - **Play back a session's recording** from its session screen: play /
   pause, a seek bar, ±10 s skip and 1× / 1.5× / 2× speed. Tap a
   transcript line to play from there; while playing, the current line

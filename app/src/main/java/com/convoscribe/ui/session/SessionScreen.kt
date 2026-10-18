@@ -110,8 +110,12 @@ import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
+import com.convoscribe.ui.record.ParticipantsDialog
+import kotlinx.coroutines.flow.map
 
 /**
  * Fixed 6-entry palette used to tint speaker labels by their
@@ -251,6 +255,35 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
     // time, whichever session it belongs to.
     val recorderState by container.recordingController.state.collectAsStateWithLifecycle()
     val appSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    val enrolledNames by remember(container) {
+        container.enrolledSpeakers.observeAll().map { rows -> rows.map { it.name }.distinct() }
+    }.collectAsStateWithLifecycle(initialValue = emptyList())
+    val effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers
+    val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
+    val retranscribing = retranscribeState is RetranscribeState.Running
+    val retranscribeFailedMessage = stringResource(R.string.session_retranscribe_failed)
+    LaunchedEffect(retranscribeState) {
+        val failed = retranscribeState as? RetranscribeState.Failed ?: return@LaunchedEffect
+        if (failed.sessionId != sessionId) return@LaunchedEffect
+        container.retranscribeUseCase.acknowledgeFailure()
+        snackbarHostState.showSnackbar(
+            message = "$retranscribeFailedMessage ${failed.message}",
+            duration = SnackbarDuration.Long
+        )
+    }
+    val reidentify: (Int) -> Unit = { count ->
+        // Hand off to the foreground service, which saves the
+        // count on the session and promotes itself to
+        // `dataSync` while the diarizer runs. The status banner
+        // already picks up the DIARIZING flip the use case
+        // writes, so the screen mirrors the work without having
+        // to track it locally.
+        vm.stopPlayback()
+        ContextCompat.startForegroundService(
+            context,
+            RecordingService.diarizeIntent(context, sessionId, numSpeakers = count)
+        )
+    }
 
     SessionBody(
         title = state.title,
@@ -279,6 +312,7 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         snackbarHostState = snackbarHostState,
         canContinueRecording = !state.notFound &&
             recorderState.phase == RecordingPhase.IDLE &&
+            !retranscribing &&
             state.status in CONTINUABLE_STATUSES,
         onContinueRecording = { navController.navigate("record/resume/$sessionId") },
         onBack = { navController.popBackStack() },
@@ -302,20 +336,41 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         onRenameSpeaker = { index, label -> vm.renameSpeaker(index, label) },
         onRenameAndRemember = { index, label -> vm.renameAndRemember(index, label) },
         onRenameSession = { title -> vm.renameSession(title) },
-        effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers,
-        onReidentifySpeakers = { count ->
-            // Hand off to the foreground service, which saves the
-            // count on the session and promotes itself to
-            // `dataSync` while the diarizer runs. The status banner
-            // already picks up the DIARIZING flip the use case
-            // writes, so the screen mirrors the work without having
-            // to track it locally.
-            vm.stopPlayback()
-            ContextCompat.startForegroundService(
-                context,
-                RecordingService.diarizeIntent(context, sessionId, numSpeakers = count)
-            )
-        },
+        effectiveSpeakerCount = effectiveSpeakerCount,
+        onReidentifySpeakers = reidentify,
+        details = SessionDetails(
+            language = state.language,
+            numSpeakers = effectiveSpeakerCount,
+            participants = state.participants,
+            asrEngine = state.asrEngine,
+            asrModel = state.asrModel
+        ),
+        enrolledNames = enrolledNames,
+        onSetParticipants = { vm.setParticipants(it) },
+        retranscribe = RetranscribeUi(
+            progress = (retranscribeState as? RetranscribeState.Running)
+                ?.takeIf { it.sessionId == sessionId }
+                ?.progress,
+            enabled = !state.notFound &&
+                recorderState.phase == RecordingPhase.IDLE &&
+                !retranscribing &&
+                state.status in CONTINUABLE_STATUSES,
+            onStart = { language ->
+                val engine = appSettings.asrEngine
+                val missing = container.modelStore.missing(ModelCatalog.requiredFor(language, engine))
+                if (missing.isNotEmpty()) {
+                    // Download first; setup pops back here and the user starts again.
+                    navController.navigate("setup?engine=$engine&language=$language&back=true")
+                } else {
+                    vm.stopPlayback()
+                    ContextCompat.startForegroundService(
+                        context,
+                        RecordingService.retranscribeIntent(context, sessionId, language)
+                    )
+                }
+            },
+            onCancel = { context.startService(RecordingService.cancelRetranscribeIntent(context)) }
+        ),
         onSummarise = { summaryVm.summarise() },
         onCancelSummary = { summaryVm.cancel() },
         onAsk = { question -> askVm.ask(question) },
@@ -366,7 +421,11 @@ internal fun SessionBody(
     onRetryAsk: () -> Unit,
     onCancelAsk: () -> Unit,
     onClearQuestions: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    details: SessionDetails = SessionDetails(),
+    enrolledNames: List<String> = emptyList(),
+    onSetParticipants: (List<String>?) -> Unit = {},
+    retranscribe: RetranscribeUi = RetranscribeUi()
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(0) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -378,6 +437,10 @@ internal fun SessionBody(
     var renameSessionOpen by remember { mutableStateOf(false) }
     var clearQuestionsOpen by remember { mutableStateOf(false) }
     var reidentifyOpen by remember { mutableStateOf(false) }
+    var participantsOpen by remember { mutableStateOf(false) }
+    var reidentifyAfterParticipants by remember { mutableStateOf(false) }
+    var infoOpen by remember { mutableStateOf(false) }
+    var retranscribeOpen by remember { mutableStateOf(false) }
     Scaffold(
         snackbarHost = {
             // One-line snackbar with a short duration: the
@@ -447,13 +510,39 @@ internal fun SessionBody(
                                 onSaveAudio()
                             }
                         )
-                        val canDiarize = status != SessionStatus.DIARIZING && status != SessionStatus.RECORDING
+                        val canDiarize = status != SessionStatus.DIARIZING &&
+                            status != SessionStatus.RECORDING &&
+                            retranscribe.progress == null
                         DropdownMenuItem(
                             text = { Text(text = stringResource(R.string.session_overflow_reidentify)) },
                             enabled = canDiarize,
                             onClick = {
                                 overflowExpanded = false
                                 reidentifyOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.session_overflow_retranscribe)) },
+                            enabled = retranscribe.enabled,
+                            onClick = {
+                                overflowExpanded = false
+                                retranscribeOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.session_overflow_participants)) },
+                            enabled = !notFound,
+                            onClick = {
+                                overflowExpanded = false
+                                participantsOpen = true
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.session_overflow_info)) },
+                            enabled = !notFound,
+                            onClick = {
+                                overflowExpanded = false
+                                infoOpen = true
                             }
                         )
                         DropdownMenuItem(
@@ -474,6 +563,9 @@ internal fun SessionBody(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            retranscribe.progress?.let { progress ->
+                RetranscribeBanner(progress = progress, onCancel = retranscribe.onCancel)
+            }
             PrimaryTabRow(selectedTabIndex = selectedTab) {
                 Tab(
                     selected = selectedTab == 0,
@@ -591,6 +683,46 @@ internal fun SessionBody(
                 onReidentifySpeakers(count)
             },
             onDismiss = { reidentifyOpen = false }
+        )
+    }
+    if (participantsOpen) {
+        ParticipantsDialog(
+            enrolledNames = enrolledNames,
+            selected = details.participants,
+            onConfirm = { chosen ->
+                participantsOpen = false
+                onSetParticipants(chosen)
+                // Re-identifying needs a finished recording and no diarization running.
+                if (chosen != details.participants &&
+                    status != SessionStatus.DIARIZING &&
+                    status != SessionStatus.RECORDING
+                ) {
+                    reidentifyAfterParticipants = true
+                }
+            },
+            onDismiss = { participantsOpen = false }
+        )
+    }
+    if (reidentifyAfterParticipants) {
+        ReidentifyAfterParticipantsDialog(
+            onConfirm = {
+                reidentifyAfterParticipants = false
+                onReidentifySpeakers(effectiveSpeakerCount)
+            },
+            onDismiss = { reidentifyAfterParticipants = false }
+        )
+    }
+    if (infoOpen) {
+        SessionInfoDialog(details = details, onDismiss = { infoOpen = false })
+    }
+    if (retranscribeOpen) {
+        RetranscribeDialog(
+            currentLanguage = details.language,
+            onConfirm = { language ->
+                retranscribeOpen = false
+                retranscribe.onStart(language)
+            },
+            onDismiss = { retranscribeOpen = false }
         )
     }
     // Clear-questions confirmation. The action itself is gated on

@@ -52,7 +52,10 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.models.ModelCatalog
+import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
 
 /**
@@ -93,11 +96,24 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val vm: RecordViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                RecordViewModel(controller = container.recordingController)
+                RecordViewModel(
+                    controller = container.recordingController,
+                    settings = container.settingsRepository,
+                    enrolled = container.enrolledSpeakers,
+                    missingModels = { language ->
+                        val engine = container.settingsRepository.settings.value.asrEngine
+                        container.modelStore.missing(ModelCatalog.requiredFor(language, engine)).isNotEmpty()
+                    }
+                )
             }
         }
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    val options by vm.options.collectAsStateWithLifecycle()
+    val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
+    val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
+    // A continued session keeps its own options; only a new one sends them.
+    val startOptions = options.takeIf { resumeSessionId == null }
 
     // `rememberSaveable` keeps the denial message around process
     // death so a transient blank does not make it vanish.
@@ -118,7 +134,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         if (micOk) {
             ContextCompat.startForegroundService(
                 context,
-                RecordingService.startIntent(context, resumeSessionId)
+                RecordingService.startIntent(context, resumeSessionId, startOptions)
             )
         }
     }
@@ -148,10 +164,32 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         finalLines = state.finalLines,
         partialText = state.partialText,
         error = state.error,
+        busyMessage = if (retranscribeState is RetranscribeState.Running) {
+            stringResource(R.string.record_busy_retranscribing)
+        } else {
+            null
+        },
         micDeniedMessage = micDeniedMessage,
         continuing = resumeSessionId != null,
+        options = options,
+        enrolledNames = enrolledNames,
+        optionActions = ConversationOptionActions(
+            onLanguageChange = vm::setLanguage,
+            onNumSpeakersChange = vm::setNumSpeakers,
+            onParticipantsChange = vm::setParticipants,
+            onTitleChange = vm::setTitle,
+            onSaveAsDefault = vm::saveAsDefault
+        ),
         onBack = { navController.popBackStack() },
         onStart = {
+            // The chosen language's models must be on disk first:
+            // download them in setup, which pops back here with the
+            // options untouched.
+            if (resumeSessionId == null && vm.modelsMissing()) {
+                val engine = container.settingsRepository.settings.value.asrEngine
+                navController.navigate("setup?engine=$engine&language=${options.language}&back=true")
+                return@RecordBody
+            }
             // Defensive: re-check at click time, not just at
             // recomposition. The user could have revoked the
             // permission from system Settings while the screen
@@ -166,7 +204,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             }
             ContextCompat.startForegroundService(
                 context,
-                RecordingService.startIntent(context, resumeSessionId)
+                RecordingService.startIntent(context, resumeSessionId, startOptions)
             )
         },
         onStop = {
@@ -185,7 +223,11 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
  * @param micDeniedMessage shown between the elapsed time and the
  *   final transcript when the user denied the runtime permission.
  * @param continuing `true` when appending to an existing session;
- *   only changes the title.
+ *   changes the title and hides the new-conversation options.
+ * @param busyMessage why Start is unavailable (another job holds the
+ *   recorder), or `null`.
+ * @param options the new conversation's options, shown while idle
+ *   (see [ConversationOptionsForm]).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -196,8 +238,12 @@ internal fun RecordBody(
     finalLines: List<String>,
     partialText: String,
     error: String?,
+    busyMessage: String? = null,
     micDeniedMessage: String?,
     continuing: Boolean = false,
+    options: ConversationOptions? = null,
+    enrolledNames: List<String> = emptyList(),
+    optionActions: ConversationOptionActions = ConversationOptionActions(),
     onBack: () -> Unit,
     onStart: () -> Unit,
     onStop: () -> Unit
@@ -255,6 +301,26 @@ internal fun RecordBody(
                 Text(
                     text = phaseLabel,
                     style = MaterialTheme.typography.bodyLarge
+                )
+            }
+
+            if (phase == RecordingPhase.IDLE && !continuing && options != null) {
+                ConversationOptionsForm(
+                    options = options,
+                    enrolledNames = enrolledNames,
+                    onLanguageChange = optionActions.onLanguageChange,
+                    onNumSpeakersChange = optionActions.onNumSpeakersChange,
+                    onParticipantsChange = optionActions.onParticipantsChange,
+                    onTitleChange = optionActions.onTitleChange,
+                    onSaveAsDefault = optionActions.onSaveAsDefault
+                )
+            }
+
+            if (busyMessage != null && phase == RecordingPhase.IDLE) {
+                Text(
+                    text = busyMessage,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
                 )
             }
 
@@ -322,7 +388,7 @@ internal fun RecordBody(
             // disabling here gives clearer visual feedback.
             // Not gated on the mic permission: tapping Start is what
             // asks for it.
-            val showStart = phase == RecordingPhase.IDLE
+            val showStart = phase == RecordingPhase.IDLE && busyMessage == null
             val showStop = phase == RecordingPhase.RECORDING
             // The round FAB is large (96dp) but it's structured as
             // a `Button` (not `FloatingActionButton`) so its state
@@ -373,6 +439,15 @@ internal fun RecordBody(
         }
     }
 }
+
+/** Callbacks of the new-conversation [ConversationOptionsForm]. */
+internal data class ConversationOptionActions(
+    val onLanguageChange: (String) -> Unit = {},
+    val onNumSpeakersChange: (Int) -> Unit = {},
+    val onParticipantsChange: (List<String>?) -> Unit = {},
+    val onTitleChange: (String) -> Unit = {},
+    val onSaveAsDefault: () -> Unit = {}
+)
 
 /**
  * Runtime permissions the Start button asks for. Mic + the Android

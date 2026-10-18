@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -287,5 +288,14 @@ class SettingsRepositoryTest {
     fun clusterThreshold_halfChosenAfterTheChangeIsKept() {
         newRepository().update { it.copy(clusterThreshold = 0.5f) }
         assertEquals(0.5f, newRepository().settings.value.clusterThreshold, 0.0001f)
+    }
+
+    @Test
+    fun defaultParticipants_persistAndEmptyMeansAnyone() {
+        assertNull(newRepository().settings.value.defaultParticipants)
+        newRepository().update { it.copy(defaultParticipants = listOf(" Alice ", "Bob", "Alice")) }
+        assertEquals(listOf("Alice", "Bob"), newRepository().settings.value.defaultParticipants)
+        newRepository().update { it.copy(defaultParticipants = emptyList()) }
+        assertNull(newRepository().settings.value.defaultParticipants)
     }
 }

@@ -6,7 +6,7 @@ set -uo pipefail
 
 # If cmake is provided by setup-toolchain.sh, add it to PATH so this check can
 # find it even when env.sh was not sourced.
-for cmake_bin in "$HOME"/.local/share/convoscribe-toolchain/cmake-*/bin; do
+for cmake_bin in "${CONVOSCRIBE_TOOLCHAIN:-/workspace/toolchain}"/cmake-*/bin; do
   if [[ -x "$cmake_bin/cmake" ]]; then
     PATH="$cmake_bin:$PATH"
     break

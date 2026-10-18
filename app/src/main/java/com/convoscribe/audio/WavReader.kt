@@ -55,6 +55,50 @@ object WavReader {
     }
 
     /**
+     * Number of 16 kHz samples [readChunks16k] hands out for [file].
+     */
+    fun samples16k(file: File): Long {
+        val info = inspect(file)
+        val samples = info.dataBytes / 2
+        if (info.sampleRate == AudioSpec.SAMPLE_RATE) return samples
+        return samples * AudioSpec.SAMPLE_RATE / info.sampleRate
+    }
+
+    /**
+     * Read [file] like [readMono16k], but hand the samples to [block]
+     * [chunkSamples] at a time instead of holding the whole recording
+     * in memory. A 16 kHz file (every session recording) is streamed
+     * from disk; another rate is read and resampled in one go first.
+     * Inline so [block] can suspend (e.g. to check for cancellation).
+     */
+    internal inline fun readChunks16k(file: File, chunkSamples: Int, block: (FloatArray) -> Unit) {
+        require(chunkSamples > 0) { "chunkSamples must be > 0" }
+        val info = inspect(file)
+        if (info.sampleRate != AudioSpec.SAMPLE_RATE) {
+            val all = readMono16k(file)
+            var start = 0
+            while (start < all.size) {
+                val end = minOf(start + chunkSamples, all.size)
+                block(all.copyOfRange(start, end))
+                start = end
+            }
+            return
+        }
+        RandomAccessFile(file, "r").use { raf ->
+            raf.seek(info.dataOffset)
+            val raw = ByteArray(chunkSamples * 2)
+            var left = info.dataBytes
+            while (left >= 2) {
+                val want = minOf(raw.size.toLong(), left).toInt() and 1.inv()
+                raf.readFully(raw, 0, want)
+                left -= want
+                val bb = ByteBuffer.wrap(raw, 0, want).order(ByteOrder.LITTLE_ENDIAN)
+                block(FloatArray(want / 2) { bb.short / 32_768f })
+            }
+        }
+    }
+
+    /**
      * Where the PCM payload of a mono 16-bit WAV sits: [sampleRate] in
      * Hz, [dataOffset] the byte offset of the first sample and
      * [dataBytes] the payload length (a whole number of samples).
