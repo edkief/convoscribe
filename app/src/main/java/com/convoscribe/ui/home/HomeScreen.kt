@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -28,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -43,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
@@ -207,7 +210,8 @@ fun HomeScreen(navController: NavHostController) {
         onOpenSession = { id -> navController.navigate("session/$id") },
         onDelete = vm::delete,
         onSettings = { navController.navigate("settings") },
-        onEngineCheck = { navController.navigate("engine-check") }
+        onEngineCheck = { navController.navigate("engine-check") },
+        onSearch = { navController.navigate("search") }
     )
 }
 
@@ -229,14 +233,26 @@ internal fun HomeBody(
     onOpenSession: (Long) -> Unit,
     onDelete: (Long) -> Unit,
     onSettings: () -> Unit,
-    onEngineCheck: () -> Unit
+    onEngineCheck: () -> Unit,
+    onSearch: () -> Unit = {}
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    // Search is a field above the list where there is room, an icon otherwise.
+    val searchable = sessions.isNotEmpty()
+    val wide = LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_DP
 
     ScreenScaffold(
         title = stringResource(R.string.app_name),
         actions = {
+            if (searchable && !wide) {
+                IconButton(onClick = onSearch) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = stringResource(R.string.home_search)
+                    )
+                }
+            }
             IconButton(onClick = onSettings) {
                 Icon(
                     imageVector = Icons.Filled.Settings,
@@ -290,6 +306,7 @@ internal fun HomeBody(
                 )
             }
             importing?.let { ImportBanner(state = it, onCancel = onCancelImport) }
+            if (searchable && wide) SearchEntry(onClick = onSearch)
             SessionList(
                 sessions = sessions,
                 onNewRecording = onNewRecording,
@@ -313,6 +330,42 @@ internal fun HomeBody(
             },
             onDismiss = { pendingDeleteId = null }
         )
+    }
+}
+
+/** Width from which Home shows a search field instead of a top-bar icon. */
+private const val WIDE_SCREEN_DP = 600
+
+/** A field-shaped button above the session list that opens search. */
+@Composable
+private fun SearchEntry(onClick: () -> Unit) {
+    val spacing = AppTheme.spacing
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = spacing.screen, vertical = spacing.s),
+        contentAlignment = Alignment.Center
+    ) {
+        OutlinedButton(
+            onClick = onClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .widthIn(max = AppTheme.sizes.contentMaxWidth),
+            shape = MaterialTheme.shapes.small
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(spacing.s)
+            ) {
+                Icon(imageVector = Icons.Filled.Search, contentDescription = null)
+                Text(
+                    text = stringResource(R.string.home_search_field),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
     }
 }
 

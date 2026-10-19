@@ -14,6 +14,7 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.ui.enginecheck.EngineCheckScreen
 import com.convoscribe.ui.home.HomeScreen
 import com.convoscribe.ui.record.RecordScreen
+import com.convoscribe.ui.search.SearchScreen
 import com.convoscribe.ui.session.SessionScreen
 import com.convoscribe.ui.settings.SettingsScreen
 import com.convoscribe.ui.setup.ModelSetupScreen
@@ -28,6 +29,7 @@ private const val ROUTE_SESSION_DETAIL = "session/{id}?tab={tab}&line={line}&at=
 private const val ROUTE_ENGINE_CHECK = "engine-check"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_SPEAKERS = "speakers"
+private const val ROUTE_SEARCH = "search"
 
 private const val NO_ARG = -1L
 
@@ -71,6 +73,8 @@ internal fun sessionRoute(id: Long, tab: Int = 0, lineId: Long? = null, atMs: Lo
  *    them. Reachable from the Speakers section of Settings; the
  *    screen renders an "Open setup" hint when the embedding
  *    model is not installed.
+ *  - `search` — search across sessions (issue #24), reached from
+ *    the home top bar;
  *  - `session/{id}` — session-detail screen (transcript tab,
  *    summary tab and ask tab). The route id is a `Long` so the
  *    home list's `session/${row.id}` push lands on the right row.
@@ -165,6 +169,9 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
         composable(ROUTE_SPEAKERS) {
             SpeakersScreen(navController = navController)
+        }
+        composable(ROUTE_SEARCH) {
+            SearchScreen(navController = navController)
         }
         composable(
             route = ROUTE_SESSION_DETAIL,
