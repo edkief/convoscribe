@@ -373,4 +373,38 @@ class SettingsRepositoryTest {
         prefs.edit().putString(SettingsRepository.KEY_SPEAKER_ID_MODE, "sometimes").apply()
         assertEquals("auto", newRepository().settings.value.speakerIdMode)
     }
+
+    @Test
+    fun floatingShape_isUnsetUntilChosenThenPersists() {
+        val repo = newRepository()
+        assertNull(repo.settings.value.floatingShape)
+        assertFalse(prefs.contains(SettingsRepository.KEY_FLOATING_SHAPE))
+        repo.update { it.copy(floatingShape = "minimal") }
+        assertEquals("minimal", newRepository().settings.value.floatingShape)
+        repo.update { it.copy(floatingShape = "expanded") }
+        assertEquals("expanded", newRepository().settings.value.floatingShape)
+    }
+
+    @Test
+    fun floatingShape_nullRemovesTheKey() {
+        val repo = newRepository()
+        repo.update { it.copy(floatingShape = "standard") }
+        repo.update { it.copy(floatingShape = null) }
+        assertFalse(prefs.contains(SettingsRepository.KEY_FLOATING_SHAPE))
+        assertNull(newRepository().settings.value.floatingShape)
+    }
+
+    @Test
+    fun floatingShape_unknownValueKeepsPrevious() {
+        val repo = newRepository()
+        repo.update { it.copy(floatingShape = "expanded") }
+        repo.update { it.copy(floatingShape = "huge") }
+        assertEquals("expanded", repo.settings.value.floatingShape)
+    }
+
+    @Test
+    fun floatingShape_unknownStoredValueLoadsAsUnset() {
+        prefs.edit().putString(SettingsRepository.KEY_FLOATING_SHAPE, "huge").apply()
+        assertNull(newRepository().settings.value.floatingShape)
+    }
 }

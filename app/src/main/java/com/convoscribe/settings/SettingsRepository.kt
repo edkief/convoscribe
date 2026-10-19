@@ -53,6 +53,8 @@ class SettingsRepository(
      *    keeps the previous value
      *  - `speakerIdMode` must be a [SpeakerIdMode.key]; anything else
      *    keeps the previous value
+     *  - `floatingShape` must be a [FloatingShape.key] or `null`;
+     *    anything else keeps the previous value
      */
     fun update(transform: (AppSettings) -> AppSettings) {
         val current = _settings.value
@@ -74,6 +76,13 @@ class SettingsRepository(
             putString(KEY_DISPLAY_MODE, next.displayMode)
             putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
             putBoolean(KEY_FLOATING_CONTROL, next.floatingControl)
+            if (next.floatingShape == null) {
+                remove(
+                    KEY_FLOATING_SHAPE
+                )
+            } else {
+                putString(KEY_FLOATING_SHAPE, next.floatingShape)
+            }
             putBoolean(KEY_OVERLAY_PROMPT_SHOWN, next.overlayPromptShown)
             putBoolean(KEY_UPDATE_CHECK_AUTO, next.updateCheckAuto)
             putBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, next.updateIncludePrereleases)
@@ -124,6 +133,7 @@ class SettingsRepository(
             displayMode = prefs.getString(KEY_DISPLAY_MODE, null) ?: DisplayMode.AUTO.key,
             dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
             floatingControl = prefs.getBoolean(KEY_FLOATING_CONTROL, true),
+            floatingShape = FloatingShape.fromKey(prefs.getString(KEY_FLOATING_SHAPE, null))?.key,
             overlayPromptShown = prefs.getBoolean(KEY_OVERLAY_PROMPT_SHOWN, false),
             updateCheckAuto = prefs.getBoolean(KEY_UPDATE_CHECK_AUTO, true),
             updateIncludePrereleases = prefs.getBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, false)
@@ -191,6 +201,7 @@ class SettingsRepository(
         const val KEY_DISPLAY_MODE = "displayMode"
         const val KEY_DYNAMIC_COLOR = "dynamicColor"
         const val KEY_FLOATING_CONTROL = "floatingControl"
+        const val KEY_FLOATING_SHAPE = "floatingShape"
         const val KEY_OVERLAY_PROMPT_SHOWN = "overlayPromptShown"
         const val KEY_UPDATE_CHECK_AUTO = "updateCheckAuto"
         const val KEY_UPDATE_INCLUDE_PRERELEASES = "updateIncludePrereleases"
@@ -204,16 +215,20 @@ class SettingsRepository(
  * not "en" or "fr"; `asrEngine` keeps the previous value when it is
  * not "npu" or "cpu"; `displayMode` and `speakerIdMode` keep the
  * previous value when they are not a [DisplayMode.key] /
- * [SpeakerIdMode.key].
+ * [SpeakerIdMode.key]; `floatingShape` keeps the previous value when
+ * it is neither `null` nor a [FloatingShape.key].
  */
 private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val lang = if (asrLanguage == "en" || asrLanguage == "fr") asrLanguage else previous.asrLanguage
     val engine = if (asrEngine == "npu" || asrEngine == "cpu") asrEngine else previous.asrEngine
     val mode = if (DisplayMode.fromKey(displayMode) != null) displayMode else previous.displayMode
     val idMode = if (SpeakerIdMode.fromKey(speakerIdMode) != null) speakerIdMode else previous.speakerIdMode
+    val shapeValid = floatingShape == null || FloatingShape.fromKey(floatingShape) != null
+    val shape = if (shapeValid) floatingShape else previous.floatingShape
     return this.normaliseNumeric().copy(
         displayMode = mode,
         speakerIdMode = idMode,
+        floatingShape = shape,
         llmBaseUrl = llmBaseUrl.trim().trimEnd('/'),
         defaultParticipants = ParticipantsCodec.normalise(defaultParticipants),
         asrLanguage = lang,

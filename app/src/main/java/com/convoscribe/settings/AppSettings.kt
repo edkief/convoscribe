@@ -29,6 +29,9 @@ package com.convoscribe.settings
  * apps while a session is open (issue #7); it also needs the "Display
  * over other apps" permission. [overlayPromptShown] is `true` once the
  * user has been asked for that permission, so they are asked only once.
+ * [floatingShape] is a [FloatingShape.key], or `null` until the user
+ * picks one, when [FloatingShape.resolve] gives the device default
+ * (issue #21).
  *
  * [updateCheckAuto] lets the app ask GitHub for a newer release on
  * start, at most once a day (issue #15); with it off the app makes no
@@ -62,6 +65,7 @@ data class AppSettings(
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,
+    val floatingShape: String? = null,
     val overlayPromptShown: Boolean = false,
     val updateCheckAuto: Boolean = true,
     val updateIncludePrereleases: Boolean = false
