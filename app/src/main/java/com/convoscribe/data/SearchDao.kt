@@ -1,0 +1,67 @@
+package com.convoscribe.data
+
+import androidx.room.Dao
+import androidx.room.Query
+
+/**
+ * Read-only queries behind cross-session search (issue #24).
+ * Transcript lines are searched through the [SegmentFtsEntity] index;
+ * titles, speaker names and summaries are a handful of rows per
+ * session, so [SessionSearch] loads them with [sessions], [speakers]
+ * and [summaries] and matches them in Kotlin with the same folding.
+ */
+@Dao
+interface SearchDao {
+    /**
+     * Transcript lines matching the FTS4 [match] expression (see
+     * [SearchText.ftsQuery]), newest session first and in reading
+     * order within a session. [language] `null` means any; only
+     * sessions created at or after [since] are considered. The
+     * snippet marks each matched word with [open] / [close].
+     */
+    @Query(
+        "SELECT s.sessionId AS sessionId, s.id AS segmentId, s.startMs AS startMs, " +
+            "s.speakerIndex AS speakerIndex, " +
+            "snippet(segments_fts, :open, :close, '…', -1, 24) AS snippet " +
+            "FROM segments_fts " +
+            "JOIN segments s ON s.id = segments_fts.rowid " +
+            "JOIN sessions ss ON ss.id = s.sessionId " +
+            "WHERE segments_fts MATCH :match " +
+            "AND (:language IS NULL OR ss.language = :language) " +
+            "AND ss.createdAt >= :since " +
+            "ORDER BY ss.createdAt DESC, ss.id DESC, s.startMs ASC " +
+            "LIMIT :limit"
+    )
+    suspend fun findSegments(
+        match: String,
+        language: String?,
+        since: Long,
+        open: String,
+        close: String,
+        limit: Int
+    ): List<SegmentHit>
+
+    /** Every session, newest first. */
+    @Query("SELECT * FROM sessions ORDER BY createdAt DESC, id DESC")
+    suspend fun sessions(): List<SessionEntity>
+
+    /** Every speaker of every session. */
+    @Query("SELECT * FROM speakers ORDER BY sessionId, speakerIndex")
+    suspend fun speakers(): List<SpeakerEntity>
+
+    /** Saved summaries, oldest first, so the last one per session wins. */
+    @Query(
+        "SELECT * FROM chat_messages WHERE kind = 'SUMMARY' AND role = 'ASSISTANT' " +
+            "ORDER BY createdAt ASC, id ASC"
+    )
+    suspend fun summaries(): List<ChatMessageEntity>
+}
+
+/** Row of [SearchDao.findSegments]. */
+data class SegmentHit(
+    val sessionId: Long,
+    val segmentId: Long,
+    val startMs: Long,
+    val speakerIndex: Int?,
+    val snippet: String
+)
