@@ -24,10 +24,22 @@ private const val ROUTE_SETUP = "setup"
 private const val ROUTE_SETUP_WITH_ENGINE = "setup?engine={engine}&language={language}&back={back}"
 private const val ROUTE_RECORD = "record"
 private const val ROUTE_RECORD_RESUME = "record/resume/{id}"
-private const val ROUTE_SESSION_DETAIL = "session/{id}"
+private const val ROUTE_SESSION_DETAIL = "session/{id}?tab={tab}&line={line}&at={at}"
 private const val ROUTE_ENGINE_CHECK = "engine-check"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_SPEAKERS = "speakers"
+
+private const val NO_ARG = -1L
+
+/**
+ * Route to session [id], optionally opening [tab] at transcript line
+ * [lineId] with the player cued to [atMs].
+ */
+internal fun sessionRoute(id: Long, tab: Int = 0, lineId: Long? = null, atMs: Long? = null): String = buildString {
+    append("session/").append(id).append("?tab=").append(tab)
+    if (lineId != null) append("&line=").append(lineId)
+    if (atMs != null) append("&at=").append(atMs)
+}
 
 /**
  * Single navigation graph for the app. The first-run model download
@@ -62,6 +74,9 @@ private const val ROUTE_SPEAKERS = "speakers"
  *  - `session/{id}` — session-detail screen (transcript tab,
  *    summary tab and ask tab). The route id is a `Long` so the
  *    home list's `session/${row.id}` push lands on the right row.
+ *    Search results (issue #24) add `?tab=` (the tab to open),
+ *    `&line=` (the segment id to scroll to) and `&at=` (where to
+ *    cue the player, in ms) through [sessionRoute].
  *
  * A request from the floating control or the Quick Settings tile
  * (`pendingOpenRecord`, issue #7) pushes `record`, unless a Record
@@ -156,11 +171,30 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
             arguments = listOf(
                 navArgument("id") {
                     type = NavType.LongType
+                },
+                navArgument("tab") {
+                    type = NavType.IntType
+                    defaultValue = 0
+                },
+                navArgument("line") {
+                    type = NavType.LongType
+                    defaultValue = NO_ARG
+                },
+                navArgument("at") {
+                    type = NavType.LongType
+                    defaultValue = NO_ARG
                 }
             )
         ) { backStackEntry ->
-            val id = backStackEntry.arguments?.getLong("id") ?: 0L
-            SessionScreen(sessionId = id, navController = navController)
+            val args = backStackEntry.arguments
+            val id = args?.getLong("id") ?: 0L
+            SessionScreen(
+                sessionId = id,
+                navController = navController,
+                initialTab = args?.getInt("tab") ?: 0,
+                targetLineId = args?.getLong("line")?.takeIf { it != NO_ARG },
+                cueAtMs = args?.getLong("at")?.takeIf { it != NO_ARG }
+            )
         }
     }
 }
