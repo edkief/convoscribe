@@ -412,22 +412,27 @@ publish() {
   if [[ -n "$prev_tag" ]]; then
     range="$prev_tag..HEAD"
   fi
-  # Subjects and bodies, oldest first, without the release commits (prepare
-  # makes one per tag) or Co-Authored-By/Signed-off-by trailers (noise for
-  # the model).
+  # Subjects and bodies, oldest first, each commit starting with a \x1e
+  # record separator, without the release commits (prepare makes one per
+  # tag) or Co-Authored-By/Signed-off-by trailers (noise for the model).
   local log_filter=(--no-merges --invert-grep --grep='^chore(release): ')
-  local commit_log commit_count
-  commit_log=$(git log "${log_filter[@]}" --reverse --format='* %s%n%b' "$range" \
+  local commit_log commit_count prior_issues=""
+  commit_log=$(git log "${log_filter[@]}" --reverse --format='%x1e%s%n%b' "$range" \
     | grep -v -E '^(Co-Authored-By|Signed-off-by):' || true)
   [[ -n "$commit_log" ]] || die "no commits since $prev_tag besides the release commit; nothing to release."
   commit_count=$(git rev-list "${log_filter[@]}" --count "$range")
+  # Issues users already have something of: any "(#N)" in a commit subject
+  # up to the previous release. The other issues in the log are new features.
+  if [[ -n "$prev_tag" ]]; then
+    prior_issues=$(git log --no-merges --format=%s "$prev_tag" | grep -oE '\(#[0-9]+\)' | tr -d '()#' | sort -un | tr '\n' ' ' || true)
+  fi
 
   if [[ -n "$notes_file" ]]; then
     log "Using release notes from $notes_file"
     cp "$notes_file" "$NOTES_BODY"
   else
     log "Generating release notes from $commit_count commit(s) with $LLM_MODEL at $LLM_BASE_URL ..."
-    COMMIT_LOG="$commit_log" PREV_TAG="${prev_tag:-}" NEW_TAG="$tag" \
+    COMMIT_LOG="$commit_log" PRIOR_ISSUES="$prior_issues" PREV_TAG="${prev_tag:-}" NEW_TAG="$tag" \
       LLM_BASE_URL="$LLM_BASE_URL" LLM_MODEL="$LLM_MODEL" \
       LLM_DISABLE_THINKING="$LLM_DISABLE_THINKING" \
       python3 - "$NOTES_BODY" <<'PY'
@@ -439,14 +444,101 @@ import urllib.error
 import urllib.request
 
 out_path = sys.argv[1]
-log = os.environ["COMMIT_LOG"]
-# Keep the prompt well inside the context window; the oldest commits go
-# first when the log is huge (a first release covers the whole history).
+prior_issues = set(os.environ.get("PRIOR_ISSUES", "").split())
+
+# Commit types users cannot notice. The model is never shown them: given a
+# test commit whose body describes a crash, it reports a fixed crash. Build
+# commits stay only with an issue reference (e.g. release signing, #16);
+# without one they are CI plumbing.
+HIDDEN_TYPES = {"test", "docs", "ci", "style", "refactor", "chore"}
+TYPE_RE = re.compile(r"^(\w+)(?:\([^)]*\))?!?:")
+ISSUE_RE = re.compile(r"\(#(\d+)\)")
+
+# Group the visible commits by issue, in order of first appearance, so the
+# model sees each feature as a whole and is told whether users already have
+# any of it, instead of guessing that from each commit's wording.
+groups = {}
+for record in os.environ["COMMIT_LOG"].split("\x1e"):
+    if not record.strip():
+        continue
+    subject, _, commit_body = record.partition("\n")
+    match = TYPE_RE.match(subject)
+    kind = match.group(1).lower() if match else None
+    issue = ISSUE_RE.search(subject)
+    issue = issue.group(1) if issue else None
+    if kind in HIDDEN_TYPES or (kind == "build" and issue is None):
+        continue
+    groups.setdefault(issue, []).append((kind, subject, commit_body.strip()))
+
+if not groups:
+    with open(out_path, "w") as f:
+        f.write("Maintenance release with no user-visible changes.\n")
+    sys.exit(0)
+
+# Where each issue's bullet may go. Users have nothing of a new issue yet,
+# so all of it is New, never Improved or Fixed; an issue whose commits are
+# all build changes is Under the hood; a follow-up to a released issue goes
+# wherever its commits fit.
+build_only = {i for i, commits in groups.items() if i is not None and all(kind == "build" for kind, _, _ in commits)}
+new_issues = [i for i in groups if i is not None and i not in prior_issues and i not in build_only]
+# What the commits outside new features can feed. A commit without a type
+# could be anything.
+rest = [kind for i, commits in groups.items() if i not in new_issues and i not in build_only for kind, _, _ in commits]
+allowed = []
+if new_issues or rest:
+    allowed.append("New")
+if any(kind not in ("fix", "build") for kind in rest):
+    allowed.append("Improved")
+if any(kind in ("fix", None) for kind in rest):
+    allowed.append("Fixed")
+if build_only or "build" in rest:
+    allowed.append("Under the hood")
+homes = {i: {"New"} for i in new_issues}
+homes.update({i: {"Under the hood"} for i in build_only})
+homes.update({i: set(allowed) for i in groups if i is not None and i not in homes})
+
+
+def render(with_bodies):
+    parts = []
+    for issue, commits in sorted(groups.items(), key=lambda kv: kv[0] is None):
+        if issue is None:
+            parts.append("## Commits without an issue reference (each stands alone)")
+        elif issue in new_issues:
+            parts.append(f"## #{issue}: NEW FEATURE, users have never had any of it")
+        elif issue in build_only:
+            parts.append(f"## #{issue}: BUILD CHANGE to how the app is built, signed or installed")
+        else:
+            parts.append(f"## #{issue}: FOLLOW-UP to a feature users already have from an earlier release")
+        for _, subject, commit_body in commits:
+            parts.append(f"* {subject}")
+            if with_bodies and commit_body:
+                parts.append("\n".join("  " + line for line in commit_body.splitlines()))
+        parts.append("")
+    return "\n".join(parts)
+
+
+# Keep the prompt well inside the context window (a first release covers
+# the whole history): drop the bodies first, then cut the end.
 MAX_CHARS = 60000
+log = render(with_bodies=True)
 if len(log) > MAX_CHARS:
-    log = "[... older commits omitted ...]\n" + log[-MAX_CHARS:]
+    log = render(with_bodies=False)
+if len(log) > MAX_CHARS:
+    log = log[:MAX_CHARS] + "\n[... later commits omitted ...]"
 
 since = f"since {os.environ['PREV_TAG']}" if os.environ["PREV_TAG"] else "(first release)"
+
+plan = [f"- Use only these `###` sections, in this order: {', '.join(f'`### {s}`' for s in allowed)}. No other sections."]
+if new_issues:
+    refs = ", ".join(f"#{i}" for i in new_issues)
+    plan.append(f"- `### New` has exactly one bullet for each new feature: {refs}. Every part of a feature goes in its one bullet, never in a second bullet or under another section.")
+if build_only:
+    refs = ", ".join(f"#{i}" for i in build_only)
+    plan.append(f"- `### Under the hood` has one bullet for each build change, {refs}, and only when it changes how the app is installed or updated. Never list a build change under `### New`.")
+for section in ("New", "Improved", "Fixed", "Under the hood"):
+    if section not in allowed:
+        plan.append(f"- Nothing in this release belongs under `### {section}`: leave it out.")
+plan = "\n".join(plan)
 
 system = (
     "You write release notes for ConvoScribe, an Android app that records "
@@ -456,61 +548,130 @@ system = (
 )
 user = f"""Write the release notes for ConvoScribe {os.environ['NEW_TAG']} {since} from the commit log below.
 
+How to read the log:
+- It is the development history between two releases. Users only ever had the previous release; none of the intermediate commits reached them. Describe the net difference between the previous release and this one, not the steps taken to get there.
+- Commits follow Conventional Commits: `type(scope): subject`. `feat` adds behaviour, `fix` corrects it, `perf` speeds it up, `build` changes how the app is built or signed. The scope names the area of the app. Commits users cannot notice (tests, docs, refactors, CI) have already been removed.
+- The commits are grouped by issue. Each `##` heading says whether that issue is a NEW FEATURE (users have never had any of it), a FOLLOW-UP to a feature they already have, or a BUILD CHANGE. Trust these labels.
+- The commits of one issue are the steps of building it (data layer, service, UI); together they are one change for the user, not one change per commit. A fix, tweak or tuning inside a NEW FEATURE group is part of building that feature, not a fix or improvement users would notice (e.g. "add speaker identification" then "tune speaker identification sensitivity" is one New bullet).
+
+Sections for this release:
+{plan}
+- A FOLLOW-UP group goes under `### Improved` for `feat`/`perf` commits and `### Fixed` for `fix` commits, or `### New` when it adds something clearly new to the feature.
+- A commit without an issue reference: `feat` goes under `### New` or `### Improved`, `fix` under `### Fixed`, unless it adjusts something another commit in this log introduces, in which case it belongs to that change.
+
 Rules:
 - Output GitHub Markdown only: no title, no preamble, no closing remarks, no code fences around the whole answer.
 - Start with one or two plain sentences summarising the release.
-- Then use these `###` sections, in this order, leaving out any that would be empty: `### New`, `### Improved`, `### Fixed`.
-- Each bullet describes what changed for the user, in plain language, in one line. Merge commits that belong to the same feature into one bullet. Keep the issue reference when commits give one, e.g. "(#7)".
-- Leave out changes users cannot notice (refactors, tests, docs, CI, build scripts, formatting), unless they change how the app is installed or updated; those go in a final short `### Under the hood` section only if worth mentioning.
+- Write exactly one bullet per issue: what the user can now do, in plain language, in one or two sentences, mentioning its main parts (e.g. "Model downloads now run in the background with a progress notification, resume after interruptions, wait for the network and retry on errors, and the setup screen follows their progress (#10).").
+- End each bullet with its group's issue reference, e.g. "(#7)". Never give a bullet an issue reference its commits do not carry.
 - Only describe what the commits say. Do not invent features, numbers or reasons.
 - At most 12 bullets in total.
 
-Commit log (oldest first; "* " starts each commit, followed by its body):
+Commit log, grouped by issue (oldest first within a group; "* " starts each commit, followed by its indented body):
 
 {log}
 """
 
-body = {
-    "model": os.environ["LLM_MODEL"],
-    "messages": [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ],
-    "temperature": 0.3,
-    "max_tokens": 3000,
-}
-if os.environ.get("LLM_DISABLE_THINKING", "1") == "1":
-    body["chat_template_kwargs"] = {"enable_thinking": False}
+BULLET_RE = re.compile(r"\s*[-*+] ")
+REF_RE = re.compile(r"#(\d+)\b")
 
-req = urllib.request.Request(
-    os.environ["LLM_BASE_URL"].rstrip("/") + "/chat/completions",
-    data=json.dumps(body).encode(),
-    headers={
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + os.environ["LLM_API_KEY"],
-    },
-)
-try:
-    with urllib.request.urlopen(req, timeout=300) as resp:
-        data = json.load(resp)
-except urllib.error.HTTPError as e:
-    sys.exit(f"release: LLM request failed: HTTP {e.code}: {e.read().decode(errors='replace')[:500]}")
-except (urllib.error.URLError, TimeoutError) as e:
-    sys.exit(f"release: LLM request failed: {e}")
 
-try:
-    choice = data["choices"][0]
-    text = choice["message"].get("content") or ""
-except (KeyError, IndexError, TypeError):
-    sys.exit(f"release: unexpected LLM response: {json.dumps(data)[:500]}")
+def ask(messages):
+    body = {
+        "model": os.environ["LLM_MODEL"],
+        "messages": messages,
+        "temperature": 0.3,
+        "max_tokens": 3000,
+    }
+    if os.environ.get("LLM_DISABLE_THINKING", "1") == "1":
+        body["chat_template_kwargs"] = {"enable_thinking": False}
+    req = urllib.request.Request(
+        os.environ["LLM_BASE_URL"].rstrip("/") + "/chat/completions",
+        data=json.dumps(body).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + os.environ["LLM_API_KEY"],
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data = json.load(resp)
+    except urllib.error.HTTPError as e:
+        sys.exit(f"release: LLM request failed: HTTP {e.code}: {e.read().decode(errors='replace')[:500]}")
+    except (urllib.error.URLError, TimeoutError) as e:
+        sys.exit(f"release: LLM request failed: {e}")
+    try:
+        choice = data["choices"][0]
+        text = choice["message"].get("content") or ""
+    except (KeyError, IndexError, TypeError):
+        sys.exit(f"release: unexpected LLM response: {json.dumps(data)[:500]}")
+    # Reasoning models may inline their thinking; drop it and any wrapping fence.
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
+    text = re.sub(r"^```(?:markdown|md)?\s*\n(.*)\n```$", r"\1", text, flags=re.S).strip()
+    if choice.get("finish_reason") == "length":
+        sys.exit("release: the LLM hit max_tokens before finishing; retry, or pass --notes-file.")
+    if not text:
+        sys.exit("release: the LLM returned empty release notes; retry, or pass --notes-file.")
+    return text
 
-# Reasoning models may inline their thinking; drop it and any wrapping fence.
-text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
-text = re.sub(r"^```(?:markdown|md)?\s*\n(.*)\n```$", r"\1", text, flags=re.S).strip()
-if choice.get("finish_reason") == "length":
-    sys.exit("release: the LLM hit max_tokens before finishing; retry, or pass --notes-file.")
-if not text:
-    sys.exit("release: the LLM returned empty release notes; retry, or pass --notes-file.")
+
+def tidy(text):
+    """Keep the allowed sections, each bullet only in a section its issues
+    may go to (which also drops bullets citing issues not in the log), and
+    no empty sections. Returns the notes and the bullet count per issue."""
+    intro_marker = object()
+    intro, sections, current, keep = [], [], intro_marker, True
+    for line in text.splitlines():
+        if line.startswith("### "):
+            name = next((s for s in allowed if line[4:].strip().lower().startswith(s.lower())), None)
+            current = [name, []] if name else None
+            if current:
+                sections.append(current)
+            keep = True
+        elif current is intro_marker:
+            intro.append(line)
+        elif current is not None:
+            if BULLET_RE.match(line):
+                refs = REF_RE.findall(line)
+                keep = not refs or any(current[0] in homes.get(r, ()) for r in refs)
+            elif not line.strip():
+                keep = True
+            if keep:
+                current[1].append(line)
+    counts = {}
+    parts = ["\n".join(intro).strip()]
+    for name in allowed:
+        lines = [line for sec_name, sec_lines in sections if sec_name == name for line in sec_lines]
+        if not any(BULLET_RE.match(line) for line in lines):
+            continue
+        for line in lines:
+            if BULLET_RE.match(line):
+                for r in set(REF_RE.findall(line)):
+                    counts[r] = counts.get(r, 0) + 1
+        parts.append(f"### {name}\n\n" + "\n".join(lines).strip())
+    return "\n\n".join(p for p in parts if p), counts
+
+
+# The model still sometimes files part of a new feature under Improved or
+# Fixed, splits one feature over several bullets or makes up an issue
+# reference. tidy() drops the misplaced bullets; split or missing features
+# go back to the model, at most twice, before taking what it gave.
+messages = [
+    {"role": "system", "content": system},
+    {"role": "user", "content": user},
+]
+for attempt in range(3):
+    raw = ask(messages)
+    text, counts = tidy(raw)
+    problems = [f"#{i} has {n} bullets; merge them into one bullet." for i, n in counts.items() if n > 1]
+    problems += [f"#{i} is missing; give it one bullet under `### New`." for i in new_issues if i not in counts]
+    if not problems:
+        break
+    print(f"[release] notes attempt {attempt + 1}: {' '.join(problems)}", file=sys.stderr)
+    messages += [
+        {"role": "assistant", "content": raw},
+        {"role": "user", "content": "Write the full release notes again, following every rule above and fixing these problems:\n" + "\n".join(f"- {p}" for p in problems)},
+    ]
 
 with open(out_path, "w") as f:
     f.write(text + "\n")
