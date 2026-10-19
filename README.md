@@ -85,7 +85,13 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   another app, a small **floating control** shows *Recording* or
   *Paused*, the time, Pause / Resume and Stop; drag it anywhere (it
   rests against the nearest side edge and remembers where), tap it to
-  open the Record screen. It needs Android's *Display over other apps*
+  open the Record screen. It comes in three shapes, chosen in
+  Settings → Recording or with the arrow on the control: **Minimal**
+  (status dot, Pause / Resume, Stop; nothing on it changes by itself,
+  so an e-ink screen is never refreshed between taps), **Standard**
+  (as above) and **Expanded** (also the last sentences transcribed;
+  on e-ink it updates once per sentence, not per word). Minimal is the
+  default on e-ink, Standard elsewhere. It needs Android's *Display over other apps*
   permission, which the app explains once (the first time you start a
   recording, or when you turn it on in Settings → Recording); without
   it, the notification is the control. A **Quick Settings tile**
