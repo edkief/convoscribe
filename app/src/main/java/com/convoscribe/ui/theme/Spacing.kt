@@ -44,6 +44,7 @@ data class Sizes(
     val outline: Dp = 1.dp,
     val activeOutline: Dp = 2.dp,
     val bubbleMaxWidth: Dp = 320.dp,
+    val floatingExpandedWidth: Dp = 300.dp,
     val contentMaxWidth: Dp = 640.dp,
     val elevation: Dp = 1.dp
 )

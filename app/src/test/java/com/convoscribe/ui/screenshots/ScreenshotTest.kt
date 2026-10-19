@@ -14,6 +14,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -31,10 +32,12 @@ import com.convoscribe.data.TranscriptLine
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.overlay.FloatingControlContent
+import com.convoscribe.overlay.FloatingControlUi
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.settings.FloatingShape
 import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
@@ -260,8 +263,43 @@ class ScreenshotTest(private val variant: Variant) {
     @Test
     fun floatingControl() = capture("floating_control") {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            FloatingControlContent(paused = false, elapsedMs = 754_000L, onOpen = {}, onPauseResume = {}, onStop = {})
-            FloatingControlContent(paused = true, elapsedMs = 754_000L, onOpen = {}, onPauseResume = {}, onStop = {})
+            for (paused in listOf(false, true)) {
+                FloatingControlContent(
+                    shape = FloatingShape.STANDARD,
+                    ui = FloatingControlUi(paused = paused, elapsedMs = 754_000L),
+                    onOpen = {},
+                    onPauseResume = {},
+                    onStop = {},
+                    onShapeChange = {}
+                )
+            }
+            for (paused in listOf(false, true)) {
+                FloatingControlContent(
+                    shape = FloatingShape.MINIMAL,
+                    ui = FloatingControlUi(paused = paused),
+                    onOpen = {},
+                    onPauseResume = {},
+                    onStop = {},
+                    onShapeChange = {}
+                )
+            }
+            for (transcript in listOf(
+                FloatingControlUi.transcriptTail(
+                    LIVE_LINES,
+                    "",
+                    FloatingControlUi.maxCharsFor(LocalDensity.current.fontScale)
+                ),
+                null
+            )) {
+                FloatingControlContent(
+                    shape = FloatingShape.EXPANDED,
+                    ui = FloatingControlUi(paused = false, elapsedMs = 754_000L, transcript = transcript),
+                    onOpen = {},
+                    onPauseResume = {},
+                    onStop = {},
+                    onShapeChange = {}
+                )
+            }
         }
     }
 

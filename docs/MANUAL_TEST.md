@@ -738,6 +738,60 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
   where **Identify speakers now** finishes it. **Write down whether it
   happened and how long the session was.**
 
+## 26. Floating control shapes (issue #21)
+
+Run this on a phone and on the **Boox**, with *Display over other
+apps* allowed and Settings → Recording → *Floating control over other
+apps* on. On a fresh install (or *Clear data*), do not touch the
+*Shape* setting before step 1.
+
+**Steps**
+
+1. Open Settings → Recording and read *Shape*. Start a recording and
+   switch to another app.
+2. Tap the arrow (**˅**) at the end of the control three times,
+   looking at the control after each tap. Drag it to the left edge
+   before the second tap.
+3. In **Minimal**, leave the Boox recording for 30 s while speaking,
+   with the control over a static page (a document or the launcher),
+   and watch the control.
+4. Tap the dot in Minimal; leave the app again. Pause and Resume from
+   the control in each shape.
+5. In **Expanded**, speak a few sentences. On the phone, then on the
+   Boox, watch the text.
+6. With TalkBack on, move through the control in each shape.
+7. Stop. Open Settings → Recording, choose another shape, start a
+   recording and leave the app. Turn *Floating control over other
+   apps* off and on.
+8. Set the system font size to the largest and repeat step 5 on the
+   phone.
+
+**Expected**
+
+- Step 1: *Shape* shows **Minimal** on the Boox and **Standard** on
+  the phone. It is only shown while the floating control is on.
+- Step 2: the shapes go Standard → Expanded → Minimal → Standard on
+  the phone (Minimal → Standard → Expanded → Minimal on the Boox). The
+  arrow points down (*Show more*) except on Expanded, where it points
+  up (*Show less*). The control stays against the edge it rests on, at
+  the same height, fully on screen, also after it grows. Settings →
+  Recording → *Shape* follows each change.
+- Step 3: **no refresh flashes** on the Boox for the whole 30 s;
+  Minimal shows no time and no text.
+- Step 4: the dot opens the Record screen. Pause/Resume works in every
+  shape; in Minimal only the dot colour and the Pause/Play icon change.
+- Step 5: the card shows *Listening…* until the first sentence, then
+  the end of the last two sentences, with the newest words always
+  visible (a leading *…* when cut). On the phone the words being
+  recognised appear live; on the Boox the text changes only when a
+  sentence is finished, and the card never changes size.
+- Step 6: TalkBack reads *Recording* / *Paused* on the dot in Minimal,
+  and *Show more* / *Show less* on the arrow.
+- Step 7: the control opens in the shape chosen in Settings; turning
+  it off and on keeps the shape.
+- Step 8: the last words are still visible at the end of the card,
+  not cut off.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

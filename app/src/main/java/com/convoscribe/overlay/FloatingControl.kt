@@ -11,10 +11,10 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.getSystemService
-import androidx.core.view.doOnLayout
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,10 +23,10 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RecordingState
 import com.convoscribe.settings.AppSettings
 import com.convoscribe.settings.DisplayMode
+import com.convoscribe.settings.FloatingShape
 import com.convoscribe.ui.theme.ConvoScribeTheme
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -34,6 +34,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -54,6 +56,14 @@ import kotlinx.coroutines.launch
  * with the finger, so they cannot drive the window's own position. On
  * release the control snaps to the nearest side edge and the position
  * is saved ([FloatingPosition]).
+ *
+ * The content sees the session only through [FloatingControlUi], the
+ * part its [FloatingShape] draws, deduplicated, so the minimal shape
+ * never recomposes while recording and the standard one once a second
+ * (issue #21). [onShapeChange] saves the shape chosen with the
+ * control's arrow. When the control changes size (another shape, a
+ * longer time), it is placed again at its saved position, so it stays
+ * against its edge and on screen.
  */
 class FloatingControl(
     private val context: Context,
@@ -62,7 +72,8 @@ class FloatingControl(
     private val settings: StateFlow<AppSettings>,
     private val onOpen: () -> Unit,
     private val onPauseResume: () -> Unit,
-    private val onStop: () -> Unit
+    private val onStop: () -> Unit,
+    private val onShapeChange: (FloatingShape) -> Unit
 ) {
     private val windowManager: WindowManager = requireNotNull(context.getSystemService())
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -101,21 +112,29 @@ class FloatingControl(
         val compose = ComposeView(context).apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
             setContent {
-                val current by state.collectAsStateWithLifecycle()
                 val appSettings by settings.collectAsStateWithLifecycle()
                 val mode = DisplayMode.fromKey(appSettings.displayMode) ?: DisplayMode.AUTO
                 val eink = DisplayMode.resolvesToEink(mode, DisplayMode.isEinkDevice(Build.MANUFACTURER, Build.BRAND))
+                val shape = FloatingShape.resolve(appSettings.floatingShape, eink)
+                // Start from the current state, not a placeholder, so the first frame is already right.
+                val maxChars = FloatingControlUi.maxCharsFor(context.resources.configuration.fontScale)
+                val (uiFlow, initial) = remember(shape, eink, maxChars) {
+                    state.map { FloatingControlUi.of(it, shape, eink, maxChars) }.distinctUntilChanged() to
+                        FloatingControlUi.of(state.value, shape, eink, maxChars)
+                }
+                val ui by uiFlow.collectAsStateWithLifecycle(initial)
                 ConvoScribeTheme(
                     darkTheme = isSystemInDarkTheme() && !eink,
                     eink = eink,
                     dynamicColor = appSettings.dynamicColor
                 ) {
                     FloatingControlContent(
-                        paused = current.phase == RecordingPhase.PAUSED,
-                        elapsedMs = current.elapsedMs,
+                        shape = shape,
+                        ui = ui,
                         onOpen = onOpen,
                         onPauseResume = onPauseResume,
-                        onStop = onStop
+                        onStop = onStop,
+                        onShapeChange = onShapeChange
                     )
                 }
             }
@@ -124,6 +143,11 @@ class FloatingControl(
             addView(compose)
             setViewTreeLifecycleOwner(lifecycleOwner)
             setViewTreeSavedStateRegistryOwner(lifecycleOwner)
+            // First layout, then every change of size: keep it against its edge.
+            addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                val resized = right - left != oldRight - oldLeft || bottom - top != oldBottom - oldTop
+                if (resized && !dragging) place(loadPosition())
+            }
         }
         lifecycleOwner.start()
         val added = runCatching { windowManager.addView(dragFrame, params) }.isSuccess
@@ -134,7 +158,6 @@ class FloatingControl(
         }
         frame = dragFrame
         owner = lifecycleOwner
-        dragFrame.doOnLayout { place(loadPosition()) }
     }
 
     private fun hide() {
@@ -210,7 +233,10 @@ class FloatingControl(
         private var downY = 0f
         private var lastX = 0f
         private var lastY = 0f
-        private var dragging = false
+
+        /** Whether a drag is under way; the control is not re-placed meanwhile. */
+        var dragging = false
+            private set
 
         override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
             when (event.actionMasked) {

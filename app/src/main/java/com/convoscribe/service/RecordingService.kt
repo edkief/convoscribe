@@ -247,7 +247,8 @@ class RecordingService : Service() {
             onPauseResume = {
                 if (controller().state.value.phase == RecordingPhase.PAUSED) handleResume() else handlePause()
             },
-            onStop = ::handleStop
+            onStop = ::handleStop,
+            onShapeChange = { shape -> container.settingsRepository.update { it.copy(floatingShape = shape.key) } }
         ).also { floatingControl = it }
         overlayObserver = combine(
             controller().state.map { it.phase.active }.distinctUntilChanged(),

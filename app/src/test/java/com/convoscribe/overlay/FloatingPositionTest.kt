@@ -45,6 +45,18 @@ class FloatingPositionTest {
     }
 
     @Test
+    fun place_keepsAWiderControlOnScreenAgainstTheEndEdge() {
+        // Another shape (issue #21): same position, wider control.
+        val end = FloatingPosition(Edge.END, 0.3f)
+        for (width in listOf(160, 400, 800)) {
+            val x = end.x(width, screenWidth, margin = 16)
+            assertEquals(screenWidth - 16, x + width)
+        }
+        // Wider than the screen: pinned to the left rather than off it.
+        assertEquals(0, end.x(viewWidth = 1200, screenWidth = screenWidth, margin = 16))
+    }
+
+    @Test
     fun snapThenPlace_isStableOnAnotherScreenSize() {
         val position = snap(x = 700, y = 475)
         // Rotated: same edge, same relative height.

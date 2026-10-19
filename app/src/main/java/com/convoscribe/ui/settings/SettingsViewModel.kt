@@ -129,6 +129,8 @@ data class SettingsUiState(
     val dynamicColor: Boolean = false,
     /** The floating recording control over other apps (issue #7); written immediately. */
     val floatingControl: Boolean = true,
+    /** [com.convoscribe.settings.FloatingShape.key], or `null` for the device default (issue #21); written immediately. */
+    val floatingShape: String? = null,
     /** Check GitHub for a newer release on start (issue #15); written immediately. */
     val updateCheckAuto: Boolean = true,
     /** Offer pre-releases too (issue #15); written immediately. */
@@ -374,6 +376,11 @@ class SettingsViewModel(
         repo.update { it.copy(floatingControl = enabled, overlayPromptShown = it.overlayPromptShown || enabled) }
     }
 
+    /** Persist the floating control's shape immediately (issue #21). */
+    fun setFloatingShape(shape: String) {
+        repo.update { it.copy(floatingShape = shape) }
+    }
+
     /**
      * Persist *Identify speakers* immediately (issue #11). Switching
      * starts no work at once: pending sessions wait for the next
@@ -455,6 +462,7 @@ class SettingsViewModel(
             displayMode = current.displayMode,
             dynamicColor = current.dynamicColor,
             floatingControl = current.floatingControl,
+            floatingShape = current.floatingShape,
             updateCheckAuto = current.updateCheckAuto,
             updateIncludePrereleases = current.updateIncludePrereleases,
             speakerIdMode = current.speakerIdMode,

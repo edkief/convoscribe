@@ -429,6 +429,19 @@ class SettingsViewModelTest {
         assertEquals("charging", repo.settings.value.speakerIdMode)
     }
 
+    @Test
+    fun floatingShape_isWrittenImmediately_andMirroredInTheState() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertNull(vm.state.value.floatingShape)
+        vm.setFloatingShape("expanded")
+        advanceUntilIdle()
+        assertEquals("expanded", repo.settings.value.floatingShape)
+        assertEquals("expanded", vm.state.value.floatingShape)
+        vm.save()
+        assertEquals("expanded", repo.settings.value.floatingShape)
+    }
+
     /**
      * Trivial in-memory [ChatClient] for tests. Returns the
      * configured `models` list, or throws the configured `error`

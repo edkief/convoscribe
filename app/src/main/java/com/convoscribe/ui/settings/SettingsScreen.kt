@@ -64,6 +64,7 @@ import com.convoscribe.R
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.settings.DisplayMode
+import com.convoscribe.settings.FloatingShape
 import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.ErrorBanner
@@ -216,6 +217,7 @@ fun SettingsScreen(navController: NavHostController) {
                 if (enabled && !overlayGranted) askOverlay = true
             },
             onAllowOverlay = { context.startActivity(OverlayPermission.settingsIntent(context)) },
+            onFloatingShapeChange = vm::setFloatingShape,
             onUpdateCheckAutoChange = vm::setUpdateCheckAuto,
             onUpdateIncludePrereleasesChange = vm::setUpdateIncludePrereleases,
             onSpeakerIdModeChange = vm::setSpeakerIdMode
@@ -239,6 +241,7 @@ internal class SettingsActions(
     val onDynamicColorChange: (Boolean) -> Unit = {},
     val onFloatingControlChange: (Boolean) -> Unit = {},
     val onAllowOverlay: () -> Unit = {},
+    val onFloatingShapeChange: (String) -> Unit = {},
     val onUpdateCheckAutoChange: (Boolean) -> Unit = {},
     val onUpdateIncludePrereleasesChange: (Boolean) -> Unit = {},
     val onSpeakerIdModeChange: (String) -> Unit = {}
@@ -291,8 +294,10 @@ internal fun SettingsBody(
             )
             RecordingSection(
                 floatingControl = state.floatingControl,
+                floatingShape = state.floatingShape,
                 overlayGranted = overlayGranted,
                 onFloatingControlChange = actions.onFloatingControlChange,
+                onFloatingShapeChange = actions.onFloatingShapeChange,
                 onAllowOverlay = actions.onAllowOverlay
             )
             LanguageModelSection(
@@ -399,14 +404,17 @@ private fun AppearanceSection(
 
 /**
  * "Recording" section: the floating control over other apps (issue
- * #7). While it is on but the permission is missing, says so and
- * offers to open the system page.
+ * #7) and, while it is on, its shape (issue #21; [floatingShape]
+ * `null` shows the device default). While it is on but the permission
+ * is missing, says so and offers to open the system page.
  */
 @Composable
 private fun RecordingSection(
     floatingControl: Boolean,
+    floatingShape: String?,
     overlayGranted: Boolean,
     onFloatingControlChange: (Boolean) -> Unit,
+    onFloatingShapeChange: (String) -> Unit,
     onAllowOverlay: () -> Unit
 ) {
     SectionCard(
@@ -429,6 +437,15 @@ private fun RecordingSection(
             }
             Switch(checked = floatingControl, onCheckedChange = null)
         }
+        if (floatingControl) {
+            FieldLabel(text = stringResource(R.string.settings_floating_shape_label))
+            ChoiceGroup(
+                options = FLOATING_SHAPES.map { (shape, label) -> shape.key to stringResource(label) },
+                selected = FloatingShape.resolve(floatingShape, AppTheme.isEink).key,
+                onSelect = onFloatingShapeChange
+            )
+            SupportingText(text = stringResource(R.string.settings_floating_shape_help))
+        }
         if (floatingControl && !overlayGranted) {
             NoticeText(text = stringResource(R.string.settings_floating_control_needs_permission))
             TextButton(onClick = onAllowOverlay) {
@@ -437,6 +454,12 @@ private fun RecordingSection(
         }
     }
 }
+
+private val FLOATING_SHAPES = listOf(
+    FloatingShape.MINIMAL to R.string.settings_floating_shape_minimal,
+    FloatingShape.STANDARD to R.string.settings_floating_shape_standard,
+    FloatingShape.EXPANDED to R.string.settings_floating_shape_expanded
+)
 
 private val SPEAKER_ID_MODES = listOf(
     SpeakerIdMode.AUTO to R.string.settings_speakers_id_mode_auto,
