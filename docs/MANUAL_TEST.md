@@ -792,6 +792,58 @@ apps* on. On a fresh install (or *Clear data*), do not touch the
 - Step 8: the last words are still visible at the end of the card,
   not cut off.
 
+## 27. Search across sessions (issue #24)
+
+Run this on a phone and on the **Boox**. You need a few sessions:
+at least one in French with accented words (e.g. *réunion*, *été*),
+one in English, a renamed speaker (e.g. *Élodie*), a session with a
+saved summary, and sessions on different days. To check the upgrade,
+install this build **over** v0.4.0 with those sessions already
+recorded, without clearing data.
+
+**Steps**
+
+1. On the phone, tap the search icon on Home (on the Boox, the
+   *Search conversations…* field above the list).
+2. Type `reunion` (no accent), then `RÉUNION`, then `reun`.
+3. Type the renamed speaker's name without accents (`elodie`), then a
+   word from the saved summary, then a word from a session title.
+4. Type two words that are said in the same line, then two words that
+   are never in the same line, title or summary.
+5. Tap a transcript line in the results.
+6. Go back and tap a summary result; go back and tap a session's
+   title.
+7. Choose *Français* in the language chip, *Last 7 days* in the date
+   chip, then a person in the third chip; set them back to *Any*.
+8. On the Boox, type a word of six letters at a normal speed and
+   watch the screen; then type and press the keyboard's Search key.
+9. Delete a session that matched and search again; re-transcribe or
+   re-identify speakers on another and search for one of its words.
+
+**Expected**
+
+- Step 2: all three find the French lines with *réunion*; the matched
+  word is highlighted (bold; also underlined on the Boox) and each
+  line shows its speaker and time. Results are grouped per session,
+  newest first; *Show N more lines* reveals the rest.
+- Step 3: the speaker, summary and title each find their session; the
+  card shows *Speakers* or *Summary* with the match highlighted.
+- Step 4: a line with both words is found; no result for words that
+  are never together.
+- Step 5: the session opens on the Transcript tab, scrolled to that
+  line, which is highlighted; the player shows the line's time and is
+  **not playing**. Play starts from there.
+- Step 6: the summary result opens the Summary tab; the title opens
+  the Transcript tab at the top.
+- Step 7: each filter narrows the results at once; with no match the
+  screen says so and mentions the filters.
+- Step 8: the Boox refreshes the results **once** after you stop
+  typing (no refresh per letter); the Search key shows results at once.
+- Step 9: the deleted session no longer appears; the re-processed
+  session is found by its new text.
+- After the upgrade from v0.4.0, sessions recorded before it are found
+  too.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
