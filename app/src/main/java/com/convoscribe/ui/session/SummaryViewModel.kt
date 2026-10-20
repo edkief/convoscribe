@@ -8,9 +8,12 @@ import com.convoscribe.TAG
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.PromptBuilder
+import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.ui.UiText
@@ -20,7 +23,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -39,13 +44,22 @@ import kotlinx.coroutines.launch
  * @property configured `false` when either the LLM base URL or the
  *   model is blank — the screen swaps to a "Set up a language
  *   model endpoint in Settings" placeholder in that case.
+ * @property savedTemplateName name of the template [saved] was
+ *   written with (issue #27); `null` for summaries from before
+ *   templates.
+ * @property templates built-in and user templates for the picker.
+ * @property selectedKey template the next summary uses: the session's
+ *   own, or the Settings default when it has none.
  */
 data class SummaryUiState(
     val saved: String? = null,
     val streaming: String = "",
     val running: Boolean = false,
     val error: UiText? = null,
-    val configured: Boolean = true
+    val configured: Boolean = true,
+    val savedTemplateName: String? = null,
+    val templates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
+    val selectedKey: String = SummaryTemplates.MEETING_KEY
 )
 
 /**
@@ -64,11 +78,15 @@ data class SummaryUiState(
  *    text is blank, `error` is set to the "transcript is empty" text
  *    and the LLM client is **not** called.
  *  - Otherwise the LLM is called with
- *    `PromptBuilder.summary(text, settings.maxTranscriptChars)`.
- *    Every token is appended to `streaming`.
+ *    `PromptBuilder.summary(text, settings.maxTranscriptChars, body)`,
+ *    `body` being the selected template's (Meeting when that
+ *    template no longer exists). Every token is appended to
+ *    `streaming`.
  *  - On completion the SUMMARY kind is wiped, the full text is
- *    saved as a fresh ASSISTANT row, and `streaming` / `running`
- *    are reset.
+ *    saved as a fresh ASSISTANT row with the template's name, and
+ *    `streaming` / `running` are reset.
+ *  - [selectTemplate] stores the template on the session, so it
+ *    sticks for the next summary too.
  *  - Any failure (an LLM transport or HTTP error, or anything
  *    unexpected) sets `error` to
  *    [com.convoscribe.llm.toUserMessage], logs the stack trace
@@ -82,14 +100,17 @@ data class SummaryUiState(
  * @param chatClient LLM streaming client — fakes are accepted
  *   here so the unit test can drive deterministic token sequences.
  * @param settings persisted settings; the summary budget comes
- *   from `maxTranscriptChars`, and `configured` is derived from
- *   `llmBaseUrl` / `llmModel`.
+ *   from `maxTranscriptChars`, `configured` is derived from
+ *   `llmBaseUrl` / `llmModel`, and `defaultSummaryTemplate` applies
+ *   to sessions that have no template of their own.
+ * @param templates the summary templates (issue #27).
  */
 class SummaryViewModel(
     private val sessionId: Long,
     private val repository: SessionRepository,
     private val chatClient: ChatClient,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val templates: SummaryTemplateStore
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SummaryUiState> =
@@ -114,8 +135,20 @@ class SummaryViewModel(
         viewModelScope.launch {
             repository.observeMessages(sessionId, MessageKind.SUMMARY).collect { rows ->
                 val assistant = rows.lastOrNull { it.role == MessageRole.ASSISTANT }
-                _state.value = _state.value.copy(saved = assistant?.content)
+                _state.value = _state.value.copy(
+                    saved = assistant?.content,
+                    savedTemplateName = assistant?.templateName
+                )
             }
+        }
+        viewModelScope.launch {
+            templates.observeAll().collect { list -> _state.update { it.copy(templates = list) } }
+        }
+        // The session's own template, or the default while it has none.
+        viewModelScope.launch {
+            combine(repository.observeSession(sessionId), settings.settings) { session, s ->
+                session?.summaryTemplate ?: s.defaultSummaryTemplate
+            }.collect { key -> _state.update { it.copy(selectedKey = key) } }
         }
         // Mirror the configured flag from the repository. Settings
         // is a `StateFlow`, so any future edit (the user types a
@@ -138,6 +171,15 @@ class SummaryViewModel(
     }
 
     /**
+     * Use template [key] for this session's summaries from now on.
+     * Does not regenerate; the user taps Summarise or Regenerate.
+     */
+    fun selectTemplate(key: String) {
+        _state.update { it.copy(selectedKey = key) }
+        viewModelScope.launch { repository.setSummaryTemplate(sessionId, key) }
+    }
+
+    /**
      * Drive the streaming summary call. No-op when a previous run
      * is still in flight (`running == true`); otherwise the
      * transcript is rendered, the streaming flow is collected,
@@ -157,7 +199,8 @@ class SummaryViewModel(
                 return@launch
             }
             val maxChars = settings.settings.value.maxTranscriptChars
-            val messages = PromptBuilder.summary(transcript, maxChars)
+            val template = SummaryTemplates.resolve(_state.value.selectedKey, templates.getUserTemplates())
+            val messages = PromptBuilder.summary(transcript, maxChars, template.body)
 
             _state.value = _state.value.copy(
                 streaming = "",
@@ -200,7 +243,8 @@ class SummaryViewModel(
                         sessionId = sessionId,
                         kind = MessageKind.SUMMARY,
                         role = MessageRole.ASSISTANT,
-                        content = full
+                        content = full,
+                        templateName = template.name
                     )
                 }
                 _state.value = _state.value.copy(

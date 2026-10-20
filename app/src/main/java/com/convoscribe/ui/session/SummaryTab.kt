@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -31,6 +32,7 @@ import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -40,7 +42,11 @@ import com.convoscribe.ui.theme.AppTheme
  *    Settings;
  *  - nothing saved yet: an empty state with Summarise;
  *  - running: Stop with a spinner, and the summary as it streams in;
- *  - saved: Regenerate and Copy above the summary in a card.
+ *  - saved: Regenerate and Copy above the summary in a card, with
+ *    the name of the template it was written with.
+ *
+ * Above every state but the first, a template picker (issue #27)
+ * chooses the template the next Summarise or Regenerate uses.
  *
  * A failure shows an error banner with Retry. The text is selectable;
  * Copy puts all of it on the clipboard. The LLM's raw text is shown
@@ -51,7 +57,8 @@ internal fun SummaryTab(
     state: SummaryUiState,
     onSummarise: () -> Unit,
     onCancel: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onSelectTemplate: (String) -> Unit = {}
 ) {
     if (!state.configured) {
         EmptyState(
@@ -64,16 +71,36 @@ internal fun SummaryTab(
     }
     val saved = state.saved
     val text = if (state.running) state.streaming else saved.orEmpty()
-    if (text.isBlank() && !state.running && state.error == null) {
-        EmptyState(
-            icon = painterResource(R.drawable.ic_conversation),
-            title = stringResource(R.string.session_summary_empty),
-            actionLabel = stringResource(R.string.session_summary_summarise),
-            onAction = onSummarise
+    val spacing = AppTheme.spacing
+    val picker: @Composable () -> Unit = {
+        SummaryTemplatePicker(
+            label = stringResource(R.string.session_summary_template_label),
+            templates = state.templates,
+            selectedKey = state.selectedKey,
+            onSelect = onSelectTemplate,
+            enabled = !state.running
         )
+    }
+    if (text.isBlank() && !state.running && state.error == null) {
+        Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                modifier = Modifier
+                    .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                    .fillMaxWidth()
+                    .padding(start = spacing.screen, end = spacing.screen, top = spacing.l)
+            ) {
+                picker()
+            }
+            EmptyState(
+                icon = painterResource(R.drawable.ic_conversation),
+                title = stringResource(R.string.session_summary_empty),
+                actionLabel = stringResource(R.string.session_summary_summarise),
+                onAction = onSummarise,
+                modifier = Modifier.weight(1f)
+            )
+        }
         return
     }
-    val spacing = AppTheme.spacing
     val clipboard = LocalClipboardManager.current
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
@@ -84,6 +111,7 @@ internal fun SummaryTab(
                 .padding(horizontal = spacing.screen, vertical = spacing.l),
             verticalArrangement = Arrangement.spacedBy(spacing.m)
         ) {
+            picker()
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(spacing.m)
@@ -114,6 +142,14 @@ internal fun SummaryTab(
                     message = message.asString(),
                     actionLabel = stringResource(R.string.session_summary_retry),
                     onAction = onSummarise
+                )
+            }
+            val templateName = state.savedTemplateName
+            if (!state.running && !saved.isNullOrBlank() && templateName != null) {
+                Text(
+                    text = stringResource(R.string.session_summary_template_used, templateName),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             if (text.isNotBlank()) {

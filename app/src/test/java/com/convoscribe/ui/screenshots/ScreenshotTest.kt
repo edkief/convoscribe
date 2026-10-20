@@ -427,7 +427,7 @@ class ScreenshotTest(private val variant: Variant) {
 
     @Test
     fun sessionSummary() = capture("session_summary") {
-        session(tab = 1, summary = SummaryUiState(saved = SUMMARY))
+        session(tab = 1, summary = SummaryUiState(saved = SUMMARY, savedTemplateName = "Meeting"))
     }
 
     @Test

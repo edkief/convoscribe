@@ -145,7 +145,8 @@ fun SessionScreen(
                     sessionId = sessionId,
                     repository = container.sessionRepository,
                     chatClient = container.chatClient,
-                    settings = container.settingsRepository
+                    settings = container.settingsRepository,
+                    templates = container.summaryTemplates
                 )
             }
         }
@@ -347,6 +348,7 @@ fun SessionScreen(
         ),
         onSummarise = { summaryVm.summarise() },
         onCancelSummary = { summaryVm.cancel() },
+        onSelectSummaryTemplate = summaryVm::selectTemplate,
         onAsk = { question -> askVm.ask(question) },
         onRetryAsk = { askVm.retryLast() },
         onCancelAsk = { askVm.cancel() },
@@ -408,6 +410,7 @@ internal fun SessionBody(
     onReidentifySpeakers: (Int) -> Unit,
     onSummarise: () -> Unit,
     onCancelSummary: () -> Unit,
+    onSelectSummaryTemplate: (String) -> Unit = {},
     onAsk: (String) -> Unit,
     onRetryAsk: () -> Unit,
     onCancelAsk: () -> Unit,
@@ -597,6 +600,7 @@ internal fun SessionBody(
                     state = summaryState,
                     onSummarise = onSummarise,
                     onCancel = onCancelSummary,
+                    onSelectTemplate = onSelectSummaryTemplate,
                     onOpenSettings = onOpenSettings
                 )
                 else -> AskTab(
