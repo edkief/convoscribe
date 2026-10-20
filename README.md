@@ -94,22 +94,34 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   audio and transcript are appended to the same session, in its own
   language.
 - **Foreground microphone service** keeps recording alive while the
-  screen is off or the app is in the background, with Pause / Resume
-  and Stop actions on the persistent notification.
+  screen is off or the app is in the background, with Mark, Pause /
+  Resume and Stop actions on the persistent notification.
 - **Pause and resume** a recording (Record screen, notification,
   floating control or tile) without ending the session: the microphone
   is released, nothing is recorded or transcribed while paused, and
   the session is only diarized once you stop. The timer and the
   transcript times follow the recorded audio, so they stay in step
   with playback.
+- **Mark moments** while recording, so the parts that matter are easy
+  to find again: one tap on *Mark* on the Record screen, the
+  notification (which then shows the count) or the floating control
+  (every shape) marks the current point of the recording, also while
+  paused (it marks the paused position). On the Record screen you can
+  add a short note to the mark you just took; it is never required. In
+  the session, each mark is a flag above the line being spoken at the
+  time, with its note, and a tick on the seek bar; tap a flag to jump
+  there. *Marks (n)* in the player (or *Marks* in the menu) lists them
+  to jump to, edit the note of or delete. Summaries are asked to give
+  marked moments priority, and the shared transcript includes them.
 - **Record from anywhere.** While a session is open and you switch to
   another app, a small **floating control** shows *Recording* or
-  *Paused*, the time, Pause / Resume and Stop; drag it anywhere (it
+  *Paused*, the time, Mark, Pause / Resume and Stop; drag it anywhere (it
   rests against the nearest side edge and remembers where), tap it to
   open the Record screen. It comes in three shapes, chosen in
   Settings → Recording or with the arrow on the control: **Minimal**
-  (status dot, Pause / Resume, Stop; nothing on it changes by itself,
-  so an e-ink screen is never refreshed between taps), **Standard**
+  (status dot, Mark, Pause / Resume, Stop; nothing on it changes by
+  itself, and Mark answers with a vibration only, so an e-ink screen is
+  never refreshed between taps), **Standard**
   (as above) and **Expanded** (also the last sentences transcribed;
   on e-ink it updates once per sentence, not per word). Minimal is the
   default on e-ink, Standard elsewhere. It needs Android's *Display over other apps*
@@ -406,6 +418,8 @@ one package per concern:
   `speakerEdited` and `sessions.transcriptEdited`; `TranscriptEditor`
   computes the edited rows and `TokenAligner` re-times edited text, and
   diarization honours the line flags.
+  Marks (issue #30, schema v8) are `MarkEntity` rows: a recorded-audio
+  time and an optional note per session, independent of the segments.
 - `settings/` — `SettingsRepository` (SharedPreferences),
   `AppSettings`, `SecretStore` (EncryptedSharedPreferences) for
   the LLM API key.

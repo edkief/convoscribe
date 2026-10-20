@@ -942,6 +942,53 @@ using a session that already has a summary.
 - On the Boox, the picker menus and the editor dialog appear without
   animation and are readable in black and white.
 
+## 30. Mark moments while recording (issue #30)
+
+Run this on a phone and on the **Boox** (floating control in
+*Minimal*), with the floating control on. To check the upgrade, install
+over the previous version without clearing data first.
+
+**Steps**
+
+1. Open a session recorded before the upgrade.
+2. Start a recording. After ~10 s tap *Mark* (right of Stop) on the
+   Record screen, then *Add note* in the snackbar and type `budget`.
+3. Switch to another app. Tap the flag on the floating control in each
+   shape (use the arrow to change shape); on the Boox, in *Minimal*.
+4. Pull down the notification and tap *Mark*.
+5. Pause (anywhere), wait 10 s, tap *Mark* in the notification, then
+   resume and stop.
+6. Open the session. Look at the transcript and the seek bar; tap a
+   flag. Tap *Marks (n)* in the player, then a mark.
+7. In the Marks list, edit a note, then delete a mark (confirm).
+8. Share the transcript to a notes app.
+9. With a working LLM endpoint, Summary tab → Summarise.
+10. Continue recording the session (mic icon), tap *Mark* once, stop.
+11. Delete the session.
+
+**Expected**
+
+- Step 1: the session opens as before; no flags, no ticks, no
+  *Marks* button, and *Marks* is disabled in the menu.
+- Step 2: *Marked at 00:10* (or so); the note dialog saves `budget`.
+- Step 3: each tap vibrates; the control does not redraw (on the Boox
+  the screen does not flash) and the notification text gains
+  *· n marks*.
+- Step 4: the count in the notification goes up at once.
+- Step 5: the paused mark has the paused time (the timer did not
+  move).
+- Step 6: each mark is a flag with its time (and note) above the line
+  being spoken then, and a tick on the seek bar at that point; tapping
+  a flag or a list row seeks there.
+- Step 7: the note changes in the list and the transcript; the deleted
+  flag and tick disappear.
+- Step 8: each mark is a `[mm:ss] ⚑ Mark: note` line above its line.
+- Step 9: the summary gives the noted moments (e.g. `budget`) a
+  prominent place.
+- Step 10: the new mark sits after the old audio, near the end of the
+  seek bar; the notification counted on from the existing marks.
+- Step 11: the session and its marks are gone.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
