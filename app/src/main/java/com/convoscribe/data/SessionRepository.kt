@@ -46,7 +46,8 @@ class SessionRepository(
         title: String,
         language: String,
         numSpeakers: Int?,
-        participants: List<String>?
+        participants: List<String>?,
+        summaryTemplate: String?
     ): Long {
         val row = SessionEntity(
             title = title,
@@ -54,7 +55,8 @@ class SessionRepository(
             language = language,
             status = SessionStatus.RECORDING,
             numSpeakers = normaliseSpeakerCount(numSpeakers),
-            participants = ParticipantsCodec.encode(participants)
+            participants = ParticipantsCodec.encode(participants),
+            summaryTemplate = summaryTemplate
         )
         val id = sessionDao.insert(row)
         sessionDao.update(row.copy(id = id, audioPath = File(recordingsDir, "$id.wav").absolutePath))
@@ -80,7 +82,8 @@ class SessionRepository(
         engine: String,
         model: String,
         segments: List<SegmentPiece>,
-        audio: File
+        audio: File,
+        summaryTemplate: String? = null
     ): Long = db.withTransaction {
         val row = SessionEntity(
             title = title,
@@ -90,6 +93,7 @@ class SessionRepository(
             status = SessionStatus.TRANSCRIBED,
             numSpeakers = normaliseSpeakerCount(numSpeakers),
             participants = ParticipantsCodec.encode(participants),
+            summaryTemplate = summaryTemplate,
             asrEngine = engine,
             asrModel = model
         )

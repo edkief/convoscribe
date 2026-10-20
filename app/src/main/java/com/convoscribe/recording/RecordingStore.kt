@@ -20,13 +20,15 @@ interface RecordingStore {
      * session list; the language tells the diarization worker
      * which model to use. [numSpeakers] (`-1` automatic) and
      * [participants] (`null` anyone) are the per-conversation
-     * options chosen before Start.
+     * options chosen before Start, as is [summaryTemplate] (`null`
+     * follows the default).
      */
     suspend fun createSession(
         title: String,
         language: String,
         numSpeakers: Int? = null,
-        participants: List<String>? = null
+        participants: List<String>? = null,
+        summaryTemplate: String? = null
     ): Long
 
     /**

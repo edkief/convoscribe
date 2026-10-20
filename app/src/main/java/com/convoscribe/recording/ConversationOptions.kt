@@ -2,6 +2,7 @@ package com.convoscribe.recording
 
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.AppSettings
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -21,12 +22,14 @@ import java.util.Locale
  * @property participants enrolled names expected in the conversation,
  *   or `null` for anyone.
  * @property title optional; blank keeps the date-based default.
+ * @property summaryTemplate summary template key (issue #27).
  */
 data class ConversationOptions(
     val language: String,
     val numSpeakers: Int = -1,
     val participants: List<String>? = null,
-    val title: String = ""
+    val title: String = "",
+    val summaryTemplate: String = SummaryTemplates.MEETING_KEY
 ) {
     /**
      * Session title for these options: [title] trimmed and capped at
@@ -46,7 +49,8 @@ data class ConversationOptions(
         fun fromSettings(settings: AppSettings): ConversationOptions = ConversationOptions(
             language = settings.asrLanguage,
             numSpeakers = settings.numSpeakers,
-            participants = ParticipantsCodec.normalise(settings.defaultParticipants)
+            participants = ParticipantsCodec.normalise(settings.defaultParticipants),
+            summaryTemplate = settings.defaultSummaryTemplate
         )
     }
 }

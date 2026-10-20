@@ -172,7 +172,8 @@ class RecordingController(
                         title = newOptions.sessionTitle(clock()),
                         language = lang,
                         numSpeakers = newOptions.numSpeakers,
-                        participants = newOptions.participants
+                        participants = newOptions.participants,
+                        summaryTemplate = newOptions.summaryTemplate
                     )
                     wav = WavWriter(File(store.audioPath(id)))
                 }

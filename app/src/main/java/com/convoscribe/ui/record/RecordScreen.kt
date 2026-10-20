@@ -50,6 +50,8 @@ import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
@@ -110,6 +112,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                     controller = container.recordingController,
                     settings = container.settingsRepository,
                     enrolled = container.enrolledSpeakers,
+                    templates = container.summaryTemplates,
                     missingModels = { language ->
                         val engine = container.settingsRepository.settings.value.asrEngine
                         container.modelStore.missing(ModelCatalog.requiredFor(language, engine)).isNotEmpty()
@@ -121,6 +124,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val state by vm.state.collectAsStateWithLifecycle()
     val options by vm.options.collectAsStateWithLifecycle()
     val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
+    val summaryTemplates by vm.summaryTemplates.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
@@ -189,11 +193,13 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         inputLevel = state.inputLevel,
         options = options,
         enrolledNames = enrolledNames,
+        summaryTemplates = summaryTemplates,
         optionActions = ConversationOptionActions(
             onLanguageChange = vm::setLanguage,
             onNumSpeakersChange = vm::setNumSpeakers,
             onParticipantsChange = vm::setParticipants,
             onTitleChange = vm::setTitle,
+            onSummaryTemplateChange = vm::setSummaryTemplate,
             onSaveAsDefault = vm::saveAsDefault
         ),
         onBack = { navController.popBackStack() },
@@ -274,6 +280,7 @@ internal fun RecordBody(
     continuing: Boolean = false,
     options: ConversationOptions? = null,
     enrolledNames: List<String> = emptyList(),
+    summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     optionActions: ConversationOptionActions = ConversationOptionActions(),
     inputLevel: Float = 0f,
     onBack: () -> Unit,
@@ -314,10 +321,12 @@ internal fun RecordBody(
                             ConversationOptionsForm(
                                 options = options,
                                 enrolledNames = enrolledNames,
+                                summaryTemplates = summaryTemplates,
                                 onLanguageChange = optionActions.onLanguageChange,
                                 onNumSpeakersChange = optionActions.onNumSpeakersChange,
                                 onParticipantsChange = optionActions.onParticipantsChange,
                                 onTitleChange = optionActions.onTitleChange,
+                                onSummaryTemplateChange = optionActions.onSummaryTemplateChange,
                                 onSaveAsDefault = optionActions.onSaveAsDefault
                             )
                         }
@@ -554,6 +563,7 @@ internal data class ConversationOptionActions(
     val onNumSpeakersChange: (Int) -> Unit = {},
     val onParticipantsChange: (List<String>?) -> Unit = {},
     val onTitleChange: (String) -> Unit = {},
+    val onSummaryTemplateChange: (String) -> Unit = {},
     val onSaveAsDefault: () -> Unit = {}
 )
 

@@ -1,5 +1,7 @@
 package com.convoscribe.settings
 
+import com.convoscribe.llm.SummaryTemplates
+
 /**
  * Persisted user preferences used by ASR, diarization and the LLM
  * client. [numSpeakers] == -1 means the diarizer should pick the
@@ -42,6 +44,11 @@ package com.convoscribe.settings
  * `"manual"`): when speakers are identified after a transcript is done
  * (issue #11).
  *
+ * [defaultSummaryTemplate] is the summary template key a new
+ * conversation starts with (issue #27, see
+ * [com.convoscribe.llm.SummaryTemplates]); a key whose user template
+ * was deleted resolves to Meeting.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -62,6 +69,7 @@ data class AppSettings(
     val speakerMatchThreshold: Float = 0.5f,
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
     val defaultParticipants: List<String>? = null,
+    val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,

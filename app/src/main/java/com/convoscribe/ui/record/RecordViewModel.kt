@@ -4,6 +4,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.data.SummaryTemplateStore
+import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingState
@@ -33,7 +36,7 @@ import kotlinx.coroutines.flow.update
  *  - the new conversation's [options] (issue #6), pre-filled from
  *    the Settings defaults. Editing them never touches Settings;
  *    [saveAsDefault] writes them back. [enrolledNames] feeds the
- *    participants picker, and [modelsMissing] tells the screen to
+ *    participants picker, [summaryTemplates] the template picker, and [modelsMissing] tells the screen to
  *    send the user to setup before Start.
  * Constructed by
  * [com.convoscribe.ui.AppNavHost]'s `viewModelFactory` reading
@@ -45,6 +48,7 @@ class RecordViewModel(
     controller: RecordingController,
     private val settings: SettingsRepository,
     enrolled: EnrolledSpeakerStore,
+    templates: SummaryTemplateStore,
     private val missingModels: (language: String) -> Boolean = { false }
 ) : ViewModel() {
 
@@ -63,6 +67,10 @@ class RecordViewModel(
         .map { rows -> rows.map { it.name }.distinct() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Built-in and user summary templates, for the template picker. */
+    val summaryTemplates: StateFlow<List<SummaryTemplate>> = templates.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SummaryTemplates.BUILT_IN)
+
     fun setLanguage(language: String) {
         if (language == "en" || language == "fr") _options.update { it.copy(language = language) }
     }
@@ -80,14 +88,19 @@ class RecordViewModel(
         _options.update { it.copy(title = title) }
     }
 
-    /** Save the language, speaker count and participants as the defaults for future conversations. */
+    fun setSummaryTemplate(key: String) {
+        _options.update { it.copy(summaryTemplate = key) }
+    }
+
+    /** Save the language, speaker count, participants and summary template as the defaults for future conversations. */
     fun saveAsDefault() {
         val chosen = _options.value
         settings.update {
             it.copy(
                 asrLanguage = chosen.language,
                 numSpeakers = chosen.numSpeakers,
-                defaultParticipants = chosen.participants
+                defaultParticipants = chosen.participants,
+                defaultSummaryTemplate = chosen.summaryTemplate
             )
         }
     }

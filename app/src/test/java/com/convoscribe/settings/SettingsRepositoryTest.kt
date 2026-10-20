@@ -322,6 +322,15 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun defaultSummaryTemplate_isMeetingThenPersistsAndBlankMeansMeeting() {
+        assertEquals("meeting", newRepository().settings.value.defaultSummaryTemplate)
+        newRepository().update { it.copy(defaultSummaryTemplate = " user:3 ") }
+        assertEquals("user:3", newRepository().settings.value.defaultSummaryTemplate)
+        newRepository().update { it.copy(defaultSummaryTemplate = "  ") }
+        assertEquals("meeting", newRepository().settings.value.defaultSummaryTemplate)
+    }
+
+    @Test
     fun displayMode_defaultsToAutoWithBrandColours() {
         val s = newRepository().settings.value
         assertEquals("auto", s.displayMode)

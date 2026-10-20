@@ -149,6 +149,7 @@
     <string name="conversation_participants_confirm">Done</string>
     <string name="conversation_cancel">Cancel</string>
     <string name="conversation_title_label">Title (optional)</string>
+    <string name="conversation_summary_template_label">Summary template</string>
     <string name="conversation_set_default">Set as default</string>
     <string name="conversation_set_default_done">Saved for new conversations</string>
     <string name="home_new_recording">New recording</string>
