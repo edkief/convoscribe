@@ -4,8 +4,11 @@ import com.convoscribe.asr.EngineInfo
 import com.convoscribe.asr.StreamingTranscriber
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.audio.AudioSpec
+import com.convoscribe.audio.StreamingCleaner
+import com.convoscribe.audio.WavReader
 import com.convoscribe.audio.WavWriter
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
@@ -207,10 +210,14 @@ class RecordingControllerTest {
         var closed: Boolean = false
             private set
 
+        /** Every sample fed through [accept], in order. */
+        val fed: MutableList<Float> = mutableListOf()
+
         /** [acceptCount] at the end of the last utterance. */
         private var boundary: Int = 0
 
         override fun accept(samples: FloatArray): List<TranscriptEvent> {
+            fed += samples.toList()
             acceptCount += 1
             if (acceptCount - boundary == 3) {
                 val n = acceptCount
@@ -303,7 +310,8 @@ class RecordingControllerTest {
         transcriber: EveryThirdChunkTranscriber = EveryThirdChunkTranscriber(),
         store: FakeRecordingStore = FakeRecordingStore(tmp.root),
         clock: () -> Long = { 0L },
-        needsPreparation: Boolean = false
+        needsPreparation: Boolean = false,
+        cleanerFactory: AudioCleanerFactory? = null
     ): Harness {
         val audio = ChannelAudioSource(Channel(Channel.UNLIMITED))
         val factory = FakeTranscriberFactory(transcriber, factoryError, needsPreparation)
@@ -313,7 +321,8 @@ class RecordingControllerTest {
             store = store,
             defaultOptions = { ConversationOptions(language = "en", numSpeakers = 3) },
             asrDispatcher = StandardTestDispatcher(testScheduler),
-            clock = clock
+            clock = clock,
+            cleanerFactory = cleanerFactory
         )
         return Harness(controller, audio, transcriber, factory, store)
     }
@@ -837,5 +846,146 @@ class RecordingControllerTest {
         assertEquals(2, h.controller.state.value.markCount)
         h.controller.stop()
         advanceUntilIdle()
+    }
+
+    /**
+     * Cleaner that halves every sample in 256-sample frames, holding
+     * back what does not fill a frame like the sherpa denoiser (issue #37).
+     */
+    private class HalvingCleaner : StreamingCleaner {
+        private val pending = mutableListOf<Float>()
+        var closed = false
+
+        override fun process(samples: FloatArray): FloatArray {
+            pending += samples.toList()
+            val whole = pending.size / 256 * 256
+            val out = FloatArray(whole) { pending[it] / 2 }
+            repeat(whole) { pending.removeAt(0) }
+            return out
+        }
+
+        override fun flush(): FloatArray {
+            val out = FloatArray(pending.size) { pending[it] / 2 }
+            pending.clear()
+            return out
+        }
+
+        override fun close() {
+            closed = true
+        }
+    }
+
+    private class FakeCleanerFactory(var available: Boolean = true) : AudioCleanerFactory {
+        val made = mutableListOf<HalvingCleaner>()
+        override fun isAvailable(): Boolean = available
+        override fun create(): StreamingCleaner = HalvingCleaner().also { made += it }
+        override fun modelId(): String = "enh-test"
+    }
+
+    private fun loudChunk(): ShortArray = ShortArray(AudioSpec.CHUNK_SAMPLES) { 8_000 }
+
+    @Test
+    fun cleanAudio_feedsCleanedAudioToTheRecognizer_andKeepsBothFilesAligned() = runTest {
+        val cleaners = FakeCleanerFactory()
+        val h = buildHarness(cleanerFactory = cleaners)
+        h.controller.start(this, options = ConversationOptions(language = "en", cleanAudio = true))
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId!!
+        assertTrue(h.controller.state.value.cleaning)
+        assertEquals("enh-test", h.store.createCalls.single().cleanedWith)
+
+        repeat(2) { h.audio.channel.trySend(loudChunk()) }
+        advanceUntilIdle()
+        // The cleaner holds back what does not fill a frame.
+        assertEquals(3_200 / 256 * 256, h.transcriber.fed.size)
+        h.controller.pause()
+        advanceUntilIdle()
+        // A pause flushes it: the recognizer has every sample, cleaned.
+        assertEquals(3_200, h.transcriber.fed.size)
+        assertTrue(h.transcriber.fed.all { it == 8_000 / 32_768f / 2 })
+
+        h.controller.resume(this)
+        advanceUntilIdle()
+        h.audio.channel.trySend(loudChunk())
+        advanceUntilIdle()
+        h.controller.stop()
+        advanceUntilIdle()
+
+        assertEquals(4_800, h.transcriber.fed.size)
+        val original = WavReader.readMono16k(File(h.store.audioPath(id)))
+        val cleaned = WavReader.readMono16k(File(h.store.cleanAudioPath(id)))
+        assertEquals(original.size, cleaned.size)
+        assertEquals(original[4_000] / 2, cleaned[4_000], 1e-4f)
+        assertTrue(cleaners.made.single().closed)
+        assertEquals(false, h.controller.state.value.cleaning)
+    }
+
+    @Test
+    fun cleanAudio_isSkippedWithoutTheModelOrWhenNotAsked() = runTest {
+        val missing = buildHarness(cleanerFactory = FakeCleanerFactory(available = false))
+        missing.controller.start(this, options = ConversationOptions(language = "en", cleanAudio = true))
+        advanceUntilIdle()
+        assertEquals(false, missing.controller.state.value.cleaning)
+        assertNull(missing.store.createCalls.single().cleanedWith)
+        missing.audio.channel.trySend(loudChunk())
+        advanceUntilIdle()
+        assertEquals(1_600, missing.transcriber.fed.size)
+        val id = missing.controller.stop()!!
+        advanceUntilIdle()
+        assertTrue(!File(missing.store.cleanAudioPath(id)).exists())
+
+        val cleaners = FakeCleanerFactory()
+        val notAsked = buildHarness(cleanerFactory = cleaners)
+        notAsked.controller.start(this, options = ConversationOptions(language = "en"))
+        advanceUntilIdle()
+        assertEquals(false, notAsked.controller.state.value.cleaning)
+        assertTrue(cleaners.made.isEmpty())
+        notAsked.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun cleanAudio_continuedSessionPadsALaggingCleanedFileAndKeepsCleaning() = runTest {
+        val store = FakeRecordingStore(tmp.root)
+        existingRecording(store, sessionId = 7L, ms = 600, language = "en")
+        store.cleaned[7L] = "enh-test"
+        // A crash before the last flush left the cleaned file 100 ms short.
+        com.convoscribe.audio.WavWriter(File(store.cleanAudioPath(7L))).use { it.write(ShortArray(8_000)) }
+        val h = buildHarness(store = store, cleanerFactory = FakeCleanerFactory())
+
+        h.controller.start(this, resumeSessionId = 7L)
+        advanceUntilIdle()
+        assertTrue(h.controller.state.value.cleaning)
+        h.audio.channel.trySend(loudChunk())
+        advanceUntilIdle()
+        h.controller.stop()
+        advanceUntilIdle()
+
+        val original = WavReader.readMono16k(File(store.audioPath(7L)))
+        val cleaned = WavReader.readMono16k(File(store.cleanAudioPath(7L)))
+        assertEquals(original.size, cleaned.size)
+        assertEquals(0f, cleaned[8_500], 0f)
+        assertEquals(original.last() / 2, cleaned.last(), 1e-4f)
+    }
+
+    @Test
+    fun cleanAudio_continuedCleanedSessionWithoutTheModelWritesTheAudioAsItIs() = runTest {
+        val store = FakeRecordingStore(tmp.root)
+        existingRecording(store, sessionId = 7L, ms = 600, language = "en")
+        store.cleaned[7L] = "enh-test"
+        val h = buildHarness(store = store, cleanerFactory = FakeCleanerFactory(available = false))
+
+        h.controller.start(this, resumeSessionId = 7L)
+        advanceUntilIdle()
+        h.audio.channel.trySend(loudChunk())
+        advanceUntilIdle()
+        h.controller.stop()
+        advanceUntilIdle()
+
+        val original = WavReader.readMono16k(File(store.audioPath(7L)))
+        val cleaned = WavReader.readMono16k(File(store.cleanAudioPath(7L)))
+        assertEquals(original.size, cleaned.size)
+        assertEquals(original.last(), cleaned.last(), 0f)
+        assertEquals(1_600, h.transcriber.fed.size)
     }
 }

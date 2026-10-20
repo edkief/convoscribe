@@ -65,6 +65,8 @@ enum class RecordingPhase {
  *   those from earlier runs of a continued session; 0 while idle.
  *   The notification shows it. The floating control deliberately
  *   ignores it, so a mark never redraws the minimal shape.
+ * @property cleaning the open session's audio is cleaned live
+ *   (issue #37), so the Record screen can say so; `false` while idle.
  * @property lastCompletedSessionId id of the session that just
  *   finished, until the UI calls [RecordingController.consumeCompleted].
  *   The UI navigates to the session-detail screen on this and then
@@ -82,6 +84,7 @@ data class RecordingState(
     val partialText: String = "",
     val finalLines: List<String> = emptyList(),
     val markCount: Int = 0,
+    val cleaning: Boolean = false,
     val lastCompletedSessionId: Long? = null,
     val error: String? = null
 )

@@ -3,6 +3,7 @@ package com.convoscribe.recording
 import com.convoscribe.audio.WavWriter
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.cleanAudioFile
 import java.io.File
 
 /**
@@ -23,7 +24,9 @@ import java.io.File
  *   per millisecond: 2 bytes × 16 000 samples / 1 000 ms). The
  *   status is moved to `TRANSCRIBED` so the home screen shows the
  *   row and the post-record pipeline can pick it up if the user
- *   hits retry.
+ *   hits retry. A live-cleaned session's cleaned WAV (issue #37) is
+ *   repaired the same way; continuing the session pads it if it fell
+ *   behind.
  * * **DIARIZING**: the process died mid-diarization. The WAV is
  *   already valid; the session row is set to `DIARIZATION_PENDING`
  *   so the charging job (or the user) picks it up again (issue #11).
@@ -64,6 +67,9 @@ class SessionRecovery(private val repository: SessionRepository) {
                 // negative duration.
                 val durationMs = (bytes / BYTES_PER_MS).coerceAtLeast(0L)
                 repository.setDuration(session.id, durationMs)
+            }
+            if (session.cleanedWith != null) {
+                session.cleanAudioFile().takeIf { it.exists() }?.let(WavWriter::repairHeader)
             }
             repository.setStatus(session.id, SessionStatus.TRANSCRIBED)
         }
