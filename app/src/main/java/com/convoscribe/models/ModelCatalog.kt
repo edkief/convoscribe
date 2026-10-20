@@ -3,8 +3,9 @@ package com.convoscribe.models
 /**
  * What kind of model a bundle represents. Used by the engines and the
  * downloader to pick the right on-disk paths and engine code.
+ * [ENHANCEMENT] is the optional noise cleanup model (issue #37).
  */
-enum class ModelKind { ASR, SEGMENTATION, EMBEDDING }
+enum class ModelKind { ASR, SEGMENTATION, EMBEDDING, ENHANCEMENT }
 
 /**
  * One file that belongs to a [ModelBundle]: its on-disk name (which may
@@ -80,7 +81,8 @@ data class ModelBundle(
  * listed in [all]; helpers below filter by language or kind. Adding a
  * new language means adding one more ASR bundle and extending
  * [asrFor]; adding a new model kind means adding a constant and
- * listing it in [requiredFor] for any language that needs it.
+ * listing it in [requiredFor] for any language that needs it. An
+ * optional model ([CLEANUP]) is in [all] but never in [requiredFor].
  */
 object ModelCatalog {
 
@@ -200,7 +202,28 @@ object ModelCatalog {
         )
     )
 
-    val all: List<ModelBundle> = listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING)
+    /**
+     * Optional noise cleanup before transcription (issue #37):
+     * sherpa-onnx's GTCRN speech-enhancement model, about 0.5 MB, run
+     * on the CPU by its streaming denoiser. Downloaded from Settings;
+     * setup and recording never require it.
+     */
+    val CLEANUP: ModelBundle = ModelBundle(
+        id = "enh-gtcrn-simple",
+        displayName = "Noise cleanup",
+        kind = ModelKind.ENHANCEMENT,
+        language = null,
+        files = listOf(
+            ModelFile(
+                "gtcrn_simple.onnx",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
+                    "speech-enhancement-models/gtcrn_simple.onnx",
+                535_638
+            )
+        )
+    )
+
+    val all: List<ModelBundle> = listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, CLEANUP)
 
     /**
      * Resolve the user-facing engine selection (currently `"npu"` or

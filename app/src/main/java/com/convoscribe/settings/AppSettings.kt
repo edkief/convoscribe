@@ -49,6 +49,10 @@ import com.convoscribe.llm.SummaryTemplates
  * [com.convoscribe.llm.SummaryTemplates]); a key whose user template
  * was deleted resolves to Meeting.
  *
+ * [cleanAudioDefault] starts a new conversation with live noise
+ * cleanup on (issue #37); it only applies once the cleanup model is
+ * downloaded, and the Record screen can change it per conversation.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -70,6 +74,7 @@ data class AppSettings(
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
     val defaultParticipants: List<String>? = null,
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
+    val cleanAudioDefault: Boolean = false,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,

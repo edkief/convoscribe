@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.audio.WavReader
+import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.EngineCheckRunner
+import com.convoscribe.enginecheck.LiveCleanupStore
+import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.formatReport
 import com.convoscribe.enginecheck.storageWarning
 import com.convoscribe.models.ModelBundle
@@ -42,6 +45,14 @@ import kotlinx.coroutines.withContext
  *   `<engine>` model first").
  * @property missingEngine engine whose model is missing, or
  *   `null` if every model's installed.
+ * @property cleanupAvailable the noise cleanup model is installed, so
+ *   live cleaning can be checked (issue #37).
+ * @property cleanupRunning the live-cleaning check is in flight.
+ * @property cleanup the cleaner's own timing, from the last check.
+ * @property cleanupEngine the ASR engine the last live-cleaning check
+ *   was combined with (the one Settings select).
+ * @property liveVerdict whether live cleaning is recommended with
+ *   [cleanupEngine], from the combined real-time factor.
  */
 data class EngineCheckUiState(
     val deviceInfo: DeviceInfo? = null,
@@ -49,8 +60,21 @@ data class EngineCheckUiState(
     val runningEngine: String? = null,
     val recordingBlocked: Boolean = false,
     val modelMissing: Boolean = false,
-    val missingEngine: String? = null
-)
+    val missingEngine: String? = null,
+    val cleanupAvailable: Boolean = false,
+    val cleanupRunning: Boolean = false,
+    val cleanup: CleanupCheckResult? = null,
+    val cleanupEngine: String? = null,
+    val liveVerdict: LiveCleanupVerdict? = null
+) {
+    /** Recognizer plus cleaner, for [cleanupEngine]; `null` until both ran cleanly. */
+    val combinedRtf: Double?
+        get() {
+            val asr = results[cleanupEngine]?.takeIf { it.error == null } ?: return null
+            val clean = cleanup?.takeIf { it.error == null } ?: return null
+            return asr.realTimeFactor + clean.realTimeFactor
+        }
+}
 
 /**
  * Function the ViewModel calls to build an in-process runner for
@@ -75,6 +99,16 @@ fun interface NpuProbe {
 }
 
 /**
+ * Times the noise cleaner over the sample clip (issue #37), or says
+ * it is unavailable. Production wraps [measureCleanup] around the
+ * container's cleaner factory.
+ */
+interface CleanupProbe {
+    fun isAvailable(): Boolean
+    fun run(sampleFile: File): CleanupCheckResult
+}
+
+/**
  * ViewModel for the engine-check screen. Owns one
  * [EngineCheckUiState] `StateFlow` that the screen collects.
  *
@@ -88,10 +122,13 @@ class EngineCheckViewModel(
     private val context: Context,
     private val recordingController: RecordingController,
     private val runnerFactory: EngineCheckRunnerFactory,
-    private val npuProbe: NpuProbe
+    private val npuProbe: NpuProbe,
+    private val cleanupProbe: CleanupProbe? = null,
+    private val liveCleanup: LiveCleanupStore? = null,
+    private val currentEngine: () -> String = { "cpu" }
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(EngineCheckUiState())
+    private val _state = MutableStateFlow(EngineCheckUiState(cleanupAvailable = cleanupProbe?.isAvailable() == true))
     val state: StateFlow<EngineCheckUiState> = _state.asStateFlow()
 
     /**
@@ -165,36 +202,84 @@ class EngineCheckViewModel(
             modelMissing = false,
             missingEngine = null
         )
-        viewModelScope.launch {
-            val sampleFile = File(File(context.filesDir, "models/${bundle.id}"), "test_wavs/0.wav")
-            val result = if (engine == "npu") {
-                try {
-                    npuProbe.run(sampleFile)
-                } catch (e: Exception) {
-                    if (e is kotlinx.coroutines.CancellationException) throw e
-                    EngineCheckResult(
-                        engine = engine,
-                        initMs = 0L,
-                        firstRun = false,
-                        audioMs = 0L,
-                        processMs = 0L,
-                        text = "",
-                        error = e.message ?: e.toString()
-                    )
-                }
-            } else {
-                withContext(Dispatchers.Default) {
-                    val runner = runnerFactory.create(engine, sampleFile, clock = { System.nanoTime() / 1_000_000L })
-                    runner.run(engine)
-                }
-            }
-            val next = _state.value.results.toMutableMap()
-            next[engine] = result
-            _state.value = _state.value.copy(
-                results = next,
-                runningEngine = null
-            )
+        viewModelScope.launch { checkEngine(engine) }
+    }
+
+    /**
+     * Check live noise cleanup (issue #37) with the engine Settings
+     * select: run that engine's check first if it has not run, time
+     * the cleaner over the same clip, and record whether the two
+     * together keep up with live audio. The Record screen and
+     * Settings read the verdict from [LiveCleanupStore].
+     */
+    fun runCleanupCheck() {
+        val probe = cleanupProbe ?: return
+        ensureDeviceInfo()
+        if (recordingController.state.value.phase != RecordingPhase.IDLE) {
+            _state.value = _state.value.copy(recordingBlocked = true)
+            return
         }
+        val engine = currentEngine()
+        val bundle = ModelCatalog.asrFor("en", engine)
+        if (!isInstalled(bundle)) {
+            _state.value = _state.value.copy(modelMissing = true, missingEngine = engine)
+            return
+        }
+        _state.value = _state.value.copy(
+            cleanupRunning = true,
+            recordingBlocked = false,
+            modelMissing = false,
+            missingEngine = null
+        )
+        viewModelScope.launch {
+            if (_state.value.results[engine] == null) {
+                _state.value = _state.value.copy(runningEngine = engine)
+                checkEngine(engine)
+            }
+            val cleanup = withContext(Dispatchers.Default) { probe.run(sampleFile(bundle)) }
+            _state.value = _state.value.copy(cleanup = cleanup, cleanupEngine = engine, cleanupRunning = false)
+            val combined = _state.value.combinedRtf
+            if (combined != null) {
+                liveCleanup?.record(engine, combined)
+                _state.value = _state.value.copy(liveVerdict = LiveCleanupVerdict.of(combined))
+            } else {
+                _state.value = _state.value.copy(liveVerdict = null)
+            }
+        }
+    }
+
+    private fun sampleFile(bundle: ModelBundle) = File(File(context.filesDir, "models/${bundle.id}"), "test_wavs/0.wav")
+
+    /** Run [engine]'s check and store its result; [EngineCheckUiState.runningEngine] must already be set. */
+    private suspend fun checkEngine(engine: String) {
+        val sampleFile = sampleFile(ModelCatalog.asrFor("en", engine))
+        val result = if (engine == "npu") {
+            try {
+                npuProbe.run(sampleFile)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                EngineCheckResult(
+                    engine = engine,
+                    initMs = 0L,
+                    firstRun = false,
+                    audioMs = 0L,
+                    processMs = 0L,
+                    text = "",
+                    error = e.message ?: e.toString()
+                )
+            }
+        } else {
+            withContext(Dispatchers.Default) {
+                val runner = runnerFactory.create(engine, sampleFile, clock = { System.nanoTime() / 1_000_000L })
+                runner.run(engine)
+            }
+        }
+        val next = _state.value.results.toMutableMap()
+        next[engine] = result
+        _state.value = _state.value.copy(
+            results = next,
+            runningEngine = null
+        )
     }
 
     /**
@@ -206,7 +291,22 @@ class EngineCheckViewModel(
         val info = _state.value.deviceInfo ?: return ""
         val list = listOf("npu", "cpu")
             .mapNotNull { _state.value.results[it] }
-        return formatReport(info, list)
+        val report = formatReport(info, list)
+        val cleanup = _state.value.cleanup ?: return report
+        return buildString {
+            append(report)
+            if (!report.endsWith("\n")) append('\n')
+            append("\n--- Noise cleanup ---\n")
+            if (cleanup.error != null) {
+                append("Error: ").append(cleanup.error).append('\n')
+            } else {
+                append("RTF: ").append("%.2f".format(cleanup.realTimeFactor)).append('\n')
+            }
+            _state.value.combinedRtf?.let { combined ->
+                append("With ").append(_state.value.cleanupEngine.orEmpty().uppercase()).append(": ")
+                append("%.2f".format(combined)).append(" (").append(LiveCleanupVerdict.of(combined).name).append(")\n")
+            }
+        }
     }
 
     /**

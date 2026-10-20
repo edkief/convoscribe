@@ -36,9 +36,12 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
+import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.NpuProbeClient
+import com.convoscribe.enginecheck.measureCleanup
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InfoRow
 import com.convoscribe.ui.components.NoticeText
@@ -47,6 +50,7 @@ import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.theme.AppTheme
+import java.io.File
 
 /**
  * Diagnostics screen that lets the owner confirm the NPU works,
@@ -88,7 +92,21 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                         context = context.applicationContext,
                         availability = container.npuAvailability,
                         onVerified = container.settingsRepository::refreshDefaults
-                    ).let { client -> NpuProbe { sampleFile -> client.run(sampleFile) } }
+                    ).let { client -> NpuProbe { sampleFile -> client.run(sampleFile) } },
+                    cleanupProbe = object : CleanupProbe {
+                        override fun isAvailable() = container.audioCleanerFactory.isAvailable()
+                        override fun run(sampleFile: File) = try {
+                            measureCleanup(
+                                cleaner = container.audioCleanerFactory.create(),
+                                samples = readEngineCheckSamples(sampleFile),
+                                clock = { System.nanoTime() / 1_000_000L }
+                            )
+                        } catch (e: Exception) {
+                            CleanupCheckResult(audioMs = 0L, processMs = 0L, error = e.message ?: e.toString())
+                        }
+                    },
+                    liveCleanup = container.liveCleanup,
+                    currentEngine = { container.settingsRepository.settings.value.asrEngine }
                 )
             }
         }
@@ -104,6 +122,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
         storageLow = vm.storageLow,
         onBack = { navController.popBackStack() },
         onRunCheck = vm::runCheck,
+        onRunCleanupCheck = vm::runCleanupCheck,
         onOpenSetup = { engine -> navController.navigate("setup?engine=$engine") },
         onCopyReport = { copyToClipboard(context, vm.buildReport()) },
         onShareReport = { shareText(context, vm.buildReport()) }
@@ -119,7 +138,8 @@ internal fun EngineCheckBody(
     onRunCheck: (String) -> Unit,
     onOpenSetup: (String) -> Unit,
     onCopyReport: () -> Unit,
-    onShareReport: () -> Unit
+    onShareReport: () -> Unit,
+    onRunCleanupCheck: () -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
     ScreenScaffold(title = stringResource(R.string.enginecheck_title), onBack = onBack) { innerPadding: PaddingValues ->
@@ -161,7 +181,7 @@ internal fun EngineCheckBody(
                         ProgressBlock(message = stringResource(running))
                     }
                     CheckButtons(
-                        enabled = state.runningEngine == null,
+                        enabled = state.runningEngine == null && !state.cleanupRunning,
                         onCheckNpu = { onRunCheck("npu") },
                         onCheckCpu = { onRunCheck("cpu") }
                     )
@@ -169,6 +189,9 @@ internal fun EngineCheckBody(
             }
             state.results["npu"]?.let { ResultCard(it, modifier = width) }
             state.results["cpu"]?.let { ResultCard(it, modifier = width) }
+            if (state.cleanupAvailable) {
+                CleanupCard(state = state, onRun = onRunCleanupCheck, modifier = width)
+            }
             ActionRow(
                 enabled = state.results.isNotEmpty(),
                 onCopy = onCopyReport,
@@ -252,6 +275,58 @@ private fun ResultCard(result: EngineCheckResult, modifier: Modifier = Modifier)
             }
         } else if (result.text.isNotBlank()) {
             SupportingText(text = stringResource(R.string.enginecheck_result_text, result.text))
+        }
+    }
+}
+
+/**
+ * Live noise cleanup (issue #37): times the cleaner and adds it to
+ * the selected engine's real-time factor, since live cleaning runs
+ * both on one thread. The verdict says whether to clean live or
+ * afterwards.
+ */
+@Composable
+private fun CleanupCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: Modifier = Modifier) {
+    SectionCard(modifier = modifier, title = stringResource(R.string.enginecheck_cleanup_title)) {
+        SupportingText(text = stringResource(R.string.enginecheck_cleanup_help))
+        val verdict = state.liveVerdict
+        val cleanup = state.cleanup
+        if (state.cleanupRunning) {
+            ProgressBlock(message = stringResource(R.string.enginecheck_cleanup_running))
+        } else if (cleanup != null) {
+            if (cleanup.error != null) {
+                ErrorBanner(message = stringResource(R.string.enginecheck_result_error, cleanup.error))
+            } else if (verdict != null) {
+                Text(
+                    text = stringResource(
+                        when (verdict) {
+                            LiveCleanupVerdict.RECOMMENDED -> R.string.enginecheck_cleanup_verdict_ok
+                            LiveCleanupVerdict.MARGINAL -> R.string.enginecheck_cleanup_verdict_marginal
+                            LiveCleanupVerdict.NOT_RECOMMENDED -> R.string.enginecheck_cleanup_verdict_slow
+                        }
+                    ),
+                    style = MaterialTheme.typography.titleLarge,
+                    color = when (verdict) {
+                        LiveCleanupVerdict.RECOMMENDED -> MaterialTheme.colorScheme.primary
+                        LiveCleanupVerdict.MARGINAL -> MaterialTheme.colorScheme.tertiary
+                        LiveCleanupVerdict.NOT_RECOMMENDED -> MaterialTheme.colorScheme.error
+                    }
+                )
+            }
+            InfoRow(stringResource(R.string.enginecheck_cleanup_rtf), "%.2f".format(cleanup.realTimeFactor))
+            state.combinedRtf?.let { combined ->
+                InfoRow(
+                    stringResource(R.string.enginecheck_cleanup_combined, state.cleanupEngine.orEmpty().uppercase()),
+                    "%.2f".format(combined)
+                )
+            }
+        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.runningEngine == null && !state.cleanupRunning,
+            onClick = onRun
+        ) {
+            Text(text = stringResource(R.string.enginecheck_cleanup_check))
         }
     }
 }

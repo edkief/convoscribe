@@ -20,7 +20,9 @@ import kotlinx.coroutines.withContext
 /**
  * What the player bar renders. [ready] is `false` until the file has
  * been opened (and again after an error, see [failed]); [positionMs]
- * and [durationMs] are milliseconds into the recording.
+ * and [durationMs] are milliseconds into the recording. [source] is
+ * the path of the file that is open, so switching to another file
+ * (the original or cleaned recording, issue #37) shows as a change.
  */
 data class PlayerState(
     val ready: Boolean = false,
@@ -28,7 +30,8 @@ data class PlayerState(
     val positionMs: Long = 0,
     val durationMs: Long = 0,
     val speed: Float = 1f,
-    val failed: Boolean = false
+    val failed: Boolean = false,
+    val source: String? = null
 )
 
 /**
@@ -85,6 +88,8 @@ class MediaPlayerAudioPlayer(private val scope: CoroutineScope) : AudioPlayer {
         if (released || file.absolutePath == openedPath) return
         openedPath = file.absolutePath
         preparing?.cancel()
+        stopTicker()
+        _state.update { it.copy(ready = false, isPlaying = false) }
         preparing = scope.launch {
             val usable = withContext(Dispatchers.IO) { repairIfNeeded(file) }
             if (!usable) {
@@ -114,7 +119,15 @@ class MediaPlayerAudioPlayer(private val scope: CoroutineScope) : AudioPlayer {
         try {
             mp.setDataSource(file.absolutePath)
             mp.setOnPreparedListener {
-                _state.update { s -> s.copy(ready = true, failed = false, durationMs = it.duration.toLong()) }
+                _state.update { s ->
+                    s.copy(
+                        ready = true,
+                        failed = false,
+                        durationMs = it.duration.toLong(),
+                        positionMs = 0L,
+                        source = file.absolutePath
+                    )
+                }
                 applySpeed(_state.value.speed, keepPaused = true)
             }
             mp.setOnCompletionListener {

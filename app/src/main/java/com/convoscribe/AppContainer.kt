@@ -6,6 +6,7 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.MediaCodecAudioDecoder
 import com.convoscribe.audio.MicAudioSource
@@ -21,6 +22,7 @@ import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
 import com.convoscribe.diarization.PendingDiarizationRunner
 import com.convoscribe.diarization.SpeakerEmbedderFactory
+import com.convoscribe.engine.sherpa.SherpaAudioCleanerFactory
 import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
@@ -114,6 +116,14 @@ class AppContainer(val context: Context) {
      */
     val npuAvailability = NpuAvailability(
         context.getSharedPreferences(NpuAvailability.PREFS_NAME, Context.MODE_PRIVATE)
+    )
+
+    /**
+     * The engine check's verdict on live noise cleanup per ASR engine
+     * (issue #37); the Record screen and Settings warn from it.
+     */
+    val liveCleanup = com.convoscribe.enginecheck.LiveCleanupStore(
+        context.getSharedPreferences(com.convoscribe.enginecheck.LiveCleanupStore.PREFS_NAME, Context.MODE_PRIVATE)
     )
 
     /**
@@ -223,6 +233,13 @@ class AppContainer(val context: Context) {
     fun transcriberFactoryFor(engine: String): TranscriberFactory = sherpaTranscriberFactory.withEngine(engine)
 
     /**
+     * Builds the optional noise cleaner (issue #37) from the cleanup
+     * model in [modelStore]; used live by [recordingController] and
+     * over stored audio by [retranscribeUseCase].
+     */
+    val audioCleanerFactory: AudioCleanerFactory = SherpaAudioCleanerFactory(modelStore)
+
+    /**
      * Drives a recording session: opens the mic, writes the WAV,
      * feeds the streaming ASR and persists each closed utterance
      * as it arrives. The screen (TASK-12) and the foreground
@@ -237,7 +254,8 @@ class AppContainer(val context: Context) {
         transcriberFactory = transcriberFactory,
         store = sessionRepository,
         defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) },
-        asrDispatcher = Dispatchers.Default.limitedParallelism(1)
+        asrDispatcher = Dispatchers.Default.limitedParallelism(1),
+        cleanerFactory = audioCleanerFactory
     )
 
     /**
@@ -321,7 +339,8 @@ class AppContainer(val context: Context) {
     val retranscribeUseCase: RetranscribeUseCase = RetranscribeUseCase(
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
-        diarize = diarizeSessionUseCase
+        diarize = diarizeSessionUseCase,
+        cleanerFactory = audioCleanerFactory
     )
 
     /**

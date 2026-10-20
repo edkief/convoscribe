@@ -5,6 +5,7 @@ import com.convoscribe.TAG
 import com.convoscribe.asr.StreamingTranscriber
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.audio.WavWriter
 import com.convoscribe.audio.inputLevel
@@ -61,6 +62,11 @@ import kotlinx.coroutines.withContext
  *   `Dispatchers.Default.limitedParallelism(1)`.
  * @param clock wall-clock source for the session title; injectable
  *   so tests can pin the date.
+ * @param cleanerFactory builds the live noise cleaner (issue #37) for
+ *   a session started with [ConversationOptions.cleanAudio], or a
+ *   cleaned session continued; `null` never cleans. The original
+ *   audio still goes to the session's WAV; the cleaned audio goes to
+ *   its cleaned WAV and to the recognizer, on [asrDispatcher].
  */
 class RecordingController(
     private val audioSource: AudioSource,
@@ -68,7 +74,8 @@ class RecordingController(
     private val store: RecordingStore,
     private val defaultOptions: () -> ConversationOptions,
     private val asrDispatcher: CoroutineDispatcher,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val cleanerFactory: AudioCleanerFactory? = null
 ) {
 
     private val _state = MutableStateFlow(RecordingState())
@@ -147,6 +154,7 @@ class RecordingController(
             // surface the message to the UI.
             var transcriber: StreamingTranscriber? = null
             var wav: WavWriter? = null
+            var clean: CleanTrack? = null
             var sessionId: Long? = null
             var lang = newLang
             try {
@@ -163,21 +171,35 @@ class RecordingController(
                     transcriberFactory.create(lang)
                 }
                 val id: Long
+                // A cleaned session keeps cleaning when continued, so
+                // its cleaned WAV never falls out of step; a new one
+                // cleans when asked and the model is installed.
+                val cleaning: Boolean
                 if (resumeSessionId != null) {
                     id = resumeSessionId
+                    cleaning = store.cleanedWith(id) != null
                     wav = WavWriter(File(store.audioPath(id)), append = true)
-                    store.reopenSession(id)
                 } else {
+                    cleaning = newOptions.cleanAudio && cleanerFactory?.isAvailable() == true
                     id = store.createSession(
                         title = newOptions.sessionTitle(clock()),
                         language = lang,
                         numSpeakers = newOptions.numSpeakers,
                         participants = newOptions.participants,
-                        summaryTemplate = newOptions.summaryTemplate
+                        summaryTemplate = newOptions.summaryTemplate,
+                        cleanedWith = if (cleaning) cleanerFactory?.modelId() else null
                     )
                     wav = WavWriter(File(store.audioPath(id)))
                 }
                 sessionId = id
+                if (cleaning) {
+                    val cleaner = cleanerFactory?.takeIf { it.isAvailable() }?.let { factory ->
+                        withContext(asrDispatcher) { factory.create() }
+                    }
+                    if (cleaner == null) Log.w(TAG, "cleanup model missing, session=$id continues uncleaned")
+                    clean = CleanTrack.open(File(store.cleanAudioPath(id)), cleaner, wav.samplesWritten)
+                }
+                if (resumeSessionId != null) store.reopenSession(id)
                 val engine = transcriberFactory.describe(lang)
                 store.recordEngine(id, engine.engine, engine.model, continued = resumeSessionId != null)
                 // The recognizer's timestamps start at 0 for this
@@ -190,6 +212,7 @@ class RecordingController(
                 // never touches them again after [collect] starts.
                 activeTranscriber = transcriber
                 activeWav = wav
+                activeClean = clean
                 val marks = if (resumeSessionId != null) store.countMarks(id) else 0
                 _state.update {
                     it.copy(
@@ -197,14 +220,19 @@ class RecordingController(
                         preparingNpu = false,
                         sessionId = id,
                         markCount = marks,
+                        cleaning = clean != null,
                         elapsedMs = samplesToMs(wav.samplesWritten),
                         partialText = "",
                         finalLines = emptyList(),
                         error = null
                     )
                 }
-                Log.i(TAG, "recording started session=$id lang=$lang resumed=${resumeSessionId != null}")
-                capture(transcriber, wav)
+                Log.i(
+                    TAG,
+                    "recording started session=$id lang=$lang resumed=${resumeSessionId != null} " +
+                        "cleaning=${clean != null}"
+                )
+                capture(transcriber, wav, clean)
             } catch (ce: CancellationException) {
                 // Cooperative cancellation: stop() / pause() / scope
                 // cancel path. Do not call finishRecording here —
@@ -214,7 +242,7 @@ class RecordingController(
                 // cancel.
                 throw ce
             } catch (t: Throwable) {
-                fail(t, transcriber, wav, sessionId)
+                fail(t, transcriber, wav, clean, sessionId)
             }
         }
     }
@@ -231,13 +259,17 @@ class RecordingController(
      * collector half-way: the recognizer may already have closed an
      * utterance and reset on it, so dropping its events would lose
      * that segment for good.
+     *
+     * With [clean] the recognizer gets the cleaned chunk instead,
+     * which [CleanTrack] also writes to the cleaned WAV (issue #37).
      */
-    private suspend fun capture(transcriber: StreamingTranscriber, wav: WavWriter) {
+    private suspend fun capture(transcriber: StreamingTranscriber, wav: WavWriter, clean: CleanTrack?) {
         audioSource.chunks().collect { chunk ->
             withContext(NonCancellable) {
                 wav.write(chunk)
                 val events = withContext(asrDispatcher) {
-                    transcriber.accept(chunk.toFloatSamples())
+                    val samples = chunk.toFloatSamples()
+                    transcriber.accept(clean?.process(samples) ?: samples)
                 }
                 applyEvents(events)
                 _state.update {
@@ -254,11 +286,19 @@ class RecordingController(
      * throwable during cleanup is swallowed because the original
      * exception is more useful.
      */
-    private suspend fun fail(t: Throwable, transcriber: StreamingTranscriber?, wav: WavWriter?, sessionId: Long?) {
+    private suspend fun fail(
+        t: Throwable,
+        transcriber: StreamingTranscriber?,
+        wav: WavWriter?,
+        clean: CleanTrack?,
+        sessionId: Long?
+    ) {
         runCatching { transcriber?.close() }
         runCatching { wav?.close() }
+        runCatching { clean?.close() }
         activeTranscriber = null
         activeWav = null
+        activeClean = null
         val writtenMs = wav?.let { samplesToMs(it.samplesWritten) } ?: 0L
         if (sessionId != null) {
             runCatching { store.finishRecording(sessionId, writtenMs) }
@@ -284,7 +324,8 @@ class RecordingController(
      * the recognizer's clock and the audio file advance together and
      * segment times after [resume] stay aligned with the WAV. The
      * session row stays `RECORDING`, which is what crash recovery
-     * ([SessionRecovery]) looks for.
+     * ([SessionRecovery]) looks for. A live cleaner is flushed first,
+     * so the cleaned WAV and the recognizer catch up with the original.
      */
     suspend fun pause(): Unit = lifecycle.withLock {
         if (_state.value.phase != RecordingPhase.RECORDING) return@withLock
@@ -293,7 +334,11 @@ class RecordingController(
         sessionJob = null
         _state.update { it.copy(inputLevel = 0f) }
         val transcriber = activeTranscriber ?: return@withLock
-        val events = withContext(asrDispatcher) { transcriber.endUtterance() }
+        val clean = activeClean
+        val events = withContext(asrDispatcher) {
+            val tail = clean?.flush()?.takeIf { it.isNotEmpty() }?.let(transcriber::accept).orEmpty()
+            tail + transcriber.endUtterance()
+        }
         applyEvents(events)
         Log.i(TAG, "recording paused session=${_state.value.sessionId}")
     }
@@ -309,15 +354,16 @@ class RecordingController(
         if (_state.value.phase != RecordingPhase.PAUSED) return@withLock
         val transcriber = activeTranscriber ?: return@withLock
         val wav = activeWav ?: return@withLock
+        val clean = activeClean
         val id = _state.value.sessionId
         _state.update { it.copy(phase = RecordingPhase.RECORDING) }
         sessionJob = scope.launch {
             try {
-                capture(transcriber, wav)
+                capture(transcriber, wav, clean)
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
-                fail(t, transcriber, wav, id)
+                fail(t, transcriber, wav, clean, id)
             }
         }
         Log.i(TAG, "recording resumed session=$id")
@@ -357,16 +403,23 @@ class RecordingController(
         sessionJob?.cancelAndJoin()
         val transcriber = activeTranscriber
         val wav = activeWav
+        val clean = activeClean
         activeTranscriber = null
         activeWav = null
+        activeClean = null
         try {
             val flushEvents = withContext(asrDispatcher) {
-                transcriber?.finish().orEmpty()
+                // The cleaner's last frame goes to the recognizer
+                // before its own final flush.
+                val tail = clean?.flush()?.takeIf { it.isNotEmpty() }
+                val tailEvents = if (tail != null && transcriber != null) transcriber.accept(tail) else emptyList()
+                tailEvents + transcriber?.finish().orEmpty()
             }
             applyEvents(flushEvents)
         } finally {
             runCatching { transcriber?.close() }
             runCatching { wav?.close() }
+            runCatching { clean?.close() }
         }
         val durationMs = wav?.let { samplesToMs(it.samplesWritten) } ?: 0L
         store.finishRecording(id, durationMs)
@@ -415,6 +468,9 @@ class RecordingController(
 
     /** WAV writer the launched session body is using; `null` outside a session. */
     private var activeWav: WavWriter? = null
+
+    /** The session's live cleaner and cleaned WAV (issue #37); `null` when not cleaning. */
+    private var activeClean: CleanTrack? = null
 
     /**
      * Added to every segment's start/end: the audio that was already

@@ -989,6 +989,62 @@ over the previous version without clearing data first.
   seek bar; the notification counted on from the existing marks.
 - Step 11: the session and its marks are gone.
 
+## 31. Noise cleanup (issue #37)
+
+Run this on a phone and on the **Boox**, in a noisy room (a radio or
+a fan next to the phone works). To check the upgrade, install over the
+previous version without clearing data first.
+
+**Steps**
+
+1. Open a session recorded before the upgrade: *Session info*.
+2. Settings → *Noise cleanup*: look at the card, then *Download the
+   cleanup model*.
+3. Settings → Transcription → *Engine check* → *Check noise cleanup*.
+4. Back in Settings, look at the *Noise cleanup* card again.
+5. Record screen: turn *Clean up noise* on, *Set as default*, Start.
+   Speak for ~30 s over the noise, pause 10 s, resume, speak, Stop.
+6. Open the session. Play a few seconds; tap *Cleaned* in the player,
+   then *Original*. Look at *Session info*.
+7. Continue recording the session (mic icon) for 10 s, stop.
+8. Record a second conversation with *Clean up noise* off. Open it,
+   menu → *Clean up audio* → *Clean up*. Cancel once half-way, then run
+   it again to the end.
+9. Menu → *Remove cleaning* → *Remove*.
+10. Settings → *Noise cleanup* → *Delete the cleanup model*. Open the
+    first session and play it; menu → *Clean up audio*.
+11. Delete both sessions.
+
+**Expected**
+
+- Step 1: *Noise cleanup: Not cleaned*; nothing else changed.
+- Step 2: before the download, *Clean new recordings* is greyed out;
+  the download shows progress, then *Cleanup model installed*.
+- Step 3: a *Live noise cleanup* card with the cleanup real-time
+  factor, the combined factor with the selected engine, and a verdict.
+  The Boox is expected to say it may fall behind or is too slow.
+- Step 4: the verdict line matches step 3 (a warning when live cleaning
+  is not recommended).
+- Step 5: the switch shows the same warning when the device is too
+  slow; *Noise cleanup on* under the timer while recording and paused;
+  the live transcript keeps up (no growing delay after Stop).
+- Step 6: playback starts on the cleaned recording, with less
+  background noise; switching keeps the position. *Session info* names
+  the cleanup model.
+- Step 7: the continued part is cleaned too; both versions have the
+  same length and the lines still match the audio.
+- Step 8: *Cleaning up audio… n%* then *Re-transcribing… n%*; Cancel
+  keeps the old transcript and the session uncleaned; the second run
+  replaces the transcript and adds the player toggle. Speaker names
+  are kept.
+- Step 9: the toggle disappears and the original plays; the transcript
+  stays.
+- Step 10: the cleaned session still plays its cleaned recording;
+  *Clean up audio* on the other one asks to download the model in
+  Settings.
+- Step 11: `adb shell run-as com.convoscribe ls files/recordings` lists
+  neither `<id>.wav` nor `<id>.clean.wav`.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

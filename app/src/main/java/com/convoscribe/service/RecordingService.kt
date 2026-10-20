@@ -149,7 +149,7 @@ class RecordingService : Service() {
                 val id = intent.getLongExtra(EXTRA_SESSION_ID, -1L)
                 val language = intent.getStringExtra(EXTRA_LANGUAGE)
                 if (id > 0L && language != null) {
-                    handleRetranscribe(id, language)
+                    handleRetranscribe(id, language, intent.getBooleanExtra(EXTRA_CLEAN, false))
                 } else if (idle()) {
                     stopSelf()
                 }
@@ -389,26 +389,29 @@ class RecordingService : Service() {
      * notification and a Cancel action. Refused while a recording or
      * another re-transcription runs (the service is already in the
      * foreground then). Cancel or failure keeps the old transcript.
+     * With [clean] the audio is cleaned first (issue #37).
      */
-    private fun handleRetranscribe(sessionId: Long, language: String) {
+    private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
         if (!idle() || useCase.isRunning) return
         ensureNotificationChannel()
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildRetranscribeNotification(0f),
+            buildRetranscribeNotification(0f, cleaning = clean),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
         acquireWakeLock()
         retranscribeJob = scope.launch {
             val progress = useCase.state
                 .onEach { state ->
-                    if (state is RetranscribeState.Running) maybeRefreshRetranscribeNotification(state.progress)
+                    if (state is RetranscribeState.Running) {
+                        maybeRefreshRetranscribeNotification(state.progress, state.cleaning)
+                    }
                 }
                 .launchIn(this)
             try {
-                useCase.run(sessionId, language)
+                useCase.run(sessionId, language, clean)
             } finally {
                 progress.cancel()
                 retranscribeJob = null
@@ -541,19 +544,19 @@ class RecordingService : Service() {
         return builder.build()
     }
 
-    private fun maybeRefreshRetranscribeNotification(progress: Float) {
+    private fun maybeRefreshRetranscribeNotification(progress: Float, cleaning: Boolean) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildRetranscribeNotification(progress),
+            buildRetranscribeNotification(progress, cleaning),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
     }
 
-    private fun buildRetranscribeNotification(progress: Float): android.app.Notification {
+    private fun buildRetranscribeNotification(progress: Float, cleaning: Boolean = false): android.app.Notification {
         val contentIntent = PendingIntent.getActivity(
             this,
             REQUEST_OPEN,
@@ -572,7 +575,12 @@ class RecordingService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(getString(R.string.notification_retranscribe_title))
-            .setContentText(getString(R.string.notification_retranscribe_text, percent))
+            .setContentText(
+                getString(
+                    if (cleaning) R.string.notification_cleanup_text else R.string.notification_retranscribe_text,
+                    percent
+                )
+            )
             .setProgress(100, percent, false)
             .setContentIntent(contentIntent)
             .setOngoing(true)
@@ -924,16 +932,20 @@ class RecordingService : Service() {
          * [EXTRA_PARTICIPANTS] is absent for anyone.
          */
         private const val EXTRA_LANGUAGE = "com.convoscribe.EXTRA_LANGUAGE"
+        private const val EXTRA_CLEAN = "com.convoscribe.EXTRA_CLEAN"
         private const val EXTRA_PARTICIPANTS = "com.convoscribe.EXTRA_PARTICIPANTS"
         private const val EXTRA_TITLE = "com.convoscribe.EXTRA_TITLE"
+        private const val EXTRA_CLEAN_AUDIO = "com.convoscribe.EXTRA_CLEAN_AUDIO"
 
-        private fun optionsFrom(intent: Intent): ConversationOptions? {
+        /** The [ConversationOptions] [startIntent] put on [intent], or `null` for the Settings defaults. */
+        internal fun optionsFrom(intent: Intent): ConversationOptions? {
             val language = intent.getStringExtra(EXTRA_LANGUAGE) ?: return null
             return ConversationOptions(
                 language = language,
                 numSpeakers = intent.getIntExtra(EXTRA_NUM_SPEAKERS, -1),
                 participants = intent.getStringArrayExtra(EXTRA_PARTICIPANTS)?.toList(),
-                title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+                title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                cleanAudio = intent.getBooleanExtra(EXTRA_CLEAN_AUDIO, false)
             )
         }
 
@@ -956,18 +968,22 @@ class RecordingService : Service() {
                         putExtra(EXTRA_NUM_SPEAKERS, options.numSpeakers)
                         options.participants?.let { putExtra(EXTRA_PARTICIPANTS, it.toTypedArray()) }
                         putExtra(EXTRA_TITLE, options.title)
+                        putExtra(EXTRA_CLEAN_AUDIO, options.cleanAudio)
                     }
                 }
 
         /**
          * Build an [Intent] that re-transcribes [sessionId] in
-         * [language]. Send it with `startForegroundService`.
+         * [language], cleaning its audio first when [clean] is set
+         * (*Clean up audio*, issue #37). Send it with
+         * `startForegroundService`.
          */
-        fun retranscribeIntent(context: Context, sessionId: Long, language: String): Intent =
+        fun retranscribeIntent(context: Context, sessionId: Long, language: String, clean: Boolean = false): Intent =
             Intent(context, RecordingService::class.java)
                 .setAction(ACTION_RETRANSCRIBE)
                 .putExtra(EXTRA_SESSION_ID, sessionId)
                 .putExtra(EXTRA_LANGUAGE, language)
+                .putExtra(EXTRA_CLEAN, clean)
 
         /**
          * Build an [Intent] that imports [uri] as a new session, passing

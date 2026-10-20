@@ -16,6 +16,7 @@ import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.diarization.EnrollFromSessionUseCase
 import com.convoscribe.ui.UiText
 import java.io.File
@@ -80,7 +81,11 @@ data class SessionUiState(
     val createdAt: Long = 0L,
     val durationMs: Long = 0L,
     /** The transcript was edited by hand (issue #26); re-transcribing asks first. */
-    val hasEdits: Boolean = false
+    val hasEdits: Boolean = false,
+    /** Cleanup model the audio was cleaned with (issue #37); `null` when not cleaned. */
+    val cleanedWith: String? = null,
+    /** Path of the cleaned recording; blank when not cleaned. */
+    val cleanAudioPath: String = ""
 )
 
 /**
@@ -169,7 +174,9 @@ class SessionViewModel(
                         asrModel = session.asrModel,
                         createdAt = session.createdAt,
                         durationMs = session.durationMs,
-                        hasEdits = session.transcriptEdited
+                        hasEdits = session.transcriptEdited,
+                        cleanedWith = session.cleanedWith,
+                        cleanAudioPath = if (session.cleanedWith != null) session.cleanAudioFile().absolutePath else ""
                     )
                 }
             }
@@ -215,11 +222,31 @@ class SessionViewModel(
     /** Where to position the player once it is ready; see [cueAtMs]. */
     private var pendingCue: Long? = cueAtMs
 
+    private val _playCleaned = MutableStateFlow(true)
+
+    /**
+     * Whether a cleaned session (issue #37) plays, shares and saves
+     * its cleaned recording (the default) or the original.
+     */
+    val playCleaned: StateFlow<Boolean> = _playCleaned.asStateFlow()
+
+    /** Switch between the cleaned and the original recording, keeping the position. */
+    fun setPlayCleaned(cleaned: Boolean) {
+        if (_playCleaned.value == cleaned) return
+        val position = playerState.value.positionMs
+        if (playerState.value.ready && position > 0L) pendingCue = position
+        _playCleaned.value = cleaned
+    }
+
+    /** The recording [state] plays: the cleaned one when there is one and it is chosen. */
+    private fun playedPath(state: SessionUiState, cleaned: Boolean): String =
+        state.cleanAudioPath.takeIf { cleaned && it.isNotBlank() && File(it).exists() } ?: state.audioPath
+
     init {
         val audio = player
         if (audio != null) {
             viewModelScope.launch {
-                audio.state.map { it.ready }.distinctUntilChanged().collect { ready ->
+                audio.state.map { it.ready to it.source }.distinctUntilChanged().collect { (ready, _) ->
                     val cue = pendingCue
                     if (ready && cue != null) {
                         pendingCue = null
@@ -229,10 +256,12 @@ class SessionViewModel(
                 }
             }
             viewModelScope.launch {
-                uiState
-                    .map { state ->
-                        state.audioPath.takeIf { state.status != null && state.status != SessionStatus.RECORDING }
-                    }
+                combine(uiState, _playCleaned) { state, cleaned ->
+                    playedPath(
+                        state,
+                        cleaned
+                    ).takeIf { state.status != null && state.status != SessionStatus.RECORDING }
+                }
                     .distinctUntilChanged()
                     .collect { path -> if (path.isNullOrBlank()) audio.stop() else audio.prepare(File(path)) }
             }
@@ -480,7 +509,7 @@ class SessionViewModel(
             try {
                 val session = repository.getSession(sessionId)
                 if (session == null || session.audioPath.isBlank()) return@launch
-                block(exporter, session, File(session.audioPath))
+                block(exporter, session, File(playedPath(uiState.value, _playCleaned.value)))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -489,6 +518,15 @@ class SessionViewModel(
                 _exportState.value = ExportState.Idle
             }
         }
+    }
+
+    /**
+     * Forget the cleaned recording (issue #37): playback goes back to
+     * the original; the transcript stays.
+     */
+    fun removeCleaning() {
+        stopPlayback()
+        viewModelScope.launch { repository.removeCleaning(sessionId) }
     }
 
     override fun onCleared() {

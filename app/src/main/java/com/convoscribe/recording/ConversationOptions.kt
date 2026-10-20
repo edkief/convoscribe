@@ -23,13 +23,16 @@ import java.util.Locale
  *   or `null` for anyone.
  * @property title optional; blank keeps the date-based default.
  * @property summaryTemplate summary template key (issue #27).
+ * @property cleanAudio clean the audio live while recording (issue
+ *   #37); ignored when the cleanup model is not installed.
  */
 data class ConversationOptions(
     val language: String,
     val numSpeakers: Int = -1,
     val participants: List<String>? = null,
     val title: String = "",
-    val summaryTemplate: String = SummaryTemplates.MEETING_KEY
+    val summaryTemplate: String = SummaryTemplates.MEETING_KEY,
+    val cleanAudio: Boolean = false
 ) {
     /**
      * Session title for these options: [title] trimmed and capped at
@@ -50,7 +53,8 @@ data class ConversationOptions(
             language = settings.asrLanguage,
             numSpeakers = settings.numSpeakers,
             participants = ParticipantsCodec.normalise(settings.defaultParticipants),
-            summaryTemplate = settings.defaultSummaryTemplate
+            summaryTemplate = settings.defaultSummaryTemplate,
+            cleanAudio = settings.cleanAudioDefault
         )
     }
 }

@@ -7,11 +7,15 @@ import com.convoscribe.asr.EngineInfo
 import com.convoscribe.asr.StreamingTranscriber
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.audio.AudioCleanerFactory
+import com.convoscribe.audio.StreamingCleaner
+import com.convoscribe.audio.WavReader
 import com.convoscribe.audio.WavWriter
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SegmentEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.Diarizer
 import com.convoscribe.diarization.DiarizerFactory
@@ -104,12 +108,42 @@ class RetranscribeUseCaseTest {
         override fun describe(language: String) = EngineInfo("cpu", "asr-$language")
     }
 
-    private fun useCase(factory: TranscriberFactory) = RetranscribeUseCase(
+    private fun useCase(factory: TranscriberFactory, cleaners: AudioCleanerFactory? = null) = RetranscribeUseCase(
         repository = repo,
         transcriberFactory = factory,
         diarize = diarizer(),
-        asrDispatcher = Dispatchers.Unconfined
+        asrDispatcher = Dispatchers.Unconfined,
+        cleanerFactory = cleaners
     )
+
+    /** A cleaner that halves every sample (issue #37). */
+    private class Halving(private val available: Boolean = true) : AudioCleanerFactory {
+        override fun isAvailable() = available
+        override fun create(): StreamingCleaner = object : StreamingCleaner {
+            override fun process(samples: FloatArray) = FloatArray(samples.size) { samples[it] / 2 }
+            override fun flush() = FloatArray(0)
+            override fun close() = Unit
+        }
+        override fun modelId() = "enh-test"
+    }
+
+    /** Records the loudest sample it was fed. */
+    private class PeakTranscriber : StreamingTranscriber {
+        var peak = 0f
+        override fun accept(samples: FloatArray): List<TranscriptEvent> {
+            samples.forEach { peak = maxOf(peak, it) }
+            return emptyList()
+        }
+        override fun finish() = listOf(TranscriptEvent.Final("clean", 0, 2_000))
+        override fun close() = Unit
+    }
+
+    /** [englishSession] whose audio is a constant 0.25. */
+    private suspend fun loudSession(): Long {
+        val id = englishSession()
+        WavWriter(File(repo.audioPath(id))).use { it.write(ShortArray(2_000 * 16) { 8_192 }) }
+        return id
+    }
 
     private fun diarizer() = DiarizeSessionUseCase(
         repository = repo,
@@ -220,5 +254,51 @@ class RetranscribeUseCaseTest {
         assertEquals(1, RetranscribeUseCase.dominantSpeaker(old, 800, 2_000))
         assertEquals(0, RetranscribeUseCase.dominantSpeaker(old, 0, 900))
         assertNull(RetranscribeUseCase.dominantSpeaker(old, 3_200, 3_800))
+    }
+
+    @Test
+    fun clean_transcribesTheCleanedAudioAndKeepsItNextToTheOriginal() = runTest {
+        val id = loudSession()
+        val transcriber = PeakTranscriber()
+        val uc = useCase(factory { transcriber }, Halving())
+
+        assertTrue(uc.run(id, "en", clean = true))
+
+        // Half cleaned (0.125), half original (0.25).
+        assertEquals(0.1875f, transcriber.peak, 1e-4f)
+        val session = repo.getSession(id)!!
+        assertEquals("enh-test", session.cleanedWith)
+        val original = WavReader.readMono16k(File(session.audioPath))
+        val cleaned = WavReader.readMono16k(session.cleanAudioFile())
+        assertEquals(original.size, cleaned.size)
+        assertEquals(0.25f, original[100], 1e-4f)
+        assertEquals(0.125f, cleaned[100], 1e-4f)
+        assertEquals(listOf("clean"), repo.getSegments(id).map { it.text })
+        assertTrue(dir.listFiles()!!.none { it.name.endsWith(".cleaning.wav") || it.name.endsWith(".mix.wav") })
+
+        // A later plain re-transcription uses the cleaned recording too.
+        val again = PeakTranscriber()
+        assertTrue(useCase(factory { again }, Halving()).run(id, "en"))
+        assertEquals(0.1875f, again.peak, 1e-4f)
+        assertEquals("enh-test", repo.getSession(id)!!.cleanedWith)
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun clean_failureOrMissingModelLeavesTheSessionUncleaned() = runTest {
+        val id = loudSession()
+
+        val missing = useCase(factory { PeakTranscriber() }, Halving(available = false))
+        assertFalse(missing.run(id, "en", clean = true))
+        assertTrue(missing.state.value is RetranscribeState.Failed)
+
+        val crashing = useCase(factory { FrenchTranscriber(failAfterMs = 500) }, Halving())
+        assertFalse(crashing.run(id, "en", clean = true))
+
+        val session = repo.getSession(id)!!
+        assertNull(session.cleanedWith)
+        assertFalse(session.cleanAudioFile().exists())
+        assertTrue(dir.listFiles()!!.none { it.name.endsWith(".cleaning.wav") })
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
     }
 }

@@ -1,6 +1,7 @@
 package com.convoscribe.recording
 
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.data.cleanAudioPathFor
 
 /**
  * Persistence façade [RecordingController] uses to keep its
@@ -21,15 +22,24 @@ interface RecordingStore {
      * which model to use. [numSpeakers] (`-1` automatic) and
      * [participants] (`null` anyone) are the per-conversation
      * options chosen before Start, as is [summaryTemplate] (`null`
-     * follows the default).
+     * follows the default). [cleanedWith] is the cleanup model when
+     * the audio is cleaned live (issue #37), `null` otherwise.
      */
     suspend fun createSession(
         title: String,
         language: String,
         numSpeakers: Int? = null,
         participants: List<String>? = null,
-        summaryTemplate: String? = null
+        summaryTemplate: String? = null,
+        cleanedWith: String? = null
     ): Long
+
+    /**
+     * The cleanup model [sessionId] was cleaned with, or `null` when
+     * it is not cleaned (issue #37). A continued session that was
+     * cleaned keeps cleaning, so its two recordings stay aligned.
+     */
+    suspend fun cleanedWith(sessionId: Long): String?
 
     /**
      * Remember that [engine] and [model] transcribed (part of)
@@ -64,6 +74,12 @@ interface RecordingStore {
      * temporary folder.
      */
     suspend fun audioPath(sessionId: Long): String
+
+    /**
+     * Absolute path of [sessionId]'s cleaned recording (issue #37),
+     * written next to [audioPath] while the session is cleaned live.
+     */
+    suspend fun cleanAudioPath(sessionId: Long): String = cleanAudioPathFor(audioPath(sessionId))
 
     /**
      * Append one transcript segment (a closed utterance produced by

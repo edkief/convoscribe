@@ -53,6 +53,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -61,9 +62,13 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.models.ModelCatalog
+import com.convoscribe.models.ModelDownloadState
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
+import com.convoscribe.service.ModelDownloadService
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.FloatingShape
 import com.convoscribe.settings.SpeakerIdMode
@@ -190,12 +195,29 @@ fun SettingsScreen(navController: NavHostController) {
         )
     }
     val snackbarHostState = remember { SnackbarHostState() }
+    // The cleanup model downloads through the shared download service
+    // (issue #37); re-read the model state once it lands.
+    val downloadState by container.modelDownloadManager.state.collectAsStateWithLifecycle()
+    val cleanupDownloading = (downloadState as? ModelDownloadState.Running)
+        ?.bundleIds?.contains(ModelCatalog.CLEANUP.id) == true
+    LaunchedEffect(downloadState) {
+        if (downloadState is ModelDownloadState.Completed) vm.refreshModels()
+    }
     val updateState by container.updateManager.state.collectAsStateWithLifecycle()
     val updateActions = rememberUpdateActions(container.updateManager) { message ->
         coroutineScope.launch { snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Long) }
     }
+    // Re-read on resume: the engine check that records it is another screen.
+    var liveCleanupVerdict by remember { mutableStateOf<LiveCleanupVerdict?>(null) }
+    LifecycleResumeEffect(state.asrEngine, state.asrLanguage) {
+        val engine = ModelCatalog.effectiveEngine(state.asrLanguage, state.asrEngine)
+        liveCleanupVerdict = container.liveCleanup.verdict(engine)
+        onPauseOrDispose {}
+    }
     SettingsBody(
         state = state,
+        cleanupDownloading = cleanupDownloading,
+        liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = updateState,
         installedVersion = container.installedApp.versionName,
@@ -225,7 +247,15 @@ fun SettingsScreen(navController: NavHostController) {
             onUpdateIncludePrereleasesChange = vm::setUpdateIncludePrereleases,
             onSpeakerIdModeChange = vm::setSpeakerIdMode,
             onDefaultSummaryTemplateChange = vm::setDefaultSummaryTemplate,
-            onOpenSummaryTemplates = { navController.navigate("summary-templates") }
+            onOpenSummaryTemplates = { navController.navigate("summary-templates") },
+            onDownloadCleanup = {
+                ContextCompat.startForegroundService(
+                    context,
+                    ModelDownloadService.startIntent(context, listOf(ModelCatalog.CLEANUP))
+                )
+            },
+            onDeleteCleanup = vm::deleteCleanupModel,
+            onCleanAudioDefaultChange = vm::setCleanAudioDefault
         )
     )
 }
@@ -251,19 +281,27 @@ internal class SettingsActions(
     val onUpdateIncludePrereleasesChange: (Boolean) -> Unit = {},
     val onSpeakerIdModeChange: (String) -> Unit = {},
     val onDefaultSummaryTemplateChange: (String) -> Unit = {},
-    val onOpenSummaryTemplates: () -> Unit = {}
+    val onOpenSummaryTemplates: () -> Unit = {},
+    val onDownloadCleanup: () -> Unit = {},
+    val onDeleteCleanup: () -> Unit = {},
+    val onCleanAudioDefaultChange: (Boolean) -> Unit = {}
 )
 
 /**
  * Render-only body of [SettingsScreen] for previews and screenshot tests.
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
+ * [cleanupDownloading] while the noise cleanup model downloads (issue #37);
+ * [liveCleanupVerdict] is the engine check's verdict on cleaning live
+ * with the selected engine, `null` when it was not checked.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsBody(
     state: SettingsUiState,
     actions: SettingsActions,
+    cleanupDownloading: Boolean = false,
+    liveCleanupVerdict: LiveCleanupVerdict? = null,
     overlayGranted: Boolean = true,
     update: UpdateState = UpdateState.Idle,
     installedVersion: String = "",
@@ -335,6 +373,15 @@ internal fun SettingsBody(
                 },
                 onEngineCheck = actions.onEngineCheck,
                 onDeleteFrenchModel = actions.onDeleteFrenchModel
+            )
+            NoiseCleanupSection(
+                installed = state.cleanupInstalled,
+                downloading = cleanupDownloading,
+                cleanByDefault = state.cleanAudioDefault,
+                liveVerdict = liveCleanupVerdict,
+                onDownload = actions.onDownloadCleanup,
+                onDelete = actions.onDeleteCleanup,
+                onCleanByDefaultChange = actions.onCleanAudioDefaultChange
             )
             SpeakersSection(
                 speakerIdMode = state.speakerIdMode,
@@ -753,6 +800,84 @@ private fun TranscriptionSection(
 }
 
 /**
+ * "Noise cleanup" section (issue #37): the optional cleanup model,
+ * downloaded or removed here, and whether new conversations clean
+ * their audio live ([cleanByDefault], written immediately; the Record
+ * screen can change it per conversation). A finished session can be
+ * cleaned afterwards from its menu either way.
+ */
+@Composable
+private fun NoiseCleanupSection(
+    installed: Boolean,
+    downloading: Boolean,
+    cleanByDefault: Boolean,
+    liveVerdict: LiveCleanupVerdict?,
+    onDownload: () -> Unit,
+    onDelete: () -> Unit,
+    onCleanByDefaultChange: (Boolean) -> Unit
+) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_cleanup)
+    ) {
+        SupportingText(text = stringResource(R.string.settings_cleanup_help))
+        when {
+            downloading -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+            ) {
+                InlineProgress()
+                NoticeText(text = stringResource(R.string.settings_cleanup_downloading))
+            }
+            installed -> {
+                SupportingText(text = stringResource(R.string.settings_cleanup_installed))
+                TextButton(onClick = onDelete) {
+                    Text(text = stringResource(R.string.settings_cleanup_delete))
+                }
+            }
+            else -> OutlinedButton(onClick = onDownload) {
+                Text(
+                    text = stringResource(
+                        R.string.settings_cleanup_download,
+                        ModelCatalog.CLEANUP.totalBytes.toFloat() / 1_000_000f
+                    )
+                )
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = cleanByDefault,
+                    enabled = installed,
+                    role = Role.Switch,
+                    onValueChange = onCleanByDefaultChange
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_cleanup_default_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                SupportingText(text = stringResource(R.string.settings_cleanup_default_help))
+            }
+            Switch(checked = cleanByDefault && installed, onCheckedChange = null, enabled = installed)
+        }
+        if (installed) {
+            when (liveVerdict) {
+                null -> SupportingText(text = stringResource(R.string.settings_cleanup_not_checked))
+                LiveCleanupVerdict.RECOMMENDED -> SupportingText(
+                    text = stringResource(R.string.enginecheck_cleanup_verdict_ok)
+                )
+                else -> NoticeText(text = stringResource(R.string.conversation_cleanup_slow), isError = true)
+            }
+        }
+    }
+}
+
+/**
  * "Speakers" section: when speakers are identified ([speakerIdMode],
  * issue #11, written immediately), number-of-speakers dropdown (Automatic,
  * 2..6 — `-1` is the "automatic" sentinel persisted by the
@@ -978,6 +1103,11 @@ private fun AboutSection(
                 name = stringResource(R.string.settings_about_wespeaker_name),
                 licence = stringResource(R.string.settings_about_wespeaker_licence),
                 url = "https://github.com/wenet-e2e/wespeaker"
+            )
+            AboutModelRow(
+                name = stringResource(R.string.settings_about_gtcrn_name),
+                licence = stringResource(R.string.settings_about_gtcrn_licence),
+                url = "https://github.com/Xiaobin-Rong/gtcrn"
             )
             AboutModelRow(
                 name = stringResource(R.string.settings_about_sherpa_name),

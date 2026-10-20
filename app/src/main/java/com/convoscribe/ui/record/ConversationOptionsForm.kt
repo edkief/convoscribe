@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
@@ -14,6 +15,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -26,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import com.convoscribe.R
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.llm.SummaryTemplate
@@ -33,6 +36,7 @@ import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.PickerField
+import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
@@ -59,7 +63,9 @@ fun ConversationOptionsForm(
     onTitleChange: (String) -> Unit,
     onSummaryTemplateChange: (String) -> Unit,
     onSaveAsDefault: (() -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cleanup: CleanupOption? = null,
+    onCleanAudioChange: (Boolean) -> Unit = {}
 ) {
     var participantsOpen by remember { mutableStateOf(false) }
     var savedAsDefault by rememberSaveable { mutableStateOf(false) }
@@ -107,6 +113,40 @@ fun ConversationOptionsForm(
             }
         )
 
+        if (cleanup != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = options.cleanAudio,
+                        role = Role.Switch,
+                        onValueChange = {
+                            savedAsDefault = false
+                            onCleanAudioChange(it)
+                        }
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.conversation_cleanup_label),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    SupportingText(
+                        text = stringResource(
+                            if (cleanup.liveNotRecommended) {
+                                R.string.conversation_cleanup_slow
+                            } else {
+                                R.string.conversation_cleanup_help
+                            }
+                        )
+                    )
+                }
+                Switch(checked = options.cleanAudio, onCheckedChange = null)
+            }
+        }
+
         if (onSaveAsDefault != null) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TextButton(
@@ -141,6 +181,13 @@ fun ConversationOptionsForm(
         )
     }
 }
+
+/**
+ * The live noise cleanup switch (issue #37), shown only once the
+ * cleanup model is installed. [liveNotRecommended] when the engine
+ * check found this device too slow to clean while recording.
+ */
+data class CleanupOption(val liveNotRecommended: Boolean = false)
 
 /** "Anyone", or the chosen names joined by commas. */
 @Composable

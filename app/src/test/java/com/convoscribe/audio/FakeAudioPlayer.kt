@@ -16,7 +16,9 @@ class FakeAudioPlayer(durationMs: Long = 60_000L) : AudioPlayer {
 
     override fun prepare(file: File) {
         prepared.add(file)
-        _state.update { it.copy(ready = true, durationMs = duration) }
+        _state.update {
+            it.copy(ready = true, isPlaying = false, positionMs = 0L, durationMs = duration, source = file.absolutePath)
+        }
     }
 
     override fun play() = _state.update { it.copy(isPlaying = true) }

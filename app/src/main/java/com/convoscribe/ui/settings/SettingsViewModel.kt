@@ -143,7 +143,11 @@ data class SettingsUiState(
     /** Summary template new conversations start with (issue #27); written immediately. */
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     /** Built-in and user templates, for the default template picker. */
-    val summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN
+    val summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
+    /** The noise cleanup model is downloaded (issue #37). */
+    val cleanupInstalled: Boolean = false,
+    /** New conversations clean their audio live (issue #37); written immediately. */
+    val cleanAudioDefault: Boolean = false
 )
 
 /**
@@ -401,6 +405,27 @@ class SettingsViewModel(
         repo.update { it.copy(speakerIdMode = mode) }
     }
 
+    /** Persist *Clean new recordings* immediately (issue #37). */
+    fun setCleanAudioDefault(enabled: Boolean) {
+        repo.update { it.copy(cleanAudioDefault = enabled) }
+    }
+
+    /**
+     * Re-read which models are on disk, after a download finished
+     * outside this screen's writes (the cleanup model, issue #37).
+     */
+    fun refreshModels() {
+        _state.value = computeModelState(repo.settings.value, _state.value)
+    }
+
+    /** Remove the noise cleanup model (issue #37); cleaned sessions keep their cleaned audio. */
+    fun deleteCleanupModel() {
+        viewModelScope.launch {
+            modelStore.delete(ModelCatalog.CLEANUP)
+            refreshModels()
+        }
+    }
+
     /** Persist the default summary template immediately (issue #27). */
     fun setDefaultSummaryTemplate(key: String) {
         repo.update { it.copy(defaultSummaryTemplate = key) }
@@ -484,6 +509,8 @@ class SettingsViewModel(
             speakerIdMode = current.speakerIdMode,
             defaultSummaryTemplate = current.defaultSummaryTemplate,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
+            cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
+            cleanAudioDefault = current.cleanAudioDefault,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )

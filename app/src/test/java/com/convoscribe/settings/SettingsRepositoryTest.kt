@@ -331,6 +331,13 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun cleanAudioDefault_isOffThenPersists() {
+        assertFalse(newRepository().settings.value.cleanAudioDefault)
+        newRepository().update { it.copy(cleanAudioDefault = true) }
+        assertTrue(newRepository().settings.value.cleanAudioDefault)
+    }
+
+    @Test
     fun displayMode_defaultsToAutoWithBrandColours() {
         val s = newRepository().settings.value
         assertEquals("auto", s.displayMode)

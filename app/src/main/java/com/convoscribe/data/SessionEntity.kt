@@ -57,5 +57,22 @@ data class SessionEntity(
      * #27, see [com.convoscribe.llm.SummaryTemplates]); `null` on
      * sessions from before templates, which use the current default.
      */
-    val summaryTemplate: String? = null
+    val summaryTemplate: String? = null,
+    /**
+     * Id of the noise cleanup model that cleaned this session's audio
+     * (issue #37), or `null` when it is not cleaned. When set, the
+     * cleaned recording sits next to the original at
+     * [cleanAudioFile], sample-aligned with it, and the transcript was
+     * made from it. A session cleaned live keeps cleaning when continued.
+     */
+    val cleanedWith: String? = null
 )
+
+/**
+ * Where [audioPath]'s cleaned copy lives (issue #37):
+ * `<id>.clean.wav` next to `<id>.wav`.
+ */
+fun cleanAudioPathFor(audioPath: String): String = audioPath.removeSuffix(".wav") + ".clean.wav"
+
+/** This session's cleaned recording; it exists only while [SessionEntity.cleanedWith] is set. */
+fun SessionEntity.cleanAudioFile(): java.io.File = java.io.File(cleanAudioPathFor(audioPath))

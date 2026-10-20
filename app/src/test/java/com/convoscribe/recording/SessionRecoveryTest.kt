@@ -119,6 +119,22 @@ class SessionRecoveryTest {
         assertEquals(3_200L, dataSize.toLong())
     }
 
+    /** Issue #37: a session cleaned live has its cleaned WAV repaired too. */
+    @Test
+    fun recover_cleanedRecording_repairsTheCleanedWavToo() = runTest {
+        val id = repo.createSession(title = "Noisy", language = "en", cleanedWith = "enh-gtcrn-simple")
+        writeCrashRecoveredAudio(id, samples = 1_600)
+        val cleaned = File(recordingsDir, "$id.clean.wav")
+        WavWriter(cleaned).write(ShortArray(1_600))
+
+        recovery.recover()
+
+        // The data chunk size (offset 40, little-endian) now holds 1 600 samples.
+        val header = cleaned.readBytes()
+        assertEquals(3_200, (header[40].toInt() and 0xFF) or ((header[41].toInt() and 0xFF) shl 8))
+        assertEquals("enh-gtcrn-simple", repo.getSession(id)!!.cleanedWith)
+    }
+
     /**
      * Issue #7: a session the process died in while paused is just a
      * `RECORDING` row with an unclosed WAV and the segments persisted
