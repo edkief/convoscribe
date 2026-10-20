@@ -5,8 +5,8 @@ package com.convoscribe.llm
  * for the two operations that need a transcript in context:
  *
  *  - [summary] — a one-shot pass over the whole transcript that
- *    returns an Overview / Key points / Decisions / Action items
- *    write-up;
+ *    returns a write-up shaped by a [SummaryTemplate] (Meeting by
+ *    default: Overview / Key points / Decisions / Action items);
  *  - [question] — a multi-round chat where the user asks follow-up
  *    questions and the model answers them from the same transcript.
  *
@@ -20,21 +20,39 @@ package com.convoscribe.llm
 object PromptBuilder {
 
     /**
-     * System prompt for a one-shot summary. The model is told to
-     * follow a fixed structure (Overview → Key points → Decisions
-     * → Action items), to write in the language of the transcript
-     * and not to invent facts. The literal text is part of the
-     * contract with the model: changing it changes what the user
-     * sees on the Summary screen.
+     * Opening of every summary system prompt (issue #27): what the
+     * model does and that it writes in the transcript's language.
+     * [summarySystem] puts the template body after it.
      */
-    const val SUMMARY_SYSTEM: String =
-        "You summarise conversation transcripts. Write in the same language as the transcript. " +
-            "Use this structure:\n" +
-            "1. Overview: one short paragraph.\n" +
-            "2. Key points: bullet list.\n" +
-            "3. Decisions: bullet list, or \"None\".\n" +
-            "4. Action items: bullet list with the owner's name when known, or \"None\".\n" +
-            "Use the speaker names exactly as they appear. Do not invent facts that are not in the transcript."
+    const val SUMMARY_PREAMBLE: String =
+        "You summarise conversation transcripts. Write in the same language as the transcript. "
+
+    /**
+     * Closing of every summary system prompt, after the template
+     * body, so no template — built-in or user-written — can drop it.
+     */
+    const val SUMMARY_GUARDRAILS: String =
+        "Use the speaker names exactly as they appear. Do not invent facts that are not in the transcript."
+
+    /**
+     * System prompt for a one-shot summary with the Meeting template:
+     * a fixed structure (Overview → Key points → Decisions → Action
+     * items), framed by [SUMMARY_PREAMBLE] and [SUMMARY_GUARDRAILS].
+     * The literal text is part of the contract with the model:
+     * changing it changes what the user sees on the Summary screen.
+     */
+    val SUMMARY_SYSTEM: String = summarySystem(SummaryTemplates.MEETING_BODY)
+
+    /**
+     * The summary system prompt for a template [body]:
+     * [SUMMARY_PREAMBLE], the body trimmed and ended with a newline,
+     * then [SUMMARY_GUARDRAILS]. A blank body leaves just the two.
+     */
+    fun summarySystem(body: String): String {
+        val trimmed = body.trim()
+        val framed = if (trimmed.isEmpty()) "" else trimmed + "\n"
+        return SUMMARY_PREAMBLE + framed + SUMMARY_GUARDRAILS
+    }
 
     /**
      * System prompt prefix for a Q&A turn. The transcript is
@@ -53,19 +71,21 @@ object PromptBuilder {
     /**
      * Build the messages list for a one-shot summary call.
      *
-     * Returns two messages: the [SUMMARY_SYSTEM] prompt, then a
+     * Returns two messages: the system prompt for the template
+     * [body] (see [summarySystem]; Meeting by default), then a
      * single user turn whose body is `Transcript:\n\n` followed by
      * the transcript truncated to [maxChars] characters. The model
      * sees the structured instructions first and the raw transcript
      * second, which is the order OpenAI's chat format recommends.
      */
-    fun summary(transcript: String, maxChars: Int): List<LlmMessage> = listOf(
-        LlmMessage(LlmMessage.ROLE_SYSTEM, SUMMARY_SYSTEM),
-        LlmMessage(
-            LlmMessage.ROLE_USER,
-            "Transcript:\n\n" + TranscriptTruncator.fit(transcript, maxChars)
+    fun summary(transcript: String, maxChars: Int, body: String = SummaryTemplates.MEETING_BODY): List<LlmMessage> =
+        listOf(
+            LlmMessage(LlmMessage.ROLE_SYSTEM, summarySystem(body)),
+            LlmMessage(
+                LlmMessage.ROLE_USER,
+                "Transcript:\n\n" + TranscriptTruncator.fit(transcript, maxChars)
+            )
         )
-    )
 
     /**
      * Build the messages list for a Q&A turn about a transcript.
