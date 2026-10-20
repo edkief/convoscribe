@@ -88,12 +88,14 @@ class SessionViewModelTest {
     private fun viewModel(
         id: Long,
         playerFactory: ((CoroutineScope) -> AudioPlayer)? = null,
-        audioExporter: AudioExporter? = null
+        audioExporter: AudioExporter? = null,
+        cueAtMs: Long? = null
     ) = SessionViewModel(
         sessionId = id,
         repository = repo,
         playerFactory = playerFactory,
-        audioExporter = audioExporter
+        audioExporter = audioExporter,
+        cueAtMs = cueAtMs
     ).also { viewModels += it }
 
     /**
@@ -351,6 +353,23 @@ class SessionViewModelTest {
 
         assertEquals(5_000L, vm.playerState.value.positionMs)
         assertTrue(vm.playerState.value.isPlaying)
+    }
+
+    @Test
+    fun cue_positionsThePlayerOnceReady_withoutPlaying() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val player = FakeAudioPlayer()
+        val vm = viewModel(id, playerFactory = { player }, cueAtMs = 5_000L)
+        // Nothing is applied before the recording is open.
+        assertEquals(0L, player.state.value.positionMs)
+
+        vm.uiState.first { it.lines.size == 2 }
+        advanceUntilIdle()
+
+        assertTrue(vm.playerState.value.ready)
+        assertEquals(5_000L, vm.playerState.value.positionMs)
+        assertFalse(vm.playerState.value.isPlaying)
+        assertEquals(1, vm.activeLineIndex.first { it != null })
     }
 
     @Test

@@ -172,6 +172,29 @@
         <item quantity="other">%d speakers</item>
     </plurals>
     <string name="home_engine_check">Engine check</string>
+    <string name="home_search">Search</string>
+    <string name="home_search_field">Search conversations…</string>
+    <string name="search_title">Search</string>
+    <string name="search_hint">Titles, transcripts, speakers, summaries</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_start_title">Search your conversations</string>
+    <string name="search_start_body">Find words in titles, transcripts, speaker names and summaries. Capitals and accents don’t matter.</string>
+    <string name="search_no_results_title">No matches</string>
+    <string name="search_no_results_body">Nothing matches “%1$s”. Try fewer or shorter words.</string>
+    <string name="search_no_results_filtered">Nothing matches “%1$s” with these filters.</string>
+    <string name="search_filter_language_any">Any language</string>
+    <string name="search_filter_date_any">Any date</string>
+    <string name="search_filter_date_week">Last 7 days</string>
+    <string name="search_filter_date_month">Last 30 days</string>
+    <string name="search_filter_date_year">This year</string>
+    <string name="search_filter_speaker_any">Anyone</string>
+    <string name="search_speakers_label">Speakers</string>
+    <string name="search_summary_label">Summary</string>
+    <string name="search_open_at">Open at %1$s</string>
+    <plurals name="search_more_lines">
+        <item quantity="one">Show %d more line</item>
+        <item quantity="other">Show %d more lines</item>
+    </plurals>
     <string name="home_settings">Settings</string>
     <string name="home_delete_title">Delete this session?</string>
     <string name="home_delete_message">This will remove the recording and its transcript from this device.</string>

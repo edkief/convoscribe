@@ -29,7 +29,11 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,6 +65,9 @@ import com.convoscribe.ui.theme.AppTheme
  * on [TranscriptLine.speakerIndex] like the chips) and timestamp above
  * the text. While playing, the current line is highlighted and kept in
  * view until the user scrolls by hand; *Follow* resumes.
+ *
+ * [targetLineId] is the line a search hit opened (issue #24): the list
+ * scrolls to it once and it is highlighted until playback moves on.
  */
 @Composable
 internal fun TranscriptTab(
@@ -75,7 +82,8 @@ internal fun TranscriptTab(
     playback: PlaybackActions,
     onSpeakerChipTapped: (Int) -> Unit,
     waitingForCharger: Boolean = false,
-    onIdentifySpeakersNow: (() -> Unit)? = null
+    onIdentifySpeakersNow: (() -> Unit)? = null,
+    targetLineId: Long? = null
 ) {
     val spacing = AppTheme.spacing
     Column(modifier = Modifier.fillMaxSize()) {
@@ -99,6 +107,15 @@ internal fun TranscriptTab(
             }
         }
         val reduceMotion = AppTheme.reduceMotion
+        // Opened from a search hit: bring its line into view once.
+        val targetIndex = targetLineId?.let { id -> lines.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
+        var scrolledToTarget by rememberSaveable { mutableStateOf(false) }
+        LaunchedEffect(targetIndex) {
+            if (targetIndex != null && !scrolledToTarget) {
+                listState.scrollToItem(targetIndex)
+                scrolledToTarget = true
+            }
+        }
         LaunchedEffect(activeLineIndex, following) {
             val index = activeLineIndex
             if (following && index != null && index < lines.size && !listState.isFullyVisible(index)) {
@@ -115,7 +132,8 @@ internal fun TranscriptTab(
                 verticalArrangement = Arrangement.spacedBy(spacing.xs)
             ) {
                 itemsIndexed(items = lines, key = { _, line -> line.id }) { index, line ->
-                    val active = index == activeLineIndex
+                    // Until something plays, the search hit stands in for the playing line.
+                    val active = index == (activeLineIndex ?: targetIndex)
                     TranscriptRow(
                         line = line,
                         active = active,

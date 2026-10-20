@@ -4,12 +4,14 @@ import androidx.room.AutoMigration
 import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
+import androidx.room.migration.AutoMigrationSpec
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Room database holding the five entity families that survive an
  * app restart: sessions, transcript segments, speaker labels,
- * LLM chat messages, and (v2) enrolled speakers. The current
- * version is 4; the generated JSON for every version is committed
+ * LLM chat messages, (v2) enrolled speakers, and (v5) a
+ * full-text index over transcript lines. The current version is 5; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -31,6 +33,10 @@ import androidx.room.TypeConverters
  * `sessions.asrModel` columns. Existing rows keep their language and
  * speaker count, and show the engine as unknown.
  *
+ * The 4 → 5 migration (issue #24) adds the `segments_fts` FTS4
+ * index ([SegmentFtsEntity]) and its sync triggers; [Migration4To5]
+ * then fills it from the existing segments.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -40,14 +46,16 @@ import androidx.room.TypeConverters
         SegmentEntity::class,
         SpeakerEntity::class,
         ChatMessageEntity::class,
-        EnrolledSpeakerEntity::class
+        EnrolledSpeakerEntity::class,
+        SegmentFtsEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
-        AutoMigration(from = 3, to = 4)
+        AutoMigration(from = 3, to = 4),
+        AutoMigration(from = 4, to = 5, spec = Migration4To5::class)
     ]
 )
 @TypeConverters(Converters::class)
@@ -57,8 +65,19 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun speakerDao(): SpeakerDao
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun enrolledSpeakerDao(): EnrolledSpeakerDao
+    abstract fun searchDao(): SearchDao
 
     companion object {
         const val NAME: String = "convoscribe.db"
+    }
+}
+
+/**
+ * The new FTS index starts empty and its triggers only see later
+ * writes, so index the transcripts recorded before the upgrade.
+ */
+class Migration4To5 : AutoMigrationSpec {
+    override fun onPostMigrate(db: SupportSQLiteDatabase) {
+        db.execSQL("INSERT INTO segments_fts(segments_fts) VALUES('rebuild')")
     }
 }

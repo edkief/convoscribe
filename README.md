@@ -69,6 +69,16 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   session's recording and transcribed in the Settings language, then
   speakers are identified. It runs in the background with progress and
   Cancel; a cancelled or unreadable import leaves nothing behind.
+- **Search across sessions** from Home (the search icon, or the
+  search field on wide screens). Words are matched in session titles,
+  transcript lines, speaker names and saved summaries, ignoring capitals
+  and accents (*reunion* finds *Réunion*), each word as the start of a
+  word. Results are grouped per session with the matching words
+  highlighted and each line's time; tapping a line opens the transcript
+  there with the player positioned on it (not playing), and a summary
+  hit opens the Summary tab. Filter by language, date (last 7 / 30
+  days, this year) and person. On e-ink the search waits for a longer
+  pause in typing, so the screen refreshes once per burst.
 - **Continue a recording** from its session screen (mic button). The
   audio and transcript are appended to the same session, in its own
   language.
@@ -369,6 +379,8 @@ one package per concern:
 - `data/` — Room database (`AppDatabase`), entities and DAOs for
   sessions, segments, speakers, chat messages; `SessionRepository`
   is the single façade the rest of the app reads / writes through.
+  `SegmentFtsEntity` is an FTS4 index over transcript lines (kept in
+  sync by Room's triggers) that `SessionSearch` queries for search.
 - `settings/` — `SettingsRepository` (SharedPreferences),
   `AppSettings`, `SecretStore` (EncryptedSharedPreferences) for
   the LLM API key.

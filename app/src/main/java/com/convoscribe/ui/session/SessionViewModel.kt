@@ -117,6 +117,10 @@ sealed interface ExportState {
  * releases the player in [onCleared]. With an [audioExporter] it
  * also encodes the recording to M4A for [shareAudio] / [saveAudio],
  * reporting [exportState] and cancellable with [cancelExport].
+ *
+ * [cueAtMs] (a search hit, issue #24) positions the player there as
+ * soon as the recording is open, without playing; the seek can only
+ * be applied once the player is ready, so it waits until then.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 class SessionViewModel(
@@ -124,7 +128,8 @@ class SessionViewModel(
     private val repository: SessionRepository,
     private val enrollFromSession: EnrollFromSessionUseCase? = null,
     playerFactory: ((CoroutineScope) -> AudioPlayer)? = null,
-    private val audioExporter: AudioExporter? = null
+    private val audioExporter: AudioExporter? = null,
+    cueAtMs: Long? = null
 ) : ViewModel() {
 
     val uiState: StateFlow<SessionUiState> = repository.observeSession(sessionId)
@@ -191,9 +196,22 @@ class SessionViewModel(
         initialValue = null
     )
 
+    /** Where to position the player once it is ready; see [cueAtMs]. */
+    private var pendingCue: Long? = cueAtMs
+
     init {
         val audio = player
         if (audio != null) {
+            viewModelScope.launch {
+                audio.state.map { it.ready }.distinctUntilChanged().collect { ready ->
+                    val cue = pendingCue
+                    if (ready && cue != null) {
+                        pendingCue = null
+                        audio.seekTo(cue)
+                        _following.value = true
+                    }
+                }
+            }
             viewModelScope.launch {
                 uiState
                     .map { state ->

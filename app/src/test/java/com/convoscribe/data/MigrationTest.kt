@@ -58,6 +58,40 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate4To5_indexesExistingSegments() = runTest {
+        helper.createDatabase(DB_NAME, 4).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Lundi', 1000, 5000, 'fr', '/r/1.wav', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO segments (id, sessionId, startMs, endMs, text) " +
+                    "VALUES (7, 1, 1200, 2400, 'La réunion sur le budget')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 5, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val hits = db.searchDao().findSegments(
+                match = "reunion*",
+                language = null,
+                since = 0L,
+                open = "[",
+                close = "]",
+                limit = 10
+            )
+            assertEquals(listOf(7L), hits.map { it.segmentId })
+            assertEquals(1200L, hits.single().startMs)
+            assertEquals("La [réunion] sur le budget", hits.single().snippet)
+        } finally {
+            db.close()
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test.db"
     }

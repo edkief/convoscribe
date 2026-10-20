@@ -24,8 +24,14 @@ import com.convoscribe.R
 import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.EnrolledSpeakerEntity
+import com.convoscribe.data.Highlighted
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
+import com.convoscribe.data.SearchLine
+import com.convoscribe.data.SearchOptions
+import com.convoscribe.data.SearchResult
+import com.convoscribe.data.SearchText
+import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
@@ -43,6 +49,10 @@ import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
 import com.convoscribe.ui.home.SessionRow
 import com.convoscribe.ui.record.RecordBody
+import com.convoscribe.ui.search.DateRange
+import com.convoscribe.ui.search.FilterState
+import com.convoscribe.ui.search.SearchBody
+import com.convoscribe.ui.search.SearchResults
 import com.convoscribe.ui.session.AskUiState
 import com.convoscribe.ui.session.ExportState
 import com.convoscribe.ui.session.PlaybackActions
@@ -206,6 +216,42 @@ class ScreenshotTest(private val variant: Variant) {
             onDelete = {},
             onSettings = {},
             onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun search() = capture("search") {
+        SearchBody(
+            query = "budget réunion",
+            filters = FilterState(dateRange = DateRange.MONTH),
+            options = SearchOptions(languages = listOf("en", "fr"), speakers = listOf("Alice", "Élodie")),
+            results = SearchResults(query = "budget réunion", items = SEARCH_RESULTS),
+            onQueryChange = {},
+            onSubmit = {},
+            onLanguage = {},
+            onDateRange = {},
+            onSpeaker = {},
+            onOpen = { _, _, _ -> },
+            onBack = {},
+            autoFocus = false
+        )
+    }
+
+    @Test
+    fun searchNoResults() = capture("search_no_results") {
+        SearchBody(
+            query = "quarterly",
+            filters = FilterState(language = "fr"),
+            options = SearchOptions(languages = listOf("en", "fr")),
+            results = SearchResults(query = "quarterly"),
+            onQueryChange = {},
+            onSubmit = {},
+            onLanguage = {},
+            onDateRange = {},
+            onSpeaker = {},
+            onOpen = { _, _, _ -> },
+            onBack = {},
+            autoFocus = false
         )
     }
 
@@ -534,6 +580,57 @@ class ScreenshotTest(private val variant: Variant) {
         // 2025-03-14 09:30 UTC and a day later.
         private const val T0 = 1_741_944_600_000L
         private const val DAY = 86_400_000L
+
+        private val SEARCH_TERMS = SearchText.terms("budget réunion")
+
+        private fun hit(id: Long, startMs: Long, speaker: String?, index: Int?, text: String) = SearchLine(
+            segmentId = id,
+            startMs = startMs,
+            speaker = speaker,
+            speakerIndex = index,
+            text = Highlighted(
+                text,
+                SearchText.matchRanges(text, SearchText.terms("budget")) +
+                    SearchText.matchRanges(text, SearchText.terms("réunion"))
+            )
+        )
+
+        private val SEARCH_RESULTS = listOf(
+            SearchResult(
+                session = SessionEntity(
+                    id = 1,
+                    title = "Réunion budget Q2",
+                    createdAt = T0 + DAY,
+                    language = "fr",
+                    status = SessionStatus.DIARIZED
+                ),
+                title = SearchText.match("Réunion budget Q2", SEARCH_TERMS)!!,
+                speakers = emptyList(),
+                summary = null,
+                lines = listOf(
+                    hit(11, 64_000, "Élodie", 0, "On commence la réunion par le budget marketing."),
+                    hit(12, 312_000, "Alice", 1, "Le budget de la réunion de lundi est validé."),
+                    hit(13, 845_000, "Élodie", 0, "Pour la prochaine réunion, revoir le budget."),
+                    hit(14, 1_210_000, null, null, "Budget, réunion, et planning.")
+                )
+            ),
+            SearchResult(
+                session = SessionEntity(
+                    id = 2,
+                    title = "Planning call",
+                    createdAt = T0,
+                    language = "en",
+                    status = SessionStatus.DIARIZED
+                ),
+                title = Highlighted("Planning call"),
+                speakers = emptyList(),
+                summary = SearchText.excerpt(
+                    "The team agreed to move the réunion to Thursday and to cap the travel budget at 2,000 euros.",
+                    SEARCH_TERMS
+                ),
+                lines = emptyList()
+            )
+        )
 
         private fun row(
             id: Long,

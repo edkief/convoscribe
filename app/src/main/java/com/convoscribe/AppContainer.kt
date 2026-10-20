@@ -13,6 +13,7 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.data.SessionSearch
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
@@ -151,6 +152,9 @@ class AppContainer(val context: Context) {
         db = database,
         recordingsDir = File(context.filesDir, "recordings").apply { mkdirs() }
     )
+
+    /** Cross-session search over titles, transcripts, speakers and summaries (issue #24). */
+    val sessionSearch: SessionSearch = SessionSearch(database.searchDao())
 
     /**
      * Encodes a session's WAV to M4A for sharing and saving. Exports

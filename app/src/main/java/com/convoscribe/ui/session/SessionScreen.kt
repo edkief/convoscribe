@@ -105,10 +105,21 @@ private val CONTINUABLE_STATUSES = setOf(
  *   row through the repository.
  * @param navController app-level controller; the back arrow pops
  *   the back stack so the user lands back on the home list.
+ * @param initialTab tab to open on (0 transcript, 1 summary, 2 ask).
+ * @param targetLineId transcript line a search hit opened, scrolled
+ *   to and highlighted (issue #24).
+ * @param cueAtMs where to position the player once it is ready,
+ *   without playing.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SessionScreen(sessionId: Long, navController: NavHostController) {
+fun SessionScreen(
+    sessionId: Long,
+    navController: NavHostController,
+    initialTab: Int = 0,
+    targetLineId: Long? = null,
+    cueAtMs: Long? = null
+) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
     val vm: SessionViewModel = viewModel(
@@ -119,7 +130,8 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
                     repository = container.sessionRepository,
                     enrollFromSession = container.enrollFromSessionUseCase,
                     playerFactory = { scope -> MediaPlayerAudioPlayer(scope) },
-                    audioExporter = container.audioExporter
+                    audioExporter = container.audioExporter,
+                    cueAtMs = cueAtMs
                 )
             }
         }
@@ -324,7 +336,9 @@ fun SessionScreen(sessionId: Long, navController: NavHostController) {
         onRetryAsk = { askVm.retryLast() },
         onCancelAsk = { askVm.cancel() },
         onClearQuestions = { askVm.clearHistory() },
-        onOpenSettings = { navController.navigate("settings") }
+        onOpenSettings = { navController.navigate("settings") },
+        initialTab = initialTab,
+        targetLineId = targetLineId
     )
 }
 
@@ -376,7 +390,8 @@ internal fun SessionBody(
     waitingForCharger: Boolean = false,
     createdAt: Long = 0L,
     durationMs: Long = 0L,
-    initialTab: Int = 0
+    initialTab: Int = 0,
+    targetLineId: Long? = null
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -536,7 +551,8 @@ internal fun SessionBody(
                     waitingForCharger = waitingForCharger,
                     // The manual trigger works whatever the setting says.
                     onIdentifySpeakersNow = { onReidentifySpeakers(effectiveSpeakerCount) }
-                        .takeIf { retranscribe.progress == null }
+                        .takeIf { retranscribe.progress == null },
+                    targetLineId = targetLineId
                 )
                 selectedTab == 1 -> SummaryTab(
                     state = summaryState,
