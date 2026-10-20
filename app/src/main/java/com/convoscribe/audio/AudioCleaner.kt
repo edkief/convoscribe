@@ -2,6 +2,9 @@ package com.convoscribe.audio
 
 import java.io.Closeable
 import java.io.File
+import java.io.RandomAccessFile
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -89,6 +92,64 @@ private class AlignedCleaner(private val inner: StreamingCleaner) : StreamingCle
 
 /** Cleaning a stored recording, for imports and finished sessions. */
 object AudioCleaning {
+
+    /**
+     * How much of the cleaned audio the recognizer hears; the rest is
+     * the original. Fully cleaned audio sounds better but transcribes
+     * worse: the cleaner's artefacts cost the Kroko recognizer far
+     * more than the noise it removes (`scripts/eval/eval_cleanup.py`:
+     * e.g. LibriSpeech in babble at 5 dB SNR, 29.5% WER as recorded,
+     * 46.1% fully cleaned, 26.8% half and half). The cleaned recording
+     * the player offers stays fully cleaned.
+     */
+    const val RECOGNIZER_CLEAN_SHARE: Float = 0.5f
+
+    /**
+     * What the recognizer gets for [cleaned] audio whose original is
+     * [original] (same length): [RECOGNIZER_CLEAN_SHARE] of one plus
+     * the rest of the other.
+     */
+    fun forRecognizer(cleaned: FloatArray, original: FloatArray): FloatArray {
+        require(cleaned.size == original.size) { "cleaned and original audio differ in length" }
+        val share = RECOGNIZER_CLEAN_SHARE
+        return FloatArray(cleaned.size) { cleaned[it] * share + original[it] * (1f - share) }
+    }
+
+    /**
+     * Write the audio the recognizer should hear for a cleaned session
+     * into [target]: [forRecognizer] of [cleaned] and [original],
+     * streamed chunk by chunk so memory does not grow with the length.
+     * [cleaned] is the app's own 16 kHz PCM16 WAV, sample-aligned with
+     * [original]; the shorter length wins.
+     */
+    suspend fun writeRecognizerMix(
+        original: File,
+        cleaned: File,
+        target: File,
+        chunkSamples: Int = AudioSpec.CHUNK_SAMPLES
+    ) {
+        val info = WavReader.inspect(cleaned)
+        require(info.sampleRate == AudioSpec.SAMPLE_RATE) { "cleaned audio must be 16 kHz" }
+        val cleanedTotal = info.dataBytes / 2
+        var offset = 0L
+        RandomAccessFile(cleaned, "r").use { raf ->
+            WavWriter(target).use { out ->
+                WavReader.readChunks16k(original, chunkSamples) { chunk ->
+                    currentCoroutineContext().ensureActive()
+                    val n = minOf(chunk.size.toLong(), cleanedTotal - offset).toInt()
+                    if (n > 0) {
+                        val bytes = ByteArray(n * 2)
+                        raf.seek(info.dataOffset + offset * 2)
+                        raf.readFully(bytes)
+                        val bb = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+                        val clean = FloatArray(n) { bb.short / 32_768f }
+                        out.write(forRecognizer(clean, chunk.copyOf(n)).toPcm16Samples())
+                    }
+                    offset += chunk.size
+                }
+            }
+        }
+    }
 
     /**
      * Clean [source] into [target], a 16 kHz mono PCM16 WAV with the

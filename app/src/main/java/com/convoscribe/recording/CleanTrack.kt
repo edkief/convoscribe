@@ -1,5 +1,6 @@
 package com.convoscribe.recording
 
+import com.convoscribe.audio.AudioCleaning
 import com.convoscribe.audio.StreamingCleaner
 import com.convoscribe.audio.WavWriter
 import com.convoscribe.audio.aligned
@@ -10,8 +11,10 @@ import java.io.File
 /**
  * The cleaned half of a live recording (issue #37): runs each chunk
  * through [cleaner] and writes the result to the session's cleaned
- * WAV, which stays sample-aligned with the original. The cleaned
- * audio is what the recognizer gets.
+ * WAV, which stays sample-aligned with the original. The recognizer
+ * gets [AudioCleaning.forRecognizer] of the cleaned audio and the
+ * original it came from, which the cleaner returns a little later
+ * than it was given; [held] keeps that original until then.
  *
  * With no [cleaner] (a cleaned session continued after its model was
  * removed) the audio is written as it is, so the two files still line
@@ -24,11 +27,20 @@ internal class CleanTrack private constructor(
 
     private val cleaner: StreamingCleaner? = cleaner?.aligned()
 
-    /** Clean [samples], append them to the cleaned WAV and return them. */
+    /** Original audio given to [cleaner] whose cleaned version has not come back yet: [heldCount] samples. */
+    private var held = FloatArray(0)
+    private var heldCount = 0
+
+    /**
+     * Clean [samples], append the cleaned audio to the cleaned WAV and
+     * return what the recognizer should get for it.
+     */
     fun process(samples: FloatArray): FloatArray {
-        val out = cleaner?.process(samples) ?: samples
-        wav.write(out.toPcm16Samples())
-        return out
+        val cleaner = cleaner ?: return samples.also { wav.write(it.toPcm16Samples()) }
+        if (heldCount + samples.size > held.size) held = held.copyOf(heldCount + samples.size)
+        samples.copyInto(held, heldCount)
+        heldCount += samples.size
+        return forRecognizer(cleaner.process(samples))
     }
 
     /**
@@ -37,9 +49,17 @@ internal class CleanTrack private constructor(
      * the recognizer.
      */
     fun flush(): FloatArray {
-        val out = cleaner?.flush() ?: FloatArray(0)
-        wav.write(out.toPcm16Samples())
-        return out
+        val cleaner = cleaner ?: return FloatArray(0)
+        return forRecognizer(cleaner.flush()).also { heldCount = 0 }
+    }
+
+    /** Write [cleaned] to the cleaned WAV and blend it with the original it came from. */
+    private fun forRecognizer(cleaned: FloatArray): FloatArray {
+        wav.write(cleaned.toPcm16Samples())
+        val original = held.copyOf(cleaned.size)
+        held.copyInto(held, 0, cleaned.size, heldCount)
+        heldCount -= cleaned.size
+        return AudioCleaning.forRecognizer(cleaned, original)
     }
 
     override fun close() {

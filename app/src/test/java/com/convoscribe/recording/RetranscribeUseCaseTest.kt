@@ -264,7 +264,8 @@ class RetranscribeUseCaseTest {
 
         assertTrue(uc.run(id, "en", clean = true))
 
-        assertEquals(0.125f, transcriber.peak, 1e-4f)
+        // Half cleaned (0.125), half original (0.25).
+        assertEquals(0.1875f, transcriber.peak, 1e-4f)
         val session = repo.getSession(id)!!
         assertEquals("enh-test", session.cleanedWith)
         val original = WavReader.readMono16k(File(session.audioPath))
@@ -273,12 +274,12 @@ class RetranscribeUseCaseTest {
         assertEquals(0.25f, original[100], 1e-4f)
         assertEquals(0.125f, cleaned[100], 1e-4f)
         assertEquals(listOf("clean"), repo.getSegments(id).map { it.text })
-        assertTrue(dir.listFiles()!!.none { it.name.endsWith(".cleaning.wav") })
+        assertTrue(dir.listFiles()!!.none { it.name.endsWith(".cleaning.wav") || it.name.endsWith(".mix.wav") })
 
-        // A later plain re-transcription uses the cleaned recording.
+        // A later plain re-transcription uses the cleaned recording too.
         val again = PeakTranscriber()
         assertTrue(useCase(factory { again }, Halving()).run(id, "en"))
-        assertEquals(0.125f, again.peak, 1e-4f)
+        assertEquals(0.1875f, again.peak, 1e-4f)
         assertEquals("enh-test", repo.getSession(id)!!.cleanedWith)
         assertEquals(RetranscribeState.Idle, uc.state.value)
     }

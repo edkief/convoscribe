@@ -94,4 +94,26 @@ class AudioCleanerTest {
         assertEquals(1f, progress.last(), 0f)
         assertEquals(progress, progress.sorted())
     }
+
+    @Test
+    fun forRecognizer_blendsHalfAndHalf() {
+        assertArrayEquals(
+            floatArrayOf(0.75f, 0f),
+            AudioCleaning.forRecognizer(floatArrayOf(0.5f, 0f), floatArrayOf(1f, 0f)),
+            1e-6f
+        )
+    }
+
+    @Test
+    fun writeRecognizerMix_streamsTheBlendOfBothFiles() = runTest {
+        val original = File(tmp.root, "o.wav").apply { WavWriter(this).use { it.write(ShortArray(4_000) { 8_192 }) } }
+        val cleaned = File(tmp.root, "c.wav").apply { WavWriter(this).use { it.write(ShortArray(4_000) { 4_096 }) } }
+        val mix = File(tmp.root, "m.wav")
+
+        AudioCleaning.writeRecognizerMix(original, cleaned, mix, chunkSamples = 1_600)
+
+        val out = WavReader.readMono16k(mix)
+        assertEquals(4_000, out.size)
+        assertEquals(0.1875f, out[3_999], 1e-4f)
+    }
 }

@@ -113,17 +113,19 @@ class RetranscribeUseCase(
                 cleaned = CleanedAudio(target, factory.modelId())
                 target
             } else {
-                session.cleanAudioFile().takeIf { session.cleanedWith != null && it.exists() } ?: original
+                session.cleanAudioFile().takeIf { session.cleanedWith != null && it.exists() }
             }
-            val finals = withContext(asrDispatcher) {
-                transcriberFactory.create(language).use { transcriber ->
-                    FileTranscriber.transcribe(source, transcriber) { progress ->
-                        _state.value = RetranscribeState.Running(
-                            sessionId,
-                            transcribeFrom + progress * (1f - transcribeFrom)
-                        )
-                    }
+            // The recognizer hears the cleaned recording blended with the
+            // original (AudioCleaning.RECOGNIZER_CLEAN_SHARE), written to a
+            // second work file that is always deleted afterwards.
+            val mix = source?.let { File(original.parentFile, "${original.nameWithoutExtension}.mix.wav") }
+            val finals = try {
+                if (source != null && mix != null) {
+                    withContext(asrDispatcher) { AudioCleaning.writeRecognizerMix(original, source, mix) }
                 }
+                transcribe(language, mix ?: original, sessionId, transcribeFrom)
+            } finally {
+                mix?.delete()
             }
             val pieces = finals.map { final ->
                 SegmentPiece(
@@ -152,6 +154,16 @@ class RetranscribeUseCase(
         diarize.runOrDefer(sessionId)
         return true
     }
+
+    /** Transcribe [file], reporting progress from [from] to 1 of the whole run. */
+    private suspend fun transcribe(language: String, file: File, sessionId: Long, from: Float) =
+        withContext(asrDispatcher) {
+            transcriberFactory.create(language).use { transcriber ->
+                FileTranscriber.transcribe(file, transcriber) { progress ->
+                    _state.value = RetranscribeState.Running(sessionId, from + progress * (1f - from))
+                }
+            }
+        }
 
     /** Clear a [RetranscribeState.Failed] once the screen has shown it. */
     fun acknowledgeFailure() {

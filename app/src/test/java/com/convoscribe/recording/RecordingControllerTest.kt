@@ -900,9 +900,10 @@ class RecordingControllerTest {
         assertEquals(3_200 / 256 * 256, h.transcriber.fed.size)
         h.controller.pause()
         advanceUntilIdle()
-        // A pause flushes it: the recognizer has every sample, cleaned.
+        // A pause flushes it: the recognizer has every sample, half
+        // cleaned and half original.
         assertEquals(3_200, h.transcriber.fed.size)
-        assertTrue(h.transcriber.fed.all { it == 8_000 / 32_768f / 2 })
+        assertTrue(h.transcriber.fed.all { kotlin.math.abs(it - 8_000 / 32_768f * 0.75f) < 1e-6f })
 
         h.controller.resume(this)
         advanceUntilIdle()
