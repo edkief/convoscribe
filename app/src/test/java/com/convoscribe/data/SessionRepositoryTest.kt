@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
+import com.convoscribe.asr.TimedToken
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -429,5 +430,114 @@ class SessionRepositoryTest {
         } catch (_: Exception) {
         }
         assertTrue(repo.observeAllSessions().first().isEmpty())
+    }
+
+    // --- Hand edits (issue #26) ---
+
+    private suspend fun threeLines(): Pair<Long, List<Long>> {
+        val id = repo.createSession(title = "Edit", language = "en")
+        val ids = listOf(
+            repo.addSegment(id, 0, 1_000, "the budget", listOf(TimedToken(" the", 0), TimedToken(" budget", 400))),
+            repo.addSegment(
+                id,
+                1_000,
+                2_000,
+                "for march",
+                listOf(TimedToken(" for", 1_000), TimedToken(" march", 1_500))
+            ),
+            repo.addSegment(id, 2_000, 3_000, "okay", emptyList())
+        )
+        repo.applyDiarization(id, mapOf(ids[0] to 0, ids[1] to 1, ids[2] to 0), speakerCount = 2)
+        return id to ids
+    }
+
+    @Test
+    fun editLineText_persistsAndIsSearchable_andUndoRestores() = runTest {
+        val (id, ids) = threeLines()
+        val undo = repo.editLineText(ids[1], "for April")!!
+
+        val edited = repo.getSegments(id)[1]
+        assertEquals("for April", edited.text)
+        assertTrue(edited.textEdited)
+        assertEquals(listOf(1_000L, 1_500L), TokenTimingCodec.decode(edited.tokens).map { it.ms })
+        assertTrue(repo.getSession(id)!!.transcriptEdited)
+        val hits = db.searchDao().findSegments("april*", null, 0L, "[", "]", 10)
+        assertEquals(listOf(ids[1]), hits.map { it.segmentId })
+
+        repo.undo(undo)
+        assertEquals("for march", repo.getSegments(id)[1].text)
+        assertFalse(repo.getSegments(id)[1].textEdited)
+        assertFalse(repo.getSession(id)!!.transcriptEdited)
+        assertTrue(db.searchDao().findSegments("april*", null, 0L, "[", "]", 10).isEmpty())
+    }
+
+    @Test
+    fun editLineText_unchanged_writesNothing() = runTest {
+        val (id, ids) = threeLines()
+        assertNull(repo.editLineText(ids[0], " the budget "))
+        assertFalse(repo.getSession(id)!!.transcriptEdited)
+    }
+
+    @Test
+    fun setLineSpeaker_existingAndNew_andUndoRemovesTheNewSpeaker() = runTest {
+        val (id, ids) = threeLines()
+        repo.setLineSpeaker(ids[2], 1)
+        assertEquals(1, repo.getSegments(id)[2].speakerIndex)
+        assertTrue(repo.getSegments(id)[2].speakerEdited)
+
+        val undo = repo.setLineNewSpeaker(ids[0], "  Dana ")!!
+        assertEquals(2, repo.getSegments(id)[0].speakerIndex)
+        assertEquals("Dana", repo.getSpeakers(id).last().label)
+
+        repo.undo(undo)
+        assertEquals(0, repo.getSegments(id)[0].speakerIndex)
+        assertEquals(listOf(0, 1), repo.getSpeakers(id).map { it.speakerIndex })
+        assertTrue("the first speaker change still stands", repo.getSession(id)!!.transcriptEdited)
+    }
+
+    @Test
+    fun mergeWithNext_joinsLines_andUndoBringsTheSecondBack() = runTest {
+        val (id, ids) = threeLines()
+        val undo = repo.mergeWithNext(ids[0])!!
+        val lines = repo.getSegments(id)
+        assertEquals(listOf("the budget for march", "okay"), lines.map { it.text })
+        assertEquals(2_000L, lines[0].endMs)
+        assertNull(repo.mergeWithNext(ids[2]))
+
+        repo.undo(undo)
+        assertEquals(ids, repo.getSegments(id).map { it.id })
+        assertEquals(listOf("the budget", "for march", "okay"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun splitLine_insertsTheSecondPart_andUndoRemovesIt() = runTest {
+        val (id, ids) = threeLines()
+        val undo = repo.splitLine(ids[1], 3)!!
+        val lines = repo.getSegments(id)
+        assertEquals(listOf("the budget", "for", "march", "okay"), lines.map { it.text })
+        assertEquals(1_500L, lines[2].startMs)
+        assertEquals(1, lines[2].speakerIndex)
+
+        repo.undo(undo)
+        assertEquals(listOf("the budget", "for march", "okay"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun deleteLine_andUndo() = runTest {
+        val (id, ids) = threeLines()
+        val undo = repo.deleteLine(ids[1])!!
+        assertEquals(listOf("the budget", "okay"), repo.getSegments(id).map { it.text })
+        assertTrue(repo.getSession(id)!!.transcriptEdited)
+
+        repo.undo(undo)
+        assertEquals(listOf("the budget", "for march", "okay"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun replaceTranscript_clearsTheEditedFlag() = runTest {
+        val (id, ids) = threeLines()
+        repo.deleteLine(ids[2])
+        repo.replaceTranscript(id, "fr", listOf(SegmentPiece(0, 1_000, "bonjour", emptyList(), null)), "cpu", "m")
+        assertFalse(repo.getSession(id)!!.transcriptEdited)
     }
 }

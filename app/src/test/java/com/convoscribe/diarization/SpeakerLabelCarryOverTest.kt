@@ -57,4 +57,12 @@ class SpeakerLabelCarryOverTest {
         val current = listOf(span(0, 4_000, 0), span(4_000, 5_000, 0))
         assertEquals(mapOf(0 to "Alice"), SpeakerLabelCarryOver.carry(previous, labels, current))
     }
+
+    @Test
+    fun match_pairsEveryOldSpeaker_defaultNamesToo_oneToOne() {
+        val previous = listOf(span(0, 1_000, 0), span(1_000, 3_000, 1), span(3_000, 3_500, 2))
+        // Old 0 and old 2 both overlap new 1 most; old 1 overlaps new 0 most.
+        val current = listOf(span(0, 1_000, 1), span(1_000, 3_000, 0), span(3_000, 3_500, 1))
+        assertEquals(mapOf(1 to 0, 0 to 1), SpeakerLabelCarryOver.match(previous, current))
+    }
 }

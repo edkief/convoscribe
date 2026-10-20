@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -41,7 +42,20 @@ data class SegmentEntity(
      * or by a backend without timings. Lets diarization split a line
      * at a speaker change.
      */
-    val tokens: String? = null
+    val tokens: String? = null,
+    /**
+     * The user changed this line's text, or merged or split it
+     * (issue #26). Diarization then never splits it, since a split
+     * rebuilds the text from the tokens.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val textEdited: Boolean = false,
+    /**
+     * The user picked this line's speaker (issue #26); diarization
+     * keeps that speaker instead of assigning one.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val speakerEdited: Boolean = false
 )
 
 /**

@@ -844,6 +844,58 @@ recorded, without clearing data.
 - After the upgrade from v0.4.0, sessions recorded before it are found
   too.
 
+## 28. Edit the transcript (issue #26)
+
+Run this on a phone and on the **Boox**, on a diarized session with at
+least three speakers' worth of lines and word timings (recorded with
+this build or v0.3.0+). To check the upgrade, install over v0.5.0
+without clearing data first.
+
+**Steps**
+
+1. Long-press a line. Choose *Edit text*, fix a word (e.g. a name) and
+   add a comma, then Save. Play the line.
+2. Tap *Undo* in the snackbar.
+3. *Change speaker* on a line → another existing speaker; then on
+   another line → *New speaker* named `Dana`.
+4. *Merge with next* on a line; *Split here* on a long line with the
+   cursor inside a word in the middle.
+5. *Delete line*, then *Undo*.
+6. Edit one line, then delete another, then tap *Undo* on the second
+   snackbar only.
+7. Session menu → *Re-identify speakers…* → Automatic.
+8. Summarise, ask a question about the corrected word, share the
+   transcript, and search Home for the corrected word.
+9. Session menu → *Re-transcribe…*, pick a language, confirm.
+10. With TalkBack on, focus a line and open the actions menu
+    (swipe up then right, or the TalkBack menu → Actions).
+11. Start re-identifying speakers and long-press a line while it runs.
+
+**Expected**
+
+- Step 1: the line shows the new text and *edited* after its time;
+  playback still highlights word by word, including on the changed word.
+- Step 2: the original text comes back without the *edited* mark.
+- Step 3: the lines show their new speaker; `Dana` appears as a chip.
+- Step 4: the two lines become one (first line's speaker and time);
+  the split gives two lines at the word boundary nearest the cursor,
+  the second starting at that word's time. The dialog previews both.
+- Step 5: the line disappears, then returns in place.
+- Step 6: the snackbar for the delete undoes the delete only; the
+  edit stays.
+- Step 7: the lines whose speaker you picked keep that person (and
+  `Dana` stays a speaker); the corrected line is not split or rewritten.
+- Step 8: summary, answer, shared text and search all use the corrected
+  text.
+- Step 9: a *Discard your edits?* dialog appears first; Cancel keeps the
+  transcript. After confirming, the new transcript has no *edited* marks.
+- Step 10: TalkBack offers *Edit text*, *Change speaker*, *Merge with
+  next*, *Split here*, *Delete line* (merge absent on the last line).
+- Step 11: long-press does nothing while speakers are being identified
+  (or the session is recording / re-transcribing).
+- On the Boox, the menu and dialogs appear without animation and the
+  *edited* mark is readable in black and white.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

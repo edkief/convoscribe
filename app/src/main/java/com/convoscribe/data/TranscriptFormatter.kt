@@ -24,7 +24,9 @@ data class TranscriptLine(
     val id: Long = 0,
     val endMs: Long = startMs,
     val tokens: List<TimedToken> = emptyList(),
-    val speakerIndex: Int? = null
+    val speakerIndex: Int? = null,
+    /** The user changed this line's text or speaker (issue #26). */
+    val edited: Boolean = false
 )
 
 /**
@@ -87,7 +89,8 @@ object TranscriptFormatter {
                 text = segment.text,
                 id = segment.id,
                 endMs = segment.endMs,
-                tokens = TokenTimingCodec.decode(segment.tokens)
+                tokens = TokenTimingCodec.decode(segment.tokens),
+                edited = segment.textEdited || segment.speakerEdited
             )
         }
 

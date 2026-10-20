@@ -32,6 +32,9 @@ interface SpeakerDao {
     @Query("DELETE FROM speakers WHERE sessionId = :sessionId")
     suspend fun deleteForSession(sessionId: Long)
 
+    @Query("DELETE FROM speakers WHERE sessionId = :sessionId AND speakerIndex = :speakerIndex")
+    suspend fun delete(sessionId: Long, speakerIndex: Int)
+
     /**
      * Update the user-visible [label] for one speaker within a
      * session. The repository guarantees the row exists (it is

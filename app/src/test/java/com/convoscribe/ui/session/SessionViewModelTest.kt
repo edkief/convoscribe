@@ -221,6 +221,44 @@ class SessionViewModelTest {
     }
 
     @Test
+    fun editLineText_updatesLinesAndShareText_flagsTheSession_andCanBeUndone() = runTest(dispatcher) {
+        val id = repo.createSession(title = "edit", language = "en")
+        val line = repo.addSegment(sessionId = id, startMs = 0, endMs = 1_000, text = "Hello wrld")
+        val vm = viewModel(id)
+        vm.uiState.first { it.lines.size == 1 }
+
+        vm.editLineText(line, "Hello world")
+        val done = vm.editDone.first()
+        assertEquals(UiText.res(R.string.session_line_done_text), done.message)
+        val edited = vm.uiState.first { it.hasEdits }
+        assertEquals("Hello world", edited.lines.single().text)
+        assertTrue(edited.lines.single().edited)
+        assertEquals("[00:00] Hello world", vm.transcriptText())
+
+        vm.undoEdit(done.undo)
+        val undone = vm.uiState.first { !it.hasEdits }
+        assertEquals("Hello wrld", undone.lines.single().text)
+    }
+
+    @Test
+    fun undoEdit_ignoresAnOlderEdit() = runTest(dispatcher) {
+        val id = repo.createSession(title = "edit", language = "en")
+        val first = repo.addSegment(sessionId = id, startMs = 0, endMs = 1_000, text = "one")
+        val second = repo.addSegment(sessionId = id, startMs = 1_000, endMs = 2_000, text = "two")
+        val vm = viewModel(id)
+        vm.uiState.first { it.lines.size == 2 }
+
+        vm.deleteLine(first)
+        val older = vm.editDone.first()
+        vm.editLineText(second, "deux")
+        vm.editDone.first()
+        vm.undoEdit(older.undo)
+        advanceUntilIdle()
+
+        assertEquals(listOf("deux"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
     fun transcriptTextExposesShareReadyString() = runTest(dispatcher) {
         val id = repo.createSession(title = "share", language = "en")
         repo.addSegment(sessionId = id, startMs = 0, endMs = 1_000, text = "Hello")

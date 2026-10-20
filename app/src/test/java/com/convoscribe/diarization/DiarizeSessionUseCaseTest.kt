@@ -425,6 +425,83 @@ class DiarizeSessionUseCaseTest {
         assertEquals(setOf("Speaker 1", "Bob"), labels.values.toSet())
     }
 
+    private fun scripted(vararg turns: SpeakerTurn) = DiarizeSessionUseCase(
+        repository = repo,
+        diarizerFactory = ScriptedDiarizerFactory(ScriptedDiarizer(turns.toList())),
+        settings = settings,
+        readSamples = { FloatArray(48_000) }
+    )
+
+    /** Re-identifying keeps a speaker the user picked for a line (issue #26). */
+    @Test
+    fun run_again_keepsASpeakerPickedByHand() = runTest {
+        val id = repo.createSession(title = "Test", language = "en")
+        repo.addSegment(id, startMs = 0L, endMs = 1000L, text = "first")
+        repo.addSegment(id, startMs = 1000L, endMs = 2000L, text = "second")
+        val third = repo.addSegment(id, startMs = 2000L, endMs = 3000L, text = "third")
+        val turns = arrayOf(
+            SpeakerTurn(startMs = 0L, endMs = 1000L, speaker = 5),
+            SpeakerTurn(startMs = 1000L, endMs = 3000L, speaker = 9)
+        )
+        scripted(*turns).run(id)
+        repo.setLineSpeaker(third, 0)
+
+        scripted(*turns).run(id)
+
+        val segments = repo.getSegments(id)
+        assertEquals(listOf(0, 1, 0), segments.map { it.speakerIndex })
+        assertTrue(segments[2].speakerEdited)
+        assertEquals(listOf("Speaker 1", "Speaker 2"), repo.getSpeakers(id).map { it.label })
+    }
+
+    /** A speaker the user added by hand, heard nowhere else, comes back after the re-run. */
+    @Test
+    fun run_again_keepsANewSpeakerAddedByHand() = runTest {
+        val id = repo.createSession(title = "Test", language = "en")
+        repo.addSegment(id, startMs = 0L, endMs = 1000L, text = "first")
+        val second = repo.addSegment(id, startMs = 1000L, endMs = 2000L, text = "second")
+        repo.addSegment(id, startMs = 2000L, endMs = 3000L, text = "third")
+        val turns = arrayOf(
+            SpeakerTurn(startMs = 0L, endMs = 1000L, speaker = 0),
+            SpeakerTurn(startMs = 1000L, endMs = 3000L, speaker = 1)
+        )
+        scripted(*turns).run(id)
+        repo.setLineNewSpeaker(second, "Dana")
+
+        scripted(*turns).run(id)
+
+        val labels = repo.getSpeakers(id).associate { it.speakerIndex to it.label }
+        val segments = repo.getSegments(id)
+        assertEquals("Dana", labels[segments[1].speakerIndex])
+        assertEquals(setOf("Speaker 1", "Speaker 2", "Dana"), labels.values.toSet())
+        assertEquals("Speaker 2", labels[segments[2].speakerIndex])
+    }
+
+    /** A line whose text the user corrected is never split, so the correction stays. */
+    @Test
+    fun run_lineWithEditedText_staysWholeWithItsText() = runTest {
+        val id = repo.createSession(title = "Test", language = "en")
+        val line = repo.addSegment(
+            id,
+            startMs = 0L,
+            endMs = 4_000L,
+            text = "Are you coming yes I am",
+            tokens = listOf(" are" to 100L, " you" to 300L, " coming" to 500L, " yes" to 1_500L, " I" to 1_800L)
+                .map { (t, ms) -> com.convoscribe.asr.TimedToken(t, ms) }
+        )
+        repo.editLineText(line, "Are you coming? Yes, I am.")
+
+        scripted(
+            SpeakerTurn(startMs = 0L, endMs = 1_200L, speaker = 4),
+            SpeakerTurn(startMs = 1_300L, endMs = 3_000L, speaker = 2)
+        ).run(id)
+
+        val segments = repo.getSegments(id)
+        assertEquals(listOf("Are you coming? Yes, I am."), segments.map { it.text })
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertTrue(segments.single().speakerIndex != null)
+    }
+
     /**
      * Acceptance test 2: a diarizer that throws leaves the session
      * in `DIARIZATION_FAILED` and the segment rows untouched (no

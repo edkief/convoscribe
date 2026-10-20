@@ -55,6 +55,8 @@ import com.convoscribe.ui.search.SearchBody
 import com.convoscribe.ui.search.SearchResults
 import com.convoscribe.ui.session.AskUiState
 import com.convoscribe.ui.session.ExportState
+import com.convoscribe.ui.session.LineDialog
+import com.convoscribe.ui.session.LineEditActions
 import com.convoscribe.ui.session.PlaybackActions
 import com.convoscribe.ui.session.SessionBody
 import com.convoscribe.ui.session.SummaryUiState
@@ -73,7 +75,10 @@ import com.convoscribe.update.SemVer
 import com.convoscribe.update.UpdateFailure
 import com.convoscribe.update.UpdateOffer
 import com.convoscribe.update.UpdateState
+import com.github.takahirom.roborazzi.ExperimentalRoborazziApi
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.captureScreenRoboImage
+import org.junit.Assume
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -141,6 +146,18 @@ class ScreenshotTest(private val variant: Variant) {
             }
         }
         compose.onRoot().captureRoboImage("build/outputs/roborazzi/${variant.name}/$screen.png")
+    }
+
+    /** Like [capture], but the whole screen, so dialogs and menus (own windows) are in the shot. */
+    @OptIn(ExperimentalRoborazziApi::class)
+    private fun captureScreen(screen: String, content: @Composable () -> Unit) {
+        compose.setContent {
+            ConvoScribeTheme(darkTheme = variant.dark, eink = variant.eink) {
+                content()
+            }
+        }
+        compose.waitForIdle()
+        captureScreenRoboImage("build/outputs/roborazzi/${variant.name}/$screen.png")
     }
 
     @Test
@@ -355,6 +372,36 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun sessionLineMenu() = captureScreen("session_line_menu") {
+        session(lineMenu = 2L)
+    }
+
+    @Test
+    fun sessionEditLine() {
+        assumeTextFieldDialogsRender()
+        captureScreen("session_edit_line") { session(lineDialog = LineDialog.EditText(2L)) }
+    }
+
+    @Test
+    fun sessionChangeSpeaker() = captureScreen("session_change_speaker") {
+        session(lineDialog = LineDialog.ChangeSpeaker(2L))
+    }
+
+    @Test
+    fun sessionSplitLine() {
+        assumeTextFieldDialogsRender()
+        captureScreen("session_split_line") { session(lineDialog = LineDialog.Split(2L)) }
+    }
+
+    /**
+     * A dialog holding a text field never lets Compose go idle under
+     * Robolectric when animations run (the existing rename dialog does
+     * the same), so those dialogs are only shot on the e-ink variant,
+     * where animations are off.
+     */
+    private fun assumeTextFieldDialogsRender() = Assume.assumeTrue(variant.eink)
+
+    @Test
     fun sessionDiarizing() = capture("session_diarizing") {
         session(
             status = SessionStatus.DIARIZING,
@@ -514,7 +561,9 @@ class ScreenshotTest(private val variant: Variant) {
         playing: Boolean = false,
         tab: Int = 0,
         summary: SummaryUiState = SummaryUiState(),
-        waitingForCharger: Boolean = false
+        waitingForCharger: Boolean = false,
+        lineMenu: Long? = null,
+        lineDialog: LineDialog? = null
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -557,7 +606,10 @@ class ScreenshotTest(private val variant: Variant) {
             onCancelAsk = {},
             onClearQuestions = {},
             onOpenSettings = {},
-            waitingForCharger = waitingForCharger
+            waitingForCharger = waitingForCharger,
+            lineEdits = LineEditActions(),
+            initialLineMenu = lineMenu,
+            initialLineDialog = lineDialog
         )
     }
 
@@ -708,7 +760,8 @@ class ScreenshotTest(private val variant: Variant) {
                 endMs = 13_000L,
                 speaker = "Bob",
                 speakerIndex = 2,
-                text = "That's fine as long as the e-ink mode is in."
+                text = "That's fine as long as the e-ink mode is in.",
+                edited = true
             ),
             TranscriptLine(
                 id = 4,

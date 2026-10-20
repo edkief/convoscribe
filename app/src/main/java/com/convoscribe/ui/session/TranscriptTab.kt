@@ -1,9 +1,11 @@
 package com.convoscribe.ui.session
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +25,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -39,10 +43,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -50,6 +57,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import com.convoscribe.R
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
+import com.convoscribe.data.TokenAligner
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.ui.components.EmptyState
@@ -68,6 +76,13 @@ import com.convoscribe.ui.theme.AppTheme
  *
  * [targetLineId] is the line a search hit opened (issue #24): the list
  * scrolls to it once and it is highlighted until playback moves on.
+ *
+ * With [lineEdits] (issue #26; `null` while the transcript is being
+ * written by something else) a long press on a line opens its menu:
+ * edit text, change speaker, merge with next, split, delete. TalkBack
+ * gets the same entries as custom actions. [initialMenuLineId] and
+ * [initialDialog] open the menu or a dialog straight away, for the
+ * screenshot tests.
  */
 @Composable
 internal fun TranscriptTab(
@@ -83,9 +98,14 @@ internal fun TranscriptTab(
     onSpeakerChipTapped: (Int) -> Unit,
     waitingForCharger: Boolean = false,
     onIdentifySpeakersNow: (() -> Unit)? = null,
-    targetLineId: Long? = null
+    targetLineId: Long? = null,
+    lineEdits: LineEditActions? = null,
+    initialMenuLineId: Long? = null,
+    initialDialog: LineDialog? = null
 ) {
     val spacing = AppTheme.spacing
+    var menuLineId by remember { mutableStateOf(initialMenuLineId) }
+    var dialog by remember { mutableStateOf(initialDialog) }
     Column(modifier = Modifier.fillMaxSize()) {
         StatusBanner(status = status, waitingForCharger = waitingForCharger, onIdentifyNow = onIdentifySpeakersNow)
         if (speakers.isNotEmpty()) {
@@ -139,7 +159,26 @@ internal fun TranscriptTab(
                         active = active,
                         positionMs = if (active) positionMs else NO_POSITION,
                         onSpeakerTapped = onSpeakerChipTapped,
-                        onTapped = if (canPlay) ({ playback.onLineTapped(line) }) else null
+                        onTapped = if (canPlay) ({ playback.onLineTapped(line) }) else null,
+                        menu = lineEdits?.let { edits ->
+                            LineMenu(
+                                open = menuLineId == line.id,
+                                hasNext = index < lines.lastIndex,
+                                canSplit = TokenAligner.wordStarts(line.text).size >= 2,
+                                onOpen = { menuLineId = line.id },
+                                onDismiss = { menuLineId = null },
+                                onChoose = { choice ->
+                                    menuLineId = null
+                                    when (choice) {
+                                        LineChoice.EDIT_TEXT -> dialog = LineDialog.EditText(line.id)
+                                        LineChoice.CHANGE_SPEAKER -> dialog = LineDialog.ChangeSpeaker(line.id)
+                                        LineChoice.SPLIT -> dialog = LineDialog.Split(line.id)
+                                        LineChoice.MERGE -> edits.onMergeWithNext(line)
+                                        LineChoice.DELETE -> edits.onDelete(line)
+                                    }
+                                }
+                            )
+                        }
                     )
                 }
             }
@@ -154,6 +193,88 @@ internal fun TranscriptTab(
                 }
             }
         }
+    }
+    val edits = lineEdits ?: return
+    val open = dialog ?: return
+    // The line may be gone (merged, deleted, a diarization rewrote it).
+    val line = lines.firstOrNull { it.id == open.lineId } ?: return
+    val close = { dialog = null }
+    when (open) {
+        is LineDialog.EditText -> EditLineDialog(
+            initialText = line.text,
+            onConfirm = { text ->
+                close()
+                edits.onEditText(line, text)
+            },
+            onDismiss = close
+        )
+        is LineDialog.ChangeSpeaker -> ChangeSpeakerDialog(
+            speakers = speakers,
+            current = line.speakerIndex,
+            onPick = { index ->
+                close()
+                edits.onSetSpeaker(line, index)
+            },
+            onNew = { name ->
+                close()
+                edits.onNewSpeaker(line, name)
+            },
+            onDismiss = close
+        )
+        is LineDialog.Split -> SplitLineDialog(
+            text = line.text,
+            onConfirm = { offset ->
+                close()
+                edits.onSplit(line, offset)
+            },
+            onDismiss = close
+        )
+    }
+}
+
+/** What the transcript can do to a line (issue #26); see [TranscriptTab]. */
+internal class LineEditActions(
+    val onEditText: (TranscriptLine, String) -> Unit = { _, _ -> },
+    val onSetSpeaker: (TranscriptLine, Int) -> Unit = { _, _ -> },
+    val onNewSpeaker: (TranscriptLine, String) -> Unit = { _, _ -> },
+    val onMergeWithNext: (TranscriptLine) -> Unit = {},
+    val onSplit: (TranscriptLine, Int) -> Unit = { _, _ -> },
+    val onDelete: (TranscriptLine) -> Unit = {}
+)
+
+/** A line-edit dialog open for the line [lineId]. */
+internal sealed interface LineDialog {
+    val lineId: Long
+
+    data class EditText(override val lineId: Long) : LineDialog
+
+    data class ChangeSpeaker(override val lineId: Long) : LineDialog
+
+    data class Split(override val lineId: Long) : LineDialog
+}
+
+/** Entries of a line's menu, in menu order. */
+private enum class LineChoice(val label: Int) {
+    EDIT_TEXT(R.string.session_line_edit_text),
+    CHANGE_SPEAKER(R.string.session_line_change_speaker),
+    MERGE(R.string.session_line_merge),
+    SPLIT(R.string.session_line_split),
+    DELETE(R.string.session_line_delete)
+}
+
+/** State and callbacks of one row's line menu. */
+private class LineMenu(
+    val open: Boolean,
+    val hasNext: Boolean,
+    val canSplit: Boolean,
+    val onOpen: () -> Unit,
+    val onDismiss: () -> Unit,
+    val onChoose: (LineChoice) -> Unit
+) {
+    fun enabled(choice: LineChoice): Boolean = when (choice) {
+        LineChoice.MERGE -> hasNext
+        LineChoice.SPLIT -> canSplit
+        else -> true
     }
 }
 
@@ -249,16 +370,21 @@ private fun SpeakerChipRow(speakers: List<SpeakerEntity>, onChipTapped: (Int) ->
  * line ([onTapped], only when the recording can be played) plays from
  * its start. The [active] line is highlighted (outlined on e-ink) and,
  * when it has word timings, the word at [positionMs] is emphasised.
+ *
+ * With a [menu], a long press (or a tap when the line cannot be played)
+ * opens the line's edit menu, and TalkBack lists its entries as custom
+ * actions. A line edited by hand says so after its timestamp.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TranscriptRow(
     line: TranscriptLine,
     active: Boolean,
     positionMs: () -> Long,
     onSpeakerTapped: (Int) -> Unit,
-    onTapped: (() -> Unit)?
+    onTapped: (() -> Unit)?,
+    menu: LineMenu? = null
 ) {
-    val spacing = AppTheme.spacing
     val speakerIndex = line.speakerIndex
     val speakerColor = if (speakerIndex == null) Color.Unspecified else AppTheme.speakerColors[speakerIndex]
     val timestamp = remember(line.startMs) { TranscriptFormatter.timestamp(line.startMs) }
@@ -289,9 +415,55 @@ private fun TranscriptRow(
             )
         }
     }
-    if (onTapped != null) rowModifier = rowModifier.clickable(onClick = onTapped)
+    if (menu != null) {
+        val actionsLabel = stringResource(R.string.session_line_actions)
+        val labels = LineChoice.entries.associateWith { stringResource(it.label) }
+        rowModifier = rowModifier
+            .combinedClickable(
+                onClick = onTapped ?: menu.onOpen,
+                onLongClick = menu.onOpen,
+                onLongClickLabel = actionsLabel
+            )
+            .semantics {
+                customActions = LineChoice.entries.filter(menu::enabled).map { choice ->
+                    CustomAccessibilityAction(labels.getValue(choice)) {
+                        menu.onChoose(choice)
+                        true
+                    }
+                }
+            }
+    } else if (onTapped != null) {
+        rowModifier = rowModifier.clickable(onClick = onTapped)
+    }
+    Box(modifier = rowModifier) {
+        RowContent(line, speakerColor, timestamp, text, onSpeakerTapped)
+        if (menu != null) {
+            DropdownMenu(expanded = menu.open, onDismissRequest = menu.onDismiss) {
+                for (choice in LineChoice.entries) {
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(choice.label)) },
+                        enabled = menu.enabled(choice),
+                        onClick = { menu.onChoose(choice) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Speaker, timestamp and "edited" above the line's text. */
+@Composable
+private fun RowContent(
+    line: TranscriptLine,
+    speakerColor: Color,
+    timestamp: String,
+    text: AnnotatedString,
+    onSpeakerTapped: (Int) -> Unit
+) {
+    val spacing = AppTheme.spacing
+    val speakerIndex = line.speakerIndex
     Column(
-        modifier = rowModifier.padding(horizontal = spacing.s, vertical = spacing.s),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = spacing.s, vertical = spacing.s),
         verticalArrangement = Arrangement.spacedBy(spacing.xs)
     ) {
         Row(
@@ -317,6 +489,13 @@ private fun TranscriptRow(
                 style = AppTheme.typography.figures,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (line.edited) {
+                Text(
+                    text = stringResource(R.string.session_line_edited),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         Text(text = text, style = AppTheme.typography.transcript)
     }

@@ -79,6 +79,17 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   hit opens the Summary tab. Filter by language, date (last 7 / 30
   days, this year) and person. On e-ink the search waits for a longer
   pause in typing, so the screen refreshes once per burst.
+- **Edit the transcript.** Long-press a line (or use TalkBack's
+  actions on it) for *Edit text*, *Change speaker* (to an existing
+  speaker or a new one), *Merge with next*, *Split here* (at the
+  cursor, snapped to a word) and *Delete line*; a snackbar offers
+  *Undo* for the latest edit. Words you did not change keep their
+  timings, so playback still highlights the word being said. Edited
+  lines are marked *edited*. *Re-identify speakers* keeps the speakers
+  you picked by hand and never splits a line whose text you corrected;
+  *Re-transcribe* asks before replacing an edited transcript. Summary,
+  Q&A, search and *Share* use the edited text. Editing is off while the
+  session is recording, identifying speakers or being re-transcribed.
 - **Continue a recording** from its session screen (mic button). The
   audio and transcript are appended to the same session, in its own
   language.
@@ -381,6 +392,10 @@ one package per concern:
   is the single façade the rest of the app reads / writes through.
   `SegmentFtsEntity` is an FTS4 index over transcript lines (kept in
   sync by Room's triggers) that `SessionSearch` queries for search.
+  Hand edits (issue #26, schema v6) set `segments.textEdited` /
+  `speakerEdited` and `sessions.transcriptEdited`; `TranscriptEditor`
+  computes the edited rows and `TokenAligner` re-times edited text, and
+  diarization honours the line flags.
 - `settings/` — `SettingsRepository` (SharedPreferences),
   `AppSettings`, `SecretStore` (EncryptedSharedPreferences) for
   the LLM API key.

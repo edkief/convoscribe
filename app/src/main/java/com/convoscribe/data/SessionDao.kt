@@ -66,6 +66,9 @@ interface SessionDao {
     @Query("UPDATE sessions SET asrEngine = :engine, asrModel = :model WHERE id = :id")
     suspend fun setEngine(id: Long, engine: String?, model: String?)
 
+    @Query("UPDATE sessions SET transcriptEdited = :edited WHERE id = :id")
+    suspend fun setTranscriptEdited(id: Long, edited: Boolean)
+
     @Query("UPDATE sessions SET language = :language WHERE id = :id")
     suspend fun setLanguage(id: Long, language: String)
 

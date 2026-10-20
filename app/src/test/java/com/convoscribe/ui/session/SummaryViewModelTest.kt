@@ -303,6 +303,28 @@ class SummaryViewModelTest {
         assertEquals(expected, client.lastMessages)
     }
 
+    /** A line corrected by hand reaches the summary prompt (issue #26). */
+    @Test
+    fun summarise_usesTheEditedTranscript() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id, text = "hello world")
+        repo.editLineText(repo.getSegments(id).first().id, "hello Kubernetes")
+        val client = FakeChatClient(tokens = listOf("OK"))
+        val vm = SummaryViewModel(
+            sessionId = id,
+            repository = repo,
+            chatClient = client,
+            settings = newSettings().also { configureSettings(it) }
+        )
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        val prompt = client.lastMessages!!.joinToString("\n") { it.content }
+        assertTrue(prompt.contains("hello Kubernetes"))
+        assertFalse(prompt.contains("hello world"))
+    }
+
     /**
      * Build the transcript the ViewModel sees so the test does not
      * have to mirror the formatter's behaviour.
