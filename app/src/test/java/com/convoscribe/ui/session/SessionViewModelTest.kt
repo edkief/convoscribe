@@ -387,6 +387,41 @@ class SessionViewModelTest {
     }
 
     @Test
+    fun playback_ofACleanedSession_playsTheCleanedRecordingAndSwitchesKeepingThePosition() = runTest(dispatcher) {
+        val id = finishedSessionWithLines()
+        val original = File(repo.audioPath(id)).apply { writeBytes(ByteArray(100)) }
+        val work = File(original.parentFile, "work.wav").apply { writeBytes(ByteArray(100)) }
+        repo.replaceTranscript(
+            id,
+            "en",
+            listOf(com.convoscribe.data.SegmentPiece(0, 1_000, "clean", emptyList(), null)),
+            "cpu",
+            "asr",
+            com.convoscribe.data.CleanedAudio(work, "enh-test")
+        )
+        val cleaned = File(original.parentFile, "$id.clean.wav")
+        val player = FakeAudioPlayer()
+        val vm = playbackVm(id, player)
+        vm.uiState.first { it.cleanedWith == "enh-test" }
+        advanceUntilIdle()
+        assertEquals(listOf(cleaned), player.prepared)
+
+        vm.seekTo(4_000L)
+        vm.setPlayCleaned(false)
+        advanceUntilIdle()
+        assertEquals(listOf(cleaned, original), player.prepared)
+        assertEquals(4_000L, vm.playerState.value.positionMs)
+
+        vm.setPlayCleaned(true)
+        advanceUntilIdle()
+        vm.removeCleaning()
+        vm.uiState.first { it.cleanedWith == null }
+        advanceUntilIdle()
+        assertFalse(cleaned.exists())
+        assertEquals(original, player.prepared.last())
+    }
+
+    @Test
     fun playback_isNotOpenedWhileTheSessionIsStillRecording() = runTest(dispatcher) {
         val id = repo.createSession(title = "live", language = "en")
         val player = FakeAudioPlayer()

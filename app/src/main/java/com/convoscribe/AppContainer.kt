@@ -331,7 +331,8 @@ class AppContainer(val context: Context) {
     val retranscribeUseCase: RetranscribeUseCase = RetranscribeUseCase(
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
-        diarize = diarizeSessionUseCase
+        diarize = diarizeSessionUseCase,
+        cleanerFactory = audioCleanerFactory
     )
 
     /**

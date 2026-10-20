@@ -230,6 +230,7 @@ fun SessionScreen(
     val effectiveSpeakerCount = state.numSpeakers ?: appSettings.numSpeakers
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val retranscribing = retranscribeState is RetranscribeState.Running
+    val playCleaned by vm.playCleaned.collectAsStateWithLifecycle()
     // An import holds the recorder and the ASR engine too.
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     val importing = importState is ImportState.Running
@@ -323,7 +324,8 @@ fun SessionScreen(
             numSpeakers = effectiveSpeakerCount,
             participants = state.participants,
             asrEngine = state.asrEngine,
-            asrModel = state.asrModel
+            asrModel = state.asrModel,
+            cleanedWith = state.cleanedWith
         ),
         enrolledNames = enrolledNames,
         onSetParticipants = { vm.setParticipants(it) },
@@ -331,6 +333,7 @@ fun SessionScreen(
             progress = (retranscribeState as? RetranscribeState.Running)
                 ?.takeIf { it.sessionId == sessionId }
                 ?.progress,
+            cleaning = (retranscribeState as? RetranscribeState.Running)?.cleaning == true,
             enabled = !state.notFound &&
                 recorderState.phase == RecordingPhase.IDLE &&
                 !retranscribing &&
@@ -351,6 +354,31 @@ fun SessionScreen(
                 }
             },
             onCancel = { context.startService(RecordingService.cancelRetranscribeIntent(context)) }
+        ),
+        cleanup = CleanupUi(
+            cleaned = state.cleanedWith != null,
+            available = remember(state.cleanedWith, retranscribing) { container.audioCleanerFactory.isAvailable() },
+            enabled = !state.notFound &&
+                recorderState.phase == RecordingPhase.IDLE &&
+                !retranscribing &&
+                !importing &&
+                state.status in CONTINUABLE_STATUSES,
+            playCleaned = playCleaned,
+            onClean = {
+                val engine = appSettings.asrEngine
+                val missing = container.modelStore.missing(ModelCatalog.requiredFor(state.language, engine))
+                if (missing.isNotEmpty()) {
+                    navController.navigate("setup?engine=$engine&language=${state.language}&back=true")
+                } else {
+                    vm.stopPlayback()
+                    ContextCompat.startForegroundService(
+                        context,
+                        RecordingService.retranscribeIntent(context, sessionId, state.language, clean = true)
+                    )
+                }
+            },
+            onRemove = { vm.removeCleaning() },
+            onPlayCleaned = vm::setPlayCleaned
         ),
         onSummarise = { summaryVm.summarise() },
         onCancelSummary = { summaryVm.cancel() },
@@ -426,6 +454,7 @@ internal fun SessionBody(
     enrolledNames: List<String> = emptyList(),
     onSetParticipants: (List<String>?) -> Unit = {},
     retranscribe: RetranscribeUi = RetranscribeUi(),
+    cleanup: CleanupUi = CleanupUi(),
     waitingForCharger: Boolean = false,
     createdAt: Long = 0L,
     durationMs: Long = 0L,
@@ -456,6 +485,8 @@ internal fun SessionBody(
     // Language chosen for a re-transcription that waits for "discard your edits?".
     var retranscribeOverEdits by remember { mutableStateOf<String?>(null) }
     var marksOpen by remember { mutableStateOf(initialMarksOpen) }
+    var cleanupOpen by remember { mutableStateOf(false) }
+    var removeCleaningOpen by remember { mutableStateOf(false) }
     ScreenScaffold(
         title = title,
         onBack = onBack,
@@ -530,6 +561,25 @@ internal fun SessionBody(
                         retranscribeOpen = true
                     }
                 )
+                if (cleanup.cleaned) {
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(R.string.session_overflow_remove_cleanup)) },
+                        enabled = cleanup.enabled,
+                        onClick = {
+                            overflowExpanded = false
+                            removeCleaningOpen = true
+                        }
+                    )
+                } else {
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(R.string.session_overflow_cleanup)) },
+                        enabled = cleanup.enabled,
+                        onClick = {
+                            overflowExpanded = false
+                            cleanupOpen = true
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(text = stringResource(R.string.session_overflow_participants)) },
                     enabled = !notFound,
@@ -580,7 +630,11 @@ internal fun SessionBody(
                 )
             }
             retranscribe.progress?.let { progress ->
-                RetranscribeBanner(progress = progress, onCancel = retranscribe.onCancel)
+                RetranscribeBanner(
+                    progress = progress,
+                    onCancel = retranscribe.onCancel,
+                    cleaning = retranscribe.cleaning
+                )
             }
             SessionTabs(selectedTab = selectedTab, onSelect = { selectedTab = it })
             // Finished sessions with a readable recording get the player;
@@ -591,7 +645,8 @@ internal fun SessionBody(
                     state = playerState,
                     actions = playback,
                     marks = marks,
-                    onOpenMarks = { marksOpen = true }
+                    onOpenMarks = { marksOpen = true },
+                    cleanup = cleanup
                 )
             }
             when {
@@ -765,6 +820,49 @@ internal fun SessionBody(
                 retranscribe.onStart(language)
             },
             onDismiss = { retranscribeOverEdits = null }
+        )
+    }
+    if (cleanupOpen) {
+        if (cleanup.available) {
+            ConfirmDialog(
+                title = stringResource(R.string.session_cleanup_title),
+                message = stringResource(R.string.session_cleanup_message) +
+                    if (hasEdits) "\n\n" + stringResource(R.string.session_retranscribe_edits_message) else "",
+                confirmLabel = stringResource(R.string.session_cleanup_confirm),
+                dismissLabel = stringResource(R.string.conversation_cancel),
+                destructive = hasEdits,
+                onConfirm = {
+                    cleanupOpen = false
+                    cleanup.onClean()
+                },
+                onDismiss = { cleanupOpen = false }
+            )
+        } else {
+            ConfirmDialog(
+                title = stringResource(R.string.session_cleanup_title),
+                message = stringResource(R.string.session_cleanup_missing),
+                confirmLabel = stringResource(R.string.session_cleanup_open_settings),
+                dismissLabel = stringResource(R.string.conversation_cancel),
+                onConfirm = {
+                    cleanupOpen = false
+                    onOpenSettings()
+                },
+                onDismiss = { cleanupOpen = false }
+            )
+        }
+    }
+    if (removeCleaningOpen) {
+        ConfirmDialog(
+            title = stringResource(R.string.session_remove_cleanup_title),
+            message = stringResource(R.string.session_remove_cleanup_message),
+            confirmLabel = stringResource(R.string.session_remove_cleanup_confirm),
+            dismissLabel = stringResource(R.string.conversation_cancel),
+            destructive = true,
+            onConfirm = {
+                removeCleaningOpen = false
+                cleanup.onRemove()
+            },
+            onDismiss = { removeCleaningOpen = false }
         )
     }
     // Clear-questions confirmation. The action itself is gated on

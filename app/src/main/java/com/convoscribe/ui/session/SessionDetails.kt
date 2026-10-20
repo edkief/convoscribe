@@ -42,7 +42,9 @@ data class SessionDetails(
     val numSpeakers: Int = -1,
     val participants: List<String>? = null,
     val asrEngine: String? = null,
-    val asrModel: String? = null
+    val asrModel: String? = null,
+    /** Noise cleanup model (issue #37); `null` when the audio is not cleaned. */
+    val cleanedWith: String? = null
 )
 
 /** Read-only "Session info" dialog. */
@@ -66,6 +68,10 @@ internal fun SessionInfoDialog(details: SessionDetails, onDismiss: () -> Unit) {
                 InfoRow(stringResource(R.string.session_info_participants), participantsSummary(details.participants))
                 InfoRow(stringResource(R.string.session_info_engine), details.asrEngine ?: unknown)
                 InfoRow(stringResource(R.string.session_info_model), details.asrModel ?: unknown)
+                InfoRow(
+                    stringResource(R.string.session_info_cleanup),
+                    details.cleanedWith ?: stringResource(R.string.session_info_cleanup_none)
+                )
             }
         },
         confirmButton = {
@@ -113,14 +119,39 @@ internal fun ReidentifyAfterParticipantsDialog(onConfirm: () -> Unit, onDismiss:
  */
 data class RetranscribeUi(
     val progress: Float? = null,
+    /** The running pass is cleaning the audio first (issue #37). */
+    val cleaning: Boolean = false,
     val enabled: Boolean = false,
     val onStart: (language: String) -> Unit = {},
     val onCancel: () -> Unit = {}
 )
 
-/** "Re-transcribing… 42%" with a progress bar and Cancel, above the tabs. */
+/**
+ * Noise cleanup controls for the session screen (issue #37).
+ *
+ * @property cleaned the session has a cleaned recording.
+ * @property available the cleanup model is downloaded, so *Clean up
+ *   audio* can run; without it the menu entry points to Settings.
+ * @property enabled whether the menu entries can be used now (the
+ *   same conditions as re-transcribing).
+ * @property playCleaned the player uses the cleaned recording.
+ */
+data class CleanupUi(
+    val cleaned: Boolean = false,
+    val available: Boolean = false,
+    val enabled: Boolean = false,
+    val playCleaned: Boolean = true,
+    val onClean: () -> Unit = {},
+    val onRemove: () -> Unit = {},
+    val onPlayCleaned: (Boolean) -> Unit = {}
+)
+
+/**
+ * "Re-transcribing… 42%" with a progress bar and Cancel, above the
+ * tabs; "Cleaning up audio… 42%" while [cleaning] (issue #37).
+ */
 @Composable
-internal fun RetranscribeBanner(progress: Float, onCancel: () -> Unit) {
+internal fun RetranscribeBanner(progress: Float, onCancel: () -> Unit, cleaning: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -129,7 +160,10 @@ internal fun RetranscribeBanner(progress: Float, onCancel: () -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = stringResource(R.string.session_retranscribe_progress, (progress * 100).toInt()),
+                text = stringResource(
+                    if (cleaning) R.string.session_cleanup_progress else R.string.session_retranscribe_progress,
+                    (progress * 100).toInt()
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.weight(1f)
             )

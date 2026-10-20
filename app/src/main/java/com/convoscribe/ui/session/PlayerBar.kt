@@ -70,7 +70,8 @@ internal fun PlayerBar(
     actions: PlaybackActions,
     modifier: Modifier = Modifier,
     marks: List<TranscriptMark> = emptyList(),
-    onOpenMarks: () -> Unit = {}
+    onOpenMarks: () -> Unit = {},
+    cleanup: CleanupUi? = null
 ) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging ?: state.positionMs.toFloat()
@@ -151,6 +152,19 @@ internal fun PlayerBar(
                     modifier = Modifier.semantics { contentDescription = speedDescription }
                 ) {
                     Text(text = stringResource(R.string.player_speed_label, speedText))
+                }
+                if (cleanup != null && cleanup.cleaned) {
+                    // Original / Cleaned (issue #37): one tap switches.
+                    val label = stringResource(
+                        if (cleanup.playCleaned) R.string.player_audio_cleaned else R.string.player_audio_original
+                    )
+                    val description = stringResource(R.string.player_audio_switch, label)
+                    TextButton(
+                        onClick = { cleanup.onPlayCleaned(!cleanup.playCleaned) },
+                        modifier = Modifier.semantics { contentDescription = description }
+                    ) {
+                        Text(text = label)
+                    }
                 }
                 if (marks.isNotEmpty()) {
                     TextButton(onClick = onOpenMarks) {
