@@ -54,6 +54,7 @@ import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.models.ModelCatalog
@@ -225,7 +226,14 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             onSaveAsDefault = vm::saveAsDefault,
             onCleanAudioChange = vm::setCleanAudio
         ),
-        cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let { CleanupOption() },
+        cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let {
+            val engine = ModelCatalog.effectiveEngine(
+                options.language,
+                container.settingsRepository.settings.value.asrEngine
+            )
+            val verdict = container.liveCleanup.verdict(engine)
+            CleanupOption(liveNotRecommended = verdict != null && verdict != LiveCleanupVerdict.RECOMMENDED)
+        },
         cleaning = state.cleaning,
         onBack = { navController.popBackStack() },
         onStart = {

@@ -294,6 +294,15 @@
         <item quantity="other">Connected – %1$d models: %2$s</item>
     </plurals>
     <string name="settings_test_failed">Failed: %1$s</string>
+    <string name="enginecheck_cleanup_title">Live noise cleanup</string>
+    <string name="enginecheck_cleanup_help">Checks whether this device can clean the audio while recording. Cleaning runs alongside the speech recognizer selected in Settings, so both have to keep up with live audio.</string>
+    <string name="enginecheck_cleanup_check">Check noise cleanup</string>
+    <string name="enginecheck_cleanup_running">Timing the noise cleanup…</string>
+    <string name="enginecheck_cleanup_rtf">Cleanup real-time factor</string>
+    <string name="enginecheck_cleanup_combined">With %1$s speech recognition</string>
+    <string name="enginecheck_cleanup_verdict_ok">Live cleaning recommended</string>
+    <string name="enginecheck_cleanup_verdict_marginal">Live cleaning may fall behind; clean afterwards for long recordings</string>
+    <string name="enginecheck_cleanup_verdict_slow">Too slow to clean live; clean conversations afterwards</string>
     <string name="enginecheck_title">Engine check</string>
     <string name="enginecheck_device_title">Device</string>
     <string name="enginecheck_device_loading">Reading…</string>
@@ -475,6 +484,7 @@
     <string name="settings_cleanup_downloading">Downloading the cleanup model…</string>
     <string name="settings_cleanup_installed">Cleanup model installed. Finished conversations can be cleaned from their menu.</string>
     <string name="settings_cleanup_delete">Delete the cleanup model</string>
+    <string name="settings_cleanup_not_checked">Run Noise cleanup in Engine check to see whether this device can clean while recording.</string>
     <string name="settings_cleanup_default_label">Clean new recordings</string>
     <string name="settings_cleanup_default_help">Clean the audio live while recording, so the live transcript benefits too. You can change it for each conversation before Start.</string>
     <string name="settings_floating_control_label">Floating control over other apps</string>

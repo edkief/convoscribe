@@ -62,6 +62,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelDownloadState
@@ -206,9 +207,17 @@ fun SettingsScreen(navController: NavHostController) {
     val updateActions = rememberUpdateActions(container.updateManager) { message ->
         coroutineScope.launch { snackbarHostState.showSnackbar(message, duration = SnackbarDuration.Long) }
     }
+    // Re-read on resume: the engine check that records it is another screen.
+    var liveCleanupVerdict by remember { mutableStateOf<LiveCleanupVerdict?>(null) }
+    LifecycleResumeEffect(state.asrEngine, state.asrLanguage) {
+        val engine = ModelCatalog.effectiveEngine(state.asrLanguage, state.asrEngine)
+        liveCleanupVerdict = container.liveCleanup.verdict(engine)
+        onPauseOrDispose {}
+    }
     SettingsBody(
         state = state,
         cleanupDownloading = cleanupDownloading,
+        liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = updateState,
         installedVersion = container.installedApp.versionName,
@@ -282,7 +291,9 @@ internal class SettingsActions(
  * Render-only body of [SettingsScreen] for previews and screenshot tests.
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
- * [cleanupDownloading] while the noise cleanup model downloads (issue #37).
+ * [cleanupDownloading] while the noise cleanup model downloads (issue #37);
+ * [liveCleanupVerdict] is the engine check's verdict on cleaning live
+ * with the selected engine, `null` when it was not checked.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -290,6 +301,7 @@ internal fun SettingsBody(
     state: SettingsUiState,
     actions: SettingsActions,
     cleanupDownloading: Boolean = false,
+    liveCleanupVerdict: LiveCleanupVerdict? = null,
     overlayGranted: Boolean = true,
     update: UpdateState = UpdateState.Idle,
     installedVersion: String = "",
@@ -366,6 +378,7 @@ internal fun SettingsBody(
                 installed = state.cleanupInstalled,
                 downloading = cleanupDownloading,
                 cleanByDefault = state.cleanAudioDefault,
+                liveVerdict = liveCleanupVerdict,
                 onDownload = actions.onDownloadCleanup,
                 onDelete = actions.onDeleteCleanup,
                 onCleanByDefaultChange = actions.onCleanAudioDefaultChange
@@ -798,6 +811,7 @@ private fun NoiseCleanupSection(
     installed: Boolean,
     downloading: Boolean,
     cleanByDefault: Boolean,
+    liveVerdict: LiveCleanupVerdict?,
     onDownload: () -> Unit,
     onDelete: () -> Unit,
     onCleanByDefaultChange: (Boolean) -> Unit
@@ -850,6 +864,15 @@ private fun NoiseCleanupSection(
                 SupportingText(text = stringResource(R.string.settings_cleanup_default_help))
             }
             Switch(checked = cleanByDefault && installed, onCheckedChange = null, enabled = installed)
+        }
+        if (installed) {
+            when (liveVerdict) {
+                null -> SupportingText(text = stringResource(R.string.settings_cleanup_not_checked))
+                LiveCleanupVerdict.RECOMMENDED -> SupportingText(
+                    text = stringResource(R.string.enginecheck_cleanup_verdict_ok)
+                )
+                else -> NoticeText(text = stringResource(R.string.conversation_cleanup_slow), isError = true)
+            }
         }
     }
 }

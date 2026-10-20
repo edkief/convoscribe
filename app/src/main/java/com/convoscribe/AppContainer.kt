@@ -119,6 +119,14 @@ class AppContainer(val context: Context) {
     )
 
     /**
+     * The engine check's verdict on live noise cleanup per ASR engine
+     * (issue #37); the Record screen and Settings warn from it.
+     */
+    val liveCleanup = com.convoscribe.enginecheck.LiveCleanupStore(
+        context.getSharedPreferences(com.convoscribe.enginecheck.LiveCleanupStore.PREFS_NAME, Context.MODE_PRIVATE)
+    )
+
+    /**
      * Persists [com.convoscribe.settings.AppSettings] in
      * `settings` SharedPreferences and the LLM API key in an
      * encrypted file. Read by ASR (language, thread count),
