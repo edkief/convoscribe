@@ -1,5 +1,6 @@
 package com.convoscribe.llm
 
+import com.convoscribe.data.TranscriptMark
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -158,6 +159,34 @@ class PromptBuilderTest {
             "user body must still start with 'Transcript:'",
             messages[1].content.startsWith("Transcript:")
         )
+    }
+
+    @Test
+    fun summary_withMarks_listsThemInTimeOrderBeforeTheTranscript() {
+        val marks = listOf(
+            TranscriptMark(id = 2, atMs = 754_000L),
+            TranscriptMark(id = 1, atMs = 65_000L, note = "the decision")
+        )
+        val messages = PromptBuilder.summary("Alice: hello\n", 1_000, marks = marks)
+
+        assertEquals(PromptBuilder.SUMMARY_SYSTEM, messages[0].content)
+        assertEquals(
+            PromptBuilder.MARKS_HEADER +
+                "[01:05] the decision\n" +
+                "[12:34] (no note)\n" +
+                "\n" +
+                "Transcript:\n\nAlice: hello\n",
+            messages[1].content
+        )
+    }
+
+    @Test
+    fun summary_withMarks_keepsThemWhenTheTranscriptIsTruncated() {
+        val transcript = (1..100).joinToString(separator = "") { "L%03d:".format(it) + "x".repeat(94) + "\n" }
+        val marks = listOf(TranscriptMark(id = 1, atMs = 1_000L, note = "keep me"))
+        val user = PromptBuilder.summary(transcript, 1_000, marks = marks)[1].content
+        assertTrue(user.startsWith(PromptBuilder.MARKS_HEADER + "[00:01] keep me\n\nTranscript:"))
+        assertTrue(user.contains("characters omitted"))
     }
 
     @Test

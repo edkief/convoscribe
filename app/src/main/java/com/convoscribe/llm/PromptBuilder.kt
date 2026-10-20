@@ -1,5 +1,8 @@
 package com.convoscribe.llm
 
+import com.convoscribe.data.TranscriptFormatter
+import com.convoscribe.data.TranscriptMark
+
 /**
  * Builds the exact list of [LlmMessage]s the app sends to the LLM
  * for the two operations that need a transcript in context:
@@ -69,6 +72,17 @@ object PromptBuilder {
             "Cite timestamps like [12:34] when useful.\n\nTranscript:\n"
 
     /**
+     * Opening of the list of marked moments (issue #30) in a summary's
+     * user turn; one `[mm:ss] note` line per mark follows.
+     */
+    const val MARKS_HEADER: String =
+        "The user marked these moments as important while recording. " +
+            "Give them priority in the summary:\n"
+
+    /** Stands in for the note of a mark that has none. */
+    const val MARK_WITHOUT_NOTE: String = "(no note)"
+
+    /**
      * Build the messages list for a one-shot summary call.
      *
      * Returns two messages: the system prompt for the template
@@ -77,15 +91,33 @@ object PromptBuilder {
      * the transcript truncated to [maxChars] characters. The model
      * sees the structured instructions first and the raw transcript
      * second, which is the order OpenAI's chat format recommends.
+     *
+     * With [marks] (issue #30) the user turn opens with
+     * [MARKS_HEADER] and a `[mm:ss] note` line per mark, then a blank
+     * line, before `Transcript:`. They come first so truncating a long
+     * transcript never drops them, and the system prompt is unchanged.
      */
-    fun summary(transcript: String, maxChars: Int, body: String = SummaryTemplates.MEETING_BODY): List<LlmMessage> =
-        listOf(
-            LlmMessage(LlmMessage.ROLE_SYSTEM, summarySystem(body)),
-            LlmMessage(
-                LlmMessage.ROLE_USER,
-                "Transcript:\n\n" + TranscriptTruncator.fit(transcript, maxChars)
-            )
+    fun summary(
+        transcript: String,
+        maxChars: Int,
+        body: String = SummaryTemplates.MEETING_BODY,
+        marks: List<TranscriptMark> = emptyList()
+    ): List<LlmMessage> = listOf(
+        LlmMessage(LlmMessage.ROLE_SYSTEM, summarySystem(body)),
+        LlmMessage(
+            LlmMessage.ROLE_USER,
+            marksSection(marks) + "Transcript:\n\n" + TranscriptTruncator.fit(transcript, maxChars)
         )
+    )
+
+    /** [MARKS_HEADER] and one line per mark in time order, then a blank line; empty without marks. */
+    private fun marksSection(marks: List<TranscriptMark>): String {
+        if (marks.isEmpty()) return ""
+        return marks.sortedBy { it.atMs }.joinToString(separator = "", prefix = MARKS_HEADER, postfix = "\n") {
+            val note = it.note?.takeIf { n -> n.isNotBlank() } ?: MARK_WITHOUT_NOTE
+            "[${TranscriptFormatter.timestamp(it.atMs)}] $note\n"
+        }
+    }
 
     /**
      * Build the messages list for a Q&A turn about a transcript.

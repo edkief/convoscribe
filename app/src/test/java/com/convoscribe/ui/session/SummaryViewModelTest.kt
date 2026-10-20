@@ -9,6 +9,7 @@ import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateRepository
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
@@ -309,6 +310,34 @@ class SummaryViewModelTest {
         val expected = PromptBuilder.summary(
             transcript = expectedTranscriptFor(id),
             maxChars = settings.settings.value.maxTranscriptChars
+        )
+        assertEquals(expected, client.lastMessages)
+    }
+
+    /** Marks taken while recording reach the summary prompt (issue #30). */
+    @Test
+    fun summarise_passesTheMarks() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id, text = "hello world")
+        repo.addMark(id, atMs = 2_000L, note = "follow up")
+        val settings = newSettings().also { configureSettings(it) }
+        val client = FakeChatClient(tokens = listOf("OK"))
+        val vm = SummaryViewModel(
+            sessionId = id,
+            repository = repo,
+            chatClient = client,
+            settings = settings,
+            templates = templates
+        )
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        val mark = repo.getMarks(id).single()
+        val expected = PromptBuilder.summary(
+            transcript = expectedTranscriptFor(id),
+            maxChars = settings.settings.value.maxTranscriptChars,
+            marks = listOf(TranscriptMark(mark.id, 2_000L, "follow up"))
         )
         assertEquals(expected, client.lastMessages)
     }
