@@ -5,10 +5,12 @@ import com.convoscribe.TAG
 import com.convoscribe.audio.WavReader
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.data.SegmentEntity
 import com.convoscribe.data.SegmentPiece
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.TokenTimingCodec
+import com.convoscribe.data.defaultSpeakerLabel
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
 import java.io.File
@@ -256,15 +258,19 @@ class DiarizeSessionUseCase(
             }
             currentCoroutineContext().ensureActive()
             // Split lines at speaker changes (where token times exist),
-            // then number speakers by first appearance.
-            val split = segments.map { segment ->
+            // then number speakers by first appearance. Lines whose
+            // speaker the user picked keep it (below); lines whose text
+            // the user edited stay whole, since a split rebuilds the
+            // text from the tokens (issue #26).
+            val (manual, automatic) = segments.partition { it.speakerEdited }
+            val split = automatic.map { segment ->
                 segment to SegmentSplitter.split(
                     SplittableSegment(
                         id = segment.id,
                         startMs = segment.startMs,
                         endMs = segment.endMs,
                         text = segment.text,
-                        tokens = TokenTimingCodec.decode(segment.tokens)
+                        tokens = if (segment.textEdited) emptyList() else TokenTimingCodec.decode(segment.tokens)
                     ),
                     turns
                 )
@@ -272,7 +278,7 @@ class DiarizeSessionUseCase(
             val rawToIndex = SpeakerAssigner.renumber(
                 split.flatMap { (_, pieces) -> pieces }.sortedBy { it.startMs }.map { it.rawSpeaker }
             )
-            val speakerCount = rawToIndex.size
+            val detectedCount = rawToIndex.size
             val assignments = mutableMapOf<Long, Int?>()
             val replacements = mutableMapOf<Long, List<SegmentPiece>>()
             for ((segment, pieces) in split) {
@@ -295,20 +301,28 @@ class DiarizeSessionUseCase(
                 samples = samples,
                 turns = turns,
                 rawToIndex = rawToIndex,
-                speakerCount = speakerCount,
+                speakerCount = detectedCount,
                 settings = speakerSettings,
                 participants = ParticipantsCodec.decode(session.participants)
             )
             // Names typed on an earlier diarization survive the re-run;
             // a match against an enrolled voice still wins.
-            val carriedLabels = SpeakerLabelCarryOver.carry(
-                previous = segments.map { LabelledSpan(it.startMs, it.endMs, it.speakerIndex) },
-                previousLabels = repository.getSpeakers(sessionId).associate { it.speakerIndex to it.label },
-                current = split.flatMap { (_, pieces) ->
-                    pieces.map { LabelledSpan(it.startMs, it.endMs, it.rawSpeaker?.let { raw -> rawToIndex[raw] }) }
-                }
+            val previous = segments.map { LabelledSpan(it.startMs, it.endMs, it.speakerIndex) }
+            val previousLabels = repository.getSpeakers(sessionId).associate { it.speakerIndex to it.label }
+            val current = split.flatMap { (_, pieces) ->
+                pieces.map { LabelledSpan(it.startMs, it.endMs, it.rawSpeaker?.let { raw -> rawToIndex[raw] }) }
+            }
+            val carriedLabels = SpeakerLabelCarryOver.carry(previous, previousLabels, current)
+            val labels = (carriedLabels + enrolledLabels).toMutableMap()
+            var speakerCount = detectedCount
+            val kept = keepManualSpeakers(
+                manual = manual,
+                previousLabels = previousLabels,
+                matched = SpeakerLabelCarryOver.match(previous, current),
+                labels = labels,
+                nextIndex = { speakerCount++ }
             )
-            val labels = carriedLabels + enrolledLabels
+            assignments += kept
             repository.applyDiarization(
                 sessionId = sessionId,
                 assignments = assignments,
@@ -320,7 +334,7 @@ class DiarizeSessionUseCase(
             Log.i(
                 TAG,
                 "diarization completed session=$sessionId durationMs=$durationMs" +
-                    " speakers=$speakerCount splitLines=${replacements.size}"
+                    " speakers=$speakerCount splitLines=${replacements.size} manualLines=${kept.size}"
             )
         } catch (ce: CancellationException) {
             // Cooperative cancellation: re-throw so structured
@@ -334,6 +348,36 @@ class DiarizeSessionUseCase(
             Log.w(TAG, "Diarization failed for session $sessionId", t)
             repository.setStatus(sessionId, SessionStatus.DIARIZATION_FAILED)
         }
+    }
+
+    /**
+     * New speaker index for each line whose speaker the user picked
+     * (issue #26), so it keeps that person through the re-run. The old
+     * speaker goes to: the new speaker now carrying its custom name,
+     * else the new speaker it overlaps most ([matched]), else a new
+     * speaker from [nextIndex], added to [labels] with its old custom
+     * name or the default one.
+     */
+    private fun keepManualSpeakers(
+        manual: List<SegmentEntity>,
+        previousLabels: Map<Int, String>,
+        matched: Map<Int, Int>,
+        labels: MutableMap<Int, String>,
+        nextIndex: () -> Int
+    ): Map<Long, Int> {
+        val newIndexOf = mutableMapOf<Int, Int>()
+        val result = mutableMapOf<Long, Int>()
+        for (line in manual) {
+            val old = line.speakerIndex ?: continue
+            result[line.id] = newIndexOf.getOrPut(old) {
+                val label = previousLabels[old]?.takeIf { it != defaultSpeakerLabel(old) }
+                val byName = label?.let { name -> labels.entries.firstOrNull { it.value == name }?.key }
+                byName ?: matched[old] ?: nextIndex().also { index ->
+                    labels[index] = label ?: defaultSpeakerLabel(index)
+                }
+            }
+        }
+        return result
     }
 
     /**
