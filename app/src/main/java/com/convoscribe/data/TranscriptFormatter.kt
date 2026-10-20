@@ -30,6 +30,16 @@ data class TranscriptLine(
 )
 
 /**
+ * A marked moment as the session screen and the exports show it
+ * (issue #30): [atMs] in the recorded audio and the optional [note].
+ */
+data class TranscriptMark(
+    val id: Long,
+    val atMs: Long,
+    val note: String? = null
+)
+
+/**
  * Pure helpers that turn the persisted [SegmentEntity] / [SpeakerEntity]
  * rows into the user-facing transcript: formatted timestamps,
  * resolved speaker labels and a plain-text export suitable for the
@@ -94,6 +104,30 @@ object TranscriptFormatter {
             )
         }
 
+    /** The [MarkEntity] rows as the UI shows them, in the same order. */
+    fun marks(rows: List<MarkEntity>): List<TranscriptMark> = rows.map { TranscriptMark(it.id, it.atMs, it.note) }
+
+    /**
+     * Index in [lines] of the line a mark at [atMs] belongs to: the
+     * line being spoken then (the last one that had started), or the
+     * first line for a mark before anything was said. `null` when
+     * there are no lines. [lines] must be ordered by `startMs`.
+     */
+    fun markLineIndex(lines: List<TranscriptLine>, atMs: Long): Int? {
+        if (lines.isEmpty()) return null
+        val index = lines.indexOfLast { it.startMs <= atMs }
+        return if (index < 0) 0 else index
+    }
+
+    /**
+     * One mark as a plain-text line, `"[<timestamp>] ⚑ Mark: <note>"`,
+     * or `"[<timestamp>] ⚑ Mark"` without a note.
+     */
+    fun markText(mark: TranscriptMark): String {
+        val head = "[${timestamp(mark.atMs)}] $MARK_FLAG Mark"
+        return if (mark.note.isNullOrBlank()) head else "$head: ${mark.note}"
+    }
+
     /**
      * Render [lines] as plain text suitable for an email body or a
      * share-sheet payload. Each line is either
@@ -103,13 +137,27 @@ object TranscriptFormatter {
      * speaker are **not** merged — the user gets a per-segment
      * entry that mirrors what the screen shows, so the shared
      * transcript reads the same way on the recipient's side.
+     *
+     * Each of [marks] (issue #30) is a [markText] line just above the
+     * line it belongs to ([markLineIndex]), as the screen shows its
+     * flag; with no lines the marks are listed alone.
      */
-    fun toText(lines: List<TranscriptLine>): String = lines.joinToString(separator = "\n") { line ->
-        val stamp = timestamp(line.startMs)
-        if (line.speaker.isNullOrEmpty()) {
-            "[$stamp] ${line.text}"
-        } else {
-            "[$stamp] ${line.speaker}: ${line.text}"
+    fun toText(lines: List<TranscriptLine>, marks: List<TranscriptMark> = emptyList()): String {
+        val byLine = marks.sortedBy { it.atMs }.groupBy { markLineIndex(lines, it.atMs) }
+        val out = ArrayList<String>(lines.size + marks.size)
+        byLine[null]?.forEach { out += markText(it) }
+        lines.forEachIndexed { index, line ->
+            byLine[index]?.forEach { out += markText(it) }
+            val stamp = timestamp(line.startMs)
+            out += if (line.speaker.isNullOrEmpty()) {
+                "[$stamp] ${line.text}"
+            } else {
+                "[$stamp] ${line.speaker}: ${line.text}"
+            }
         }
+        return out.joinToString(separator = "\n")
     }
+
+    /** The flag in front of a mark in plain text. */
+    const val MARK_FLAG: String = "\u2691"
 }

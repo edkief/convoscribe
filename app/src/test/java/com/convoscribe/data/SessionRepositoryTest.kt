@@ -540,4 +540,41 @@ class SessionRepositoryTest {
         repo.replaceTranscript(id, "fr", listOf(SegmentPiece(0, 1_000, "bonjour", emptyList(), null)), "cpu", "m")
         assertFalse(repo.getSession(id)!!.transcriptEdited)
     }
+
+    @Test
+    fun marks_areKeptInTimeOrderWithNotesTrimmed() = runTest {
+        val id = repo.createSession(title = "Marks", language = "en")
+        val late = repo.addMark(id, atMs = 90_000L, note = "  the decision  ")
+        val early = repo.addMark(id, atMs = 12_000L)
+
+        val marks = repo.observeMarks(id).first()
+        assertEquals(listOf(early, late), marks.map { it.id })
+        assertEquals(null, marks[0].note)
+        assertEquals("the decision", marks[1].note)
+        assertEquals(2, repo.countMarks(id))
+    }
+
+    @Test
+    fun setMarkNote_trimsCapsAndClearsWhenBlank() = runTest {
+        val id = repo.createSession(title = "Marks", language = "en")
+        val mark = repo.addMark(id, atMs = 1_000L)
+
+        repo.setMarkNote(mark, "x".repeat(SessionRepository.MARK_NOTE_MAX_LEN + 50))
+        assertEquals(SessionRepository.MARK_NOTE_MAX_LEN, repo.getMarks(id).single().note!!.length)
+        repo.setMarkNote(mark, "   ")
+        assertEquals(null, repo.getMarks(id).single().note)
+    }
+
+    @Test
+    fun deleteMark_andDeleteSession_removeMarks() = runTest {
+        val id = repo.createSession(title = "Marks", language = "en")
+        val first = repo.addMark(id, atMs = 1_000L)
+        repo.addMark(id, atMs = 2_000L)
+
+        repo.deleteMark(first)
+        assertEquals(listOf(2_000L), repo.getMarks(id).map { it.atMs })
+
+        repo.deleteSession(id)
+        assertEquals(0, repo.countMarks(id))
+    }
 }

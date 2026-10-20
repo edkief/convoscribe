@@ -128,6 +128,18 @@ class RecordingControllerTest {
 
         override suspend fun audioPath(sessionId: Long): String = File(root, "$sessionId.wav").absolutePath
 
+        /** A persisted mark (issue #30). */
+        data class Mark(val sessionId: Long, val atMs: Long, val note: String?)
+
+        val marks: MutableList<Mark> = mutableListOf()
+
+        override suspend fun addMark(sessionId: Long, atMs: Long, note: String?): Long {
+            marks += Mark(sessionId, atMs, note)
+            return marks.size.toLong()
+        }
+
+        override suspend fun countMarks(sessionId: Long): Int = marks.count { it.sessionId == sessionId }
+
         override suspend fun addSegment(
             sessionId: Long,
             startMs: Long,

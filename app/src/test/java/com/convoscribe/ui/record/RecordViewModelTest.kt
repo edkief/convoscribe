@@ -184,6 +184,8 @@ class RecordViewModelTest {
         override suspend fun sessionLanguage(sessionId: Long): String = error("not used")
         override suspend fun reopenSession(sessionId: Long) = Unit
         override suspend fun audioPath(sessionId: Long): String = error("not used")
+        override suspend fun addMark(sessionId: Long, atMs: Long, note: String?): Long = error("not used")
+        override suspend fun countMarks(sessionId: Long): Int = 0
         override suspend fun addSegment(
             sessionId: Long,
             startMs: Long,

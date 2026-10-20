@@ -11,8 +11,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Room database holding the entity families that survive an
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
- * index over transcript lines, and (v7) summary templates.
- * The current version is 7; the generated JSON for every version is committed
+ * index over transcript lines, (v7) summary templates and (v8)
+ * marks. The current version is 8; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -47,6 +47,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * and `chat_messages.templateName`, so existing sessions follow the
  * default template and existing summaries show no template name.
  *
+ * The 7 → 8 migration (issue #30) is automatic: the `marks` table
+ * only, so existing sessions simply have no marks.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -58,9 +61,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChatMessageEntity::class,
         EnrolledSpeakerEntity::class,
         SegmentFtsEntity::class,
-        SummaryTemplateEntity::class
+        SummaryTemplateEntity::class,
+        MarkEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -68,7 +72,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = Migration4To5::class),
         AutoMigration(from = 5, to = 6),
-        AutoMigration(from = 6, to = 7)
+        AutoMigration(from = 6, to = 7),
+        AutoMigration(from = 7, to = 8)
     ]
 )
 @TypeConverters(Converters::class)
@@ -80,6 +85,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun enrolledSpeakerDao(): EnrolledSpeakerDao
     abstract fun searchDao(): SearchDao
     abstract fun summaryTemplateDao(): SummaryTemplateDao
+    abstract fun markDao(): MarkDao
 
     companion object {
         const val NAME: String = "convoscribe.db"
