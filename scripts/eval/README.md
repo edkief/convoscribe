@@ -136,3 +136,60 @@ This re-checks two behaviours the app relies on:
 The script contains Python copies of `SpeakerAssigner` and `SegmentSplitter` (in
 `app/src/main/java/com/convoscribe/diarization/`) and of the endpoint, chunk and diarizer
 settings. Change both together, or the scores stop describing the app.
+
+# Noise cleanup evaluation
+
+`eval_cleanup.py` measures what the optional noise cleanup (issue #37) does to transcripts. It
+runs the app's streaming Kroko recognizer on read speech with known transcripts, clean and mixed
+with white, pink or babble noise, and scores the word error rate (WER):
+
+- `none`: the audio as recorded;
+- `<cleaner> mix`: what the app's recognizer hears, the cleaned audio blended half and half with
+  the original (`AudioCleaning.RECOGNIZER_CLEAN_SHARE`);
+- `<cleaner> full`: the fully cleaned audio, which the player plays.
+
+The clips (LibriSpeech dev-clean for English, Multilingual LibriSpeech for French) and the models
+are downloaded into the same cache as `eval_speakers.py`.
+
+```sh
+.venv-eval/bin/python scripts/eval/eval_cleanup.py --langs en --limit 30 --cleanup none gtcrn
+.venv-eval/bin/python scripts/eval/eval_cleanup.py --langs fr --limit 20 --cleanup none gtcrn
+```
+
+`--cleanup dpdfnet` also scores sherpa-onnx's DPDFNet (its 40 ms output delay is shifted out).
+The real-time factor it prints depends on how busy the machine is; use the app's *Engine check*
+for the device.
+
+## Results (sherpa-onnx 1.13.8, GTCRN, 30 English and 20 French clips)
+
+| lang | noise | SNR | none | gtcrn mix | gtcrn full |
+|---|---|---|---|---|---|
+| en | clean | – | 9.7% | 9.5% | 9.3% |
+| en | white | 0 dB | 29.9% | 29.0% | 49.2% |
+| en | white | 5 dB | 17.9% | 17.3% | 30.8% |
+| en | white | 10 dB | 12.0% | 11.8% | 15.5% |
+| en | pink | 0 dB | 25.7% | 25.1% | 39.7% |
+| en | pink | 5 dB | 14.6% | 13.8% | 21.5% |
+| en | pink | 10 dB | 10.6% | 10.4% | 15.7% |
+| en | babble | 0 dB | 79.4% | 78.5% | 86.9% |
+| en | babble | 5 dB | 29.5% | 26.8% | 46.1% |
+| en | babble | 10 dB | 14.9% | 14.6% | 23.1% |
+| fr | clean | – | 16.5% | 16.6% | 17.1% |
+| fr | white | 0 dB | 44.5% | 41.8% | 56.0% |
+| fr | white | 5 dB | 30.7% | 29.0% | 40.2% |
+| fr | white | 10 dB | 22.2% | 22.3% | 28.0% |
+| fr | pink | 0 dB | 33.4% | 33.7% | 44.8% |
+| fr | pink | 5 dB | 24.1% | 26.4% | 30.4% |
+| fr | pink | 10 dB | 18.8% | 19.6% | 23.1% |
+| fr | babble | 0 dB | 79.4% | 80.1% | 89.6% |
+| fr | babble | 5 dB | 43.7% | 41.5% | 51.1% |
+| fr | babble | 10 dB | 23.4% | 23.3% | 29.0% |
+
+Fully cleaned audio sounds cleaner but transcribes much worse: the cleaner's artefacts cost the
+recognizer more than the noise it removes. That is why the recognizer hears the blend. The blend
+is as good as the original or slightly better in English, and within about two points either way
+in French, which 20 clips cannot tell apart. Clean audio is unchanged. In short, cleanup is mainly
+for listening; it does not make transcripts noticeably better with these recognizers.
+
+Keep the chunk size, endpoint rules and blend share in sync with `SherpaAsrConfigs.kt`,
+`SherpaAudioCleaner.kt` and `AudioCleaner.kt`.
