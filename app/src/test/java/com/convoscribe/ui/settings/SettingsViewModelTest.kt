@@ -2,6 +2,7 @@ package com.convoscribe.ui.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.data.FakeSummaryTemplateStore
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
@@ -76,8 +77,9 @@ class SettingsViewModelTest {
 
     private fun newVm(
         repo: SettingsRepository = newRepo(),
-        chatClient: ChatClient = FakeChatClient(models = emptyList())
-    ): SettingsViewModel = SettingsViewModel(repo, chatClient, modelStore)
+        chatClient: ChatClient = FakeChatClient(models = emptyList()),
+        templates: FakeSummaryTemplateStore = FakeSummaryTemplateStore()
+    ): SettingsViewModel = SettingsViewModel(repo, chatClient, modelStore, templates)
 
     @Test
     fun save_persistsFormAndApiKeyAndReloadReadsThemBack() {
@@ -427,6 +429,22 @@ class SettingsViewModelTest {
         // Save does not undo it.
         vm.save()
         assertEquals("charging", repo.settings.value.speakerIdMode)
+    }
+
+    @Test
+    fun defaultSummaryTemplate_isWrittenImmediately_andListsUserTemplates() = runTest(dispatcher) {
+        val repo = newRepo()
+        val templates = FakeSummaryTemplateStore()
+        val key = templates.add("Standup", "Three bullets.")
+        val vm = newVm(repo = repo, templates = templates)
+        advanceUntilIdle()
+        assertEquals("meeting", vm.state.value.defaultSummaryTemplate)
+        assertEquals("Standup", vm.state.value.summaryTemplates.last().name)
+
+        vm.setDefaultSummaryTemplate(key)
+        advanceUntilIdle()
+        assertEquals(key, repo.settings.value.defaultSummaryTemplate)
+        assertEquals(key, vm.state.value.defaultSummaryTemplate)
     }
 
     @Test
