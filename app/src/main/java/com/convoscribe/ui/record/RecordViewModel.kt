@@ -99,7 +99,15 @@ class RecordViewModel(
         _options.update { it.copy(summaryTemplate = key) }
     }
 
-    /** Save the language, speaker count, participants and summary template as the defaults for future conversations. */
+    /** Clean this conversation's audio live (issue #37). */
+    fun setCleanAudio(enabled: Boolean) {
+        _options.update { it.copy(cleanAudio = enabled) }
+    }
+
+    /**
+     * Save the language, speaker count, participants, summary template
+     * and noise cleanup as the defaults for future conversations.
+     */
     fun saveAsDefault() {
         val chosen = _options.value
         settings.update {
@@ -107,7 +115,8 @@ class RecordViewModel(
                 asrLanguage = chosen.language,
                 numSpeakers = chosen.numSpeakers,
                 defaultParticipants = chosen.participants,
-                defaultSummaryTemplate = chosen.summaryTemplate
+                defaultSummaryTemplate = chosen.summaryTemplate,
+                cleanAudioDefault = chosen.cleanAudio
             )
         }
     }

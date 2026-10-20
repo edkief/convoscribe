@@ -73,6 +73,7 @@ import com.convoscribe.ui.components.ProgressBlock
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.StatusBadge
+import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.collectLatest
 
@@ -221,8 +222,11 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             onParticipantsChange = vm::setParticipants,
             onTitleChange = vm::setTitle,
             onSummaryTemplateChange = vm::setSummaryTemplate,
-            onSaveAsDefault = vm::saveAsDefault
+            onSaveAsDefault = vm::saveAsDefault,
+            onCleanAudioChange = vm::setCleanAudio
         ),
+        cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let { CleanupOption() },
+        cleaning = state.cleaning,
         onBack = { navController.popBackStack() },
         onStart = {
             // The chosen language's models must be on disk first:
@@ -318,6 +322,8 @@ internal fun RecordBody(
     enrolledNames: List<String> = emptyList(),
     summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     optionActions: ConversationOptionActions = ConversationOptionActions(),
+    cleanup: CleanupOption? = null,
+    cleaning: Boolean = false,
     inputLevel: Float = 0f,
     onBack: () -> Unit,
     onStart: () -> Unit,
@@ -366,7 +372,9 @@ internal fun RecordBody(
                                 onParticipantsChange = optionActions.onParticipantsChange,
                                 onTitleChange = optionActions.onTitleChange,
                                 onSummaryTemplateChange = optionActions.onSummaryTemplateChange,
-                                onSaveAsDefault = optionActions.onSaveAsDefault
+                                onSaveAsDefault = optionActions.onSaveAsDefault,
+                                cleanup = cleanup,
+                                onCleanAudioChange = optionActions.onCleanAudioChange
                             )
                         }
                     }
@@ -378,6 +386,7 @@ internal fun RecordBody(
                         inputLevel = inputLevel,
                         finalLines = finalLines,
                         partialText = partialText,
+                        cleaning = cleaning,
                         modifier = Modifier
                             .weight(1f)
                             .widthIn(max = AppTheme.sizes.contentMaxWidth)
@@ -415,7 +424,8 @@ private fun LiveTranscript(
     inputLevel: Float,
     finalLines: List<String>,
     partialText: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cleaning: Boolean = false
 ) {
     val spacing = AppTheme.spacing
     Column(
@@ -441,6 +451,9 @@ private fun LiveTranscript(
             RecordingPhase.STOPPING -> ProgressBlock(message = stringResource(R.string.record_phase_stopping))
             RecordingPhase.PAUSED -> PausedBadge()
             RecordingPhase.IDLE -> Unit
+        }
+        if (cleaning && (phase == RecordingPhase.RECORDING || phase == RecordingPhase.PAUSED)) {
+            SupportingText(text = stringResource(R.string.record_cleaning))
         }
 
         // The list grows monotonically for the lifetime of a session,
@@ -615,7 +628,8 @@ internal data class ConversationOptionActions(
     val onParticipantsChange: (List<String>?) -> Unit = {},
     val onTitleChange: (String) -> Unit = {},
     val onSummaryTemplateChange: (String) -> Unit = {},
-    val onSaveAsDefault: () -> Unit = {}
+    val onSaveAsDefault: () -> Unit = {},
+    val onCleanAudioChange: (Boolean) -> Unit = {}
 )
 
 /**

@@ -53,7 +53,8 @@ data class ConversationOptions(
             language = settings.asrLanguage,
             numSpeakers = settings.numSpeakers,
             participants = ParticipantsCodec.normalise(settings.defaultParticipants),
-            summaryTemplate = settings.defaultSummaryTemplate
+            summaryTemplate = settings.defaultSummaryTemplate,
+            cleanAudio = settings.cleanAudioDefault
         )
     }
 }

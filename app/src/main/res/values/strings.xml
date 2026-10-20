@@ -168,6 +168,10 @@
     <string name="conversation_cancel">Cancel</string>
     <string name="conversation_title_label">Title (optional)</string>
     <string name="conversation_summary_template_label">Summary template</string>
+    <string name="conversation_cleanup_label">Clean up noise</string>
+    <string name="conversation_cleanup_help">Reduce background noise while recording. The original audio is kept too.</string>
+    <string name="conversation_cleanup_slow">This device may be too slow to clean while recording (see Engine check). You can clean the conversation afterwards from its menu instead.</string>
+    <string name="record_cleaning">Noise cleanup on</string>
     <string name="conversation_set_default">Set as default</string>
     <string name="conversation_set_default_done">Saved for new conversations</string>
     <string name="home_new_recording">New recording</string>
@@ -384,7 +388,7 @@
     <string name="session_cleanup_title">Clean up audio</string>
     <string name="session_cleanup_message">Reduce background noise in this recording, then transcribe it again from the cleaned audio. The original recording is kept, and you can switch between them in the player. Speakers are identified again; names you gave are kept where they match.</string>
     <string name="session_cleanup_confirm">Clean up</string>
-    <string name="session_cleanup_missing">Noise cleanup needs a small model (about 0.5 MB). Download it in Settings › Transcription, then try again.</string>
+    <string name="session_cleanup_missing">Noise cleanup needs a small model (about 0.5 MB). Download it in Settings › Noise cleanup, then try again.</string>
     <string name="session_cleanup_open_settings">Open Settings</string>
     <string name="session_cleanup_progress">Cleaning up audio… %1$d%%</string>
     <string name="session_remove_cleanup_title">Remove cleaning?</string>
@@ -465,6 +469,14 @@
     <string name="session_ask_clear_cancel">Cancel</string>
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_recording">Recording</string>
+    <string name="settings_section_cleanup">Noise cleanup</string>
+    <string name="settings_cleanup_help">Reduces background noise before transcription, for recordings made in noisy places. The original recording is always kept.</string>
+    <string name="settings_cleanup_download">Download the cleanup model (%1$.1f MB)</string>
+    <string name="settings_cleanup_downloading">Downloading the cleanup model…</string>
+    <string name="settings_cleanup_installed">Cleanup model installed. Finished conversations can be cleaned from their menu.</string>
+    <string name="settings_cleanup_delete">Delete the cleanup model</string>
+    <string name="settings_cleanup_default_label">Clean new recordings</string>
+    <string name="settings_cleanup_default_help">Clean the audio live while recording, so the live transcript benefits too. You can change it for each conversation before Start.</string>
     <string name="settings_floating_control_label">Floating control over other apps</string>
     <string name="settings_floating_control_help">While a recording is open and you are in another app, show a small control with Pause and Stop. Drag it to move it.</string>
     <string name="settings_floating_shape_label">Shape</string>

@@ -317,6 +317,29 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun cleanupModel_showsAsInstalled_andCanBeDeleted_andCleanByDefaultPersists() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertFalse(vm.state.value.cleanupInstalled)
+        val bundle = com.convoscribe.models.ModelCatalog.CLEANUP
+        val onDisk = modelStore.fileFor(bundle, bundle.files.single().fileName)
+        onDisk.parentFile?.mkdirs()
+        java.io.RandomAccessFile(onDisk, "rw").use { it.setLength(bundle.files.single().sizeBytes) }
+
+        vm.refreshModels()
+        assertTrue(vm.state.value.cleanupInstalled)
+        vm.setCleanAudioDefault(true)
+        advanceUntilIdle()
+        assertTrue(repo.settings.value.cleanAudioDefault)
+        assertTrue(vm.state.value.cleanAudioDefault)
+
+        vm.deleteCleanupModel()
+        advanceUntilIdle()
+        assertFalse(modelStore.isInstalled(bundle))
+        assertFalse(vm.state.value.cleanupInstalled)
+    }
+
+    @Test
     fun deletingFrenchModel_whileEnglishIsActive_keepsEnglishInstalled() = runTest(dispatcher) {
         // Pre-install both English and French so the French
         // bundle is removable without affecting the user's

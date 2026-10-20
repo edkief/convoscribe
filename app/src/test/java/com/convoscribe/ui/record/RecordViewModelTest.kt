@@ -142,6 +142,7 @@ class RecordViewModelTest {
         vm.setParticipants(listOf("Bob"))
         vm.setTitle("Not a default")
         vm.setSummaryTemplate("lecture")
+        vm.setCleanAudio(true)
         vm.saveAsDefault()
 
         val s = settings.settings.value
@@ -149,9 +150,10 @@ class RecordViewModelTest {
         assertEquals(4, s.numSpeakers)
         assertEquals(listOf("Bob"), s.defaultParticipants)
         assertEquals("lecture", s.defaultSummaryTemplate)
+        assertTrue(s.cleanAudioDefault)
         // The title is per conversation only.
         assertEquals(
-            ConversationOptions("fr", 4, listOf("Bob"), summaryTemplate = "lecture"),
+            ConversationOptions("fr", 4, listOf("Bob"), summaryTemplate = "lecture", cleanAudio = true),
             newViewModel().options.value
         )
     }
