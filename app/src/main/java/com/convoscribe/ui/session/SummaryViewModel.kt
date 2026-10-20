@@ -200,7 +200,8 @@ class SummaryViewModel(
             }
             val maxChars = settings.settings.value.maxTranscriptChars
             val template = SummaryTemplates.resolve(_state.value.selectedKey, templates.getUserTemplates())
-            val messages = PromptBuilder.summary(transcript, maxChars, template.body)
+            val marks = TranscriptFormatter.marks(repository.getMarks(sessionId))
+            val messages = PromptBuilder.summary(transcript, maxChars, template.body, marks)
 
             _state.value = _state.value.copy(
                 streaming = "",

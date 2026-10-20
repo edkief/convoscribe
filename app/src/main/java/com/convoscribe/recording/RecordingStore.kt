@@ -81,6 +81,15 @@ interface RecordingStore {
     ): Long
 
     /**
+     * Mark the moment [atMs] of [sessionId]'s recorded audio, with an
+     * optional [note] (issue #30), and return the mark's id.
+     */
+    suspend fun addMark(sessionId: Long, atMs: Long, note: String? = null): Long
+
+    /** How many marks [sessionId] has, so a continued session counts on from them. */
+    suspend fun countMarks(sessionId: Long): Int
+
+    /**
      * Stamp the final duration and flip the session to `TRANSCRIBED`
      * so the diarization worker picks it up. Called by
      * [RecordingController.stop] on a clean exit, and by the

@@ -65,6 +65,7 @@ import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
@@ -262,6 +263,11 @@ fun SessionScreen(
         status = state.status,
         lines = state.lines,
         speakers = state.speakers,
+        marks = state.marks,
+        markActions = MarkActions(
+            onEditNote = { mark, note -> vm.editMarkNote(mark, note) },
+            onDelete = { mark -> vm.deleteMark(mark) }
+        ),
         notFound = state.notFound,
         summaryState = summaryState,
         askState = askState,
@@ -428,7 +434,10 @@ internal fun SessionBody(
     hasEdits: Boolean = false,
     lineEdits: LineEditActions? = null,
     initialLineMenu: Long? = null,
-    initialLineDialog: LineDialog? = null
+    initialLineDialog: LineDialog? = null,
+    marks: List<TranscriptMark> = emptyList(),
+    markActions: MarkActions = MarkActions(),
+    initialMarksOpen: Boolean = false
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -446,6 +455,7 @@ internal fun SessionBody(
     var retranscribeOpen by remember { mutableStateOf(false) }
     // Language chosen for a re-transcription that waits for "discard your edits?".
     var retranscribeOverEdits by remember { mutableStateOf<String?>(null) }
+    var marksOpen by remember { mutableStateOf(initialMarksOpen) }
     ScreenScaffold(
         title = title,
         onBack = onBack,
@@ -529,6 +539,14 @@ internal fun SessionBody(
                     }
                 )
                 DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_marks)) },
+                    enabled = marks.isNotEmpty(),
+                    onClick = {
+                        overflowExpanded = false
+                        marksOpen = true
+                    }
+                )
+                DropdownMenuItem(
                     text = { Text(text = stringResource(R.string.session_overflow_info)) },
                     enabled = !notFound,
                     onClick = {
@@ -569,7 +587,12 @@ internal fun SessionBody(
             // it is not offered while the session is still being recorded.
             val canPlay = !notFound && status != SessionStatus.RECORDING && playerState.ready
             if (canPlay && selectedTab == 0) {
-                PlayerBar(state = playerState, actions = playback)
+                PlayerBar(
+                    state = playerState,
+                    actions = playback,
+                    marks = marks,
+                    onOpenMarks = { marksOpen = true }
+                )
             }
             when {
                 notFound -> EmptyState(
@@ -594,7 +617,8 @@ internal fun SessionBody(
                     targetLineId = targetLineId,
                     lineEdits = lineEdits,
                     initialMenuLineId = initialLineMenu,
-                    initialDialog = initialLineDialog
+                    initialDialog = initialLineDialog,
+                    marks = marks
                 )
                 selectedTab == 1 -> SummaryTab(
                     state = summaryState,
@@ -612,6 +636,16 @@ internal fun SessionBody(
                 )
             }
         }
+    }
+
+    if (marksOpen) {
+        val canPlay = !notFound && status != SessionStatus.RECORDING && playerState.ready
+        MarksDialog(
+            marks = marks,
+            onSeek = if (canPlay) ({ mark -> playback.onSeek(mark.atMs) }) else null,
+            actions = markActions,
+            onDismiss = { marksOpen = false }
+        )
     }
 
     if (exportState is ExportState.Encoding) {

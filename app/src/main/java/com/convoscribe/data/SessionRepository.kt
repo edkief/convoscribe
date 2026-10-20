@@ -32,6 +32,7 @@ class SessionRepository(
     private val segmentDao: SegmentDao = db.segmentDao()
     private val speakerDao: SpeakerDao = db.speakerDao()
     private val chatMessageDao: ChatMessageDao = db.chatMessageDao()
+    private val markDao: MarkDao = db.markDao()
 
     /**
      * Create a new session row with [status] = RECORDING and
@@ -154,6 +155,30 @@ class SessionRepository(
         )
     )
 
+    override suspend fun addMark(sessionId: Long, atMs: Long, note: String?): Long = markDao.insert(
+        MarkEntity(
+            sessionId = sessionId,
+            atMs = atMs.coerceAtLeast(0L),
+            note = normaliseNote(note),
+            createdAt = System.currentTimeMillis()
+        )
+    )
+
+    override suspend fun countMarks(sessionId: Long): Int = markDao.count(sessionId)
+
+    /** The session's marks (issue #30), in recorded-time order. */
+    fun observeMarks(sessionId: Long): Flow<List<MarkEntity>> = markDao.observeForSession(sessionId)
+
+    suspend fun getMarks(sessionId: Long): List<MarkEntity> = markDao.getForSession(sessionId)
+
+    /**
+     * Replace a mark's note. It is trimmed and cut to
+     * [MARK_NOTE_MAX_LEN]; a blank note removes it.
+     */
+    suspend fun setMarkNote(markId: Long, note: String?) = markDao.setNote(markId, normaliseNote(note))
+
+    suspend fun deleteMark(markId: Long) = markDao.delete(markId)
+
     /**
      * Recording finished. Stamp the duration and move the session
      * to [SessionStatus.TRANSCRIBED]; the service then diarizes it or
@@ -187,7 +212,7 @@ class SessionRepository(
 
     /**
      * Delete the session, the WAV file and (via `ON DELETE CASCADE`)
-     * the segments, speakers and chat messages. Idempotent: deleting
+     * the segments, speakers, chat messages and marks. Idempotent: deleting
      * an unknown id is a no-op and silently returns.
      */
     suspend fun deleteSession(id: Long) {
@@ -576,6 +601,12 @@ class SessionRepository(
         }
 
         /** `-1` automatic, `1..10` fixed, `null` kept (follow Settings). */
+        /** Longest note a mark keeps; marks are for a few words, not paragraphs. */
+        const val MARK_NOTE_MAX_LEN: Int = 200
+
+        internal fun normaliseNote(note: String?): String? =
+            note?.trim()?.take(MARK_NOTE_MAX_LEN)?.trim()?.takeIf { it.isNotEmpty() }
+
         internal fun normaliseSpeakerCount(numSpeakers: Int?): Int? =
             numSpeakers?.let { if (it < 1) -1 else it.coerceAtMost(10) }
 

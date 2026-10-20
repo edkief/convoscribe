@@ -6,11 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -21,6 +23,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -37,7 +41,7 @@ import com.convoscribe.ui.theme.AppTheme
  * Body of the floating recording control (issues #7 and #21), drawn
  * over other apps while a session is open, in one of three shapes:
  *
- *  * [FloatingShape.MINIMAL]: the status dot, Pause / Resume and Stop.
+ *  * [FloatingShape.MINIMAL]: the status dot, Mark, Pause / Resume and Stop.
  *  * [FloatingShape.STANDARD]: the dot with *Recording* or *Paused*
  *    and the recorded time, then the same buttons.
  *  * [FloatingShape.EXPANDED]: the standard row above the end of the
@@ -46,7 +50,9 @@ import com.convoscribe.ui.theme.AppTheme
  *
  * Every shape ends with an expand / collapse arrow that calls
  * [onShapeChange] with [FloatingShape.next]. Tapping the status part
- * opens the Record screen. Render-only, so the screenshot tests can
+ * opens the Record screen. Mark (issue #30) is the same static button
+ * in every shape: it answers with a haptic tick only, never a redraw,
+ * so marking costs no e-ink refresh. Render-only, so the screenshot tests can
  * draw it; [FloatingControl] hosts it in its own window and handles
  * dragging.
  *
@@ -58,6 +64,7 @@ internal fun FloatingControlContent(
     shape: FloatingShape,
     ui: FloatingControlUi,
     onOpen: () -> Unit,
+    onMark: () -> Unit,
     onPauseResume: () -> Unit,
     onStop: () -> Unit,
     onShapeChange: (FloatingShape) -> Unit,
@@ -77,8 +84,13 @@ internal fun FloatingControlContent(
         border = BorderStroke(if (eink) AppTheme.sizes.activeOutline else AppTheme.sizes.outline, scheme.outline)
     ) {
         if (expanded) {
-            Column(modifier = Modifier.width(AppTheme.sizes.floatingExpandedWidth)) {
-                ControlRow(shape, ui, onOpen, onPauseResume, onStop, onShapeChange)
+            // At least the card's width, wider when a large font needs it for the whole control row.
+            Column(
+                modifier = Modifier
+                    .width(IntrinsicSize.Min)
+                    .widthIn(min = AppTheme.sizes.floatingExpandedWidth)
+            ) {
+                ControlRow(shape, ui, onOpen, onMark, onPauseResume, onStop, onShapeChange)
                 Text(
                     text = ui.transcript ?: stringResource(R.string.overlay_listening),
                     modifier = Modifier.padding(start = spacing.m, end = spacing.m, bottom = spacing.m),
@@ -90,7 +102,7 @@ internal fun FloatingControlContent(
                 )
             }
         } else {
-            ControlRow(shape, ui, onOpen, onPauseResume, onStop, onShapeChange)
+            ControlRow(shape, ui, onOpen, onMark, onPauseResume, onStop, onShapeChange)
         }
     }
 }
@@ -100,6 +112,7 @@ private fun ControlRow(
     shape: FloatingShape,
     ui: FloatingControlUi,
     onOpen: () -> Unit,
+    onMark: () -> Unit,
     onPauseResume: () -> Unit,
     onStop: () -> Unit,
     onShapeChange: (FloatingShape) -> Unit
@@ -145,6 +158,18 @@ private fun ControlRow(
                     Text(text = formatElapsed(ui.elapsedMs ?: 0L), style = AppTheme.typography.figures)
                 }
             }
+        }
+        val haptics = LocalHapticFeedback.current
+        IconButton(
+            onClick = {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                onMark()
+            }
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.ic_flag),
+                contentDescription = stringResource(R.string.record_mark)
+            )
         }
         IconButton(onClick = onPauseResume) {
             Icon(

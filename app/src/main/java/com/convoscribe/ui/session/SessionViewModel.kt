@@ -15,6 +15,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.diarization.EnrollFromSessionUseCase
 import com.convoscribe.ui.UiText
 import java.io.File
@@ -51,6 +52,8 @@ import kotlinx.coroutines.launch
  *   current speaker labels, ordered by start time.
  * @property speakers per-session speaker list (1..5 entries
  *   usually); kept around so the screen can tint labels by index.
+ * @property marks moments marked while recording (issue #30), in time
+ *   order.
  * @property notFound `true` when the session id has no row. The
  *   screen renders a "Session not found" placeholder instead of
  *   the transcript tab.
@@ -60,6 +63,7 @@ data class SessionUiState(
     val status: SessionStatus? = null,
     val lines: List<TranscriptLine> = emptyList(),
     val speakers: List<SpeakerEntity> = emptyList(),
+    val marks: List<TranscriptMark> = emptyList(),
     val notFound: Boolean = false,
     /** Speaker count chosen for this session; `null` follows Settings. */
     val numSpeakers: Int? = null,
@@ -148,13 +152,15 @@ class SessionViewModel(
             } else {
                 combine(
                     repository.observeSegments(sessionId),
-                    repository.observeSpeakers(sessionId)
-                ) { segments, speakers ->
+                    repository.observeSpeakers(sessionId),
+                    repository.observeMarks(sessionId)
+                ) { segments, speakers, marks ->
                     SessionUiState(
                         title = session.title,
                         status = session.status,
                         lines = TranscriptFormatter.lines(segments, speakers),
                         speakers = speakers,
+                        marks = TranscriptFormatter.marks(marks),
                         numSpeakers = session.numSpeakers,
                         audioPath = session.audioPath,
                         language = session.language,
@@ -252,9 +258,10 @@ class SessionViewModel(
      * just to format a string. The state is always at least the
      * `SessionUiState()` initial (with empty `lines`), so
      * `toText` produces an empty string — which is what the
-     * chooser would receive anyway on a not-found session.
+     * chooser would receive anyway on a not-found session. Marks
+     * (issue #30) are part of the text, above their lines.
      */
-    fun transcriptText(): String = TranscriptFormatter.toText(uiState.value.lines)
+    fun transcriptText(): String = uiState.value.let { TranscriptFormatter.toText(it.lines, it.marks) }
 
     /**
      * Persist a new label for the speaker identified by
@@ -397,6 +404,16 @@ class SessionViewModel(
     fun skip(deltaMs: Long) {
         player?.skip(deltaMs)
         _following.value = true
+    }
+
+    /** Give [mark] a new [note]; a blank one removes it (issue #30). */
+    fun editMarkNote(mark: TranscriptMark, note: String) {
+        viewModelScope.launch { repository.setMarkNote(mark.id, note) }
+    }
+
+    /** Remove [mark]. */
+    fun deleteMark(mark: TranscriptMark) {
+        viewModelScope.launch { repository.deleteMark(mark.id) }
     }
 
     /** Speed button: 1x → 1.5x → 2x → 1x. */

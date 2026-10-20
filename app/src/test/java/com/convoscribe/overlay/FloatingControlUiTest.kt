@@ -19,11 +19,12 @@ class FloatingControlUiTest {
         finalLines = listOf("First sentence.", "Second sentence.")
     )
 
-    /** The state a few audio chunks later: more time, a longer partial, a new final line. */
+    /** The state a few audio chunks later: more time, a longer partial, a new final line, a mark (#30). */
     private val later = recording.copy(
         elapsedMs = 75_910L,
         partialText = "and then we",
-        finalLines = recording.finalLines + "Third sentence."
+        finalLines = recording.finalLines + "Third sentence.",
+        markCount = recording.markCount + 1
     )
 
     private fun ui(state: RecordingState, shape: FloatingShape, eink: Boolean = false) =
@@ -33,6 +34,16 @@ class FloatingControlUiTest {
     fun minimal_doesNotChangeWhileRecording() {
         for (eink in listOf(true, false)) {
             assertEquals(ui(recording, FloatingShape.MINIMAL, eink), ui(later, FloatingShape.MINIMAL, eink))
+        }
+    }
+
+    @Test
+    fun noShape_changesOnAMarkAlone() {
+        val marked = recording.copy(markCount = 4)
+        for (shape in FloatingShape.entries) {
+            for (eink in listOf(true, false)) {
+                assertEquals(ui(recording, shape, eink), ui(marked, shape, eink))
+            }
         }
     }
 

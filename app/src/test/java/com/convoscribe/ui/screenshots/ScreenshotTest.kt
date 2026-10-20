@@ -35,6 +35,7 @@ import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.llm.SummaryTemplate
@@ -46,6 +47,7 @@ import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.settings.FloatingShape
+import com.convoscribe.ui.components.MarkNoteDialog
 import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
@@ -335,6 +337,7 @@ class ScreenshotTest(private val variant: Variant) {
                     shape = FloatingShape.STANDARD,
                     ui = FloatingControlUi(paused = paused, elapsedMs = 754_000L),
                     onOpen = {},
+                    onMark = {},
                     onPauseResume = {},
                     onStop = {},
                     onShapeChange = {}
@@ -345,6 +348,7 @@ class ScreenshotTest(private val variant: Variant) {
                     shape = FloatingShape.MINIMAL,
                     ui = FloatingControlUi(paused = paused),
                     onOpen = {},
+                    onMark = {},
                     onPauseResume = {},
                     onStop = {},
                     onShapeChange = {}
@@ -362,6 +366,7 @@ class ScreenshotTest(private val variant: Variant) {
                     shape = FloatingShape.EXPANDED,
                     ui = FloatingControlUi(paused = false, elapsedMs = 754_000L, transcript = transcript),
                     onOpen = {},
+                    onMark = {},
                     onPauseResume = {},
                     onStop = {},
                     onShapeChange = {}
@@ -404,6 +409,24 @@ class ScreenshotTest(private val variant: Variant) {
      * where animations are off.
      */
     private fun assumeTextFieldDialogsRender() = Assume.assumeTrue(variant.eink)
+
+    @Test
+    fun sessionMarks() = capture("session_marks") {
+        session(playing = true, marks = MARKS)
+    }
+
+    @Test
+    fun sessionMarksList() = captureScreen("session_marks_list") {
+        session(marks = MARKS, marksOpen = true)
+    }
+
+    @Test
+    fun recordMarkNote() {
+        assumeTextFieldDialogsRender()
+        captureScreen("record_mark_note") {
+            MarkNoteDialog(time = "12:34", initialNote = "Release date moves", onConfirm = {}, onDismiss = {})
+        }
+    }
 
     @Test
     fun sessionDiarizing() = capture("session_diarizing") {
@@ -593,7 +616,9 @@ class ScreenshotTest(private val variant: Variant) {
         summary: SummaryUiState = SummaryUiState(),
         waitingForCharger: Boolean = false,
         lineMenu: Long? = null,
-        lineDialog: LineDialog? = null
+        lineDialog: LineDialog? = null,
+        marks: List<TranscriptMark> = emptyList(),
+        marksOpen: Boolean = false
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -639,7 +664,9 @@ class ScreenshotTest(private val variant: Variant) {
             waitingForCharger = waitingForCharger,
             lineEdits = LineEditActions(),
             initialLineMenu = lineMenu,
-            initialLineDialog = lineDialog
+            initialLineDialog = lineDialog,
+            marks = marks,
+            initialMarksOpen = marksOpen
         )
     }
 
@@ -765,6 +792,11 @@ class ScreenshotTest(private val variant: Variant) {
             SpeakerEntity(sessionId = 4, speakerIndex = 0, label = "Alice"),
             SpeakerEntity(sessionId = 4, speakerIndex = 1, label = "Speaker 2"),
             SpeakerEntity(sessionId = 4, speakerIndex = 2, label = "Bob")
+        )
+
+        private val MARKS = listOf(
+            TranscriptMark(id = 1, atMs = 6_000L, note = "Release date moves a week"),
+            TranscriptMark(id = 2, atMs = 402_000L)
         )
 
         private val TRANSCRIPT = listOf(

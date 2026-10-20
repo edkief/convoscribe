@@ -60,6 +60,7 @@ import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TokenAligner
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.ProgressBlock
@@ -101,7 +102,8 @@ internal fun TranscriptTab(
     targetLineId: Long? = null,
     lineEdits: LineEditActions? = null,
     initialMenuLineId: Long? = null,
-    initialDialog: LineDialog? = null
+    initialDialog: LineDialog? = null,
+    marks: List<TranscriptMark> = emptyList()
 ) {
     val spacing = AppTheme.spacing
     var menuLineId by remember { mutableStateOf(initialMenuLineId) }
@@ -127,6 +129,10 @@ internal fun TranscriptTab(
             }
         }
         val reduceMotion = AppTheme.reduceMotion
+        // Each mark flags the line being spoken when it was taken (issue #30).
+        val marksByLine = remember(lines, marks) {
+            marks.groupBy { TranscriptFormatter.markLineIndex(lines, it.atMs) }
+        }
         // Opened from a search hit: bring its line into view once.
         val targetIndex = targetLineId?.let { id -> lines.indexOfFirst { it.id == id }.takeIf { it >= 0 } }
         var scrolledToTarget by rememberSaveable { mutableStateOf(false) }
@@ -154,6 +160,9 @@ internal fun TranscriptTab(
                 itemsIndexed(items = lines, key = { _, line -> line.id }) { index, line ->
                     // Until something plays, the search hit stands in for the playing line.
                     val active = index == (activeLineIndex ?: targetIndex)
+                    marksByLine[index]?.forEach { mark ->
+                        MarkFlag(mark = mark, onTapped = if (canPlay) ({ playback.onSeek(mark.atMs) }) else null)
+                    }
                     TranscriptRow(
                         line = line,
                         active = active,

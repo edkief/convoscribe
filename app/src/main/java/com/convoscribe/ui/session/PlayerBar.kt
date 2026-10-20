@@ -5,13 +5,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -22,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -30,6 +34,7 @@ import com.convoscribe.R
 import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.ui.theme.AppTheme
 import java.util.Locale
 
@@ -54,9 +59,19 @@ internal class PlaybackActions(
  * speed button (1x, 1.5x, 2x). While the user drags the seek bar it
  * shows the dragged position and seeks once on release, so the
  * player is not asked to seek on every pixel.
+ *
+ * [marks] (issue #30) are ticks on the seek bar's track, and with any
+ * marks a *Marks (n)* button opens the list ([onOpenMarks]).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun PlayerBar(state: PlayerState, actions: PlaybackActions, modifier: Modifier = Modifier) {
+internal fun PlayerBar(
+    state: PlayerState,
+    actions: PlaybackActions,
+    modifier: Modifier = Modifier,
+    marks: List<TranscriptMark> = emptyList(),
+    onOpenMarks: () -> Unit = {}
+) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     val shown = dragging ?: state.positionMs.toFloat()
     val total = state.durationMs.coerceAtLeast(1L).toFloat()
@@ -77,6 +92,16 @@ internal fun PlayerBar(state: PlayerState, actions: PlaybackActions, modifier: M
                         dragging = null
                     },
                     valueRange = 0f..total,
+                    track = { sliderState ->
+                        val tickColor = MaterialTheme.colorScheme.onSurface
+                        SliderDefaults.Track(
+                            sliderState = sliderState,
+                            modifier = Modifier.drawWithContent {
+                                drawContent()
+                                drawMarkTicks(marks, state.durationMs, tickColor)
+                            }
+                        )
+                    },
                     modifier = Modifier
                         .weight(1f)
                         .padding(horizontal = spacing.s)
@@ -126,6 +151,16 @@ internal fun PlayerBar(state: PlayerState, actions: PlaybackActions, modifier: M
                     modifier = Modifier.semantics { contentDescription = speedDescription }
                 ) {
                     Text(text = stringResource(R.string.player_speed_label, speedText))
+                }
+                if (marks.isNotEmpty()) {
+                    TextButton(onClick = onOpenMarks) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_flag),
+                            contentDescription = null,
+                            modifier = Modifier.size(AppTheme.sizes.icon)
+                        )
+                        Text(text = stringResource(R.string.session_marks_button, marks.size))
+                    }
                 }
             }
         }

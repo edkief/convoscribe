@@ -56,8 +56,8 @@ import kotlinx.coroutines.launch
  *
  *  1. promote itself to a `microphone`-typed foreground service;
  *  2. publish + update the persistent notification so the user can
- *     see, pause / resume and stop the recording without re-opening
- *     the app;
+ *     see, mark (issue #30), pause / resume and stop the recording
+ *     without re-opening the app;
  *  3. hold a partial [android.os.PowerManager.WakeLock] so the
  *     CPU stays awake during the capture loop (released while the
  *     session is paused, when there is nothing to process);
@@ -128,6 +128,7 @@ class RecordingService : Service() {
             ACTION_STOP -> handleStop()
             ACTION_PAUSE -> handlePause()
             ACTION_RESUME -> handleResume()
+            ACTION_MARK -> handleMark()
             ACTION_TOGGLE_PAUSE -> when (controller().state.value.phase) {
                 RecordingPhase.RECORDING -> handlePause()
                 RecordingPhase.PAUSED -> handleResume()
@@ -212,7 +213,11 @@ class RecordingService : Service() {
         // A START for an already open session (e.g. a second tap)
         // must still promote the service, but keeps its live text.
         val current = controller.state.value
-        val notification = buildNotification(current.elapsedMs, paused = current.phase == RecordingPhase.PAUSED)
+        val notification = buildNotification(
+            current.elapsedMs,
+            paused = current.phase == RecordingPhase.PAUSED,
+            marks = current.markCount
+        )
         // ServiceCompat ignores the foregroundServiceType argument
         // below API 29; the project's `minSdk = 29` so we always
         // get the typed call. On Android 14+ the type must be
@@ -244,6 +249,7 @@ class RecordingService : Service() {
             state = controller().state,
             settings = container.settingsRepository.settings,
             onOpen = { startActivity(MainActivity.openRecordIntent(this)) },
+            onMark = ::handleMark,
             onPauseResume = {
                 if (controller().state.value.phase == RecordingPhase.PAUSED) handleResume() else handlePause()
             },
@@ -319,6 +325,20 @@ class RecordingService : Service() {
             controller.pause()
             if (controller.state.value.phase == RecordingPhase.PAUSED) releaseWakeLock()
         }
+    }
+
+    /**
+     * Mark the current moment of the open session (issue #30), from the
+     * notification or the floating control. A no-op without one; the
+     * notification's mark count shows it was taken.
+     */
+    private fun handleMark() {
+        val controller = controller()
+        if (!controller.state.value.phase.active) {
+            if (idle()) stopSelf()
+            return
+        }
+        scope.launch { controller.mark() }
     }
 
     /** Resume a paused session on the same transcriber and WAV; no-op otherwise. */
@@ -575,16 +595,23 @@ class RecordingService : Service() {
         // before the first ACTION_STOP propagates.
         stateObserver?.cancel()
         var lastPhase: RecordingPhase? = null
+        var lastMarks = 0
         stateObserver = controller().state
             .onEach { state ->
-                // A phase change (paused / resumed) shows at once; the
-                // timer text only once a second.
-                val phaseChanged = state.phase != lastPhase
+                // A phase change (paused / resumed) or a new mark shows
+                // at once; the timer text only once a second.
+                val changed = state.phase != lastPhase || state.markCount != lastMarks
                 lastPhase = state.phase
+                lastMarks = state.markCount
                 // LOADING / STOPPING: the start / stop paths own the
                 // notification.
                 if (state.phase.active) {
-                    maybeRefreshNotification(state.elapsedMs, state.phase == RecordingPhase.PAUSED, phaseChanged)
+                    maybeRefreshNotification(
+                        state.elapsedMs,
+                        state.phase == RecordingPhase.PAUSED,
+                        state.markCount,
+                        changed
+                    )
                 } else if (state.phase == RecordingPhase.IDLE && state.error != null) {
                     // The controller fell back to IDLE because of
                     // an error: surface a final teardown so we do
@@ -607,11 +634,11 @@ class RecordingService : Service() {
      * emits on every chunk and the OS would otherwise drop frames
      * of unrelated work while we re-bind builders).
      */
-    private fun maybeRefreshNotification(elapsedMs: Long, paused: Boolean, force: Boolean) {
+    private fun maybeRefreshNotification(elapsedMs: Long, paused: Boolean, marks: Int, force: Boolean) {
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
-        val notification = buildNotification(elapsedMs = elapsedMs, paused = paused)
+        val notification = buildNotification(elapsedMs = elapsedMs, paused = paused, marks = marks)
         // `startForeground` is documented to be cheap to re-invoke
         // with the same id and is the supported way to update the
         // contents of a foreground notification.
@@ -649,10 +676,11 @@ class RecordingService : Service() {
     private fun ensureNotificationChannel() = ensureChannel(this)
 
     /**
-     * The recording notification: elapsed recorded time, and Pause or
-     * Resume next to Stop. [paused] swaps the title, text and action.
+     * The recording notification: elapsed recorded time and [marks],
+     * then Mark, Pause or Resume, and Stop. [paused] swaps the title,
+     * text and action; Mark works either way.
      */
-    private fun buildNotification(elapsedMs: Long, paused: Boolean = false): android.app.Notification {
+    private fun buildNotification(elapsedMs: Long, paused: Boolean = false, marks: Int = 0): android.app.Notification {
         val contentIntent = PendingIntent.getActivity(
             this,
             REQUEST_OPEN,
@@ -666,6 +694,16 @@ class RecordingService : Service() {
             REQUEST_STOP,
             stopIntent(this),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val mark = NotificationCompat.Action.Builder(
+            R.drawable.ic_flag,
+            getString(R.string.notification_recording_action_mark),
+            PendingIntent.getService(
+                this,
+                REQUEST_MARK,
+                markIntent(this),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
         )
         val pauseOrResume = if (paused) {
             NotificationCompat.Action.Builder(
@@ -695,12 +733,13 @@ class RecordingService : Service() {
             .setContentTitle(
                 getString(if (paused) R.string.notification_paused_title else R.string.notification_recording_title)
             )
-            .setContentText(recordingNotificationText(elapsedMs, paused))
+            .setContentText(recordingNotificationText(elapsedMs, paused, marks))
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(mark.build())
             .addAction(pauseOrResume.build())
             .addAction(
                 NotificationCompat.Action.Builder(
@@ -808,6 +847,9 @@ class RecordingService : Service() {
         /** `requestCode` for the resume pending intent. */
         private const val REQUEST_RESUME = 1006
 
+        /** `requestCode` for the mark pending intent. */
+        private const val REQUEST_MARK = 1007
+
         /** Upper bound on the wake-lock acquired for one session. */
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
@@ -825,6 +867,9 @@ class RecordingService : Service() {
 
         /** Action to resume a paused recording session. */
         const val ACTION_RESUME = "com.convoscribe.RESUME"
+
+        /** Action to mark the current moment of the open session (issue #30). */
+        const val ACTION_MARK = "com.convoscribe.MARK"
 
         /** Action to pause a recording session or resume a paused one (the Quick Settings tile). */
         const val ACTION_TOGGLE_PAUSE = "com.convoscribe.TOGGLE_PAUSE"
@@ -956,6 +1001,9 @@ class RecordingService : Service() {
         /** Build an [Intent] that resumes a paused session; plain `startService`. */
         fun resumeIntent(context: Context): Intent =
             Intent(context, RecordingService::class.java).setAction(ACTION_RESUME)
+
+        /** Build an [Intent] that marks the current moment of the session; plain `startService`. */
+        fun markIntent(context: Context): Intent = Intent(context, RecordingService::class.java).setAction(ACTION_MARK)
 
         /** Build an [Intent] that pauses or resumes the session; plain `startService`. */
         fun togglePauseIntent(context: Context): Intent =

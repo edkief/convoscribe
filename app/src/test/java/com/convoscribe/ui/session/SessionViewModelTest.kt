@@ -11,6 +11,7 @@ import com.convoscribe.audio.FakeAudioPlayer
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.TranscriptMark
 import com.convoscribe.ui.UiText
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
@@ -275,6 +276,25 @@ class SessionViewModelTest {
             vm.transcriptText()
         )
         assertFalse(vm.transcriptText().isBlank())
+    }
+
+    @Test
+    fun marks_areInTheStateAndTheShareText_andCanBeEditedAndDeleted() = runTest(dispatcher) {
+        val id = repo.createSession(title = "marks", language = "en")
+        repo.addSegment(sessionId = id, startMs = 0, endMs = 1_000, text = "Hello")
+        repo.addSegment(sessionId = id, startMs = 3_000, endMs = 4_000, text = "Decided")
+        repo.addMark(id, atMs = 3_500L, note = "decision")
+        val vm = viewModel(id)
+        val mark = vm.uiState.first { it.marks.isNotEmpty() && it.lines.size == 2 }.marks.single()
+        assertEquals(TranscriptMark(mark.id, 3_500L, "decision"), mark)
+        assertEquals("[00:00] Hello\n[00:03] \u2691 Mark: decision\n[00:03] Decided", vm.transcriptText())
+
+        vm.editMarkNote(mark, "  ")
+        assertNull(vm.uiState.first { it.marks.singleOrNull()?.note == null }.marks.single().note)
+
+        vm.deleteMark(mark)
+        vm.uiState.first { it.marks.isEmpty() }
+        assertEquals("[00:00] Hello\n[00:03] Decided", vm.transcriptText())
     }
 
     @Test

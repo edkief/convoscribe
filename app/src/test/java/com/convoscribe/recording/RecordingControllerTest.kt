@@ -128,6 +128,18 @@ class RecordingControllerTest {
 
         override suspend fun audioPath(sessionId: Long): String = File(root, "$sessionId.wav").absolutePath
 
+        /** A persisted mark (issue #30). */
+        data class Mark(val sessionId: Long, val atMs: Long, val note: String?)
+
+        val marks: MutableList<Mark> = mutableListOf()
+
+        override suspend fun addMark(sessionId: Long, atMs: Long, note: String?): Long {
+            marks += Mark(sessionId, atMs, note)
+            return marks.size.toLong()
+        }
+
+        override suspend fun countMarks(sessionId: Long): Int = marks.count { it.sessionId == sessionId }
+
         override suspend fun addSegment(
             sessionId: Long,
             startMs: Long,
@@ -757,6 +769,64 @@ class RecordingControllerTest {
         advanceUntilIdle()
         assertEquals(1, h.transcriber.endUtteranceCount)
 
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun mark_recordsTheRecordedTime_whilePausedThePausedPosition_andCounts() = runTest {
+        val h = buildHarness()
+        assertNull(h.controller.mark())
+
+        h.controller.start(this)
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId!!
+        repeat(2) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+        assertNotNull(h.controller.mark())
+
+        h.controller.pause()
+        advanceUntilIdle()
+        h.controller.mark("while paused")
+        assertEquals(2, h.controller.state.value.markCount)
+
+        h.controller.resume(this)
+        advanceUntilIdle()
+        repeat(3) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+        h.controller.mark()
+
+        assertEquals(
+            listOf(
+                FakeRecordingStore.Mark(id, 200L, null),
+                FakeRecordingStore.Mark(id, 200L, "while paused"),
+                FakeRecordingStore.Mark(id, 500L, null)
+            ),
+            h.store.marks
+        )
+        h.controller.stop()
+        advanceUntilIdle()
+        assertEquals(0, h.controller.state.value.markCount)
+        assertNull(h.controller.mark())
+        assertEquals(3, h.store.marks.size)
+    }
+
+    @Test
+    fun mark_onAContinuedSession_followsTheEarlierAudioAndCountsItsMarks() = runTest {
+        val store = FakeRecordingStore(tmp.root)
+        existingRecording(store, sessionId = 7L, ms = 600, language = "en")
+        store.addMark(7L, 100L, "earlier")
+        val h = buildHarness(store = store)
+
+        h.controller.start(this, resumeSessionId = 7L)
+        advanceUntilIdle()
+        assertEquals(1, h.controller.state.value.markCount)
+        h.audio.channel.trySend(silentChunk())
+        advanceUntilIdle()
+        h.controller.mark()
+
+        assertEquals(FakeRecordingStore.Mark(7L, 700L, null), store.marks.last())
+        assertEquals(2, h.controller.state.value.markCount)
         h.controller.stop()
         advanceUntilIdle()
     }

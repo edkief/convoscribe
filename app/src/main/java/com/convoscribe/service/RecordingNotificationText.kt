@@ -23,11 +23,14 @@ import kotlin.math.max
  * While [paused] (issue #7) the prefix reads "Paused" and the time
  * is frozen at the audio recorded so far.
  *
+ * With [marks] (issue #30) the text ends with the count, so a Mark
+ * tapped in the notification shows it was taken.
+ *
  * Negative inputs are clamped to zero so a transient timer glitch
  * (e.g. `AudioRecord` paused without the controller noticing)
  * cannot throw here.
  */
-fun recordingNotificationText(elapsedMs: Long, paused: Boolean = false): String {
+fun recordingNotificationText(elapsedMs: Long, paused: Boolean = false, marks: Int = 0): String {
     val safe = max(0L, elapsedMs)
     val totalSeconds = safe / 1_000L
     val hours = totalSeconds / 3_600L
@@ -40,7 +43,12 @@ fun recordingNotificationText(elapsedMs: Long, paused: Boolean = false): String 
         // mm:ss — always two digits each.
         String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
-    return if (paused) "Paused – $body" else "Recording – $body"
+    val text = if (paused) "Paused – $body" else "Recording – $body"
+    return when {
+        marks <= 0 -> text
+        marks == 1 -> "$text · 1 mark"
+        else -> "$text · $marks marks"
+    }
 }
 
 /** String resource for [step]'s progress line, `"Transcribing… 42%"` (takes the percent). */

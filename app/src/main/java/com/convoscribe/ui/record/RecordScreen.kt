@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -27,11 +26,16 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +66,7 @@ import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ErrorBanner
+import com.convoscribe.ui.components.MarkNoteDialog
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.PausedBadge
 import com.convoscribe.ui.components.ProgressBlock
@@ -69,6 +74,7 @@ import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.StatusBadge
 import com.convoscribe.ui.theme.AppTheme
+import kotlinx.coroutines.flow.collectLatest
 
 /**
  * Top-level destination entered from the home FAB to record a fresh
@@ -116,7 +122,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                     missingModels = { language ->
                         val engine = container.settingsRepository.settings.value.asrEngine
                         container.modelStore.missing(ModelCatalog.requiredFor(language, engine)).isNotEmpty()
-                    }
+                    },
+                    saveMarkNote = container.sessionRepository::setMarkNote
                 )
             }
         }
@@ -135,6 +142,20 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     var micDeniedMessage by rememberSaveable { mutableStateOf<String?>(null) }
     // The one-time explanation of the floating control's permission.
     var askOverlay by rememberSaveable { mutableStateOf(false) }
+    // The mark being given a note (issue #30): its id and time.
+    var noteFor by rememberSaveable { mutableStateOf<Pair<Long, Long>?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(vm) {
+        // A newer mark replaces the snackbar (collectLatest cancels the one showing).
+        vm.marks.collectLatest { mark ->
+            val result = snackbarHostState.showSnackbar(
+                message = context.getString(R.string.record_marked, formatElapsed(mark.atMs)),
+                actionLabel = context.getString(R.string.record_mark_add_note),
+                duration = SnackbarDuration.Short
+            )
+            if (result == SnackbarResult.ActionPerformed) noteFor = mark.id to mark.atMs
+        }
+    }
     val startRecording: () -> Unit = {
         ContextCompat.startForegroundService(
             context,
@@ -234,8 +255,22 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             context.startService(RecordingService.stopIntent(context))
         },
         onPause = { context.startService(RecordingService.pauseIntent(context)) },
-        onResume = { context.startService(RecordingService.resumeIntent(context)) }
+        onResume = { context.startService(RecordingService.resumeIntent(context)) },
+        onMark = vm::mark,
+        snackbarHostState = snackbarHostState
     )
+
+    noteFor?.let { (id, atMs) ->
+        MarkNoteDialog(
+            time = formatElapsed(atMs),
+            initialNote = null,
+            onConfirm = { note ->
+                noteFor = null
+                vm.setMarkNote(id, note)
+            },
+            onDismiss = { noteFor = null }
+        )
+    }
 
     if (askOverlay) {
         OverlayPermissionDialog(
@@ -255,7 +290,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
  * card; once started, the elapsed time, a recording badge, the input
  * [InputLevelMeter] and the live transcript. The big round Start /
  * Stop control sits at the bottom in every phase, with Pause / Resume
- * next to Stop while a session is open (issue #7).
+ * left of Stop (issue #7) and Mark right of it (issue #30) while a
+ * session is open.
  *
  * @param inputLevel microphone level `0f..1f` while recording.
  * @param micDeniedMessage shown above the control when the user denied
@@ -287,13 +323,16 @@ internal fun RecordBody(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onPause: () -> Unit = {},
-    onResume: () -> Unit = {}
+    onResume: () -> Unit = {},
+    onMark: () -> Unit = {},
+    snackbarHostState: SnackbarHostState? = null
 ) {
     val spacing = AppTheme.spacing
     val showOptions = phase == RecordingPhase.IDLE && !continuing && options != null
     ScreenScaffold(
         title = stringResource(if (continuing) R.string.record_title_continue else R.string.record_title),
-        onBack = onBack
+        onBack = onBack,
+        snackbarHost = { snackbarHostState?.let { SnackbarHost(it) } }
     ) { innerPadding: PaddingValues ->
         Column(
             modifier = Modifier
@@ -357,7 +396,8 @@ internal fun RecordBody(
                 onStart = onStart,
                 onStop = onStop,
                 onPause = onPause,
-                onResume = onResume
+                onResume = onResume,
+                onMark = onMark
             )
         }
     }
@@ -470,8 +510,8 @@ private fun LiveTranscript(
  * start path cannot fire twice; the service rejects concurrent starts
  * anyway, but this shows it. Not gated on the mic permission: tapping
  * Start is what asks for it. While a session is open a smaller Pause /
- * Resume button sits to the left of Stop, balanced by an empty slot
- * on the right so Stop stays centred.
+ * Resume button sits to the left of Stop and a Mark button of the same
+ * size to the right (issue #30), so Stop stays centred.
  */
 @Composable
 private fun RecordControl(
@@ -481,7 +521,8 @@ private fun RecordControl(
     onStart: () -> Unit,
     onStop: () -> Unit,
     onPause: () -> Unit,
-    onResume: () -> Unit
+    onResume: () -> Unit,
+    onMark: () -> Unit
 ) {
     val spacing = AppTheme.spacing
     val scheme = MaterialTheme.colorScheme
@@ -517,7 +558,17 @@ private fun RecordControl(
                 }
             }
             MainRecordButton(recording = recording, enabled = enabled, onStart = onStart, onStop = onStop)
-            Spacer(modifier = Modifier.size(AppTheme.sizes.touchTarget + spacing.l))
+            Box(modifier = Modifier.size(AppTheme.sizes.touchTarget + spacing.l)) {
+                if (recording) {
+                    FilledTonalIconButton(onClick = onMark, modifier = Modifier.fillMaxSize()) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_flag),
+                            contentDescription = stringResource(R.string.record_mark),
+                            modifier = Modifier.size(AppTheme.sizes.icon)
+                        )
+                    }
+                }
+            }
         }
         val caption = when {
             paused -> R.string.record_hint_paused

@@ -150,6 +150,31 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate7To8_existingSessionsHaveNoMarksAndMarksGoWithTheirSession() = runTest {
+        helper.createDatabase(DB_NAME, 7).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Planning', 1000, 5000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 8, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals("Planning", db.sessionDao().get(1)!!.title)
+            assertEquals(emptyList<MarkEntity>(), db.markDao().getForSession(1))
+            db.markDao().insert(MarkEntity(sessionId = 1, atMs = 2_500L, note = "budget", createdAt = 3000))
+            assertEquals(1, db.markDao().count(1))
+            db.sessionDao().delete(1)
+            assertEquals(0, db.markDao().count(1))
+        } finally {
+            db.close()
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test.db"
     }

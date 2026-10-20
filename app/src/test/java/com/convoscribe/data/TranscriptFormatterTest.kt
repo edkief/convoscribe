@@ -262,4 +262,44 @@ class TranscriptFormatterTest {
             )
         )
     }
+
+    @Test
+    fun markLineIndex_isTheLineBeingSpokenOrTheFirst() {
+        val lines = listOf(
+            TranscriptLine(startMs = 1_000L, speaker = null, text = "a"),
+            TranscriptLine(startMs = 5_000L, speaker = null, text = "b")
+        )
+        assertEquals(0, TranscriptFormatter.markLineIndex(lines, 0L))
+        assertEquals(0, TranscriptFormatter.markLineIndex(lines, 4_999L))
+        assertEquals(1, TranscriptFormatter.markLineIndex(lines, 5_000L))
+        assertEquals(1, TranscriptFormatter.markLineIndex(lines, 99_000L))
+        assertEquals(null, TranscriptFormatter.markLineIndex(emptyList(), 1_000L))
+    }
+
+    @Test
+    fun toText_putsEachMarkAboveItsLine() {
+        val lines = listOf(
+            TranscriptLine(startMs = 1_000L, speaker = "Alice", text = "Hello."),
+            TranscriptLine(startMs = 65_000L, speaker = null, text = "We agree.")
+        )
+        val marks = listOf(
+            TranscriptMark(id = 2, atMs = 70_000L, note = "decision"),
+            TranscriptMark(id = 1, atMs = 2_000L)
+        )
+        assertEquals(
+            "[00:02] \u2691 Mark\n" +
+                "[00:01] Alice: Hello.\n" +
+                "[01:10] \u2691 Mark: decision\n" +
+                "[01:05] We agree.",
+            TranscriptFormatter.toText(lines, marks)
+        )
+    }
+
+    @Test
+    fun toText_listsMarksAloneWithoutLines() {
+        assertEquals(
+            "[00:03] \u2691 Mark: later",
+            TranscriptFormatter.toText(emptyList(), listOf(TranscriptMark(id = 1, atMs = 3_000L, note = "later")))
+        )
+    }
 }
