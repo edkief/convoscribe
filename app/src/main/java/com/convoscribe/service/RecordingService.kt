@@ -935,14 +935,17 @@ class RecordingService : Service() {
         private const val EXTRA_CLEAN = "com.convoscribe.EXTRA_CLEAN"
         private const val EXTRA_PARTICIPANTS = "com.convoscribe.EXTRA_PARTICIPANTS"
         private const val EXTRA_TITLE = "com.convoscribe.EXTRA_TITLE"
+        private const val EXTRA_CLEAN_AUDIO = "com.convoscribe.EXTRA_CLEAN_AUDIO"
 
-        private fun optionsFrom(intent: Intent): ConversationOptions? {
+        /** The [ConversationOptions] [startIntent] put on [intent], or `null` for the Settings defaults. */
+        internal fun optionsFrom(intent: Intent): ConversationOptions? {
             val language = intent.getStringExtra(EXTRA_LANGUAGE) ?: return null
             return ConversationOptions(
                 language = language,
                 numSpeakers = intent.getIntExtra(EXTRA_NUM_SPEAKERS, -1),
                 participants = intent.getStringArrayExtra(EXTRA_PARTICIPANTS)?.toList(),
-                title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
+                title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                cleanAudio = intent.getBooleanExtra(EXTRA_CLEAN_AUDIO, false)
             )
         }
 
@@ -965,6 +968,7 @@ class RecordingService : Service() {
                         putExtra(EXTRA_NUM_SPEAKERS, options.numSpeakers)
                         options.participants?.let { putExtra(EXTRA_PARTICIPANTS, it.toTypedArray()) }
                         putExtra(EXTRA_TITLE, options.title)
+                        putExtra(EXTRA_CLEAN_AUDIO, options.cleanAudio)
                     }
                 }
 
