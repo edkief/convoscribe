@@ -95,11 +95,14 @@ val UpdateState.offer: UpdateOffer?
  * Looks for a newer release of the app and fetches it (issue #15),
  * outside any screen.
  *
- * [checkOnStart] is the automatic check: at most once per process and
- * once every [CHECK_INTERVAL_MS], only while [autoCheck] is on, and
- * never while [isBusy] (a recording is open or paused, an import or a
- * re-transcription runs). It is silent: a failure leaves [state]
- * [UpdateState.Idle], and a skipped version is not offered.
+ * [checkIfDue] is the automatic check (issue #41), called whenever the
+ * app comes to the foreground and from the periodic background job: it
+ * runs once [CHECK_INTERVAL_MS] has passed since the last successful
+ * check, only while [autoCheck] is on, and never while [isBusy] (a
+ * recording is open or paused, an import or a re-transcription runs).
+ * A skipped or failed check runs on the next call. It is silent: a
+ * failure leaves [state] as it was, and a skipped version is not
+ * offered. It leaves a download, a ready APK or a failure alone.
  * [checkNow] is the *Check for updates* button: it ignores the
  * throttle, [autoCheck] and the skipped version, and reports
  * [UpdateState.UpToDate] or [UpdateState.CheckFailed].
@@ -143,7 +146,7 @@ class UpdateManager(
     val bannerDismissed: StateFlow<Boolean> = _bannerDismissed.asStateFlow()
 
     private val lock = Any()
-    private var startCheckDone = false
+    private var cleanedUp = false
     private var checkJob: Job? = null
     private var downloadJob: Job? = null
 
@@ -154,22 +157,22 @@ class UpdateManager(
 
     val isDownloading: Boolean get() = _state.value is UpdateState.Downloading
 
-    /** The automatic check on app start; see the class comment for when it is skipped. */
-    fun checkOnStart() {
-        if (startCheckDone) return
-        startCheckDone = true
-        // Downloads of the installed version (just updated) or older.
-        scope.launch(ioDispatcher) { runCatching { downloads.cleanUp(SemVer.parse(installed().versionName)) } }
-        if (!autoCheck() || isBusy()) {
-            // Busy now: a later start may check.
-            if (isBusy()) startCheckDone = false
-            return
+    /**
+     * The automatic check; see the class comment for when it is skipped.
+     * Returns the check's job, `null` when none was started.
+     */
+    fun checkIfDue(): Job? {
+        if (!cleanedUp) {
+            cleanedUp = true
+            // Downloads of the installed version (just updated) or older.
+            scope.launch(ioDispatcher) { runCatching { downloads.cleanUp(SemVer.parse(installed().versionName)) } }
         }
+        if (!autoCheck() || isBusy()) return null
         val last = store.lastCheckAtMs
         val now = clock()
         // A clock set back past the last check counts as due.
-        if (last in 1..now && now - last < CHECK_INTERVAL_MS) return
-        check(manual = false)
+        if (last in 1..now && now - last < CHECK_INTERVAL_MS) return null
+        return check(manual = false)
     }
 
     /** *Check for updates*: ignores the throttle, the auto switch and a skipped version. */
@@ -313,21 +316,23 @@ class UpdateManager(
     private fun verify(apk: File): UpdateRejection? =
         ApkVerifier.verify(inspector.archive(apk.path), inspector.installed())
 
-    private fun check(manual: Boolean) {
-        if (checkJob?.isActive == true) return
-        if (!canCheck()) return
-        _state.value = UpdateState.Checking(manual)
-        checkJob = scope.launch {
+    private fun check(manual: Boolean): Job? {
+        checkJob?.takeIf { it.isActive }?.let { return it }
+        val before = _state.value
+        if (!canCheck(manual)) return null
+        // An offer on screen stays there while the automatic check runs.
+        if (manual || before !is UpdateState.Available) _state.value = UpdateState.Checking(manual)
+        val job = scope.launch {
             val releases = source.releases()
             if (releases == null) {
-                _state.value = if (manual) UpdateState.CheckFailed else UpdateState.Idle
+                _state.value = if (manual) UpdateState.CheckFailed else before.afterSilentFailure()
                 return@launch
             }
             store.lastCheckAtMs = clock()
             val installedVersion = SemVer.parse(installed().versionName)
             if (installedVersion == null) {
                 Log.w(TAG, "update check: installed versionName ${installed().versionName} is not X.Y.Z")
-                _state.value = if (manual) UpdateState.CheckFailed else UpdateState.Idle
+                _state.value = if (manual) UpdateState.CheckFailed else before.afterSilentFailure()
                 return@launch
             }
             val offer = UpdateSelector.pick(releases, installedVersion, includePrereleases())
@@ -341,19 +346,27 @@ class UpdateManager(
                 }
             }
         }
+        checkJob = job
+        return job
     }
 
-    /** Only from a state that holds nothing in progress or ready. */
-    private fun canCheck(): Boolean = when (_state.value) {
-        UpdateState.Idle, UpdateState.UpToDate, UpdateState.CheckFailed, is UpdateState.Available,
-        is UpdateState.Failed -> true
+    /** What a failed automatic check leaves: an offer stays, anything else is [UpdateState.Idle]. */
+    private fun UpdateState.afterSilentFailure(): UpdateState = this as? UpdateState.Available ?: UpdateState.Idle
+
+    /**
+     * Only from a state that holds nothing in progress or ready; the
+     * automatic check also leaves a failed download for the user to retry.
+     */
+    private fun canCheck(manual: Boolean): Boolean = when (_state.value) {
+        UpdateState.Idle, UpdateState.UpToDate, UpdateState.CheckFailed, is UpdateState.Available -> true
+        is UpdateState.Failed -> manual
         is UpdateState.Checking, is UpdateState.Downloading, is UpdateState.ReadyToInstall,
         is UpdateState.Installing -> false
     }
 
     companion object {
-        /** The automatic check runs at most once in this long. */
-        const val CHECK_INTERVAL_MS = 24L * 60L * 60L * 1_000L
+        /** The automatic check runs at most once in this long: three times a day (issue #41). */
+        const val CHECK_INTERVAL_MS = 8L * 60L * 60L * 1_000L
     }
 }
 

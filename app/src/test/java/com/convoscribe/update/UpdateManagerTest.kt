@@ -127,9 +127,9 @@ class UpdateManagerTest {
         (manager.state.value as? UpdateState.Available)?.offer?.versionName
 
     @Test
-    fun startCheck_offersANewerRelease_andRecordsTheCheck() {
+    fun autoCheck_offersANewerRelease_andRecordsTheCheck() {
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         assertEquals(UpdateState.Checking(manual = false), manager.state.value)
         scope.runCurrent()
         assertEquals("0.3.0", offeredVersion(manager))
@@ -137,85 +137,138 @@ class UpdateManagerTest {
     }
 
     @Test
-    fun startCheck_equalVersion_staysIdle() {
+    fun autoCheck_equalVersion_staysIdle() {
         installed = InstalledApp("0.3.0", 4L)
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(UpdateState.Idle, manager.state.value)
     }
 
     @Test
-    fun startCheck_isThrottledTo24Hours() {
+    fun autoCheck_isThrottledTo8Hours() {
         store.lastCheckAtMs = now - UpdateManager.CHECK_INTERVAL_MS + 1
-        manager().checkOnStart()
+        manager().checkIfDue()
         scope.runCurrent()
         assertEquals(0, source.calls)
 
         store.lastCheckAtMs = now - UpdateManager.CHECK_INTERVAL_MS
-        manager().checkOnStart()
+        manager().checkIfDue()
         scope.runCurrent()
         assertEquals(1, source.calls)
     }
 
     @Test
-    fun startCheck_runsWhenTheClockWentBackPastTheLastCheck() {
+    fun autoCheck_runsWhenTheClockWentBackPastTheLastCheck() {
         store.lastCheckAtMs = now + 1_000L
-        manager().checkOnStart()
+        manager().checkIfDue()
         scope.runCurrent()
         assertEquals(1, source.calls)
     }
 
     @Test
-    fun startCheck_onlyOncePerProcess() {
+    fun autoCheck_runsAgainInTheSameProcessOnceTheIntervalPassed() {
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
-        store.lastCheckAtMs = 0L
-        manager.checkOnStart()
+        now += UpdateManager.CHECK_INTERVAL_MS - 1
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(1, source.calls)
+
+        now += 1
+        manager.checkIfDue()
+        scope.runCurrent()
+        assertEquals(2, source.calls)
     }
 
     @Test
-    fun startCheck_skippedWhenAutoCheckIsOff() {
+    fun autoCheck_failureIsRetriedOnTheNextCall() {
+        source.releases = null
+        val manager = manager()
+        manager.checkIfDue()
+        scope.runCurrent()
+
+        source.releases = listOf(release("v0.3.0"))
+        manager.checkIfDue()
+        scope.runCurrent()
+        assertEquals(2, source.calls)
+        assertEquals("0.3.0", offeredVersion(manager))
+    }
+
+    @Test
+    fun autoCheck_keepsTheOfferOnScreenWhileItRuns_andAfterAFailure() {
+        val manager = offered()
+        now += UpdateManager.CHECK_INTERVAL_MS
+        source.releases = null
+        manager.checkIfDue()
+        assertEquals("0.3.0", offeredVersion(manager))
+        scope.runCurrent()
+        assertEquals("0.3.0", offeredVersion(manager))
+    }
+
+    @Test
+    fun autoCheck_leavesAFailedDownloadForTheUserToRetry() {
+        val manager = offered()
+        assertTrue(manager.download())
+        downloads.result.completeExceptionally(ModelDownloadException("offline"))
+        scope.runCurrent()
+        check(manager.state.value is UpdateState.Failed)
+        now += UpdateManager.CHECK_INTERVAL_MS
+
+        assertEquals(null, manager.checkIfDue())
+        assertTrue(manager.state.value is UpdateState.Failed)
+    }
+
+    @Test
+    fun autoCheck_returnsTheJobItStarted() {
+        val job = manager().checkIfDue()
+        assertTrue(job != null && job.isActive)
+        scope.runCurrent()
+        assertTrue(job!!.isCompleted)
+        auto = false
+        assertEquals(null, manager().checkIfDue())
+    }
+
+    @Test
+    fun autoCheck_skippedWhenAutoCheckIsOff() {
         auto = false
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(0, source.calls)
         assertEquals(UpdateState.Idle, manager.state.value)
     }
 
     @Test
-    fun startCheck_skippedWhileBusy_andRunsOnALaterStart() {
+    fun autoCheck_skippedWhileBusy_andRunsOnALaterStart() {
         busy = true
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(0, source.calls)
 
         busy = false
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(1, source.calls)
     }
 
     @Test
-    fun startCheck_failureIsSilent_andNotRecorded() {
+    fun autoCheck_failureIsSilent_andNotRecorded() {
         source.releases = null
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(UpdateState.Idle, manager.state.value)
         assertEquals(0L, store.lastCheckAtMs)
     }
 
     @Test
-    fun skippedVersion_isNotOfferedOnStart_butANewerOneIs() {
+    fun skippedVersion_isNotOfferedAutomatically_butANewerOneIs() {
         store.skippedVersion = "0.3.0"
         manager().let {
-            it.checkOnStart()
+            it.checkIfDue()
             scope.runCurrent()
             assertEquals(UpdateState.Idle, it.state.value)
         }
@@ -223,7 +276,7 @@ class UpdateManagerTest {
         source.releases = listOf(release("v0.4.0"), release("v0.3.0"))
         store.lastCheckAtMs = 0L
         manager().let {
-            it.checkOnStart()
+            it.checkIfDue()
             scope.runCurrent()
             assertEquals("0.4.0", offeredVersion(it))
         }
@@ -232,7 +285,7 @@ class UpdateManagerTest {
     @Test
     fun skip_recordsTheVersionAndHidesTheOffer() {
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         val offer = (manager.state.value as UpdateState.Available).offer
         manager.skip(offer)
@@ -270,7 +323,7 @@ class UpdateManagerTest {
     fun unparseableInstalledVersion_offersNothing() {
         installed = InstalledApp("", 0L)
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         assertEquals(UpdateState.Idle, manager.state.value)
     }
@@ -278,7 +331,7 @@ class UpdateManagerTest {
     @Test
     fun dismissBanner_untilAManualCheckOffersAgain() {
         val manager = manager()
-        manager.checkOnStart()
+        manager.checkIfDue()
         scope.runCurrent()
         manager.dismissBanner()
         assertTrue(manager.bannerDismissed.value)
@@ -297,8 +350,8 @@ class UpdateManagerTest {
     }
 
     @Test
-    fun startCheck_cleansUpDownloadsOfTheInstalledVersion() {
-        manager().checkOnStart()
+    fun autoCheck_cleansUpDownloadsOfTheInstalledVersion() {
+        manager().checkIfDue()
         scope.runCurrent()
         assertEquals(SemVer(0, 2, 1), downloads.cleanedUpFor)
     }
