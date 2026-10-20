@@ -46,7 +46,8 @@ class SessionRepository(
         title: String,
         language: String,
         numSpeakers: Int?,
-        participants: List<String>?
+        participants: List<String>?,
+        summaryTemplate: String?
     ): Long {
         val row = SessionEntity(
             title = title,
@@ -54,7 +55,8 @@ class SessionRepository(
             language = language,
             status = SessionStatus.RECORDING,
             numSpeakers = normaliseSpeakerCount(numSpeakers),
-            participants = ParticipantsCodec.encode(participants)
+            participants = ParticipantsCodec.encode(participants),
+            summaryTemplate = summaryTemplate
         )
         val id = sessionDao.insert(row)
         sessionDao.update(row.copy(id = id, audioPath = File(recordingsDir, "$id.wav").absolutePath))
@@ -80,7 +82,8 @@ class SessionRepository(
         engine: String,
         model: String,
         segments: List<SegmentPiece>,
-        audio: File
+        audio: File,
+        summaryTemplate: String? = null
     ): Long = db.withTransaction {
         val row = SessionEntity(
             title = title,
@@ -90,6 +93,7 @@ class SessionRepository(
             status = SessionStatus.TRANSCRIBED,
             numSpeakers = normaliseSpeakerCount(numSpeakers),
             participants = ParticipantsCodec.encode(participants),
+            summaryTemplate = summaryTemplate,
             asrEngine = engine,
             asrModel = model
         )
@@ -240,16 +244,22 @@ class SessionRepository(
      * `ORDER BY createdAt ASC, id ASC` ordering used by
      * [observe] is stable across the app.
      */
-    suspend fun addMessage(sessionId: Long, kind: MessageKind, role: MessageRole, content: String): Long =
-        chatMessageDao.insert(
-            ChatMessageEntity(
-                sessionId = sessionId,
-                kind = kind,
-                role = role,
-                content = content,
-                createdAt = System.currentTimeMillis()
-            )
+    suspend fun addMessage(
+        sessionId: Long,
+        kind: MessageKind,
+        role: MessageRole,
+        content: String,
+        templateName: String? = null
+    ): Long = chatMessageDao.insert(
+        ChatMessageEntity(
+            sessionId = sessionId,
+            kind = kind,
+            role = role,
+            content = content,
+            createdAt = System.currentTimeMillis(),
+            templateName = templateName
         )
+    )
 
     /**
      * Remove every chat message of [kind] for [sessionId].
@@ -413,6 +423,14 @@ class SessionRepository(
      */
     suspend fun setParticipants(id: Long, participants: List<String>?) {
         sessionDao.setParticipants(id, ParticipantsCodec.encode(participants))
+    }
+
+    /**
+     * Summary template [key] for this session (issue #27), chosen on
+     * the Summary tab; the next summary uses it.
+     */
+    suspend fun setSummaryTemplate(id: Long, key: String) {
+        sessionDao.setSummaryTemplate(id, key)
     }
 
     /**

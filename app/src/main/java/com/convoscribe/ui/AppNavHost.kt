@@ -19,6 +19,7 @@ import com.convoscribe.ui.session.SessionScreen
 import com.convoscribe.ui.settings.SettingsScreen
 import com.convoscribe.ui.setup.ModelSetupScreen
 import com.convoscribe.ui.speakers.SpeakersScreen
+import com.convoscribe.ui.templates.SummaryTemplatesScreen
 
 private const val ROUTE_HOME = "home"
 private const val ROUTE_SETUP = "setup"
@@ -29,6 +30,7 @@ private const val ROUTE_SESSION_DETAIL = "session/{id}?tab={tab}&line={line}&at=
 private const val ROUTE_ENGINE_CHECK = "engine-check"
 private const val ROUTE_SETTINGS = "settings"
 private const val ROUTE_SPEAKERS = "speakers"
+private const val ROUTE_SUMMARY_TEMPLATES = "summary-templates"
 private const val ROUTE_SEARCH = "search"
 
 private const val NO_ARG = -1L
@@ -169,6 +171,9 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
         composable(ROUTE_SPEAKERS) {
             SpeakersScreen(navController = navController)
+        }
+        composable(ROUTE_SUMMARY_TEMPLATES) {
+            SummaryTemplatesScreen(navController = navController)
         }
         composable(ROUTE_SEARCH) {
             SearchScreen(navController = navController)

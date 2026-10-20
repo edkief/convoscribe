@@ -61,6 +61,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.settings.DisplayMode
@@ -75,6 +76,7 @@ import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 import com.convoscribe.ui.update.UpdateActions
 import com.convoscribe.ui.update.UpdateBanner
@@ -133,7 +135,8 @@ fun SettingsScreen(navController: NavHostController) {
                 SettingsViewModel(
                     repo = container.settingsRepository,
                     chatClient = container.chatClient,
-                    modelStore = container.modelStore
+                    modelStore = container.modelStore,
+                    templates = container.summaryTemplates
                 )
             }
         }
@@ -220,7 +223,9 @@ fun SettingsScreen(navController: NavHostController) {
             onFloatingShapeChange = vm::setFloatingShape,
             onUpdateCheckAutoChange = vm::setUpdateCheckAuto,
             onUpdateIncludePrereleasesChange = vm::setUpdateIncludePrereleases,
-            onSpeakerIdModeChange = vm::setSpeakerIdMode
+            onSpeakerIdModeChange = vm::setSpeakerIdMode,
+            onDefaultSummaryTemplateChange = vm::setDefaultSummaryTemplate,
+            onOpenSummaryTemplates = { navController.navigate("summary-templates") }
         )
     )
 }
@@ -244,7 +249,9 @@ internal class SettingsActions(
     val onFloatingShapeChange: (String) -> Unit = {},
     val onUpdateCheckAutoChange: (Boolean) -> Unit = {},
     val onUpdateIncludePrereleasesChange: (Boolean) -> Unit = {},
-    val onSpeakerIdModeChange: (String) -> Unit = {}
+    val onSpeakerIdModeChange: (String) -> Unit = {},
+    val onDefaultSummaryTemplateChange: (String) -> Unit = {},
+    val onOpenSummaryTemplates: () -> Unit = {}
 )
 
 /**
@@ -307,6 +314,12 @@ internal fun SettingsBody(
                 availableModels = state.availableModels,
                 onFormChange = actions.onFormChange,
                 onTestConnection = actions.onTestConnection
+            )
+            SummariesSection(
+                templates = state.summaryTemplates,
+                defaultKey = state.defaultSummaryTemplate,
+                onDefaultChange = actions.onDefaultSummaryTemplateChange,
+                onOpenTemplates = actions.onOpenSummaryTemplates
             )
             TranscriptionSection(
                 engine = state.asrEngine,
@@ -606,6 +619,44 @@ private fun LanguageModelSection(
  * Then the "Engine check" navigation row and a CPU threads
  * 1..8 slider.
  */
+/**
+ * "Summaries" section (issue #27): the template new conversations
+ * start with (written immediately), and Templates to add or edit them.
+ */
+@Composable
+private fun SummariesSection(
+    templates: List<SummaryTemplate>,
+    defaultKey: String,
+    onDefaultChange: (String) -> Unit,
+    onOpenTemplates: () -> Unit
+) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_summaries)
+    ) {
+        SummaryTemplatePicker(
+            label = stringResource(R.string.settings_summaries_default_label),
+            templates = templates,
+            selectedKey = defaultKey,
+            onSelect = onDefaultChange
+        )
+        SupportingText(text = stringResource(R.string.settings_summaries_default_help))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.settings_summaries_templates_row),
+                style = MaterialTheme.typography.bodyLarge
+            )
+            OutlinedButton(onClick = onOpenTemplates) {
+                Text(text = stringResource(R.string.settings_summaries_templates_button))
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun TranscriptionSection(

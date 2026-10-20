@@ -28,20 +28,23 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import com.convoscribe.R
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.PickerField
+import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
 /**
  * The options a new conversation is set up with (issue #6): language,
- * number of speakers, expected participants and an optional title,
- * plus "Set as default". Render-only; the Record screen feeds it from
+ * number of speakers, expected participants, an optional title and
+ * the summary template (issue #27), plus "Set as default". Render-only; the Record screen feeds it from
  * [RecordViewModel.options]. Kept free of recording specifics so the
  * file import (#3) can show the same form.
  *
  * @param enrolledNames people the participants picker offers.
+ * @param summaryTemplates templates the summary template picker offers.
  * @param onSaveAsDefault `null` hides the "Set as default" button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -49,10 +52,12 @@ import com.convoscribe.ui.theme.AppTheme
 fun ConversationOptionsForm(
     options: ConversationOptions,
     enrolledNames: List<String>,
+    summaryTemplates: List<SummaryTemplate>,
     onLanguageChange: (String) -> Unit,
     onNumSpeakersChange: (Int) -> Unit,
     onParticipantsChange: (List<String>?) -> Unit,
     onTitleChange: (String) -> Unit,
+    onSummaryTemplateChange: (String) -> Unit,
     onSaveAsDefault: (() -> Unit)?,
     modifier: Modifier = Modifier
 ) {
@@ -90,6 +95,16 @@ fun ConversationOptionsForm(
             label = { Text(text = stringResource(R.string.conversation_title_label)) },
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
+        )
+
+        SummaryTemplatePicker(
+            label = stringResource(R.string.conversation_summary_template_label),
+            templates = summaryTemplates,
+            selectedKey = options.summaryTemplate,
+            onSelect = {
+                savedAsDefault = false
+                onSummaryTemplateChange(it)
+            }
         )
 
         if (onSaveAsDefault != null) {

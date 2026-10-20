@@ -97,7 +97,8 @@ class RecordingControllerTest {
             val title: String,
             val language: String,
             val numSpeakers: Int?,
-            val participants: List<String>?
+            val participants: List<String>?,
+            val summaryTemplate: String? = null
         )
 
         /** A call to [recordEngine], in order. */
@@ -110,9 +111,10 @@ class RecordingControllerTest {
             title: String,
             language: String,
             numSpeakers: Int?,
-            participants: List<String>?
+            participants: List<String>?,
+            summaryTemplate: String?
         ): Long {
-            createCalls += Create(title, language, numSpeakers, participants)
+            createCalls += Create(title, language, numSpeakers, participants, summaryTemplate)
             val id = nextId.incrementAndGet()
             // Match the production `SessionRepository`: a file at
             // <root>/<id>.wav that the WAV writer will overwrite.
@@ -595,13 +597,14 @@ class RecordingControllerTest {
                 language = "fr",
                 numSpeakers = 2,
                 participants = listOf("Alice"),
-                title = "  Interview  "
+                title = "  Interview  ",
+                summaryTemplate = "interview"
             )
         )
         advanceUntilIdle()
 
         assertEquals(
-            listOf(FakeRecordingStore.Create("Interview", "fr", 2, listOf("Alice"))),
+            listOf(FakeRecordingStore.Create("Interview", "fr", 2, listOf("Alice"), "interview")),
             h.store.createCalls
         )
         assertEquals("fr", h.factory.lastLanguage)

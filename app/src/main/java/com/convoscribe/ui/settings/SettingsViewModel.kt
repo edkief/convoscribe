@@ -4,7 +4,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.TAG
+import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.llm.ChatClient
+import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
@@ -136,7 +139,11 @@ data class SettingsUiState(
     /** Offer pre-releases too (issue #15); written immediately. */
     val updateIncludePrereleases: Boolean = false,
     /** [com.convoscribe.settings.SpeakerIdMode.key] (issue #11); written immediately. */
-    val speakerIdMode: String = SpeakerIdMode.AUTO.key
+    val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    /** Summary template new conversations start with (issue #27); written immediately. */
+    val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
+    /** Built-in and user templates, for the default template picker. */
+    val summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN
 )
 
 /**
@@ -179,7 +186,8 @@ data class SettingsUiState(
 class SettingsViewModel(
     private val repo: SettingsRepository,
     private val chatClient: ChatClient,
-    private val modelStore: ModelStore
+    private val modelStore: ModelStore,
+    templates: SummaryTemplateStore
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SettingsUiState>
@@ -210,6 +218,9 @@ class SettingsViewModel(
             repo.settings.collect { settings ->
                 _state.value = computeModelState(settings, _state.value)
             }
+        }
+        viewModelScope.launch {
+            templates.observeAll().collect { list -> _state.value = _state.value.copy(summaryTemplates = list) }
         }
     }
 
@@ -390,6 +401,11 @@ class SettingsViewModel(
         repo.update { it.copy(speakerIdMode = mode) }
     }
 
+    /** Persist the default summary template immediately (issue #27). */
+    fun setDefaultSummaryTemplate(key: String) {
+        repo.update { it.copy(defaultSummaryTemplate = key) }
+    }
+
     /** Persist *Check for updates automatically* immediately (issue #15). */
     fun setUpdateCheckAuto(enabled: Boolean) {
         repo.update { it.copy(updateCheckAuto = enabled) }
@@ -466,6 +482,7 @@ class SettingsViewModel(
             updateCheckAuto = current.updateCheckAuto,
             updateIncludePrereleases = current.updateIncludePrereleases,
             speakerIdMode = current.speakerIdMode,
+            defaultSummaryTemplate = current.defaultSummaryTemplate,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes

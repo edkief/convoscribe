@@ -37,6 +37,8 @@ import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
+import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.overlay.FloatingControlContent
 import com.convoscribe.overlay.FloatingControlUi
 import com.convoscribe.recording.ConversationOptions
@@ -68,6 +70,8 @@ import com.convoscribe.ui.setup.SetupBody
 import com.convoscribe.ui.setup.SetupUiState
 import com.convoscribe.ui.speakers.EnrollmentPhase
 import com.convoscribe.ui.speakers.SpeakersBody
+import com.convoscribe.ui.templates.SummaryTemplatesBody
+import com.convoscribe.ui.templates.TemplateDraft
 import com.convoscribe.ui.theme.ConvoScribeTheme
 import com.convoscribe.update.Release
 import com.convoscribe.update.ReleaseAsset
@@ -427,7 +431,7 @@ class ScreenshotTest(private val variant: Variant) {
 
     @Test
     fun sessionSummary() = capture("session_summary") {
-        session(tab = 1, summary = SummaryUiState(saved = SUMMARY))
+        session(tab = 1, summary = SummaryUiState(saved = SUMMARY, savedTemplateName = "Meeting"))
     }
 
     @Test
@@ -449,6 +453,32 @@ class ScreenshotTest(private val variant: Variant) {
             installedVersionCode = 3L,
             update = UpdateState.ReadyToInstall(UPDATE, java.io.File("convoscribe-0.3.0.apk"))
         )
+    }
+
+    @Test
+    fun summaryTemplates() = capture("summary_templates") {
+        SummaryTemplatesBody(
+            templates = SummaryTemplates.BUILT_IN + USER_TEMPLATE,
+            onBack = {},
+            onSave = {},
+            onDuplicate = {},
+            onDelete = {}
+        )
+    }
+
+    @Test
+    fun summaryTemplateEditor() {
+        assumeTextFieldDialogsRender()
+        captureScreen("summary_template_editor") {
+            SummaryTemplatesBody(
+                templates = SummaryTemplates.BUILT_IN + USER_TEMPLATE,
+                onBack = {},
+                onSave = {},
+                onDuplicate = {},
+                onDelete = {},
+                initialDraft = TemplateDraft(USER_TEMPLATE.key, USER_TEMPLATE.name, USER_TEMPLATE.body)
+            )
+        }
     }
 
     @Test
@@ -816,6 +846,13 @@ class ScreenshotTest(private val variant: Variant) {
             cdspLibraryPresent = true,
             htpSkelLibs = listOf("libQnnHtpV73Skel.so"),
             freeStorageBytes = 41_300_000_000L
+        )
+
+        private val USER_TEMPLATE = SummaryTemplate(
+            key = SummaryTemplates.userKey(1),
+            name = "Standup",
+            body = "Three bullet lists: done yesterday, planned today, blockers. One line per person.",
+            builtIn = false
         )
 
         private fun enrolled(name: String) = EnrolledSpeakerEntity(

@@ -179,6 +179,7 @@ class ImportAudioUseCase(
             language = options.language,
             numSpeakers = options.numSpeakers,
             participants = options.participants,
+            summaryTemplate = options.summaryTemplate,
             durationMs = samplesToMs(samples),
             engine = engine.engine,
             model = engine.model,

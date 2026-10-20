@@ -7,6 +7,7 @@ import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.FakeSummaryTemplateStore
 import com.convoscribe.diarization.SpeakerMatcher
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
@@ -73,6 +74,7 @@ class RecordViewModelTest {
         ),
         settings = settings,
         enrolled = enrolled,
+        templates = FakeSummaryTemplateStore(),
         missingModels = missing
     )
 
@@ -118,14 +120,19 @@ class RecordViewModelTest {
         vm.setNumSpeakers(4)
         vm.setParticipants(listOf("Bob"))
         vm.setTitle("Not a default")
+        vm.setSummaryTemplate("lecture")
         vm.saveAsDefault()
 
         val s = settings.settings.value
         assertEquals("fr", s.asrLanguage)
         assertEquals(4, s.numSpeakers)
         assertEquals(listOf("Bob"), s.defaultParticipants)
+        assertEquals("lecture", s.defaultSummaryTemplate)
         // The title is per conversation only.
-        assertEquals(ConversationOptions("fr", 4, listOf("Bob")), newViewModel().options.value)
+        assertEquals(
+            ConversationOptions("fr", 4, listOf("Bob"), summaryTemplate = "lecture"),
+            newViewModel().options.value
+        )
     }
 
     @Test
@@ -170,7 +177,8 @@ class RecordViewModelTest {
             title: String,
             language: String,
             numSpeakers: Int?,
-            participants: List<String>?
+            participants: List<String>?,
+            summaryTemplate: String?
         ): Long = error("not used")
         override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) = Unit
         override suspend fun sessionLanguage(sessionId: Long): String = error("not used")

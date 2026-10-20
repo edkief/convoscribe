@@ -8,10 +8,12 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.data.SummaryTemplateRepository
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
 import com.convoscribe.llm.PromptBuilder
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.ui.UiText
@@ -61,6 +63,7 @@ class SummaryViewModelTest {
     private lateinit var repo: SessionRepository
     private lateinit var prefs: android.content.SharedPreferences
     private lateinit var secrets: InMemorySecretStore
+    private lateinit var templates: SummaryTemplateRepository
 
     @Before
     fun setUp() {
@@ -81,6 +84,7 @@ class SummaryViewModelTest {
         recordingsDir = File(context.filesDir, "summary-vm-test-${System.nanoTime()}")
         recordingsDir.mkdirs()
         repo = SessionRepository(db, recordingsDir)
+        templates = SummaryTemplateRepository(db.summaryTemplateDao())
         prefs = context.getSharedPreferences(
             "summary-vm-test-${System.nanoTime()}",
             Context.MODE_PRIVATE
@@ -136,7 +140,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = settings
+            settings = settings,
+            templates = templates
         )
 
         vm.summarise()
@@ -171,7 +176,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = settings
+            settings = settings,
+            templates = templates
         )
 
         vm.summarise()
@@ -204,7 +210,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = settings
+            settings = settings,
+            templates = templates
         )
 
         vm.summarise()
@@ -243,7 +250,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = settings
+            settings = settings,
+            templates = templates
         )
 
         vm.summarise()
@@ -263,7 +271,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = settings
+            settings = settings,
+            templates = templates
         )
 
         vm.summarise()
@@ -289,7 +298,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = settings
+            settings = settings,
+            templates = templates
         )
 
         vm.summarise()
@@ -314,7 +324,8 @@ class SummaryViewModelTest {
             sessionId = id,
             repository = repo,
             chatClient = client,
-            settings = newSettings().also { configureSettings(it) }
+            settings = newSettings().also { configureSettings(it) },
+            templates = templates
         )
 
         vm.summarise()
@@ -346,6 +357,88 @@ class SummaryViewModelTest {
      * after construction. Tests that need to vary the response
      * between calls use [replaceTokens] / [replaceError].
      */
+    private fun templateVm(id: Long, client: FakeChatClient, settings: SettingsRepository) = SummaryViewModel(
+        sessionId = id,
+        repository = repo,
+        chatClient = client,
+        settings = settings,
+        templates = templates
+    )
+
+    @Test
+    fun summarise_usesTheSessionsTemplateAndRecordsItsName() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en", summaryTemplate = SummaryTemplates.INTERVIEW_KEY)
+        seedTranscript(id)
+        val client = FakeChatClient(tokens = listOf("Q&A"))
+        val vm = templateVm(id, client, newSettings().also { configureSettings(it) })
+        advanceUntilIdle()
+        assertEquals(SummaryTemplates.INTERVIEW_KEY, vm.state.value.selectedKey)
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        val interview = SummaryTemplates.resolve(SummaryTemplates.INTERVIEW_KEY, emptyList())
+        assertEquals(PromptBuilder.summarySystem(interview.body), client.lastMessages!![0].content)
+        val row = db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().single()
+        assertEquals("Interview", row.templateName)
+        assertEquals("Interview", vm.state.first { it.saved == "Q&A" }.savedTemplateName)
+    }
+
+    @Test
+    fun selectTemplate_isStoredOnTheSessionAndUsedForTheNextSummary() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        val key = templates.add("Standup", "Three bullets: yesterday, today, blockers.")
+        val client = FakeChatClient(tokens = listOf("ok"))
+        val vm = templateVm(id, client, newSettings().also { configureSettings(it) })
+        advanceUntilIdle()
+
+        vm.selectTemplate(key)
+        advanceUntilIdle()
+        assertEquals(key, repo.getSession(id)!!.summaryTemplate)
+        assertTrue(vm.state.value.templates.any { it.key == key })
+
+        vm.summarise()
+        advanceUntilIdle()
+        assertEquals(
+            PromptBuilder.summarySystem("Three bullets: yesterday, today, blockers."),
+            client.lastMessages!![0].content
+        )
+        assertEquals("Standup", db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().single().templateName)
+    }
+
+    @Test
+    fun summarise_sessionWithoutATemplateFollowsTheDefault() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        val settings = newSettings().also { configureSettings(it) }
+        settings.update { it.copy(defaultSummaryTemplate = SummaryTemplates.BRIEF_KEY) }
+        val client = FakeChatClient(tokens = listOf("ok"))
+        val vm = templateVm(id, client, settings)
+        advanceUntilIdle()
+
+        vm.summarise()
+        advanceUntilIdle()
+        val brief = SummaryTemplates.resolve(SummaryTemplates.BRIEF_KEY, emptyList())
+        assertEquals(PromptBuilder.summarySystem(brief.body), client.lastMessages!![0].content)
+    }
+
+    @Test
+    fun summarise_deletedTemplateFallsBackToMeeting() = runTest(dispatcher) {
+        val key = templates.add("Gone", "Soon deleted.")
+        val id = repo.createSession(title = "demo", language = "en", summaryTemplate = key)
+        seedTranscript(id)
+        templates.delete(key)
+        val client = FakeChatClient(tokens = listOf("ok"))
+        val vm = templateVm(id, client, newSettings().also { configureSettings(it) })
+        advanceUntilIdle()
+
+        vm.summarise()
+        advanceUntilIdle()
+        assertEquals(PromptBuilder.SUMMARY_SYSTEM, client.lastMessages!![0].content)
+        assertEquals("Meeting", db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().single().templateName)
+    }
+
     private class FakeChatClient(
         tokens: List<String>,
         private val initialError: Throwable? = null

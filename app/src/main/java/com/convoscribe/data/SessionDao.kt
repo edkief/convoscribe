@@ -63,6 +63,10 @@ interface SessionDao {
     @Query("UPDATE sessions SET participants = :participants WHERE id = :id")
     suspend fun setParticipants(id: Long, participants: String?)
 
+    /** Summary template key (issue #27), or `null` to follow the default. */
+    @Query("UPDATE sessions SET summaryTemplate = :key WHERE id = :id")
+    suspend fun setSummaryTemplate(id: Long, key: String?)
+
     @Query("UPDATE sessions SET asrEngine = :engine, asrModel = :model WHERE id = :id")
     suspend fun setEngine(id: Long, engine: String?, model: String?)
 

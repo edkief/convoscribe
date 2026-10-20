@@ -2,6 +2,7 @@ package com.convoscribe.settings
 
 import android.content.SharedPreferences
 import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.llm.SummaryTemplates
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,6 +56,9 @@ class SettingsRepository(
      *    keeps the previous value
      *  - `floatingShape` must be a [FloatingShape.key] or `null`;
      *    anything else keeps the previous value
+     *  - `defaultSummaryTemplate` trimmed; blank becomes Meeting. A
+     *    deleted user template is not caught here (they live in
+     *    Room); it resolves to Meeting when used
      */
     fun update(transform: (AppSettings) -> AppSettings) {
         val current = _settings.value
@@ -86,6 +90,7 @@ class SettingsRepository(
             putBoolean(KEY_OVERLAY_PROMPT_SHOWN, next.overlayPromptShown)
             putBoolean(KEY_UPDATE_CHECK_AUTO, next.updateCheckAuto)
             putBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, next.updateIncludePrereleases)
+            putString(KEY_DEFAULT_SUMMARY_TEMPLATE, next.defaultSummaryTemplate)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
             if (participants == null) {
                 remove(
@@ -136,7 +141,8 @@ class SettingsRepository(
             floatingShape = FloatingShape.fromKey(prefs.getString(KEY_FLOATING_SHAPE, null))?.key,
             overlayPromptShown = prefs.getBoolean(KEY_OVERLAY_PROMPT_SHOWN, false),
             updateCheckAuto = prefs.getBoolean(KEY_UPDATE_CHECK_AUTO, true),
-            updateIncludePrereleases = prefs.getBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, false)
+            updateIncludePrereleases = prefs.getBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, false),
+            defaultSummaryTemplate = summaryTemplateKey(prefs.getString(KEY_DEFAULT_SUMMARY_TEMPLATE, null))
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -205,6 +211,7 @@ class SettingsRepository(
         const val KEY_OVERLAY_PROMPT_SHOWN = "overlayPromptShown"
         const val KEY_UPDATE_CHECK_AUTO = "updateCheckAuto"
         const val KEY_UPDATE_INCLUDE_PRERELEASES = "updateIncludePrereleases"
+        const val KEY_DEFAULT_SUMMARY_TEMPLATE = "defaultSummaryTemplate"
     }
 }
 
@@ -229,6 +236,7 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
         displayMode = mode,
         speakerIdMode = idMode,
         floatingShape = shape,
+        defaultSummaryTemplate = summaryTemplateKey(defaultSummaryTemplate),
         llmBaseUrl = llmBaseUrl.trim().trimEnd('/'),
         defaultParticipants = ParticipantsCodec.normalise(defaultParticipants),
         asrLanguage = lang,
@@ -238,6 +246,10 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
         asrEngineChosen = asrEngineChosen || engine != previous.asrEngine
     )
 }
+
+/** [key] trimmed, or Meeting's key when it is `null` or blank. */
+private fun summaryTemplateKey(key: String?): String =
+    key?.trim()?.takeIf { it.isNotEmpty() } ?: SummaryTemplates.MEETING_KEY
 
 /**
  * Apply the numeric coercions shared by load() and update().
