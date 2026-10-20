@@ -7,6 +7,7 @@ import com.convoscribe.R
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.AudioPlayer
 import com.convoscribe.audio.PlayerState
+import com.convoscribe.data.EditUndo
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionRepository
@@ -73,8 +74,16 @@ data class SessionUiState(
     val asrModel: String? = null,
     /** When the session was recorded, and its length (0 while recording). */
     val createdAt: Long = 0L,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    /** The transcript was edited by hand (issue #26); re-transcribing asks first. */
+    val hasEdits: Boolean = false
 )
+
+/**
+ * A hand edit just landed (issue #26): the screen shows [message] with
+ * *Undo*, which hands [undo] back to [SessionViewModel.undoEdit].
+ */
+class EditDone(val message: UiText, val undo: EditUndo)
 
 /** State of an audio export (share or save); the screen shows a progress dialog while encoding. */
 sealed interface ExportState {
@@ -153,7 +162,8 @@ class SessionViewModel(
                         asrEngine = session.asrEngine,
                         asrModel = session.asrModel,
                         createdAt = session.createdAt,
-                        durationMs = session.durationMs
+                        durationMs = session.durationMs,
+                        hasEdits = session.transcriptEdited
                     )
                 }
             }
@@ -315,6 +325,54 @@ class SessionViewModel(
             } catch (t: Throwable) {
                 _snackbar.trySend(UiText.Plain(t.message ?: t.javaClass.simpleName))
             }
+        }
+    }
+
+    /** The most recent hand edit, the only one *Undo* can take back. */
+    private var lastEdit: EditUndo? = null
+
+    private val _editDone = Channel<EditDone>(Channel.BUFFERED)
+
+    /** One-shot: a hand edit landed; the screen offers to undo it. */
+    val editDone: Flow<EditDone> = _editDone.receiveAsFlow()
+
+    /** Replace a line's text (issue #26); word timings are kept where the words match. */
+    fun editLineText(lineId: Long, text: String) =
+        edit(R.string.session_line_done_text) { repository.editLineText(lineId, text) }
+
+    /** Give a line one of the session's speakers. */
+    fun setLineSpeaker(lineId: Long, speakerIndex: Int) =
+        edit(R.string.session_line_done_speaker) { repository.setLineSpeaker(lineId, speakerIndex) }
+
+    /** Give a line a new speaker named [label]. */
+    fun setLineNewSpeaker(lineId: Long, label: String) =
+        edit(R.string.session_line_done_speaker) { repository.setLineNewSpeaker(lineId, label) }
+
+    /** Join a line with the one after it. */
+    fun mergeWithNext(lineId: Long) = edit(R.string.session_line_done_merge) { repository.mergeWithNext(lineId) }
+
+    /** Split a line at the word boundary nearest [offset] in its text. */
+    fun splitLine(lineId: Long, offset: Int) =
+        edit(R.string.session_line_done_split) { repository.splitLine(lineId, offset) }
+
+    /** Remove a line. */
+    fun deleteLine(lineId: Long) = edit(R.string.session_line_done_delete) { repository.deleteLine(lineId) }
+
+    /**
+     * Take back [undo] if it is still the most recent edit; an older
+     * snackbar's *Undo* does nothing once another edit has landed.
+     */
+    fun undoEdit(undo: EditUndo) {
+        if (undo !== lastEdit) return
+        lastEdit = null
+        viewModelScope.launch { repository.undo(undo) }
+    }
+
+    private fun edit(message: Int, block: suspend () -> EditUndo?) {
+        viewModelScope.launch {
+            val undo = block() ?: return@launch
+            lastEdit = undo
+            _editDone.trySend(EditDone(UiText.res(message), undo))
         }
     }
 

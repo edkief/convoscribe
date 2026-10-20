@@ -52,10 +52,8 @@ object TranscriptEditor {
      */
     fun split(line: SegmentEntity, offset: Int): Pair<SegmentEntity, SegmentEntity>? {
         val starts = TokenAligner.wordStarts(line.text)
-        if (starts.size < 2) return null
-        val at = (1 until starts.size).minBy { b -> distanceToBoundary(line.text, starts, b, offset) }
-        val firstText = line.text.substring(0, starts[at]).trimEnd()
-        val secondText = line.text.substring(starts[at]).trim()
+        val at = boundaryIndex(line.text, starts, offset) ?: return null
+        val (firstText, secondText) = splitTexts(line.text, starts, at)
 
         val tokens = TokenTimingCodec.decode(line.tokens)
         val words = TokenAligner.words(tokens)
@@ -86,6 +84,26 @@ object TranscriptEditor {
         )
         return first to second
     }
+
+    /**
+     * The two texts [text] would split into at the word boundary nearest
+     * [offset], as [split] cuts them; `null` for fewer than two words.
+     * For previewing a split.
+     */
+    fun splitTexts(text: String, offset: Int): Pair<String, String>? {
+        val starts = TokenAligner.wordStarts(text)
+        val at = boundaryIndex(text, starts, offset) ?: return null
+        return splitTexts(text, starts, at)
+    }
+
+    /** Index of the word the second part starts with: the boundary nearest [offset]. */
+    private fun boundaryIndex(text: String, starts: List<Int>, offset: Int): Int? {
+        if (starts.size < 2) return null
+        return (1 until starts.size).minBy { b -> distanceToBoundary(text, starts, b, offset) }
+    }
+
+    private fun splitTexts(text: String, starts: List<Int>, at: Int): Pair<String, String> =
+        text.substring(0, starts[at]).trimEnd() to text.substring(starts[at]).trim()
 
     /** [line] given [speakerIndex] by hand. */
     fun setSpeaker(line: SegmentEntity, speakerIndex: Int): SegmentEntity =

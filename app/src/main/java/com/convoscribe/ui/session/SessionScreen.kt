@@ -29,6 +29,7 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -80,6 +81,7 @@ import com.convoscribe.ui.home.formatSessionDate
 import com.convoscribe.ui.home.languageTag
 import com.convoscribe.ui.record.ParticipantsDialog
 import com.convoscribe.ui.theme.AppTheme
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 
 /**
@@ -200,6 +202,19 @@ fun SessionScreen(
         // not double-fire the snackbar.
         vm.snackbar.collect { message ->
             snackbarHostState.showSnackbar(message = message.asString(context), duration = SnackbarDuration.Short)
+        }
+    }
+
+    LaunchedEffect(vm) {
+        // A hand edit landed: offer to undo it. A newer edit replaces
+        // the snackbar (collectLatest cancels the one showing).
+        vm.editDone.collectLatest { done ->
+            val result = snackbarHostState.showSnackbar(
+                message = done.message.asString(context),
+                actionLabel = context.getString(R.string.session_line_undo),
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) vm.undoEdit(done.undo)
         }
     }
 
@@ -338,7 +353,22 @@ fun SessionScreen(
         onClearQuestions = { askVm.clearHistory() },
         onOpenSettings = { navController.navigate("settings") },
         initialTab = initialTab,
-        targetLineId = targetLineId
+        targetLineId = targetLineId,
+        hasEdits = state.hasEdits,
+        // Not while something else is writing the transcript.
+        lineEdits = LineEditActions(
+            onEditText = { line, text -> vm.editLineText(line.id, text) },
+            onSetSpeaker = { line, index -> vm.setLineSpeaker(line.id, index) },
+            onNewSpeaker = { line, name -> vm.setLineNewSpeaker(line.id, name) },
+            onMergeWithNext = { line -> vm.mergeWithNext(line.id) },
+            onSplit = { line, offset -> vm.splitLine(line.id, offset) },
+            onDelete = { line -> vm.deleteLine(line.id) }
+        ).takeIf {
+            !state.notFound &&
+                state.status != SessionStatus.RECORDING &&
+                state.status != SessionStatus.DIARIZING &&
+                !retranscribing
+        }
     )
 }
 
@@ -391,7 +421,11 @@ internal fun SessionBody(
     createdAt: Long = 0L,
     durationMs: Long = 0L,
     initialTab: Int = 0,
-    targetLineId: Long? = null
+    targetLineId: Long? = null,
+    hasEdits: Boolean = false,
+    lineEdits: LineEditActions? = null,
+    initialLineMenu: Long? = null,
+    initialLineDialog: LineDialog? = null
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -407,6 +441,8 @@ internal fun SessionBody(
     var reidentifyAfterParticipants by remember { mutableStateOf(false) }
     var infoOpen by remember { mutableStateOf(false) }
     var retranscribeOpen by remember { mutableStateOf(false) }
+    // Language chosen for a re-transcription that waits for "discard your edits?".
+    var retranscribeOverEdits by remember { mutableStateOf<String?>(null) }
     ScreenScaffold(
         title = title,
         onBack = onBack,
@@ -552,7 +588,10 @@ internal fun SessionBody(
                     // The manual trigger works whatever the setting says.
                     onIdentifySpeakersNow = { onReidentifySpeakers(effectiveSpeakerCount) }
                         .takeIf { retranscribe.progress == null },
-                    targetLineId = targetLineId
+                    targetLineId = targetLineId,
+                    lineEdits = lineEdits,
+                    initialMenuLineId = initialLineMenu,
+                    initialDialog = initialLineDialog
                 )
                 selectedTab == 1 -> SummaryTab(
                     state = summaryState,
@@ -671,9 +710,23 @@ internal fun SessionBody(
             currentLanguage = details.language,
             onConfirm = { language ->
                 retranscribeOpen = false
-                retranscribe.onStart(language)
+                if (hasEdits) retranscribeOverEdits = language else retranscribe.onStart(language)
             },
             onDismiss = { retranscribeOpen = false }
+        )
+    }
+    retranscribeOverEdits?.let { language ->
+        ConfirmDialog(
+            title = stringResource(R.string.session_retranscribe_edits_title),
+            message = stringResource(R.string.session_retranscribe_edits_message),
+            confirmLabel = stringResource(R.string.session_retranscribe_edits_confirm),
+            dismissLabel = stringResource(R.string.conversation_cancel),
+            destructive = true,
+            onConfirm = {
+                retranscribeOverEdits = null
+                retranscribe.onStart(language)
+            },
+            onDismiss = { retranscribeOverEdits = null }
         )
     }
     // Clear-questions confirmation. The action itself is gated on

@@ -27,7 +27,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.convoscribe.R
+import com.convoscribe.data.SpeakerEntity
+import com.convoscribe.data.TokenAligner
+import com.convoscribe.data.TranscriptEditor
+import com.convoscribe.data.defaultSpeakerLabel
+import com.convoscribe.ui.components.SpeakerDot
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -161,3 +168,166 @@ internal fun RenameDialog(
         }
     )
 }
+
+/**
+ * *Edit text* for one transcript line (issue #26): the line's text in a
+ * multi-line field. Save is disabled while it is blank; an unchanged
+ * text saves nothing.
+ */
+@Composable
+internal fun EditLineDialog(initialText: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable(initialText) { mutableStateOf(initialText) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.session_line_edit_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it },
+                minLines = 3,
+                label = { Text(text = stringResource(R.string.session_line_edit_label)) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text) }) {
+                Text(text = stringResource(R.string.session_rename_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.session_rename_cancel))
+            }
+        }
+    )
+}
+
+/**
+ * *Split here*: the line's text, read-only, with a cursor the user
+ * places where the second line should start (preset to the middle
+ * word). The preview shows both parts as [TranscriptEditor.split]
+ * will cut them, snapped to the nearest word boundary.
+ */
+@Composable
+internal fun SplitLineDialog(text: String, onConfirm: (Int) -> Unit, onDismiss: () -> Unit) {
+    var value by remember(text) {
+        val starts = TokenAligner.wordStarts(text)
+        mutableStateOf(TextFieldValue(text, TextRange(starts.getOrElse(starts.size / 2) { 0 })))
+    }
+    val parts = TranscriptEditor.splitTexts(text, value.selection.start)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.session_line_split_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
+                Text(text = stringResource(R.string.session_line_split_message))
+                OutlinedTextField(
+                    value = value,
+                    // Read-only: only the cursor moves.
+                    onValueChange = { value = it.copy(text = text) },
+                    readOnly = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (parts != null) {
+                    Text(
+                        text = stringResource(R.string.session_line_split_preview, parts.first, parts.second),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = parts != null, onClick = { onConfirm(value.selection.start) }) {
+                Text(text = stringResource(R.string.session_line_split_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.session_rename_cancel))
+            }
+        }
+    )
+}
+
+/**
+ * *Change speaker*: the session's speakers (preselected with the
+ * line's [current] one) and *New speaker*, which shows a name field
+ * prefilled with the next default name. [onPick] gets an existing
+ * speaker's index, [onNew] the new speaker's name.
+ */
+@Composable
+internal fun ChangeSpeakerDialog(
+    speakers: List<SpeakerEntity>,
+    current: Int?,
+    onPick: (Int) -> Unit,
+    onNew: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val nextIndex = (speakers.maxOfOrNull { it.speakerIndex } ?: -1) + 1
+    var selected by rememberSaveable { mutableStateOf(current ?: NEW_SPEAKER) }
+    var name by rememberSaveable { mutableStateOf(defaultSpeakerLabel(nextIndex)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.session_line_speaker_title)) },
+        text = {
+            Column {
+                for (speaker in speakers) {
+                    SpeakerOption(
+                        label = speaker.label,
+                        selected = selected == speaker.speakerIndex,
+                        speakerIndex = speaker.speakerIndex,
+                        onSelect = { selected = speaker.speakerIndex }
+                    )
+                }
+                SpeakerOption(
+                    label = stringResource(R.string.session_line_speaker_new),
+                    selected = selected == NEW_SPEAKER,
+                    speakerIndex = null,
+                    onSelect = { selected = NEW_SPEAKER }
+                )
+                if (selected == NEW_SPEAKER) {
+                    OutlinedTextField(
+                        value = name,
+                        onValueChange = { name = it },
+                        singleLine = true,
+                        label = { Text(text = stringResource(R.string.session_rename_label)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = selected != NEW_SPEAKER || name.isNotBlank(),
+                onClick = { if (selected == NEW_SPEAKER) onNew(name) else onPick(selected) }
+            ) {
+                Text(text = stringResource(R.string.session_line_speaker_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.session_rename_cancel))
+            }
+        }
+    )
+}
+
+/** One radio row of [ChangeSpeakerDialog], with the speaker's colour dot when it has one. */
+@Composable
+private fun SpeakerOption(label: String, selected: Boolean, speakerIndex: Int?, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        if (speakerIndex != null) SpeakerDot(speakerIndex = speakerIndex)
+        Text(text = label)
+    }
+}
+
+/** [ChangeSpeakerDialog]'s choice for *New speaker*. */
+private const val NEW_SPEAKER = -1
