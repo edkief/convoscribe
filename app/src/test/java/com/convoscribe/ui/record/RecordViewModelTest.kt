@@ -19,6 +19,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -62,6 +63,9 @@ class RecordViewModelTest {
         Dispatchers.resetMain()
     }
 
+    /** Notes passed to the ViewModel's save hook, in order. */
+    private val savedNotes = mutableListOf<Pair<Long, String?>>()
+
     private fun newViewModel(missing: (String) -> Boolean = { false }) = RecordViewModel(
         controller = RecordingController(
             audioSource = object : AudioSource {
@@ -75,8 +79,25 @@ class RecordViewModelTest {
         settings = settings,
         enrolled = enrolled,
         templates = FakeSummaryTemplateStore(),
-        missingModels = missing
+        missingModels = missing,
+        saveMarkNote = { id, note -> savedNotes += id to note }
     )
+
+    @Test
+    fun mark_withoutAnOpenSession_reportsNothing() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val reported = mutableListOf<MarkAdded>()
+        val job = launch { vm.marks.collect { reported += it } }
+        vm.mark()
+        assertTrue(reported.isEmpty())
+        job.cancel()
+    }
+
+    @Test
+    fun setMarkNote_savesTheNote() {
+        newViewModel().setMarkNote(5L, "decision")
+        assertEquals(listOf(5L to "decision"), savedNotes)
+    }
 
     @Test
     fun shouldAskForOverlay_onlyOnce_andNotWhenGrantedOrSwitchedOff() {

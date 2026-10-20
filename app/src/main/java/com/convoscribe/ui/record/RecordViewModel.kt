@@ -13,13 +13,17 @@ import com.convoscribe.recording.RecordingState
 import com.convoscribe.settings.SettingsRepository
 import java.util.Locale
 import kotlin.math.max
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 /**
  * Thin ViewModel over [RecordingController] for the recording screen.
@@ -37,7 +41,9 @@ import kotlinx.coroutines.flow.update
  *    the Settings defaults. Editing them never touches Settings;
  *    [saveAsDefault] writes them back. [enrolledNames] feeds the
  *    participants picker, [summaryTemplates] the template picker, and [modelsMissing] tells the screen to
- *    send the user to setup before Start.
+ *    send the user to setup before Start;
+ *  - [mark] (issue #30), which reports each new mark on [marks] so
+ *    the screen can offer a note, saved with [setMarkNote].
  * Constructed by
  * [com.convoscribe.ui.AppNavHost]'s `viewModelFactory` reading
  * `AppContainer.recordingController` so the singleton lives across
@@ -49,7 +55,8 @@ class RecordViewModel(
     private val settings: SettingsRepository,
     enrolled: EnrolledSpeakerStore,
     templates: SummaryTemplateStore,
-    private val missingModels: (language: String) -> Boolean = { false }
+    private val missingModels: (language: String) -> Boolean = { false },
+    private val saveMarkNote: suspend (markId: Long, note: String?) -> Unit = { _, _ -> }
 ) : ViewModel() {
 
     private val recordingController = controller
@@ -119,6 +126,25 @@ class RecordViewModel(
         return true
     }
 
+    private val _marks = Channel<MarkAdded>(Channel.BUFFERED)
+
+    /** One-shot: a mark was just taken here; the screen offers to add a note. */
+    val marks: Flow<MarkAdded> = _marks.receiveAsFlow()
+
+    /** Mark the current moment of the open session; nothing happens without one. */
+    fun mark() {
+        val atMs = recordingController.state.value.elapsedMs
+        viewModelScope.launch {
+            val id = recordingController.mark() ?: return@launch
+            _marks.trySend(MarkAdded(id, atMs))
+        }
+    }
+
+    /** Give mark [markId] a [note]; a blank one removes it. */
+    fun setMarkNote(markId: Long, note: String) {
+        viewModelScope.launch { saveMarkNote(markId, note) }
+    }
+
     /** Whether the chosen language still needs its models downloaded before Start. */
     fun modelsMissing(): Boolean = missingModels(_options.value.language)
 
@@ -132,6 +158,9 @@ class RecordViewModel(
         recordingController.consumeCompleted()
     }
 }
+
+/** A mark just taken on the Record screen: its id and its time in the recorded audio. */
+data class MarkAdded(val id: Long, val atMs: Long)
 
 /**
  * Format an elapsed time as the recording screen displays it.

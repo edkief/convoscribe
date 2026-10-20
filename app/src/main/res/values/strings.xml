@@ -134,6 +134,10 @@
     <string name="record_hint_paused">Paused. Resume to keep recording, or stop.</string>
     <string name="record_pause">Pause</string>
     <string name="record_mark">Mark this moment</string>
+    <string name="record_marked">Marked at %1$s</string>
+    <string name="record_mark_add_note">Add note</string>
+    <string name="mark_note_title">Note for %1$s</string>
+    <string name="mark_note_label">Note (optional)</string>
     <string name="record_resume">Resume</string>
     <string name="record_live_paused">Paused. Nothing is recorded until you resume.</string>
     <string name="record_live_listening">Listening… speech appears here as it is recognised.</string>
