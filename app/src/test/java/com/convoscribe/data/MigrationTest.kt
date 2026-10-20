@@ -175,6 +175,30 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate8To9_existingSessionsAreNotCleaned() = runTest {
+        helper.createDatabase(DB_NAME, 8).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Cafe', 1000, 5000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 9, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val session = db.sessionDao().get(1)!!
+            assertEquals("Cafe", session.title)
+            assertNull(session.cleanedWith)
+            db.sessionDao().setCleanedWith(1, "enh-gtcrn-simple")
+            assertEquals("enh-gtcrn-simple", db.sessionDao().get(1)!!.cleanedWith)
+        } finally {
+            db.close()
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test.db"
     }

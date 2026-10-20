@@ -48,7 +48,8 @@ class SessionRepository(
         language: String,
         numSpeakers: Int?,
         participants: List<String>?,
-        summaryTemplate: String?
+        summaryTemplate: String?,
+        cleanedWith: String?
     ): Long {
         val row = SessionEntity(
             title = title,
@@ -57,7 +58,8 @@ class SessionRepository(
             status = SessionStatus.RECORDING,
             numSpeakers = normaliseSpeakerCount(numSpeakers),
             participants = ParticipantsCodec.encode(participants),
-            summaryTemplate = summaryTemplate
+            summaryTemplate = summaryTemplate,
+            cleanedWith = cleanedWith
         )
         val id = sessionDao.insert(row)
         sessionDao.update(row.copy(id = id, audioPath = File(recordingsDir, "$id.wav").absolutePath))
@@ -125,6 +127,8 @@ class SessionRepository(
             mergeEngineValue(row.asrModel, model, continued)
         )
     }
+
+    override suspend fun cleanedWith(sessionId: Long): String? = sessionDao.get(sessionId)?.cleanedWith
 
     override suspend fun sessionLanguage(sessionId: Long): String {
         val row = sessionDao.get(sessionId) ?: error("No session row for id $sessionId")
@@ -211,19 +215,30 @@ class SessionRepository(
     }
 
     /**
-     * Delete the session, the WAV file and (via `ON DELETE CASCADE`)
-     * the segments, speakers, chat messages and marks. Idempotent: deleting
-     * an unknown id is a no-op and silently returns.
+     * Delete the session, the WAV file, its cleaned copy (issue #37)
+     * and (via `ON DELETE CASCADE`) the segments, speakers, chat
+     * messages and marks. Idempotent: deleting an unknown id is a
+     * no-op and silently returns.
      */
     suspend fun deleteSession(id: Long) {
         val row = sessionDao.get(id)
-        if (row != null) {
-            val audio = File(row.audioPath)
-            if (audio.exists()) {
-                audio.delete()
-            }
+        if (row != null && row.audioPath.isNotBlank()) {
+            File(row.audioPath).delete()
+            row.cleanAudioFile().delete()
         }
         sessionDao.delete(id)
+    }
+
+    /**
+     * Stop treating [sessionId] as cleaned (issue #37): forget the
+     * model and delete the cleaned recording, so playback and the
+     * next re-transcription use the original again. The transcript is
+     * left as it is.
+     */
+    suspend fun removeCleaning(sessionId: Long) {
+        val row = sessionDao.get(sessionId) ?: return
+        sessionDao.setCleanedWith(sessionId, null)
+        if (row.audioPath.isNotBlank()) row.cleanAudioFile().delete()
     }
 
     // --- Pass-throughs for observe/get ---
@@ -468,13 +483,19 @@ class SessionRepository(
      * no longer counts as edited. Speaker rows are kept so a following diarization can
      * carry custom names over (each piece's [SegmentPiece.speakerIndex]
      * says which old speaker it overlapped).
+     *
+     * With [cleaned] (issue #37) the transcript was made from a
+     * cleaned copy of the audio: the file is moved into place as the
+     * session's cleaned recording, as the last step of the same
+     * transaction, and the session is marked cleaned with its model.
      */
     suspend fun replaceTranscript(
         sessionId: Long,
         language: String,
         segments: List<SegmentPiece>,
         engine: String,
-        model: String
+        model: String,
+        cleaned: CleanedAudio? = null
     ) {
         db.withTransaction {
             sessionDao.deleteSegments(sessionId)
@@ -494,6 +515,11 @@ class SessionRepository(
             sessionDao.setEngine(sessionId, engine, model)
             sessionDao.setTranscriptEdited(sessionId, false)
             sessionDao.setStatus(sessionId, SessionStatus.TRANSCRIBED)
+            if (cleaned != null) {
+                val row = sessionDao.get(sessionId) ?: error("No session row for id $sessionId")
+                sessionDao.setCleanedWith(sessionId, cleaned.model)
+                moveFile(cleaned.file, row.cleanAudioFile())
+            }
         }
     }
 
@@ -650,3 +676,9 @@ data class EditUndo(
     val addedSpeaker: Int? = null,
     val wasEdited: Boolean = false
 )
+
+/**
+ * A cleaned copy of a session's audio, made by [model], waiting in
+ * [file] to be swapped in by [SessionRepository.replaceTranscript].
+ */
+data class CleanedAudio(val file: File, val model: String)

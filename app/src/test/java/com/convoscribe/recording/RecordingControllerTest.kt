@@ -82,6 +82,11 @@ class RecordingControllerTest {
         /** Language per existing session, for [sessionLanguage]. */
         val languages: MutableMap<Long, String> = mutableMapOf()
 
+        /** Cleanup model per session (issue #37), for [cleanedWith]. */
+        val cleaned: MutableMap<Long, String?> = mutableMapOf()
+
+        override suspend fun cleanedWith(sessionId: Long): String? = cleaned[sessionId]
+
         /** Sessions passed to [reopenSession], in order. */
         val reopenCalls: MutableList<Long> = mutableListOf()
 
@@ -98,7 +103,8 @@ class RecordingControllerTest {
             val language: String,
             val numSpeakers: Int?,
             val participants: List<String>?,
-            val summaryTemplate: String? = null
+            val summaryTemplate: String? = null,
+            val cleanedWith: String? = null
         )
 
         /** A call to [recordEngine], in order. */
@@ -112,10 +118,12 @@ class RecordingControllerTest {
             language: String,
             numSpeakers: Int?,
             participants: List<String>?,
-            summaryTemplate: String?
+            summaryTemplate: String?,
+            cleanedWith: String?
         ): Long {
-            createCalls += Create(title, language, numSpeakers, participants, summaryTemplate)
+            createCalls += Create(title, language, numSpeakers, participants, summaryTemplate, cleanedWith)
             val id = nextId.incrementAndGet()
+            cleaned[id] = cleanedWith
             // Match the production `SessionRepository`: a file at
             // <root>/<id>.wav that the WAV writer will overwrite.
             File(root, "$id.wav")

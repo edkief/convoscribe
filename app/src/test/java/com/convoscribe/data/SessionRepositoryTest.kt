@@ -577,4 +577,43 @@ class SessionRepositoryTest {
         repo.deleteSession(id)
         assertEquals(0, repo.countMarks(id))
     }
+
+    @Test
+    fun cleaning_swapsInWithTheTranscriptAndGoesWithTheSession() = runTest {
+        val id = repo.createSession(title = "Noisy", language = "en")
+        val session = repo.getSession(id)!!
+        File(session.audioPath).writeBytes(ByteArray(10))
+        assertNull(session.cleanedWith)
+        assertEquals(File(recordingsDir, "$id.clean.wav"), session.cleanAudioFile())
+
+        val work = File(recordingsDir, "work.wav").apply { writeBytes(ByteArray(10)) }
+        repo.replaceTranscript(
+            id,
+            "en",
+            listOf(SegmentPiece(0, 1_000, "hello", emptyList(), null)),
+            "cpu",
+            "asr",
+            CleanedAudio(work, "enh-model")
+        )
+        val cleaned = repo.getSession(id)!!
+        assertEquals("enh-model", cleaned.cleanedWith)
+        assertEquals("enh-model", repo.cleanedWith(id))
+        assertTrue(cleaned.cleanAudioFile().exists())
+        assertFalse(work.exists())
+        assertEquals(listOf("hello"), repo.getSegments(id).map { it.text })
+
+        repo.removeCleaning(id)
+        assertNull(repo.getSession(id)!!.cleanedWith)
+        assertFalse(cleaned.cleanAudioFile().exists())
+        assertEquals(listOf("hello"), repo.getSegments(id).map { it.text })
+
+        val live = repo.createSession(title = "Live", language = "en", cleanedWith = "enh-model")
+        assertEquals("enh-model", repo.cleanedWith(live))
+        val liveRow = repo.getSession(live)!!
+        File(liveRow.audioPath).writeBytes(ByteArray(10))
+        liveRow.cleanAudioFile().writeBytes(ByteArray(10))
+        repo.deleteSession(live)
+        assertFalse(File(liveRow.audioPath).exists())
+        assertFalse(liveRow.cleanAudioFile().exists())
+    }
 }
