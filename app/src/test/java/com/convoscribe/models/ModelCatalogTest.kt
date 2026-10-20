@@ -155,7 +155,8 @@ class ModelCatalogTest {
             setOf(
                 ModelKind.ASR,
                 ModelKind.SEGMENTATION,
-                ModelKind.EMBEDDING
+                ModelKind.EMBEDDING,
+                ModelKind.ENHANCEMENT
             ),
             kinds
         )
@@ -164,5 +165,17 @@ class ModelCatalogTest {
             "ASR_EN_NPU must appear in all",
             ModelCatalog.all.any { it.id == ModelCatalog.ASR_EN_NPU.id }
         )
+    }
+
+    @Test
+    fun cleanup_isOptional() {
+        // Issue #37: the noise cleanup model is never required for a session.
+        for (language in listOf("en", "fr")) {
+            for (engine in listOf("cpu", "npu")) {
+                assertTrue(ModelCatalog.CLEANUP !in ModelCatalog.requiredFor(language, engine))
+            }
+        }
+        assertEquals(ModelKind.ENHANCEMENT, ModelCatalog.CLEANUP.kind)
+        assertEquals(1, ModelCatalog.CLEANUP.files.size)
     }
 }
