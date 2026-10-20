@@ -240,16 +240,22 @@ class SessionRepository(
      * `ORDER BY createdAt ASC, id ASC` ordering used by
      * [observe] is stable across the app.
      */
-    suspend fun addMessage(sessionId: Long, kind: MessageKind, role: MessageRole, content: String): Long =
-        chatMessageDao.insert(
-            ChatMessageEntity(
-                sessionId = sessionId,
-                kind = kind,
-                role = role,
-                content = content,
-                createdAt = System.currentTimeMillis()
-            )
+    suspend fun addMessage(
+        sessionId: Long,
+        kind: MessageKind,
+        role: MessageRole,
+        content: String,
+        templateName: String? = null
+    ): Long = chatMessageDao.insert(
+        ChatMessageEntity(
+            sessionId = sessionId,
+            kind = kind,
+            role = role,
+            content = content,
+            createdAt = System.currentTimeMillis(),
+            templateName = templateName
         )
+    )
 
     /**
      * Remove every chat message of [kind] for [sessionId].
@@ -413,6 +419,14 @@ class SessionRepository(
      */
     suspend fun setParticipants(id: Long, participants: List<String>?) {
         sessionDao.setParticipants(id, ParticipantsCodec.encode(participants))
+    }
+
+    /**
+     * Summary template [key] for this session (issue #27), chosen on
+     * the Summary tab; the next summary uses it.
+     */
+    suspend fun setSummaryTemplate(id: Long, key: String) {
+        sessionDao.setSummaryTemplate(id, key)
     }
 
     /**

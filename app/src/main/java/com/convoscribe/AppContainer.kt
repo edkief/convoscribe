@@ -14,6 +14,8 @@ import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionSearch
+import com.convoscribe.data.SummaryTemplateRepository
+import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
@@ -155,6 +157,9 @@ class AppContainer(val context: Context) {
 
     /** Cross-session search over titles, transcripts, speakers and summaries (issue #24). */
     val sessionSearch: SessionSearch = SessionSearch(database.searchDao())
+
+    /** Built-in and user-written summary templates (issue #27). */
+    val summaryTemplates: SummaryTemplateStore = SummaryTemplateRepository(database.summaryTemplateDao())
 
     /**
      * Encodes a session's WAV to M4A for sharing and saving. Exports

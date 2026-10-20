@@ -8,10 +8,11 @@ import androidx.room.migration.AutoMigrationSpec
 import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
- * Room database holding the five entity families that survive an
+ * Room database holding the entity families that survive an
  * app restart: sessions, transcript segments, speaker labels,
- * LLM chat messages, (v2) enrolled speakers, and (v5) a
- * full-text index over transcript lines. The current version is 6; the generated JSON for every version is committed
+ * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
+ * index over transcript lines, and (v7) summary templates.
+ * The current version is 7; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -41,6 +42,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * `segments.speakerEdited` and `sessions.transcriptEdited`, all
  * defaulting to `0`, so existing transcripts read as unedited.
  *
+ * The 6 → 7 migration (issue #27) is automatic: the
+ * `summary_templates` table, and nullable `sessions.summaryTemplate`
+ * and `chat_messages.templateName`, so existing sessions follow the
+ * default template and existing summaries show no template name.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -51,16 +57,18 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SpeakerEntity::class,
         ChatMessageEntity::class,
         EnrolledSpeakerEntity::class,
-        SegmentFtsEntity::class
+        SegmentFtsEntity::class,
+        SummaryTemplateEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
         AutoMigration(from = 3, to = 4),
         AutoMigration(from = 4, to = 5, spec = Migration4To5::class),
-        AutoMigration(from = 5, to = 6)
+        AutoMigration(from = 5, to = 6),
+        AutoMigration(from = 6, to = 7)
     ]
 )
 @TypeConverters(Converters::class)
@@ -71,6 +79,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chatMessageDao(): ChatMessageDao
     abstract fun enrolledSpeakerDao(): EnrolledSpeakerDao
     abstract fun searchDao(): SearchDao
+    abstract fun summaryTemplateDao(): SummaryTemplateDao
 
     companion object {
         const val NAME: String = "convoscribe.db"

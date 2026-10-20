@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -116,6 +117,34 @@ class MigrationTest {
             assertFalse(segment.textEdited)
             assertFalse(segment.speakerEdited)
             assertFalse(db.sessionDao().get(1)!!.transcriptEdited)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrate6To7_existingSessionsFollowTheDefaultTemplate() = runTest {
+        helper.createDatabase(DB_NAME, 6).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Standup', 1000, 5000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO chat_messages (id, sessionId, kind, role, content, createdAt) " +
+                    "VALUES (3, 1, 'SUMMARY', 'ASSISTANT', 'Overview: short.', 2000)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 7, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertNull(db.sessionDao().get(1)!!.summaryTemplate)
+            val summary = db.chatMessageDao().observe(1, MessageKind.SUMMARY).first().single()
+            assertEquals("Overview: short.", summary.content)
+            assertNull(summary.templateName)
+            assertEquals(emptyList<SummaryTemplateEntity>(), db.summaryTemplateDao().getAll())
         } finally {
             db.close()
         }

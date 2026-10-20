@@ -35,5 +35,11 @@ data class ChatMessageEntity(
     val kind: MessageKind,
     val role: MessageRole,
     val content: String,
-    val createdAt: Long
+    val createdAt: Long,
+    /**
+     * Name of the template a SUMMARY row was written with (issue #27),
+     * as it was called at the time; `null` for other kinds and for
+     * summaries from before templates.
+     */
+    val templateName: String? = null
 )

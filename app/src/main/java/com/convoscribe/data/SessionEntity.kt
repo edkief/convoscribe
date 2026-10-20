@@ -51,5 +51,11 @@ data class SessionEntity(
      * the transcript is replaced.
      */
     @ColumnInfo(defaultValue = "0")
-    val transcriptEdited: Boolean = false
+    val transcriptEdited: Boolean = false,
+    /**
+     * Key of the summary template chosen for this conversation (issue
+     * #27, see [com.convoscribe.llm.SummaryTemplates]); `null` on
+     * sessions from before templates, which use the current default.
+     */
+    val summaryTemplate: String? = null
 )
