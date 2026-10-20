@@ -896,6 +896,52 @@ without clearing data first.
 - On the Boox, the menu and dialogs appear without animation and the
   *edited* mark is readable in black and white.
 
+## 29. Summary templates (issue #27)
+
+Run this with a working LLM endpoint, on a phone and on the **Boox**.
+To check the upgrade, install over v0.5.0 without clearing data first,
+using a session that already has a summary.
+
+**Steps**
+
+1. Open the session summarised before the upgrade, Summary tab.
+2. Settings → Summaries. Change *Default template* to *Brief*, then
+   go back to Home and tap Record.
+3. On the Record screen, change *Summary template* to *Interview* and
+   record a short two-person conversation. Open it, Summary tab →
+   Summarise.
+4. On the same session, pick *Brief* in the Template picker and tap
+   Regenerate. Leave the session and open it again.
+5. Settings → Summaries → Templates → *Duplicate* on *Meeting*. Edit
+   the copy: name `Standup`, instructions `Three bullet lists: done,
+   next, blockers.` Save.
+6. On a session, pick `Standup` and Regenerate.
+7. *New template* with an empty name or instructions.
+8. Delete `Standup` (confirm), then open the session from step 6.
+9. Record a conversation without touching the template, and import
+   an audio file; summarise both.
+
+**Expected**
+
+- Step 1: the old summary is still there with no template line; the
+  picker shows the current default.
+- Step 2: the Record form starts on *Brief*.
+- Step 3: the summary has context, questions and answers, quotes and
+  follow-ups; *Written with the Interview template* above it.
+- Step 4: a 3–5 bullet summary, *Written with the Brief template*;
+  the picker still shows *Brief* after reopening.
+- Step 5: `Standup` appears under *Your templates* with Edit,
+  Duplicate and Delete; built-ins have Duplicate only. The editor shows
+  the fixed opening and guardrail lines around the instructions.
+- Step 6: three bullet lists in the transcript's language with the
+  speakers' names; *Written with the Standup template*.
+- Step 7: Save stays disabled.
+- Step 8: the template is gone; the session's picker shows *Meeting*,
+  and the old summary still says *Standup* until regenerated.
+- Step 9: both use the default template (*Brief* from step 2).
+- On the Boox, the picker menus and the editor dialog appear without
+  animation and are readable in black and white.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

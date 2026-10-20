@@ -127,6 +127,16 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   OpenAI-compatible `/v1/chat/completions` endpoint (vLLM,
   llama.cpp server, Ollama with `http://<host>:11434/v1`, OpenAI,
   …); answers stream token-by-token and are saved with the session.
+- **Summary templates** — pick how a summary is laid out: *Meeting*
+  (the default: overview, key points, decisions, action items),
+  *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
+  or *Brief* (3–5 bullets). Choose one for each conversation before
+  recording (with *Set as default*), or switch on the Summary tab and
+  Regenerate. Each summary shows which template wrote it. Settings →
+  Summaries → Templates adds, edits, duplicates and deletes your own
+  templates; built-ins can be duplicated, not edited. Every template
+  keeps the same rules: write in the transcript's language, keep
+  speaker names, and don't invent facts.
 - **English and French** — pick Français for a conversation (or as
   the default in Settings) to download the French model (~71 MB) and
   transcribe French speech with the CPU engine. Settings shows each
