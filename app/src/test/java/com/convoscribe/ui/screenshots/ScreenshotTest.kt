@@ -36,8 +36,10 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
+import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.overlay.FloatingControlContent
@@ -52,12 +54,14 @@ import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
 import com.convoscribe.ui.home.SessionRow
+import com.convoscribe.ui.record.CleanupOption
 import com.convoscribe.ui.record.RecordBody
 import com.convoscribe.ui.search.DateRange
 import com.convoscribe.ui.search.FilterState
 import com.convoscribe.ui.search.SearchBody
 import com.convoscribe.ui.search.SearchResults
 import com.convoscribe.ui.session.AskUiState
+import com.convoscribe.ui.session.CleanupUi
 import com.convoscribe.ui.session.ExportState
 import com.convoscribe.ui.session.LineDialog
 import com.convoscribe.ui.session.LineEditActions
@@ -297,6 +301,24 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun recordIdleWithCleanup() = capture("record_idle_cleanup") {
+        RecordBody(
+            phase = RecordingPhase.IDLE,
+            preparingNpu = false,
+            elapsedMs = 0L,
+            finalLines = emptyList(),
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            options = ConversationOptions(language = "en", cleanAudio = true),
+            cleanup = CleanupOption(liveNotRecommended = true),
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    @Test
     fun recordLive() = capture("record_live") {
         RecordBody(
             phase = RecordingPhase.RECORDING,
@@ -378,6 +400,11 @@ class ScreenshotTest(private val variant: Variant) {
     @Test
     fun sessionTranscript() = capture("session_transcript") {
         session(playing = true)
+    }
+
+    @Test
+    fun sessionCleaned() = capture("session_cleaned") {
+        session(cleanup = CleanupUi(cleaned = true, available = true, enabled = true, playCleaned = true))
     }
 
     @Test
@@ -589,6 +616,35 @@ class ScreenshotTest(private val variant: Variant) {
         )
     }
 
+    @Test
+    fun engineCheckCleanup() = capture("engine_check_cleanup") {
+        EngineCheckBody(
+            state = EngineCheckUiState(
+                deviceInfo = DEVICE,
+                results = mapOf(
+                    "cpu" to EngineCheckResult(
+                        engine = "cpu",
+                        initMs = 412L,
+                        firstRun = false,
+                        audioMs = 3_800L,
+                        processMs = 1_900L,
+                        text = "after early nightfall the yellow lamps would light up here and there"
+                    )
+                ),
+                cleanupAvailable = true,
+                cleanup = CleanupCheckResult(audioMs = 3_800L, processMs = 760L),
+                cleanupEngine = "cpu",
+                liveVerdict = LiveCleanupVerdict.MARGINAL
+            ),
+            storageLow = false,
+            onBack = {},
+            onRunCheck = {},
+            onOpenSetup = {},
+            onCopyReport = {},
+            onShareReport = {}
+        )
+    }
+
     /** The adaptive icon's foreground on its background, in the launcher's circle mask. */
     @Test
     fun launcherIcon() = capture("launcher_icon") {
@@ -618,7 +674,8 @@ class ScreenshotTest(private val variant: Variant) {
         lineMenu: Long? = null,
         lineDialog: LineDialog? = null,
         marks: List<TranscriptMark> = emptyList(),
-        marksOpen: Boolean = false
+        marksOpen: Boolean = false,
+        cleanup: CleanupUi = CleanupUi()
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -666,7 +723,8 @@ class ScreenshotTest(private val variant: Variant) {
             initialLineMenu = lineMenu,
             initialLineDialog = lineDialog,
             marks = marks,
-            initialMarksOpen = marksOpen
+            initialMarksOpen = marksOpen,
+            cleanup = cleanup
         )
     }
 

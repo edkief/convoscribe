@@ -159,6 +159,21 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   is highlighted (and the current word, for lines recorded with word
   timings) and the list follows along until you scroll by hand — tap
   *Follow* or seek to resume. Playback stops when you leave the screen.
+- **Noise cleanup (optional).** For recordings made in noisy places,
+  Settings → *Noise cleanup* downloads a small speech-enhancement model
+  (GTCRN, about 0.5 MB) and can clean new recordings by default; the
+  Record screen has a *Clean up noise* switch per conversation. Live
+  cleaning writes a cleaned copy (`<id>.clean.wav`) next to the
+  original, sample for sample, and the player switches between
+  *Cleaned* and *Original*. A finished or imported session can be
+  cleaned afterwards (*Clean up audio* in the menu; it transcribes again,
+  keeping speaker names) and *Remove cleaning* deletes the copy. The
+  recognizer hears the cleaned audio blended half and half with the
+  original: fully cleaned audio sounds better but transcribes worse,
+  and the blend keeps transcripts at least as good (see
+  `scripts/eval/eval_cleanup.py`). Speakers are identified from the
+  original. *Engine check* → *Check noise cleanup* says whether the
+  device can clean while recording; otherwise clean afterwards.
 - **Share or save the audio** from the session menu (*Share audio*,
   *Save audio…*) as an M4A (AAC, about 0.5 MB a minute), encoded on
   demand with a progress dialog you can cancel.
@@ -356,6 +371,7 @@ data.
 | `asr-fr-kroko-2025-08-06` | CPU | 71 056 155 (≈68 MB) | French speech recognition. Same file layout as English without the test wave. `modelType = "zipformer2"`. |
 | `seg-pyannote-3-0-int8` | CPU (always) | 1 540 506 (≈1.5 MB) | Speaker segmentation. `model.int8.onnx`. |
 | `emb-wespeaker-resnet34-lm` | CPU (always) | 26 530 550 (≈25 MB) | Speaker embeddings. `wespeaker_en_voxceleb_resnet34_LM.onnx`. |
+| `enh-gtcrn-simple` | CPU, optional | 535 638 (≈0.5 MB) | Noise cleanup (issue #37), downloaded from Settings only. `gtcrn_simple.onnx`, run by sherpa-onnx's streaming denoiser. |
 
 Sources:
 
@@ -366,6 +382,7 @@ Sources:
 - Segmentation: `https://huggingface.co/csukuangfj/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.int8.onnx`
 - Embeddings: `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx`
   (the `recongition` misspelling is in the upstream tag and must be preserved).
+- Noise cleanup: `https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx`
 
 Models are downloaded on first run into
 `context.filesDir/models/<bundleId>/` — see the troubleshooting
@@ -492,6 +509,7 @@ same list with each model name + licence + source URL.
   in this README and in Settings → About.
 - **pyannote segmentation 3.0** — MIT.
 - **WeSpeaker ResNet34-LM** — Apache-2.0.
+- **GTCRN** (optional noise cleanup) — MIT, https://github.com/Xiaobin-Rong/gtcrn.
 - **sherpa-onnx** — Apache-2.0, https://github.com/k2-fsa/sherpa-onnx.
 - **Qualcomm AI Engine Direct (QNN) runtime libraries**
   (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnSystem.so`,

@@ -17,6 +17,11 @@ import com.k2fsa.sherpa.onnx.OnlineSpeechDenoiserConfig
  * sample-aligned with the input: it holds back up to one hop, which
  * its `flush()` returns, trimmed to the input length, before resetting
  * itself for the next run.
+ *
+ * Only GTCRN is index-aligned like this: sherpa-onnx's streaming
+ * DPDFNet delays its output by 640 samples (40 ms), so switching
+ * models means shifting that out to keep the cleaned recording in
+ * step (`scripts/eval/eval_cleanup.py` measures both).
  */
 class SherpaAudioCleaner(modelPath: String) : StreamingCleaner {
 

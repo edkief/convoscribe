@@ -1105,6 +1105,11 @@ private fun AboutSection(
                 url = "https://github.com/wenet-e2e/wespeaker"
             )
             AboutModelRow(
+                name = stringResource(R.string.settings_about_gtcrn_name),
+                licence = stringResource(R.string.settings_about_gtcrn_licence),
+                url = "https://github.com/Xiaobin-Rong/gtcrn"
+            )
+            AboutModelRow(
                 name = stringResource(R.string.settings_about_sherpa_name),
                 licence = stringResource(R.string.settings_about_sherpa_licence),
                 url = "https://github.com/k2-fsa/sherpa-onnx"

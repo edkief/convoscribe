@@ -513,6 +513,8 @@
     <string name="settings_about_pyannote_licence">MIT</string>
     <string name="settings_about_wespeaker_name">WeSpeaker ResNet34-LM</string>
     <string name="settings_about_wespeaker_licence">Apache-2.0</string>
+    <string name="settings_about_gtcrn_name">GTCRN noise cleanup (optional)</string>
+    <string name="settings_about_gtcrn_licence">MIT</string>
     <string name="settings_about_sherpa_name">sherpa-onnx</string>
     <string name="settings_about_sherpa_licence">Apache-2.0</string>
     <string name="settings_about_qnn_name">Qualcomm AI Engine Direct (QNN)</string>

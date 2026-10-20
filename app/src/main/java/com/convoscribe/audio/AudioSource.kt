@@ -26,9 +26,12 @@ interface AudioSource {
 
 /**
  * Microphone-backed [AudioSource]. Uses the `VOICE_RECOGNITION`
- * audio source so the system applies the same AEC / NS presets that
- * voice pipelines expect; sampling and channel configuration are
- * fixed to the project's [AudioSpec].
+ * audio source, which Android tunes for speech recognizers: the
+ * compatibility definition requires noise reduction (and automatic
+ * gain control) to be *off* for it, so the audio is close to raw.
+ * That is what the recognizers here do best on, and what the
+ * optional noise cleanup (issue #37) starts from. Sampling and
+ * channel configuration are fixed to the project's [AudioSpec].
  *
  * Callers are responsible for holding the `RECORD_AUDIO` runtime
  * permission before collecting [chunks] (the constructor is
