@@ -71,6 +71,7 @@ class FloatingControl(
     private val state: StateFlow<RecordingState>,
     private val settings: StateFlow<AppSettings>,
     private val onOpen: () -> Unit,
+    private val onMark: () -> Unit,
     private val onPauseResume: () -> Unit,
     private val onStop: () -> Unit,
     private val onShapeChange: (FloatingShape) -> Unit
@@ -132,6 +133,7 @@ class FloatingControl(
                         shape = shape,
                         ui = ui,
                         onOpen = onOpen,
+                        onMark = onMark,
                         onPauseResume = onPauseResume,
                         onStop = onStop,
                         onShapeChange = onShapeChange

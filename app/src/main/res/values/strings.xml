@@ -42,6 +42,7 @@
     <string name="notification_recording_text">Tap to open ConvoScribe</string>
     <string name="notification_recording_action_stop">Stop</string>
     <string name="notification_recording_action_pause">Pause</string>
+    <string name="notification_recording_action_mark">Mark</string>
     <string name="notification_recording_action_resume">Resume</string>
     <string name="notification_paused_title">Paused</string>
     <string name="notification_retranscribe_title">Re-transcribing</string>
@@ -132,6 +133,7 @@
     <string name="record_hint_stop">Tap to stop</string>
     <string name="record_hint_paused">Paused. Resume to keep recording, or stop.</string>
     <string name="record_pause">Pause</string>
+    <string name="record_mark">Mark this moment</string>
     <string name="record_resume">Resume</string>
     <string name="record_live_paused">Paused. Nothing is recorded until you resume.</string>
     <string name="record_live_listening">Listening… speech appears here as it is recognised.</string>

@@ -61,6 +61,10 @@ enum class RecordingPhase {
  * @property finalLines list of closed utterances that have already
  *   been persisted, oldest first. Grows by one on every
  *   [com.convoscribe.asr.TranscriptEvent.Final].
+ * @property markCount marks on the open session (issue #30), counting
+ *   those from earlier runs of a continued session; 0 while idle.
+ *   The notification shows it. The floating control deliberately
+ *   ignores it, so a mark never redraws the minimal shape.
  * @property lastCompletedSessionId id of the session that just
  *   finished, until the UI calls [RecordingController.consumeCompleted].
  *   The UI navigates to the session-detail screen on this and then
@@ -77,6 +81,7 @@ data class RecordingState(
     val inputLevel: Float = 0f,
     val partialText: String = "",
     val finalLines: List<String> = emptyList(),
+    val markCount: Int = 0,
     val lastCompletedSessionId: Long? = null,
     val error: String? = null
 )

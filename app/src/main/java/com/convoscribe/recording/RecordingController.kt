@@ -190,11 +190,13 @@ class RecordingController(
                 // never touches them again after [collect] starts.
                 activeTranscriber = transcriber
                 activeWav = wav
+                val marks = if (resumeSessionId != null) store.countMarks(id) else 0
                 _state.update {
                     it.copy(
                         phase = RecordingPhase.RECORDING,
                         preparingNpu = false,
                         sessionId = id,
+                        markCount = marks,
                         elapsedMs = samplesToMs(wav.samplesWritten),
                         partialText = "",
                         finalLines = emptyList(),
@@ -375,6 +377,27 @@ class RecordingController(
         sessionJob = null
         Log.i(TAG, "recording stopped session=$id durationMs=$durationMs")
         id
+    }
+
+    /**
+     * Mark the current moment of the open session (issue #30), with an
+     * optional [note], and return the mark's id; `null` when no session
+     * is recording or paused. The moment is [RecordingState.elapsedMs],
+     * the recorded-audio time, so a mark made while paused falls on the
+     * paused position and a continued session's marks follow its
+     * earlier audio, like its segments.
+     *
+     * Marking touches neither the transcriber nor the WAV, so it does
+     * not wait for a pause or a stop in progress.
+     */
+    suspend fun mark(note: String? = null): Long? {
+        val current = _state.value
+        if (!current.phase.active) return null
+        val id = current.sessionId ?: return null
+        val markId = store.addMark(id, current.elapsedMs, note)
+        _state.update { if (it.sessionId == id) it.copy(markCount = it.markCount + 1) else it }
+        Log.i(TAG, "mark session=$id atMs=${current.elapsedMs}")
+        return markId
     }
 
     /**

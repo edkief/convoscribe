@@ -335,6 +335,7 @@ class ScreenshotTest(private val variant: Variant) {
                     shape = FloatingShape.STANDARD,
                     ui = FloatingControlUi(paused = paused, elapsedMs = 754_000L),
                     onOpen = {},
+                    onMark = {},
                     onPauseResume = {},
                     onStop = {},
                     onShapeChange = {}
@@ -345,6 +346,7 @@ class ScreenshotTest(private val variant: Variant) {
                     shape = FloatingShape.MINIMAL,
                     ui = FloatingControlUi(paused = paused),
                     onOpen = {},
+                    onMark = {},
                     onPauseResume = {},
                     onStop = {},
                     onShapeChange = {}
@@ -362,6 +364,7 @@ class ScreenshotTest(private val variant: Variant) {
                     shape = FloatingShape.EXPANDED,
                     ui = FloatingControlUi(paused = false, elapsedMs = 754_000L, transcript = transcript),
                     onOpen = {},
+                    onMark = {},
                     onPauseResume = {},
                     onStop = {},
                     onShapeChange = {}

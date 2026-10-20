@@ -63,4 +63,11 @@ class RecordingNotificationTextTest {
     fun pausedReadsPausedWithTheFrozenTime() {
         assertEquals("Paused – 01:05", recordingNotificationText(65_000, paused = true))
     }
+
+    @Test
+    fun marksAreCountedAfterTheTime() {
+        assertEquals("Recording – 01:05", recordingNotificationText(65_000, marks = 0))
+        assertEquals("Recording – 01:05 · 1 mark", recordingNotificationText(65_000, marks = 1))
+        assertEquals("Paused – 01:05 · 3 marks", recordingNotificationText(65_000, paused = true, marks = 3))
+    }
 }
