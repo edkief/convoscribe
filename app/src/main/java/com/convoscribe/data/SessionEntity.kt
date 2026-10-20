@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -42,5 +43,13 @@ data class SessionEntity(
      * both, joined by `" + "`.
      */
     val asrEngine: String? = null,
-    val asrModel: String? = null
+    val asrModel: String? = null,
+    /**
+     * The transcript has been edited by hand (issue #26): a line's
+     * text or speaker changed, or lines merged, split or deleted.
+     * Re-transcribing would lose that, so it asks first. Cleared when
+     * the transcript is replaced.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val transcriptEdited: Boolean = false
 )

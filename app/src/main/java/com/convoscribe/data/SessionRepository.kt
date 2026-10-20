@@ -264,6 +264,92 @@ class SessionRepository(
     suspend fun setSegmentSpeaker(segmentId: Long, speakerIndex: Int?) = segmentDao.setSpeaker(segmentId, speakerIndex)
 
     /**
+     * Replace line [lineId]'s text with [text], keeping the timings of
+     * the words that did not change (issue #26). `null`, and nothing
+     * written, when the text is blank or unchanged or the line is gone.
+     */
+    suspend fun editLineText(lineId: Long, text: String): EditUndo? = edit(lineId) { line, undo ->
+        val edited = TranscriptEditor.editText(line, text) ?: return@edit null
+        segmentDao.update(edited)
+        undo
+    }
+
+    /** Give line [lineId] the session's existing speaker [speakerIndex]. */
+    suspend fun setLineSpeaker(lineId: Long, speakerIndex: Int): EditUndo? = edit(lineId) { line, undo ->
+        if (line.speakerIndex == speakerIndex && line.speakerEdited) return@edit null
+        segmentDao.update(TranscriptEditor.setSpeaker(line, speakerIndex))
+        undo
+    }
+
+    /**
+     * Give line [lineId] a speaker the session does not have yet, named
+     * [label] (trimmed; blank means the default `"Speaker N"`).
+     */
+    suspend fun setLineNewSpeaker(lineId: Long, label: String): EditUndo? = edit(lineId) { line, undo ->
+        val index = (speakerDao.getForSession(line.sessionId).maxOfOrNull { it.speakerIndex } ?: -1) + 1
+        val name = label.trim().ifEmpty { defaultSpeakerLabel(index) }
+        speakerDao.upsert(listOf(SpeakerEntity(sessionId = line.sessionId, speakerIndex = index, label = name)))
+        segmentDao.update(TranscriptEditor.setSpeaker(line, index))
+        undo.copy(addedSpeaker = index)
+    }
+
+    /** Join line [lineId] and the line after it; `null` for the last line. */
+    suspend fun mergeWithNext(lineId: Long): EditUndo? = edit(lineId) { line, undo ->
+        val lines = segmentDao.getForSession(line.sessionId)
+        val next = lines.getOrNull(lines.indexOfFirst { it.id == lineId } + 1) ?: return@edit null
+        segmentDao.update(TranscriptEditor.merge(line, next))
+        segmentDao.delete(next.id)
+        undo.copy(before = listOf(line, next))
+    }
+
+    /**
+     * Split line [lineId] in two at the word boundary nearest [offset]
+     * (a character position in its text); `null` for a one-word line.
+     */
+    suspend fun splitLine(lineId: Long, offset: Int): EditUndo? = edit(lineId) { line, undo ->
+        val (first, second) = TranscriptEditor.split(line, offset) ?: return@edit null
+        segmentDao.update(first)
+        undo.copy(insertedIds = listOf(segmentDao.insert(second)))
+    }
+
+    /** Remove line [lineId] from the transcript. */
+    suspend fun deleteLine(lineId: Long): EditUndo? = edit(lineId) { _, undo ->
+        segmentDao.delete(lineId)
+        undo
+    }
+
+    /**
+     * Put back what the edit behind [undo] changed: the lines as they
+     * were, without the rows and speaker it added, and the session's
+     * edited flag as it was. One transaction.
+     */
+    suspend fun undo(undo: EditUndo) {
+        db.withTransaction {
+            undo.insertedIds.forEach { segmentDao.delete(it) }
+            for (row in undo.before) {
+                if (segmentDao.get(row.id) != null) segmentDao.update(row) else segmentDao.insert(row)
+            }
+            undo.addedSpeaker?.let { speakerDao.delete(undo.sessionId, it) }
+            sessionDao.setTranscriptEdited(undo.sessionId, undo.wasEdited)
+        }
+    }
+
+    /**
+     * Run one hand edit of line [lineId] in a transaction and mark the
+     * session edited. [block] gets the line and an [EditUndo] holding
+     * it as it was, and returns that (amended) or `null` when it
+     * changed nothing.
+     */
+    private suspend fun edit(lineId: Long, block: suspend (SegmentEntity, EditUndo) -> EditUndo?): EditUndo? =
+        db.withTransaction {
+            val line = segmentDao.get(lineId) ?: return@withTransaction null
+            val wasEdited = sessionDao.get(line.sessionId)?.transcriptEdited ?: false
+            val undo = block(line, EditUndo(sessionId = line.sessionId, before = listOf(line), wasEdited = wasEdited))
+            if (undo != null) sessionDao.setTranscriptEdited(line.sessionId, true)
+            undo
+        }
+
+    /**
      * Rename the speaker identified by [speakerIndex] within
      * [sessionId]. The label is trimmed and a blank result is
      * ignored — the existing label stays in place so the user
@@ -335,7 +421,8 @@ class SessionRepository(
      * the new ones inserted, the language and [engine]/[model]
      * replaced and the session moved to `TRANSCRIBED`, all in one
      * transaction, so a failure leaves the previous transcript
-     * intact. Speaker rows are kept so a following diarization can
+     * intact. Hand edits are gone with the old lines, so the session
+     * no longer counts as edited. Speaker rows are kept so a following diarization can
      * carry custom names over (each piece's [SegmentPiece.speakerIndex]
      * says which old speaker it overlapped).
      */
@@ -362,6 +449,7 @@ class SessionRepository(
             }
             sessionDao.setLanguage(sessionId, language)
             sessionDao.setEngine(sessionId, engine, model)
+            sessionDao.setTranscriptEdited(sessionId, false)
             sessionDao.setStatus(sessionId, SessionStatus.TRANSCRIBED)
         }
     }
@@ -499,3 +587,17 @@ class SessionRepository(
         const val UNKNOWN_ENGINE: String = "unknown"
     }
 }
+
+/**
+ * What [SessionRepository.undo] needs to take back one hand edit:
+ * the lines it changed or removed, as they were ([before]), the rows
+ * it added, the speaker it created, and whether the session already
+ * counted as edited.
+ */
+data class EditUndo(
+    val sessionId: Long,
+    val before: List<SegmentEntity>,
+    val insertedIds: List<Long> = emptyList(),
+    val addedSpeaker: Int? = null,
+    val wasEdited: Boolean = false
+)

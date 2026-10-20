@@ -11,7 +11,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * Room database holding the five entity families that survive an
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, (v2) enrolled speakers, and (v5) a
- * full-text index over transcript lines. The current version is 5; the generated JSON for every version is committed
+ * full-text index over transcript lines. The current version is 6; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -37,6 +37,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * index ([SegmentFtsEntity]) and its sync triggers; [Migration4To5]
  * then fills it from the existing segments.
  *
+ * The 5 → 6 migration (issue #26) is automatic: `segments.textEdited`,
+ * `segments.speakerEdited` and `sessions.transcriptEdited`, all
+ * defaulting to `0`, so existing transcripts read as unedited.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -49,13 +53,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EnrolledSpeakerEntity::class,
         SegmentFtsEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
         AutoMigration(from = 2, to = 3),
         AutoMigration(from = 3, to = 4),
-        AutoMigration(from = 4, to = 5, spec = Migration4To5::class)
+        AutoMigration(from = 4, to = 5, spec = Migration4To5::class),
+        AutoMigration(from = 5, to = 6)
     ]
 )
 @TypeConverters(Converters::class)

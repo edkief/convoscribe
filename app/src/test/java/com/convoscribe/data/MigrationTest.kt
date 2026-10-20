@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
@@ -87,6 +88,34 @@ class MigrationTest {
             assertEquals(listOf(7L), hits.map { it.segmentId })
             assertEquals(1200L, hits.single().startMs)
             assertEquals("La [réunion] sur le budget", hits.single().snippet)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrate5To6_existingTranscriptsReadAsUnedited() = runTest {
+        helper.createDatabase(DB_NAME, 5).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Lundi', 1000, 5000, 'fr', '/r/1.wav', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO segments (id, sessionId, startMs, endMs, text, speakerIndex) " +
+                    "VALUES (7, 1, 1200, 2400, 'Bonjour', 0)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 6, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val segment = db.segmentDao().get(7)!!
+            assertEquals("Bonjour", segment.text)
+            assertFalse(segment.textEdited)
+            assertFalse(segment.speakerEdited)
+            assertFalse(db.sessionDao().get(1)!!.transcriptEdited)
         } finally {
             db.close()
         }

@@ -3,6 +3,7 @@ package com.convoscribe.data
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 /**
@@ -42,4 +43,15 @@ interface SegmentDao {
 
     @Query("UPDATE segments SET speakerIndex = :speakerIndex WHERE id = :segmentId")
     suspend fun setSpeaker(segmentId: Long, speakerIndex: Int?)
+
+    @Query("SELECT * FROM segments WHERE id = :segmentId")
+    suspend fun get(segmentId: Long): SegmentEntity?
+
+    /**
+     * Rewrite a line edited by hand (issue #26). A plain `UPDATE`, never
+     * an insert-or-replace: the FTS index triggers only follow updates,
+     * inserts and deletes.
+     */
+    @Update
+    suspend fun update(entity: SegmentEntity)
 }
