@@ -14,6 +14,7 @@ import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
 import com.convoscribe.llm.PromptBuilder
+import com.convoscribe.llm.SummaryStep
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
@@ -466,6 +467,151 @@ class SummaryViewModelTest {
         advanceUntilIdle()
         assertEquals(PromptBuilder.SUMMARY_SYSTEM, client.lastMessages!![0].content)
         assertEquals("Meeting", db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().single().templateName)
+    }
+
+    /**
+     * Seed [count] one-minute lines of about 80 characters, so a
+     * 2 000-character budget needs several parts (issue #28).
+     */
+    private suspend fun seedLongTranscript(sessionId: Long, count: Int = 120) {
+        repeat(count) { i ->
+            repo.addSegment(
+                sessionId = sessionId,
+                startMs = i * 60_000L,
+                endMs = i * 60_000L + 50_000L,
+                text = "point$i is something we discussed at some length today."
+            )
+        }
+    }
+
+    private fun longSettings(): SettingsRepository = newSettings().also { s ->
+        configureSettings(s)
+        s.update { it.copy(maxTranscriptChars = 2_000) }
+    }
+
+    @Test
+    fun summarise_longTranscriptIsSummarisedInPartsAndOnlyTheFinalTextIsSaved() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id)
+        lateinit var vm: SummaryViewModel
+        val steps = ArrayList<SummaryStep?>()
+        val client = ScriptedChatClient { messages ->
+            steps += vm.state.value.step
+            if (messages[0].content == PromptBuilder.PART_NOTES_SYSTEM) {
+                flow { emit(Regex("point\\d+").findAll(messages[1].content).joinToString(" ") { it.value }) }
+            } else {
+                flow { listOf("final ", "summary").forEach { emit(it) } }
+            }
+        }
+        vm = SummaryViewModel(id, repo, client, longSettings(), templates)
+        advanceUntilIdle()
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        val parts = client.calls.count { it[0].content == PromptBuilder.PART_NOTES_SYSTEM }
+        assertTrue("expected several parts, got $parts", parts >= 3)
+        assertEquals(parts + 1, client.calls.size)
+        val reduce = client.calls.last()
+        assertEquals(PromptBuilder.SUMMARY_SYSTEM, reduce[0].content)
+        (0 until 120).forEach {
+            assertTrue(
+                "point$it missing",
+                Regex("\\bpoint$it\\b").containsMatchIn(reduce[1].content)
+            )
+        }
+        assertEquals(
+            (1..parts).map { SummaryStep.Part(it, parts) } + SummaryStep.Writing,
+            steps
+        )
+        val rows = db.chatMessageDao().observe(id, MessageKind.SUMMARY).first()
+        assertEquals(listOf("final summary"), rows.map { it.content })
+        val state = vm.state.first { it.saved == "final summary" }
+        assertNull(state.step)
+        assertFalse(state.running)
+    }
+
+    @Test
+    fun summarise_longTranscriptUnderTheBudgetIsStillOneCall() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id, count = 10)
+        val client = FakeChatClient(tokens = listOf("ok"))
+        val vm = SummaryViewModel(id, repo, client, longSettings(), templates)
+        advanceUntilIdle()
+
+        vm.summarise()
+        advanceUntilIdle()
+        assertEquals(1, client.streamCalls.get())
+        assertEquals(PromptBuilder.SUMMARY_SYSTEM, client.lastMessages!![0].content)
+    }
+
+    @Test
+    fun summarise_cancelPartWayKeepsThePreviousSummary() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id)
+        repo.addMessage(id, MessageKind.SUMMARY, MessageRole.ASSISTANT, "old summary")
+        val client = ScriptedChatClient { _ ->
+            flow {
+                emit("notes")
+                kotlinx.coroutines.awaitCancellation()
+            }
+        }
+        val vm = SummaryViewModel(id, repo, client, longSettings(), templates)
+        advanceUntilIdle()
+
+        vm.summarise()
+        advanceUntilIdle()
+        assertTrue(vm.state.value.running)
+        assertEquals(1, (vm.state.value.step as SummaryStep.Part).part)
+
+        vm.cancel()
+        advanceUntilIdle()
+        val state = vm.state.value
+        assertFalse(state.running)
+        assertNull(state.step)
+        assertNull(state.error)
+        assertEquals(1, client.calls.size)
+        assertEquals(
+            listOf("old summary"),
+            db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().map { it.content }
+        )
+    }
+
+    @Test
+    fun summarise_failurePartWaySavesNothingAndShowsTheError() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id)
+        repo.addMessage(id, MessageKind.SUMMARY, MessageRole.ASSISTANT, "old summary")
+        val calls = AtomicInteger(0)
+        val client = ScriptedChatClient { _ ->
+            if (calls.incrementAndGet() == 2) flow { throw LlmException("HTTP 500: boom") } else flow { emit("notes") }
+        }
+        val vm = SummaryViewModel(id, repo, client, longSettings(), templates)
+        advanceUntilIdle()
+
+        vm.summarise()
+        advanceUntilIdle()
+        val state = vm.state.value
+        assertFalse(state.running)
+        assertNull(state.step)
+        assertNotNull(state.error)
+        assertEquals(2, client.calls.size)
+        assertEquals(
+            listOf("old summary"),
+            db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().map { it.content }
+        )
+    }
+
+    /** Answers each call with [reply] and records the messages of every call. */
+    private class ScriptedChatClient(private val reply: (List<LlmMessage>) -> Flow<String>) : ChatClient {
+        val calls = java.util.concurrent.CopyOnWriteArrayList<List<LlmMessage>>()
+
+        override fun stream(messages: List<LlmMessage>): Flow<String> {
+            calls += messages
+            return reply(messages)
+        }
+
+        override suspend fun listModels(): List<String> = emptyList()
     }
 
     private class FakeChatClient(

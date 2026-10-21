@@ -27,6 +27,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import com.convoscribe.R
+import com.convoscribe.llm.SummaryStep
 import com.convoscribe.ui.asString
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.EmptyState
@@ -42,6 +43,8 @@ import com.convoscribe.ui.theme.AppTheme
  *    Settings;
  *  - nothing saved yet: an empty state with Summarise;
  *  - running: Stop with a spinner, and the summary as it streams in;
+ *    a long transcript summarised in parts (issue #28) also shows the
+ *    step it is on ("Summarising part 2 of 5…");
  *  - saved: Regenerate and Copy above the summary in a card, with
  *    the name of the template it was written with.
  *
@@ -121,6 +124,18 @@ internal fun SummaryTab(
                         Text(text = stringResource(R.string.session_summary_stop))
                     }
                     InlineProgress()
+                    state.step?.let { step ->
+                        Text(
+                            text = when (step) {
+                                is SummaryStep.Part ->
+                                    stringResource(R.string.session_summary_step_part, step.part, step.parts)
+                                SummaryStep.Combining -> stringResource(R.string.session_summary_step_combining)
+                                SummaryStep.Writing -> stringResource(R.string.session_summary_step_writing)
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 } else {
                     Button(onClick = onSummarise) {
                         val label = if (saved.isNullOrBlank()) {

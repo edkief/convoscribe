@@ -463,6 +463,9 @@
     <string name="session_summary_copy_done">Copied to clipboard</string>
     <string name="session_summary_template_label">Template</string>
     <string name="session_summary_template_used">Written with the %1$s template</string>
+    <string name="session_summary_step_part">Summarising part %1$d of %2$d…</string>
+    <string name="session_summary_step_combining">Combining the parts…</string>
+    <string name="session_summary_step_writing">Writing the summary…</string>
     <string name="session_ask_not_configured">Set up a language model endpoint in Settings to ask questions.</string>
     <string name="session_ask_open_settings">Open Settings</string>
     <string name="session_ask_input_label">Ask about this conversation…</string>
