@@ -403,8 +403,10 @@ model show "unknown". New sessions show e.g. `cpu` /
 **Expected** — the dialog warns that the summary and questions were
 based on the old transcript. Step 1 replaces the transcript with a
 French one, speakers are identified again, and names you typed are
-kept. After the cancel in step 3 the previous transcript, language
-and speakers are unchanged. **Start** on the Record screen is
+kept. Once the new transcript shows, the notification switches to
+*Identifying speakers…* and disappears when that finishes; it never
+stays behind at its last percentage (issue #43). After the cancel in
+step 3 the previous transcript, language and speakers are unchanged. **Start** on the Record screen is
 disabled while a re-transcription runs.
 
 ---

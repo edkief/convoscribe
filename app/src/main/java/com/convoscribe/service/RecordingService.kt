@@ -389,7 +389,9 @@ class RecordingService : Service() {
      * notification and a Cancel action. Refused while a recording or
      * another re-transcription runs (the service is already in the
      * foreground then). Cancel or failure keeps the old transcript.
-     * With [clean] the audio is cleaned first (issue #37).
+     * With [clean] the audio is cleaned first (issue #37). Once the
+     * transcript is swapped in, the notification turns into the
+     * "Identifying speakers…" one while speakers are identified.
      */
     private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
@@ -403,10 +405,24 @@ class RecordingService : Service() {
         )
         acquireWakeLock()
         retranscribeJob = scope.launch {
+            var started = false
             val progress = useCase.state
                 .onEach { state ->
                     if (state is RetranscribeState.Running) {
+                        started = true
                         maybeRefreshRetranscribeNotification(state.progress, state.cleaning)
+                    } else if (started && state is RetranscribeState.Idle && diarizerUseCase().runsNow()) {
+                        // The new transcript is in and speakers are identified
+                        // next, inside run(): say so instead of leaving the
+                        // last throttled percentage on screen (issue #43).
+                        // A cancel cancels this collector too, and a failure
+                        // ends in Failed, so neither shows it.
+                        ServiceCompat.startForeground(
+                            this@RecordingService,
+                            NOTIFICATION_ID,
+                            buildDiarizingNotification(),
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
                     }
                 }
                 .launchIn(this)
