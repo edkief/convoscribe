@@ -18,12 +18,12 @@ import kotlinx.coroutines.launch
  * cancels it when it is off.
  *
  * The job needs a network and is persisted across reboots, so updates
- * are found even when ConvoScribe is not opened. It runs twice per
- * [UpdateManager.CHECK_INTERVAL_MS]; [UpdateManager.checkIfDue] still
- * asks GitHub at most once per interval, so a check made in the app in
- * between delays the next one by half an interval at most. Android may
- * run the job later than asked (Doze, a rarely used app), which the
- * check on return to the app makes up for.
+ * are found even when ConvoScribe is not opened. It runs every
+ * [PERIOD_MS], less often than [UpdateManager.CHECK_INTERVAL_MS]
+ * allows, to spare the battery; the check on return to the app is the
+ * quick path. A job scheduled by an older build with another period is
+ * replaced on the next start. Android may run the job later than asked
+ * (Doze, a rarely used app).
  *
  * [sync] is called at app start and when the setting changes.
  */
@@ -58,7 +58,7 @@ class UpdateCheckScheduler(
         /** The periodic update check's id, next to the charging job's 1101. */
         const val JOB_ID = 1102
 
-        const val PERIOD_MS = UpdateManager.CHECK_INTERVAL_MS / 2
-        private const val FLEX_MS = 60L * 60L * 1_000L
+        const val PERIOD_MS = 60L * 60L * 1_000L
+        private const val FLEX_MS = 15L * 60L * 1_000L
     }
 }
