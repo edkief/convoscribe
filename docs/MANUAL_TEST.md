@@ -1079,6 +1079,46 @@ previous version without clearing data first.
 - Step 11: `adb shell run-as com.convoscribe ls files/recordings` lists
   neither `<id>.wav` nor `<id>.clean.wav`.
 
+## 32. Long sessions (issue #28)
+
+Use a session of 20 minutes or more with a summary and a few questions
+from before the upgrade; install over the previous version without
+clearing data. A smaller budget makes the same session "long" without
+recording for an hour.
+
+**Steps**
+
+1. Open the session, Ask tab: look at the old answers.
+2. Settings → Language model → *Max transcript characters* `2000`, Save.
+3. Summary tab → Regenerate. Watch the line next to Stop.
+4. Regenerate again and tap Stop while it says *Summarising part 2 of
+   …*.
+5. Regenerate a third time, and turn the LLM server off (or the phone's
+   Wi-Fi) half-way through the parts.
+6. Ask tab: ask about something said only in the middle of the
+   session. Then ask a follow-up such as "Who said that?".
+7. Close and reopen the session, Ask tab.
+8. Settings: set *Max transcript characters* back to `24000`. Ask a
+   question in a short session (under 10 minutes).
+
+**Expected**
+
+- Step 1: the old answers show no *Based on …* line.
+- Step 3: *Summarising part 1 of N…* up to *part N of N*, maybe
+  *Combining the parts…*, then *Writing the summary…* and the summary
+  streams in. It covers the beginning, the middle and the end of the
+  conversation, with the selected template's layout.
+- Step 4: the previous summary is still shown; nothing half-done
+  replaces it.
+- Step 5: an error banner with Retry; the previous summary stays.
+- Step 6: the answer uses the middle of the conversation (not "not in
+  the transcript"), with timestamps from there, and has a line *Based
+  on X of Y minutes, the parts most relevant to the question*. The
+  follow-up is answered about the same moment.
+- Step 7: each answer from step 6 still shows its *Based on …* line.
+- Step 8: a single summary call and answers with no *Based on …* line,
+  as before the upgrade.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
