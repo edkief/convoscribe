@@ -139,6 +139,13 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   OpenAI-compatible `/v1/chat/completions` endpoint (vLLM,
   llama.cpp server, Ollama with `http://<host>:11434/v1`, OpenAI,
   …); answers stream token-by-token and are saved with the session.
+  A conversation longer than *Max transcript characters* is still
+  covered in full: the summary is written in parts (notes on each part
+  of the transcript, then the summary from the notes, with *Summarising
+  part 2 of 5…* while it runs), and a question is answered from the
+  parts of the transcript most relevant to it, picked on the device.
+  Such answers say what they were based on (*Based on 18 of 92
+  minutes…*).
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -488,9 +495,12 @@ The LLM endpoint is configured in **Settings → Language model**:
 - **Model name** — free text, e.g. `meta-llama-3.1-8b-instruct`.
   Tap **Test connection** to populate the chip list with model ids
   returned by the endpoint.
-- **Max transcript characters** — the context-window cap for
-  summaries and Q&A; the default 24 000 chars fits several hours of
-  conversational text.
+- **Max transcript characters** — how much transcript goes into one
+  request, to fit the model's context window. The default 24 000
+  characters is roughly 20–30 minutes of conversation. Longer
+  transcripts are summarised in parts and questions about them use the
+  most relevant parts (see *Summaries and Q&A* above), so raise it only
+  if your model has room: a bigger budget means fewer, larger requests.
 
 The endpoint is contacted only by `llm/ChatClient.kt`. The
 streaming path uses server-sent events (`data: {…}\n\n` chunks)

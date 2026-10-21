@@ -13,12 +13,13 @@ import com.convoscribe.data.TranscriptMark
  *  - [question] — a multi-round chat where the user asks follow-up
  *    questions and the model answers them from the same transcript.
  *
- * Long transcripts are truncated to a caller-supplied character
- * budget with [TranscriptTruncator.fit] before they are embedded
- * in the prompt, so a 60-minute conversation does not blow the
- * model's context window. The view-model picks the budget from
- * the chat model's documented context size minus the headroom
- * reserved for the answer.
+ * The caller passes the character budget for the transcript, the
+ * "Max transcript characters" setting. A transcript within it goes
+ * into [summary] or [question] whole. A longer one (issue #28) is
+ * summarised in parts — [summaryPart] for each chunk, [mergeNotes]
+ * while the notes are still too long, then [summaryFromParts] — and
+ * questions about it are answered from the most relevant parts with
+ * [questionFromExcerpts].
  */
 object PromptBuilder {
 
@@ -110,6 +111,91 @@ object PromptBuilder {
         )
     )
 
+    /**
+     * System prompt for the notes on one part of a long transcript
+     * (issue #28). The notes are input to the final summary, not shown
+     * to the user, so they keep everything and every timestamp.
+     */
+    const val PART_NOTES_SYSTEM: String =
+        "You take notes on one part of a long conversation transcript that is summarised in parts. " +
+            "Write in the same language as the transcript. " +
+            "Note every topic discussed, the key points, decisions, action items with who owns them, " +
+            "open questions and notable quotes, each with its timestamp like [12:34]. " +
+            "Be concise but leave nothing out, and write no introduction or conclusion. " +
+            SUMMARY_GUARDRAILS
+
+    /** System prompt for combining the notes on consecutive parts (issue #28). */
+    const val MERGE_NOTES_SYSTEM: String =
+        "You combine notes taken on consecutive parts of a long conversation into one set of notes. " +
+            "Write in the same language as the notes. " +
+            "Keep every topic, key point, decision, action item with its owner, open question and quote, " +
+            "with their timestamps like [12:34]; merge what is repeated and drop nothing else. " +
+            SUMMARY_GUARDRAILS
+
+    /**
+     * Opening of the final summary's notes (issue #28); `%d` is the
+     * number of parts.
+     */
+    const val PARTS_INTRO_FORMAT: String =
+        "The transcript was too long to send at once, so notes were taken on it in %d parts. " +
+            "Write the summary of the whole conversation from these notes, which are in time order:\n\n"
+
+    /**
+     * Messages for the notes on part [part] of [parts] of a long
+     * transcript: [PART_NOTES_SYSTEM], then a user turn with the
+     * [marks] in this part (as in [summary]) and the [chunk] headed
+     * by its number and time span.
+     */
+    fun summaryPart(
+        chunk: TranscriptChunk,
+        part: Int,
+        parts: Int,
+        marks: List<TranscriptMark> = emptyList()
+    ): List<LlmMessage> = listOf(
+        LlmMessage(LlmMessage.ROLE_SYSTEM, PART_NOTES_SYSTEM),
+        LlmMessage(
+            LlmMessage.ROLE_USER,
+            marksSection(marks) +
+                "Transcript, part $part of $parts ${span(chunk.startMs, chunk.endMs)}:\n\n" + chunk.text
+        )
+    )
+
+    /** Messages that combine [notes] on consecutive parts into one set: [MERGE_NOTES_SYSTEM], then the notes. */
+    fun mergeNotes(notes: List<PartNotes>): List<LlmMessage> = listOf(
+        LlmMessage(LlmMessage.ROLE_SYSTEM, MERGE_NOTES_SYSTEM),
+        LlmMessage(LlmMessage.ROLE_USER, "Notes, in time order:\n\n" + notesText(notes))
+    )
+
+    /**
+     * Messages for the summary of a long transcript from the [notes]
+     * on its parts: the template's system prompt as in [summary], then
+     * a user turn with all the [marks], [PARTS_INTRO_FORMAT] and the
+     * notes. The notes are fitted to [maxChars] with
+     * [TranscriptTruncator.fit], which leaves them as they are unless
+     * combining them failed to make them short enough.
+     */
+    fun summaryFromParts(
+        notes: List<PartNotes>,
+        maxChars: Int,
+        body: String = SummaryTemplates.MEETING_BODY,
+        marks: List<TranscriptMark> = emptyList()
+    ): List<LlmMessage> = listOf(
+        LlmMessage(LlmMessage.ROLE_SYSTEM, summarySystem(body)),
+        LlmMessage(
+            LlmMessage.ROLE_USER,
+            marksSection(marks) + PARTS_INTRO_FORMAT.format(notes.size) +
+                TranscriptTruncator.fit(notesText(notes), maxChars)
+        )
+    )
+
+    /** [notes] as `Part i [a–b]:` blocks separated by blank lines; what [mergeNotes] and [summaryFromParts] send. */
+    fun notesText(notes: List<PartNotes>): String = notes.withIndex().joinToString(separator = "\n\n") { (i, n) ->
+        "Part ${i + 1} ${span(n.startMs, n.endMs)}:\n${n.text.trim()}"
+    }
+
+    private fun span(startMs: Long, endMs: Long): String =
+        "[${TranscriptFormatter.timestamp(startMs)}–${TranscriptFormatter.timestamp(endMs)}]"
+
     /** [MARKS_HEADER] and one line per mark in time order, then a blank line; empty without marks. */
     private fun marksSection(marks: List<TranscriptMark>): String {
         if (marks.isEmpty()) return ""
@@ -134,11 +220,46 @@ object PromptBuilder {
      * the model never sees leading/trailing whitespace that would
      * eat tokens in the prompt.
      */
-    fun question(transcript: String, maxChars: Int, history: List<LlmMessage>, question: String): List<LlmMessage> {
-        val systemMessage: LlmMessage = LlmMessage(
-            LlmMessage.ROLE_SYSTEM,
-            QA_SYSTEM_PREFIX + TranscriptTruncator.fit(transcript, maxChars)
-        )
+    fun question(transcript: String, maxChars: Int, history: List<LlmMessage>, question: String): List<LlmMessage> =
+        qa(QA_SYSTEM_PREFIX + TranscriptTruncator.fit(transcript, maxChars), history, question)
+
+    /**
+     * Opening of the system prompt for a question about a transcript
+     * too long to send whole (issue #28); the [Excerpts] follow it.
+     */
+    const val QA_EXCERPTS_PREFIX: String =
+        "You answer questions about a conversation. The transcript is too long to include, " +
+            "so below are only the parts of it most relevant to the question, in time order; " +
+            "[…] marks a gap between parts. Answer only from these parts; if the answer is not in them, " +
+            "say that it is not in the parts of the transcript you were given. " +
+            "Answer in the language of the question. " +
+            "Cite timestamps like [12:34] when useful.\n\nTranscript excerpts:\n"
+
+    /** Between two excerpts that are not next to each other in the transcript. */
+    const val EXCERPT_GAP: String = "\n[…]\n"
+
+    /**
+     * Build the messages for a question about a long transcript
+     * (issue #28): as [question], with the system prompt
+     * [QA_EXCERPTS_PREFIX] followed by the [excerpts] in time order,
+     * consecutive chunks joined by a newline and the others by
+     * [EXCERPT_GAP].
+     */
+    fun questionFromExcerpts(excerpts: Excerpts, history: List<LlmMessage>, question: String): List<LlmMessage> {
+        val text = StringBuilder()
+        excerpts.chunks.forEachIndexed { index, chunk ->
+            if (index > 0) {
+                val previous = excerpts.chunks[index - 1]
+                text.append(if (chunk.firstLine <= previous.lastLine + 1) "\n" else EXCERPT_GAP)
+            }
+            text.append(chunk.text)
+        }
+        return qa(QA_EXCERPTS_PREFIX + text, history, question)
+    }
+
+    /** [system], the recent user/assistant turns of [history], then the trimmed [question]. */
+    private fun qa(system: String, history: List<LlmMessage>, question: String): List<LlmMessage> {
+        val systemMessage: LlmMessage = LlmMessage(LlmMessage.ROLE_SYSTEM, system)
         val recentHistory: List<LlmMessage> = history
             .filter {
                 it.role == LlmMessage.ROLE_USER ||

@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
  * index over transcript lines, (v7) summary templates and (v8)
- * marks. The current version is 9; the generated JSON for every version is committed
+ * marks. The current version is 10; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -53,6 +53,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * The 8 → 9 migration (issue #37) is automatic: nullable
  * `sessions.cleanedWith`, so existing sessions read as not cleaned.
  *
+ * The 9 → 10 migration (issue #28) is automatic: nullable
+ * `chat_messages.coveredMs` and `chat_messages.totalMs`, so existing
+ * answers read as based on the whole transcript.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -67,7 +71,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         SummaryTemplateEntity::class,
         MarkEntity::class
     ],
-    version = 9,
+    version = 10,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -77,7 +81,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AutoMigration(from = 5, to = 6),
         AutoMigration(from = 6, to = 7),
         AutoMigration(from = 7, to = 8),
-        AutoMigration(from = 8, to = 9)
+        AutoMigration(from = 8, to = 9),
+        AutoMigration(from = 9, to = 10)
     ]
 )
 @TypeConverters(Converters::class)

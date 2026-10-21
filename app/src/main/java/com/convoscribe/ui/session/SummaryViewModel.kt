@@ -10,8 +10,11 @@ import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.data.TranscriptFormatter
+import com.convoscribe.data.TranscriptLine
 import com.convoscribe.llm.ChatClient
+import com.convoscribe.llm.LongSummariser
 import com.convoscribe.llm.PromptBuilder
+import com.convoscribe.llm.SummaryStep
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.llm.toUserMessage
@@ -21,10 +24,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -50,6 +50,9 @@ import kotlinx.coroutines.launch
  * @property templates built-in and user templates for the picker.
  * @property selectedKey template the next summary uses: the session's
  *   own, or the Settings default when it has none.
+ * @property step what a summary of a transcript over the budget is
+ *   doing (issue #28); `null` for a single-call summary and when
+ *   nothing is running.
  */
 data class SummaryUiState(
     val saved: String? = null,
@@ -59,7 +62,8 @@ data class SummaryUiState(
     val configured: Boolean = true,
     val savedTemplateName: String? = null,
     val templates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
-    val selectedKey: String = SummaryTemplates.MEETING_KEY
+    val selectedKey: String = SummaryTemplates.MEETING_KEY,
+    val step: SummaryStep? = null
 )
 
 /**
@@ -82,9 +86,14 @@ data class SummaryUiState(
  *    `body` being the selected template's (Meeting when that
  *    template no longer exists). Every token is appended to
  *    `streaming`.
+ *  - A transcript longer than `maxTranscriptChars` (issue #28) is
+ *    summarised in parts by [LongSummariser] instead, with `step`
+ *    following its progress; only the final summary streams into
+ *    `streaming`.
  *  - On completion the SUMMARY kind is wiped, the full text is
  *    saved as a fresh ASSISTANT row with the template's name, and
- *    `streaming` / `running` are reset.
+ *    `streaming` / `running` / `step` are reset. A run that fails
+ *    or is cancelled part-way saves nothing.
  *  - [selectTemplate] stores the template on the session, so it
  *    sticks for the next summary too.
  *  - Any failure (an LLM transport or HTTP error, or anything
@@ -193,7 +202,8 @@ class SummaryViewModel(
     fun summarise() {
         if (_state.value.running) return
         job = viewModelScope.launch {
-            val transcript = buildTranscript()
+            val lines = buildLines()
+            val transcript = TranscriptFormatter.toText(lines)
             if (transcript.isBlank()) {
                 _state.value = _state.value.copy(error = UiText.res(R.string.session_summary_empty_error))
                 return@launch
@@ -201,43 +211,40 @@ class SummaryViewModel(
             val maxChars = settings.settings.value.maxTranscriptChars
             val template = SummaryTemplates.resolve(_state.value.selectedKey, templates.getUserTemplates())
             val marks = TranscriptFormatter.marks(repository.getMarks(sessionId))
-            val messages = PromptBuilder.summary(transcript, maxChars, template.body, marks)
 
             _state.value = _state.value.copy(
                 streaming = "",
                 running = true,
-                error = null
+                error = null,
+                step = null
             )
 
             val accumulated = StringBuilder()
+            val onToken: (String) -> Unit = { token ->
+                accumulated.append(token)
+                _state.value = _state.value.copy(streaming = accumulated.toString())
+            }
             try {
-                chatClient.stream(messages)
-                    .onEach { token ->
-                        accumulated.append(token)
-                        _state.value = _state.value.copy(streaming = accumulated.toString())
-                    }
-                    .catch { failure ->
-                        // Cancellation is handled by the surrounding
-                        // coroutine machinery — it does not flip
-                        // `error` because the user explicitly asked
-                        // to stop. Any other failure is shown, never
-                        // rethrown: an exception escaping
-                        // viewModelScope crashes the app.
-                        if (failure is kotlinx.coroutines.CancellationException) throw failure
-                        Log.w(TAG, "summary: LLM request failed", failure)
-                        _state.value = _state.value.copy(
-                            running = false,
-                            streaming = "",
-                            error = UiText.Plain(failure.toUserMessage())
-                        )
-                    }
-                    .collect()
+                if (transcript.length <= maxChars) {
+                    chatClient.stream(PromptBuilder.summary(transcript, maxChars, template.body, marks))
+                        .collect { onToken(it) }
+                } else {
+                    LongSummariser.summarise(
+                        client = chatClient,
+                        lines = lines,
+                        maxChars = maxChars,
+                        body = template.body,
+                        marks = marks,
+                        onStep = { step -> _state.update { it.copy(step = step) } },
+                        onToken = onToken
+                    )
+                }
 
                 val full = accumulated.toString()
-                // Persist the new summary only when the flow
-                // completed normally and produced at least one
-                // token. A cancelled or empty run leaves the
-                // previous saved value untouched.
+                // Persist the new summary only when every call
+                // completed normally and the last produced at least
+                // one token. An empty run leaves the previous saved
+                // value untouched.
                 if (full.isNotEmpty()) {
                     repository.clearMessages(sessionId, MessageKind.SUMMARY)
                     repository.addMessage(
@@ -248,16 +255,21 @@ class SummaryViewModel(
                         templateName = template.name
                     )
                 }
-                _state.value = _state.value.copy(
-                    running = false,
-                    streaming = ""
-                )
+                _state.value = _state.value.copy(running = false, streaming = "", step = null)
             } catch (_: kotlinx.coroutines.CancellationException) {
                 // `cancel()` aborted the run — reset the flags and
                 // leave the persisted summary alone.
+                _state.value = _state.value.copy(running = false, streaming = "", step = null)
+            } catch (failure: Exception) {
+                // Shown, never rethrown: an exception escaping
+                // viewModelScope crashes the app. What streamed before
+                // the failure is dropped, not saved as the summary.
+                Log.w(TAG, "summary: LLM request failed", failure)
                 _state.value = _state.value.copy(
                     running = false,
-                    streaming = ""
+                    streaming = "",
+                    step = null,
+                    error = UiText.Plain(failure.toUserMessage())
                 )
             }
         }
@@ -276,15 +288,11 @@ class SummaryViewModel(
     }
 
     /**
-     * Render the persisted segments + speakers as plain text.
+     * The persisted segments + speakers as transcript lines.
      * Pulls both lists from the repository; runs on the
      * dispatcher [viewModelScope] picks (`Dispatchers.Main.immediate`
      * for tests with `setMain`).
      */
-    private suspend fun buildTranscript(): String {
-        val segments = repository.getSegments(sessionId)
-        val speakers = repository.getSpeakers(sessionId)
-        val lines = TranscriptFormatter.lines(segments, speakers)
-        return TranscriptFormatter.toText(lines)
-    }
+    private suspend fun buildLines(): List<TranscriptLine> =
+        TranscriptFormatter.lines(repository.getSegments(sessionId), repository.getSpeakers(sessionId))
 }

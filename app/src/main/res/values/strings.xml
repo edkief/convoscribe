@@ -463,6 +463,9 @@
     <string name="session_summary_copy_done">Copied to clipboard</string>
     <string name="session_summary_template_label">Template</string>
     <string name="session_summary_template_used">Written with the %1$s template</string>
+    <string name="session_summary_step_part">Summarising part %1$d of %2$d…</string>
+    <string name="session_summary_step_combining">Combining the parts…</string>
+    <string name="session_summary_step_writing">Writing the summary…</string>
     <string name="session_ask_not_configured">Set up a language model endpoint in Settings to ask questions.</string>
     <string name="session_ask_open_settings">Open Settings</string>
     <string name="session_ask_input_label">Ask about this conversation…</string>
@@ -472,6 +475,10 @@
     <string name="session_ask_empty_title">Ask about this conversation</string>
     <string name="session_ask_empty">Questions and answers about the transcript appear here.</string>
     <string name="session_ask_streaming">Generating answer…</string>
+    <plurals name="session_ask_coverage">
+        <item quantity="one">Based on %1$d of %2$d minute, the parts most relevant to the question</item>
+        <item quantity="other">Based on %1$d of %2$d minutes, the parts most relevant to the question</item>
+    </plurals>
     <string name="session_overflow_clear_questions">Clear questions</string>
     <string name="session_ask_clear_title">Clear all questions?</string>
     <string name="session_ask_clear_message">This removes every question and answer for this session.</string>
