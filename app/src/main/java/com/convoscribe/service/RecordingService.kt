@@ -19,6 +19,7 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.MainActivity
 import com.convoscribe.R
 import com.convoscribe.diarization.DiarizeSessionUseCase
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.overlay.FloatingControl
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportSource
@@ -966,6 +967,7 @@ class RecordingService : Service() {
         private const val EXTRA_PARTICIPANTS = "com.convoscribe.EXTRA_PARTICIPANTS"
         private const val EXTRA_TITLE = "com.convoscribe.EXTRA_TITLE"
         private const val EXTRA_CLEAN_AUDIO = "com.convoscribe.EXTRA_CLEAN_AUDIO"
+        private const val EXTRA_SUMMARY_TEMPLATE = "com.convoscribe.EXTRA_SUMMARY_TEMPLATE"
 
         /** The [ConversationOptions] [startIntent] put on [intent], or `null` for the Settings defaults. */
         internal fun optionsFrom(intent: Intent): ConversationOptions? {
@@ -975,6 +977,7 @@ class RecordingService : Service() {
                 numSpeakers = intent.getIntExtra(EXTRA_NUM_SPEAKERS, -1),
                 participants = intent.getStringArrayExtra(EXTRA_PARTICIPANTS)?.toList(),
                 title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                summaryTemplate = intent.getStringExtra(EXTRA_SUMMARY_TEMPLATE) ?: SummaryTemplates.MEETING_KEY,
                 cleanAudio = intent.getBooleanExtra(EXTRA_CLEAN_AUDIO, false)
             )
         }
@@ -999,6 +1002,7 @@ class RecordingService : Service() {
                         options.participants?.let { putExtra(EXTRA_PARTICIPANTS, it.toTypedArray()) }
                         putExtra(EXTRA_TITLE, options.title)
                         putExtra(EXTRA_CLEAN_AUDIO, options.cleanAudio)
+                        putExtra(EXTRA_SUMMARY_TEMPLATE, options.summaryTemplate)
                     }
                 }
 

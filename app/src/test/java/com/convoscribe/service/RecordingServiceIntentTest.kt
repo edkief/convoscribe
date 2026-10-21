@@ -2,6 +2,7 @@ package com.convoscribe.service
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -16,16 +17,17 @@ class RecordingServiceIntentTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     @Test
-    fun startIntent_carriesTheNoiseCleanupChoice() {
+    fun startIntent_carriesEveryOption() {
         val options = ConversationOptions(
             language = "fr",
             numSpeakers = 3,
             participants = listOf("Alice"),
             title = "Cafe",
+            summaryTemplate = SummaryTemplates.INTERVIEW_KEY,
             cleanAudio = true
         )
         val read = RecordingService.optionsFrom(RecordingService.startIntent(context, options = options))!!
-        assertEquals(options.copy(summaryTemplate = read.summaryTemplate), read)
+        assertEquals(options, read)
         assertEquals(
             false,
             RecordingService.optionsFrom(
