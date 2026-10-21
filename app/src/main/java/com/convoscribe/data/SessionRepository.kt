@@ -289,7 +289,9 @@ class SessionRepository(
         kind: MessageKind,
         role: MessageRole,
         content: String,
-        templateName: String? = null
+        templateName: String? = null,
+        coveredMs: Long? = null,
+        totalMs: Long? = null
     ): Long = chatMessageDao.insert(
         ChatMessageEntity(
             sessionId = sessionId,
@@ -297,7 +299,9 @@ class SessionRepository(
             role = role,
             content = content,
             createdAt = System.currentTimeMillis(),
-            templateName = templateName
+            templateName = templateName,
+            coveredMs = coveredMs,
+            totalMs = totalMs
         )
     )
 

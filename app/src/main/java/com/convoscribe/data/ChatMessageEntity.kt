@@ -41,5 +41,13 @@ data class ChatMessageEntity(
      * as it was called at the time; `null` for other kinds and for
      * summaries from before templates.
      */
-    val templateName: String? = null
+    val templateName: String? = null,
+    /**
+     * For a QA answer about a transcript too long to send whole
+     * (issue #28): how much of the conversation the excerpts it was
+     * given span, and how long the conversation is. Both `null` when
+     * the answer saw the whole transcript, and for other rows.
+     */
+    val coveredMs: Long? = null,
+    val totalMs: Long? = null
 )

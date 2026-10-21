@@ -199,6 +199,33 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate9To10_existingAnswersHaveNoCoverage() = runTest {
+        helper.createDatabase(DB_NAME, 9).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Cafe', 1000, 5000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO chat_messages (id, sessionId, kind, role, content, createdAt) " +
+                    "VALUES (1, 1, 'QA', 'ASSISTANT', 'an answer', 2000)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 10, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val answer = db.chatMessageDao().observe(1, MessageKind.QA).first().single()
+            assertEquals("an answer", answer.content)
+            assertNull(answer.coveredMs)
+            assertNull(answer.totalMs)
+        } finally {
+            db.close()
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test.db"
     }
