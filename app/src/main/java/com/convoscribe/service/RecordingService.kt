@@ -389,7 +389,9 @@ class RecordingService : Service() {
      * notification and a Cancel action. Refused while a recording or
      * another re-transcription runs (the service is already in the
      * foreground then). Cancel or failure keeps the old transcript.
-     * With [clean] the audio is cleaned first (issue #37).
+     * With [clean] the audio is cleaned first (issue #37). Once the
+     * transcript is swapped in, the notification turns into the
+     * "Identifying speakers…" one while speakers are identified.
      */
     private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
@@ -403,10 +405,31 @@ class RecordingService : Service() {
         )
         acquireWakeLock()
         retranscribeJob = scope.launch {
+            var started = false
+            var lastCleaning: Boolean? = null
             val progress = useCase.state
                 .onEach { state ->
                     if (state is RetranscribeState.Running) {
-                        maybeRefreshRetranscribeNotification(state.progress, state.cleaning)
+                        started = true
+                        // Cleaning → transcribing shows at once (issue #43).
+                        maybeRefreshRetranscribeNotification(
+                            state.progress,
+                            state.cleaning,
+                            force = state.cleaning != lastCleaning
+                        )
+                        lastCleaning = state.cleaning
+                    } else if (started && state is RetranscribeState.Idle && diarizerUseCase().runsNow()) {
+                        // The new transcript is in and speakers are identified
+                        // next, inside run(): say so instead of leaving the
+                        // last throttled percentage on screen (issue #43).
+                        // A cancel cancels this collector too, and a failure
+                        // ends in Failed, so neither shows it.
+                        ServiceCompat.startForeground(
+                            this@RecordingService,
+                            NOTIFICATION_ID,
+                            buildDiarizingNotification(),
+                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                        )
                     }
                 }
                 .launchIn(this)
@@ -456,8 +479,15 @@ class RecordingService : Service() {
         acquireWakeLock()
         val source = importSource(uri)
         importJob = scope.launch {
+            var lastStep: ImportStep? = null
             val progress = useCase.state
-                .onEach { state -> if (state is ImportState.Running) maybeRefreshImportNotification(state) }
+                .onEach { state ->
+                    if (state is ImportState.Running) {
+                        // A new step shows at once; its progress only once a second.
+                        maybeRefreshImportNotification(state, force = state.step != lastStep)
+                        lastStep = state.step
+                    }
+                }
                 .launchIn(this)
             try {
                 useCase.run(source)
@@ -494,9 +524,9 @@ class RecordingService : Service() {
         }
     }
 
-    private fun maybeRefreshImportNotification(state: ImportState.Running) {
+    private fun maybeRefreshImportNotification(state: ImportState.Running, force: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
+        if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
         ServiceCompat.startForeground(
             this,
@@ -544,9 +574,9 @@ class RecordingService : Service() {
         return builder.build()
     }
 
-    private fun maybeRefreshRetranscribeNotification(progress: Float, cleaning: Boolean) {
+    private fun maybeRefreshRetranscribeNotification(progress: Float, cleaning: Boolean, force: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
+        if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
         ServiceCompat.startForeground(
             this,
