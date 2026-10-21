@@ -403,8 +403,11 @@ class UpdateManager(
     }
 
     companion object {
-        /** The automatic check runs at most once in this long: three times a day (issue #41). */
-        const val CHECK_INTERVAL_MS = 8L * 60L * 60L * 1_000L
+        /**
+         * The automatic check runs at most once in this long, so a new
+         * release shows soon after the app is opened (issue #41).
+         */
+        const val CHECK_INTERVAL_MS = 30L * 60L * 1_000L
     }
 }
 

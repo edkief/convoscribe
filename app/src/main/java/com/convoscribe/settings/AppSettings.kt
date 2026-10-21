@@ -37,7 +37,7 @@ import com.convoscribe.llm.SummaryTemplates
  *
  * [updateCheckAuto] lets the app ask GitHub for a newer release when
  * it comes to the foreground and from a periodic background job, at
- * most once every 8 hours (issues #15, #41); with it off the app makes
+ * most once every 30 minutes (issues #15, #41); with it off the app makes
  * no update request unless the user taps *Check for updates*.
  * [updateIncludePrereleases] also offers releases marked pre-release.
  *

@@ -606,7 +606,7 @@ To publish a test release instead, use `scripts/release.sh publish
 GitHub UI for the test and delete it after) or a pre-release (offered
 only with *Include pre-releases* on).
 
-The automatic check runs at most once every 8 hours: when the app
+The automatic check runs at most once every 30 minutes: when the app
 comes to the foreground (a fresh start or a return to a running app)
 and from a periodic background job (issue #41). To make it due again
 (this also forgets a found offer, a skipped version and the
@@ -619,7 +619,7 @@ adb shell am force-stop com.convoscribe
 
 To run the background job now, with the app closed (job id 1102;
 `adb shell dumpsys jobscheduler com.convoscribe` shows it scheduled
-every 4 hours, needing a network):
+every hour, needing a network):
 
 ```bash
 adb shell cmd jobscheduler run -f com.convoscribe 1102
@@ -636,7 +636,7 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
 2. Tap **Not now**: the banner goes. Settings → About shows
    *Version 0.0.1 (1)* and the same offer. Force-stop and reopen: the
    banner is back (the offer is remembered) but logcat shows no new
-   `update check:` line (checked less than 8 hours ago).
+   `update check:` line (checked less than 30 minutes ago).
 3. Clear the throttle (above), reopen, tap **Skip this version**.
    Clear the throttle again and reopen: no banner. Settings → About →
    **Check for updates** still offers it (a manual check ignores the
