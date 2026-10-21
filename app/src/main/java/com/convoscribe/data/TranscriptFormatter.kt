@@ -148,14 +148,19 @@ object TranscriptFormatter {
         byLine[null]?.forEach { out += markText(it) }
         lines.forEachIndexed { index, line ->
             byLine[index]?.forEach { out += markText(it) }
-            val stamp = timestamp(line.startMs)
-            out += if (line.speaker.isNullOrEmpty()) {
-                "[$stamp] ${line.text}"
-            } else {
-                "[$stamp] ${line.speaker}: ${line.text}"
-            }
+            out += lineText(line)
         }
         return out.joinToString(separator = "\n")
+    }
+
+    /**
+     * One transcript line as [toText] writes it:
+     * `"[<timestamp>] <speaker>: <text>"`, or `"[<timestamp>] <text>"`
+     * when the segment is unlabelled.
+     */
+    fun lineText(line: TranscriptLine): String {
+        val stamp = timestamp(line.startMs)
+        return if (line.speaker.isNullOrEmpty()) "[$stamp] ${line.text}" else "[$stamp] ${line.speaker}: ${line.text}"
     }
 
     /** The flag in front of a mark in plain text. */
