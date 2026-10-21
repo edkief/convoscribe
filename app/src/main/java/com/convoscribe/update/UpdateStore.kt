@@ -23,6 +23,9 @@ interface UpdateStore {
 
     /** The last offer a check found, or `null`. */
     var offer: UpdateOffer?
+
+    /** Version the *update available* notification was posted for, or `null`. */
+    var notifiedVersion: String?
 }
 
 /** [UpdateStore] in its own `updates` SharedPreferences, like [com.convoscribe.enginecheck.NpuAvailability]. */
@@ -39,11 +42,16 @@ class PrefsUpdateStore(private val prefs: SharedPreferences) : UpdateStore {
         get() = prefs.getString(KEY_OFFER, null)?.let(OfferJson::decode)
         set(value) = prefs.edit().putString(KEY_OFFER, value?.let(OfferJson::encode)).apply()
 
+    override var notifiedVersion: String?
+        get() = prefs.getString(KEY_NOTIFIED_VERSION, null)
+        set(value) = prefs.edit().putString(KEY_NOTIFIED_VERSION, value).apply()
+
     companion object {
         const val PREFS_NAME = "updates"
         private const val KEY_LAST_CHECK_AT = "lastCheckAt"
         private const val KEY_SKIPPED_VERSION = "skippedVersion"
         private const val KEY_OFFER = "offer"
+        private const val KEY_NOTIFIED_VERSION = "notifiedVersion"
     }
 }
 

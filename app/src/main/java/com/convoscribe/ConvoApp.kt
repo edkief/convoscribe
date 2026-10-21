@@ -20,11 +20,15 @@ class ConvoApp : Application() {
         // the session the main process may be recording right now.
         if (Application.getProcessName()?.contains(':') == true) return
         // Whether any activity is visible, for the floating control.
+        // Coming to the foreground also runs the update check when it
+        // is due (issue #41), not only a fresh start.
         ProcessLifecycleOwner.get().lifecycle.addObserver(
-            LifecycleEventObserver { owner, _ ->
+            LifecycleEventObserver { owner, event ->
                 container.appInForeground.value = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                if (event == Lifecycle.Event.ON_START) container.updateManager.checkIfDue()
             }
         )
+        container.updateCheckScheduler.sync()
         // Crash-recovery: walk the database for sessions that were
         // left mid-recording / mid-diarization by a previous
         // process and patch them so the user can see them in the

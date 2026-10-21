@@ -117,6 +117,11 @@ val UpdateState.offer: UpdateOffer?
  * recording short. The installer's verdict comes back through
  * [onInstallResult]; a cancelled prompt goes back to *Install*.
  *
+ * An offer the automatic check finds is announced through [notifyOffer]
+ * (a notification while the app is in the background), once per
+ * version: it returns whether it told the user, and a version not yet
+ * told is announced again by a later check.
+ *
  * The offer a check finds is kept in [store] and comes back on the
  * next start while it is still newer than the installed app, so an
  * update found by the background job is not lost with its process
@@ -141,6 +146,7 @@ class UpdateManager(
     private val includePrereleases: () -> Boolean,
     private val isBusy: () -> Boolean,
     private val scope: CoroutineScope,
+    private val notifyOffer: (UpdateOffer) -> Boolean = { false },
     private val clock: () -> Long = System::currentTimeMillis,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
@@ -353,6 +359,9 @@ class UpdateManager(
                 !manual && offer.versionName == store.skippedVersion -> UpdateState.Idle
                 else -> {
                     if (manual) _bannerDismissed.value = false
+                    if (!manual && store.notifiedVersion != offer.versionName && notifyOffer(offer)) {
+                        store.notifiedVersion = offer.versionName
+                    }
                     UpdateState.Available(offer)
                 }
             }
