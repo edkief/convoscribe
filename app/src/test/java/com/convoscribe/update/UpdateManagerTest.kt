@@ -33,6 +33,7 @@ class UpdateManagerTest {
     private class MemoryStore : UpdateStore {
         override var lastCheckAtMs: Long = 0L
         override var skippedVersion: String? = null
+        override var offer: UpdateOffer? = null
     }
 
     private fun release(tag: String) = Release(
@@ -100,6 +101,7 @@ class UpdateManagerTest {
     private var auto = true
     private var busy = false
     private var installed = InstalledApp("0.2.1", 3L)
+    private var prereleases = false
 
     private fun manager() = UpdateManager(
         source = source,
@@ -109,7 +111,7 @@ class UpdateManagerTest {
         installer = installer,
         installed = { installed },
         autoCheck = { auto },
-        includePrereleases = { false },
+        includePrereleases = { prereleases },
         isBusy = { busy },
         scope = scope,
         clock = { now },
@@ -280,6 +282,58 @@ class UpdateManagerTest {
             scope.runCurrent()
             assertEquals("0.4.0", offeredVersion(it))
         }
+    }
+
+    @Test
+    fun foundOffer_isStored_andOfferedAgainByTheNextProcess() {
+        offered()
+        assertEquals("0.3.0", store.offer?.versionName)
+
+        val next = manager()
+        assertEquals("0.3.0", offeredVersion(next))
+        assertEquals(1, source.calls)
+    }
+
+    @Test
+    fun storedOffer_isForgottenOnceInstalled() {
+        offered()
+        installed = InstalledApp("0.3.0", 4L)
+        assertEquals(UpdateState.Idle, manager().state.value)
+        assertEquals(null, store.offer)
+    }
+
+    @Test
+    fun storedOffer_isForgottenWhenSkipped_orAPreReleaseNoLongerWanted() {
+        prereleases = true
+        source.releases = listOf(release("v0.3.0").copy(prerelease = true))
+        offered()
+        prereleases = false
+        assertEquals(UpdateState.Idle, manager().state.value)
+        assertEquals(null, store.offer)
+
+        source.releases = listOf(release("v0.3.0"))
+        offered()
+        store.skippedVersion = "0.3.0"
+        assertEquals(UpdateState.Idle, manager().state.value)
+        assertEquals(null, store.offer)
+    }
+
+    @Test
+    fun checkFindingNothing_forgetsTheStoredOffer() {
+        offered()
+        source.releases = listOf(release("v0.2.1"))
+        val manager = manager()
+        manager.checkNow()
+        scope.runCurrent()
+        assertEquals(null, store.offer)
+    }
+
+    @Test
+    fun skip_forgetsTheStoredOffer() {
+        val manager = offered()
+        manager.skip((manager.state.value as UpdateState.Available).offer)
+        assertEquals(null, store.offer)
+        assertEquals(UpdateState.Idle, manager().state.value)
     }
 
     @Test

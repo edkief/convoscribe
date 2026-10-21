@@ -117,6 +117,11 @@ val UpdateState.offer: UpdateOffer?
  * recording short. The installer's verdict comes back through
  * [onInstallResult]; a cancelled prompt goes back to *Install*.
  *
+ * The offer a check finds is kept in [store] and comes back on the
+ * next start while it is still newer than the installed app, so an
+ * update found by the background job is not lost with its process
+ * (issue #41).
+ *
  * [bannerDismissed] is *Not now* on Home: the banner hides until the
  * next process start (or a manual check), while Settings › About still
  * shows the offer.
@@ -153,6 +158,10 @@ class UpdateManager(
     /** Bumped by every download start and stop; a download writes state only while it is current. */
     private var generation = 0
 
+    init {
+        restoreOffer()
+    }
+
     val installedApp: InstalledApp get() = installed()
 
     val isDownloading: Boolean get() = _state.value is UpdateState.Downloading
@@ -188,6 +197,7 @@ class UpdateManager(
     /** *Skip this version*: not offered again by the automatic check until a newer release appears. */
     fun skip(offer: UpdateOffer) {
         store.skippedVersion = offer.versionName
+        store.offer = null
         if ((_state.value as? UpdateState.Available)?.offer == offer) _state.value = UpdateState.Idle
     }
 
@@ -337,6 +347,7 @@ class UpdateManager(
             }
             val offer = UpdateSelector.pick(releases, installedVersion, includePrereleases())
             Log.i(TAG, "update check: installed=$installedVersion offer=${offer?.versionName}")
+            store.offer = offer?.takeUnless { it.versionName == store.skippedVersion }
             _state.value = when {
                 offer == null -> if (manual) UpdateState.UpToDate else UpdateState.Idle
                 !manual && offer.versionName == store.skippedVersion -> UpdateState.Idle
@@ -348,6 +359,24 @@ class UpdateManager(
         }
         checkJob = job
         return job
+    }
+
+    /**
+     * Offer the stored update again, unless it is no longer newer than
+     * the installed app (it was installed), was skipped, or is a
+     * pre-release the user no longer wants; those are forgotten.
+     */
+    private fun restoreOffer() {
+        val offer = store.offer ?: return
+        val installedVersion = SemVer.parse(installed().versionName)
+        val stillWanted = installedVersion != null && offer.version > installedVersion &&
+            offer.versionName != store.skippedVersion &&
+            (includePrereleases() || !offer.release.prerelease)
+        if (stillWanted) {
+            _state.value = UpdateState.Available(offer)
+        } else {
+            store.offer = null
+        }
     }
 
     /** What a failed automatic check leaves: an offer stays, anything else is [UpdateState.Idle]. */
