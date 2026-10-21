@@ -172,6 +172,14 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <!--
+            The periodic update check (issue #41), started by JobScheduler
+            even when the app is not running. Only the system may bind it.
+        -->
+        <service
+            android:name=".service.UpdateCheckJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!--
             Result of an update's install session (issue #15): shows the
             system's confirmation prompt and reports failures. Not
             exported: only the session's PendingIntent reaches it.

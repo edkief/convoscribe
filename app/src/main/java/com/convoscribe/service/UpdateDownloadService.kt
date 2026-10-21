@@ -10,12 +10,14 @@ import android.content.pm.ServiceInfo
 import android.os.IBinder
 import android.os.SystemClock
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.getSystemService
 import com.convoscribe.ConvoApp
 import com.convoscribe.MainActivity
 import com.convoscribe.R
 import com.convoscribe.update.UpdateManager
+import com.convoscribe.update.UpdateOffer
 import com.convoscribe.update.UpdateState
 import com.convoscribe.update.updateFailureText
 import kotlinx.coroutines.CoroutineScope
@@ -191,6 +193,27 @@ class UpdateDownloadService : Service() {
         /** Cancel the download and delete what it fetched; plain `startService`. */
         fun cancelIntent(context: Context): Intent =
             Intent(context, UpdateDownloadService::class.java).setAction(ACTION_CANCEL)
+
+        /**
+         * *ConvoScribe X.Y.Z is available*, from the background check
+         * (issue #41); `false` when notifications are off. Shares
+         * [NOTIFICATION_ID], so a download that follows replaces it.
+         */
+        fun notifyAvailable(context: Context, offer: UpdateOffer): Boolean {
+            val notifications = NotificationManagerCompat.from(context)
+            if (!notifications.areNotificationsEnabled()) return false
+            ModelDownloadService.ensureDownloadsChannel(context)
+            val notification = NotificationCompat.Builder(context, ModelDownloadService.CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle(context.getString(R.string.update_available_title, offer.versionName))
+                .setContentText(context.getString(R.string.notification_update_available_text))
+                .setContentIntent(openAppIntent(context))
+                .setAutoCancel(true)
+                .build()
+            return runCatching {
+                context.getSystemService<NotificationManager>()?.notify(NOTIFICATION_ID, notification) != null
+            }.getOrDefault(false)
+        }
 
         fun openAppIntent(context: Context): PendingIntent = PendingIntent.getActivity(
             context,

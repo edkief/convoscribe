@@ -41,6 +41,8 @@ import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.service.PendingDiarizationScheduler
+import com.convoscribe.service.UpdateCheckScheduler
+import com.convoscribe.service.UpdateDownloadService
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.update.GitHubReleases
@@ -502,11 +504,13 @@ class AppContainer(val context: Context) {
     )
 
     /**
-     * Looks for a newer GitHub release on start and from Settings ›
-     * About, and downloads it to `filesDir/updates/<version>/` with the
-     * model downloader's resume and retries (issue #15). Never checks
-     * automatically while a session is open or an import /
-     * re-transcription runs.
+     * Looks for a newer GitHub release when the app comes to the
+     * foreground, from the periodic job ([updateCheckScheduler]) and
+     * from Settings › About, and downloads it to
+     * `filesDir/updates/<version>/` with the model downloader's resume
+     * and retries (issues #15, #41). Never checks automatically while a
+     * session is open or an import / re-transcription runs. An update
+     * found while no activity is visible is announced by a notification.
      */
     val updateManager = UpdateManager(
         source = GitHubReleases(httpClient, userAgent = "ConvoScribe/${installedApp.versionName}"),
@@ -522,8 +526,22 @@ class AppContainer(val context: Context) {
                 importAudioUseCase.isRunning ||
                 retranscribeUseCase.isRunning
         },
-        scope = applicationScope
+        scope = applicationScope,
+        notifyOffer = { offer -> !appInForeground.value && UpdateDownloadService.notifyAvailable(context, offer) }
     )
+
+    /**
+     * Keeps the periodic update check scheduled while *Check for updates
+     * automatically* is on (issue #41); re-synced when it changes.
+     */
+    val updateCheckScheduler = UpdateCheckScheduler(context, settingsRepository, applicationScope).also { scheduler ->
+        settingsRepository.settings
+            .map { it.updateCheckAuto }
+            .distinctUntilChanged()
+            .drop(1)
+            .onEach { scheduler.sync() }
+            .launchIn(applicationScope)
+    }
 
     /**
      * Whether the device is plugged in, from the sticky battery

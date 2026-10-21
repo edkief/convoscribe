@@ -35,9 +35,10 @@ import com.convoscribe.llm.SummaryTemplates
  * picks one, when [FloatingShape.resolve] gives the device default
  * (issue #21).
  *
- * [updateCheckAuto] lets the app ask GitHub for a newer release on
- * start, at most once a day (issue #15); with it off the app makes no
- * update request unless the user taps *Check for updates*.
+ * [updateCheckAuto] lets the app ask GitHub for a newer release when
+ * it comes to the foreground and from a periodic background job, at
+ * most once every 8 hours (issues #15, #41); with it off the app makes
+ * no update request unless the user taps *Check for updates*.
  * [updateIncludePrereleases] also offers releases marked pre-release.
  *
  * [speakerIdMode] is a [SpeakerIdMode.key] (`"auto"`, `"charging"` or
