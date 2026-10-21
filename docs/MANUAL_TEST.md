@@ -490,7 +490,10 @@ adb push talk-44k.wav talk-48k.wav talk.mp3 talk.m4a talk.ogg talk.flac /sdcard/
   and line timings (tap a line: playback starts at that point), and
   speakers identified afterwards. Rename, *Re-identify speakers…*,
   Summary and Ask work as for a recording; *Session info* shows the
-  Settings language and the engine.
+  Settings language and the engine. The notification follows each
+  step as soon as it starts: it says *Identifying speakers* as soon as
+  transcription ends, not after a delay at the last percentage
+  (issue #43).
 - Step 4: the import keeps going with the screen off and the app in
   the background; progress resumes on screen.
 - Step 5: the import stops; no new session appears and

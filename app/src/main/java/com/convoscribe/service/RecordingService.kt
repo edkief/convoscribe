@@ -406,11 +406,18 @@ class RecordingService : Service() {
         acquireWakeLock()
         retranscribeJob = scope.launch {
             var started = false
+            var lastCleaning: Boolean? = null
             val progress = useCase.state
                 .onEach { state ->
                     if (state is RetranscribeState.Running) {
                         started = true
-                        maybeRefreshRetranscribeNotification(state.progress, state.cleaning)
+                        // Cleaning → transcribing shows at once (issue #43).
+                        maybeRefreshRetranscribeNotification(
+                            state.progress,
+                            state.cleaning,
+                            force = state.cleaning != lastCleaning
+                        )
+                        lastCleaning = state.cleaning
                     } else if (started && state is RetranscribeState.Idle && diarizerUseCase().runsNow()) {
                         // The new transcript is in and speakers are identified
                         // next, inside run(): say so instead of leaving the
@@ -472,8 +479,15 @@ class RecordingService : Service() {
         acquireWakeLock()
         val source = importSource(uri)
         importJob = scope.launch {
+            var lastStep: ImportStep? = null
             val progress = useCase.state
-                .onEach { state -> if (state is ImportState.Running) maybeRefreshImportNotification(state) }
+                .onEach { state ->
+                    if (state is ImportState.Running) {
+                        // A new step shows at once; its progress only once a second.
+                        maybeRefreshImportNotification(state, force = state.step != lastStep)
+                        lastStep = state.step
+                    }
+                }
                 .launchIn(this)
             try {
                 useCase.run(source)
@@ -510,9 +524,9 @@ class RecordingService : Service() {
         }
     }
 
-    private fun maybeRefreshImportNotification(state: ImportState.Running) {
+    private fun maybeRefreshImportNotification(state: ImportState.Running, force: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
+        if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
         ServiceCompat.startForeground(
             this,
@@ -560,9 +574,9 @@ class RecordingService : Service() {
         return builder.build()
     }
 
-    private fun maybeRefreshRetranscribeNotification(progress: Float, cleaning: Boolean) {
+    private fun maybeRefreshRetranscribeNotification(progress: Float, cleaning: Boolean, force: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
-        if (now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
+        if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
         ServiceCompat.startForeground(
             this,
