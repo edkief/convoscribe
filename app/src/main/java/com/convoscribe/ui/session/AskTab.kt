@@ -36,6 +36,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import com.convoscribe.R
@@ -102,7 +103,15 @@ internal fun AskTab(
                     verticalArrangement = Arrangement.spacedBy(spacing.s)
                 ) {
                     items(items = state.messages, key = { it.id }) { message ->
-                        ChatBubble(text = message.content, isUser = message.role == MessageRole.USER)
+                        val covered = message.coveredMs
+                        val total = message.totalMs
+                        val coverage = if (covered != null && total != null) {
+                            val (coveredMin, totalMin) = coverageMinutes(covered, total)
+                            pluralStringResource(R.plurals.session_ask_coverage, totalMin, coveredMin, totalMin)
+                        } else {
+                            null
+                        }
+                        ChatBubble(text = message.content, isUser = message.role == MessageRole.USER, note = coverage)
                     }
                     if (state.streaming.isNotEmpty()) {
                         item(key = "streaming") { ChatBubble(text = state.streaming, isUser = false) }
@@ -171,10 +180,12 @@ internal fun AskTab(
 /**
  * One chat bubble: questions on the right in the primary container
  * colour, answers on the left on a quiet surface (outlined on e-ink).
- * The text is selectable so a phrase can be copied.
+ * The text is selectable so a phrase can be copied. [note] is a small
+ * line under the text: for an answer about a long transcript
+ * (issue #28), how much of the conversation it was based on.
  */
 @Composable
-private fun ChatBubble(text: String, isUser: Boolean) {
+private fun ChatBubble(text: String, isUser: Boolean, note: String? = null) {
     val scheme = MaterialTheme.colorScheme
     val eink = AppTheme.isEink
     Row(
@@ -188,12 +199,18 @@ private fun ChatBubble(text: String, isUser: Boolean) {
             border = if (eink && !isUser) BorderStroke(AppTheme.sizes.outline, scheme.outline) else null,
             modifier = Modifier.widthIn(max = AppTheme.sizes.bubbleMaxWidth)
         ) {
-            SelectionContainer {
-                Text(
-                    text = text,
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(horizontal = AppTheme.spacing.m, vertical = AppTheme.spacing.s)
-                )
+            Column(modifier = Modifier.padding(horizontal = AppTheme.spacing.m, vertical = AppTheme.spacing.s)) {
+                SelectionContainer {
+                    Text(text = text, style = MaterialTheme.typography.bodyLarge)
+                }
+                note?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = scheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = AppTheme.spacing.xs)
+                    )
+                }
             }
         }
     }

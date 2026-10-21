@@ -334,6 +334,100 @@ class AskViewModelTest {
     }
 
     /**
+     * Seed 120 one-minute lines of filler with one fact only in the
+     * middle (minute 60), for a 2 000-character budget (issue #28).
+     */
+    private suspend fun seedLongTranscript(sessionId: Long) {
+        repeat(120) { i ->
+            val text = if (i == 60) {
+                "the Kowalski invoice is due on the ninth of March."
+            } else {
+                "we went over the agenda item number $i once more."
+            }
+            repo.addSegment(sessionId = sessionId, startMs = i * 60_000L, endMs = i * 60_000L + 50_000L, text = text)
+        }
+    }
+
+    private fun longSettings(): SettingsRepository = newSettings().also { s ->
+        configureSettings(s)
+        s.update { it.copy(maxTranscriptChars = 2_000) }
+    }
+
+    @Test
+    fun ask_longTranscriptSendsTheRelevantExcerptAndSavesItsCoverage() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id)
+        val client = FakeChatClient(tokens = listOf("The ninth of March."))
+        val vm = AskViewModel(id, repo, client, longSettings())
+        advanceUntilIdle()
+
+        vm.ask("When is the Kowalski invoice due?")
+        advanceUntilIdle()
+
+        val system = client.lastMessages!![0].content
+        assertTrue(system.startsWith(PromptBuilder.QA_EXCERPTS_PREFIX))
+        assertTrue(system.contains("[1:00:00] the Kowalski invoice is due on the ninth of March."))
+        assertTrue(system.length <= PromptBuilder.QA_EXCERPTS_PREFIX.length + 2_000)
+        val answer = db.chatMessageDao().observe(id, MessageKind.QA).first().last()
+        assertEquals(MessageRole.ASSISTANT, answer.role)
+        assertEquals(119L * 60_000L + 50_000L, answer.totalMs)
+        assertTrue(answer.coveredMs!! in 1L until answer.totalMs!!)
+    }
+
+    @Test
+    fun ask_followUpAboutALongTranscriptAlsoSearchesThePreviousQuestion() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id)
+        val client = FakeChatClient(tokens = listOf("ok"))
+        val vm = AskViewModel(id, repo, client, longSettings())
+        advanceUntilIdle()
+
+        vm.ask("When is the Kowalski invoice due?")
+        advanceUntilIdle()
+        vm.ask("Who raised that?")
+        advanceUntilIdle()
+        assertTrue(client.lastMessages!![0].content.contains("Kowalski"))
+    }
+
+    @Test
+    fun retryLast_longTranscriptUsesTheExcerptsToo() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedLongTranscript(id)
+        val client = FakeChatClient(tokens = emptyList(), initialError = LlmException("HTTP 500: x"))
+        val vm = AskViewModel(id, repo, client, longSettings())
+        advanceUntilIdle()
+        vm.ask("When is the Kowalski invoice due?")
+        advanceUntilIdle()
+
+        client.replaceTokens(listOf("March"))
+        vm.retryLast()
+        advanceUntilIdle()
+        assertTrue(client.lastMessages!![0].content.contains("Kowalski"))
+        assertNotNull(db.chatMessageDao().observe(id, MessageKind.QA).first().last().coveredMs)
+    }
+
+    @Test
+    fun ask_transcriptWithinTheBudgetSavesNoCoverage() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        val client = FakeChatClient(tokens = listOf("ok"))
+        val vm = AskViewModel(id, repo, client, newSettings().also { configureSettings(it) })
+        advanceUntilIdle()
+        vm.ask("hi?")
+        advanceUntilIdle()
+        val answer = db.chatMessageDao().observe(id, MessageKind.QA).first().last()
+        assertNull(answer.coveredMs)
+        assertNull(answer.totalMs)
+    }
+
+    @Test
+    fun coverageMinutes_roundsAndKeepsCoveredWithinTotal() {
+        assertEquals(18 to 92, coverageMinutes(18L * 60_000L + 10_000L, 91L * 60_000L + 40_000L))
+        assertEquals(1 to 90, coverageMinutes(5_000L, 90L * 60_000L))
+        assertEquals(3 to 3, coverageMinutes(200_000L, 170_000L))
+    }
+
+    /**
      * Fake [ChatClient] for [AskViewModel] tests. Records every
      * `stream()` call (the `lastMessages` field is the most
      * recent; the test asserts on it for the prompt-shape
