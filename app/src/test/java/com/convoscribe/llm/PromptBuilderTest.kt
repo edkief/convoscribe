@@ -326,4 +326,54 @@ class PromptBuilderTest {
         )
         assertEquals("was ist los?", messages.last().content)
     }
+
+    @Test
+    fun summaryPart_headsTheChunkWithItsNumberAndSpanAndListsItsMarks() {
+        val chunk =
+            TranscriptChunk("[01:00] Alice: hi", startMs = 60_000L, endMs = 125_000L, firstLine = 3, lastLine = 3)
+        val marks = listOf(TranscriptMark(id = 1, atMs = 61_000L, note = "here"))
+        val messages = PromptBuilder.summaryPart(chunk, 2, 5, marks)
+
+        assertEquals(PromptBuilder.PART_NOTES_SYSTEM, messages[0].content)
+        assertEquals(
+            PromptBuilder.MARKS_HEADER + "[01:01] here\n\n" +
+                "Transcript, part 2 of 5 [01:00–02:05]:\n\n[01:00] Alice: hi",
+            messages[1].content
+        )
+    }
+
+    @Test
+    fun summaryFromParts_usesTheTemplateAndListsEveryPartsNotesInOrder() {
+        val notes = listOf(PartNotes(0L, 60_000L, " first notes "), PartNotes(60_000L, 120_000L, "second notes"))
+        val messages = PromptBuilder.summaryFromParts(notes, 10_000, "Three bullets.")
+
+        assertEquals(PromptBuilder.summarySystem("Three bullets."), messages[0].content)
+        assertEquals(
+            PromptBuilder.PARTS_INTRO_FORMAT.format(2) +
+                "Part 1 [00:00–01:00]:\nfirst notes\n\nPart 2 [01:00–02:00]:\nsecond notes",
+            messages[1].content
+        )
+    }
+
+    @Test
+    fun mergeNotes_sendsTheNotesInOrder() {
+        val notes = listOf(PartNotes(0L, 60_000L, "a"), PartNotes(60_000L, 120_000L, "b"))
+        val messages = PromptBuilder.mergeNotes(notes)
+        assertEquals(PromptBuilder.MERGE_NOTES_SYSTEM, messages[0].content)
+        assertEquals("Notes, in time order:\n\n" + PromptBuilder.notesText(notes), messages[1].content)
+    }
+
+    @Test
+    fun questionFromExcerpts_joinsAdjacentChunksAndMarksGaps() {
+        fun chunk(line: Int) = TranscriptChunk("line $line", line * 1_000L, (line + 1) * 1_000L, line, line)
+        val excerpts = Excerpts(listOf(chunk(1), chunk(2), chunk(7)), coveredMs = 3_000L, totalMs = 10_000L)
+        val history = listOf(LlmMessage(LlmMessage.ROLE_USER, "q1"), LlmMessage(LlmMessage.ROLE_ASSISTANT, "a1"))
+        val messages = PromptBuilder.questionFromExcerpts(excerpts, history, "  why?  ")
+
+        assertEquals(
+            PromptBuilder.QA_EXCERPTS_PREFIX + "line 1\nline 2" + PromptBuilder.EXCERPT_GAP + "line 7",
+            messages[0].content
+        )
+        assertEquals(listOf("q1", "a1", "why?"), messages.drop(1).map { it.content })
+    }
 }
