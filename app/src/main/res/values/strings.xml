@@ -115,7 +115,7 @@
     <string name="settings_update_up_to_date">ConvoScribe is up to date.</string>
     <string name="settings_update_check_failed">Could not reach GitHub. Check the connection and try again.</string>
     <string name="settings_update_auto_label">Check for updates automatically</string>
-    <string name="settings_update_auto_help">Once a day when ConvoScribe starts. Off: no update requests unless you tap Check for updates.</string>
+    <string name="settings_update_auto_help">Up to three times a day, when you open ConvoScribe and in the background, with a notification when an update is found. Off: no update requests unless you tap Check for updates.</string>
     <string name="settings_update_prerelease_label">Include pre-releases</string>
     <string name="settings_update_prerelease_help">Also offer test versions marked as pre-release on GitHub.</string>
     <string name="record_title">New recording</string>

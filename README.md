@@ -192,9 +192,11 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   or failed, with Delete in each card's menu. The Record screen shows
   a live **microphone level** meter, and each speaker keeps one colour
   on their chip and lines, also after a rename.
-- **In-app updates.** Once a day on start (never while a recording is
-  open), the app asks GitHub for a newer release and offers it on
-  Home: *View notes*, *Update*, *Not now* or *Skip this version*. The
+- **In-app updates.** Up to three times a day, when you open the app
+  and from a background job while it is closed (never while a
+  recording is open), the app asks GitHub for a newer release. One
+  found in the background is announced by a notification. It is
+  offered on Home, also after a restart: *View notes*, *Update*, *Not now* or *Skip this version*. The
   APK downloads in the background with a progress notification
   (resuming after a lost connection), is checked against the
   release's sha256 and against the installed app (same package,

@@ -601,12 +601,23 @@ To publish a test release instead, use `scripts/release.sh publish
 GitHub UI for the test and delete it after) or a pre-release (offered
 only with *Include pre-releases* on).
 
-The automatic check runs at most once a day. To make it run again on
-the next start:
+The automatic check runs at most once every 8 hours: when the app
+comes to the foreground (a fresh start or a return to a running app)
+and from a periodic background job (issue #41). To make it due again
+(this also forgets a found offer, a skipped version and the
+notification already posted):
 
 ```bash
 adb shell run-as com.convoscribe rm shared_prefs/updates.xml
 adb shell am force-stop com.convoscribe
+```
+
+To run the background job now, with the app closed (job id 1102;
+`adb shell dumpsys jobscheduler com.convoscribe` shows it scheduled
+every 4 hours, needing a network):
+
+```bash
+adb shell cmd jobscheduler run -f com.convoscribe 1102
 ```
 
 Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
@@ -618,8 +629,9 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
    *ConvoScribe X.Y.Z is available*. Tap **View notes**: the release
    notes appear; close them.
 2. Tap **Not now**: the banner goes. Settings → About shows
-   *Version 0.0.1 (1)* and the same offer. Force-stop and reopen: no
-   banner (checked less than a day ago).
+   *Version 0.0.1 (1)* and the same offer. Force-stop and reopen: the
+   banner is back (the offer is remembered) but logcat shows no new
+   `update check:` line (checked less than 8 hours ago).
 3. Clear the throttle (above), reopen, tap **Skip this version**.
    Clear the throttle again and reopen: no banner. Settings → About →
    **Check for updates** still offers it (a manual check ignores the
@@ -657,6 +669,20 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
     offered too.
 11. Offline (airplane mode) with the throttle cleared: no banner, no
     error. **Check for updates** says it could not reach GitHub.
+12. Return to a running app (issue #41): open ConvoScribe, press Home
+    (do not swipe it away), clear the throttle with only the `rm`
+    line above (no force-stop), then reopen it from the launcher:
+    logcat shows `update check:` and the banner appears without the
+    app restarting.
+13. Background check (issue #41): clear the throttle, swipe
+    ConvoScribe away from recents, then run the job (above). Within a
+    few seconds a *ConvoScribe X.Y.Z is available* notification
+    appears. Dismiss it, set the device clock 9 hours ahead and run
+    the job again: logcat shows a new `update check:` but no second
+    notification for the same version. Set the clock back.
+    Tap it: Home shows the banner. Repeat with *Check for updates
+    automatically* off: `dumpsys jobscheduler` no longer lists job
+    1102.
 
 **Expected**
 
@@ -674,6 +700,9 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
   reinstall message (this is the #16 path).
 - Steps 10–11: no requests with the automatic check off; failures are
   silent on start and reported on the manual check.
+- Steps 12–13: a running app checks when it comes back to the front;
+  the closed app checks from the job and notifies once per version;
+  the job follows the switch.
 
 ## 25. Identify speakers while charging / on demand (issue #11)
 
