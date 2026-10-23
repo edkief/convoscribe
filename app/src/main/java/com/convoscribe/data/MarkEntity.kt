@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -14,6 +15,12 @@ import androidx.room.PrimaryKey
  * Marks do not belong to a segment: re-transcribing, diarizing or
  * editing the transcript leaves them where they are. Like the
  * segments they go with their session (`onDelete = CASCADE`).
+ *
+ * [expandedNote] is the full note the LLM wrote for the mark from the
+ * transcript around it (issue #48), written at [expandedAt]; `null`
+ * until one is written. [expandedStale] is `true` once the transcript
+ * or the speaker names changed after it was written, so the UI offers
+ * to regenerate it.
  */
 @Entity(
     tableName = "marks",
@@ -32,5 +39,9 @@ data class MarkEntity(
     val sessionId: Long,
     val atMs: Long,
     val note: String? = null,
-    val createdAt: Long
+    val createdAt: Long,
+    val expandedNote: String? = null,
+    val expandedAt: Long? = null,
+    @ColumnInfo(defaultValue = "0")
+    val expandedStale: Boolean = false
 )

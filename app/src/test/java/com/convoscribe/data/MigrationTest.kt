@@ -226,6 +226,31 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate10To11_existingMarksHaveNoFullNote() = runTest {
+        helper.createDatabase(DB_NAME, 10).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Planning', 1000, 5000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+            db.execSQL("INSERT INTO marks (id, sessionId, atMs, note, createdAt) VALUES (1, 1, 2500, 'budget', 3000)")
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 11, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val mark = db.markDao().getForSession(1).single()
+            assertEquals("budget", mark.note)
+            assertNull(mark.expandedNote)
+            assertNull(mark.expandedAt)
+            assertFalse(mark.expandedStale)
+        } finally {
+            db.close()
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test.db"
     }

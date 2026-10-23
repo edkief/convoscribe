@@ -302,4 +302,35 @@ class TranscriptFormatterTest {
             TranscriptFormatter.toText(emptyList(), listOf(TranscriptMark(id = 1, atMs = 3_000L, note = "later")))
         )
     }
+
+    @Test
+    fun markText_putsTheFullNoteOnIndentedLines() {
+        val mark = TranscriptMark(
+            id = 1,
+            atMs = 65_000L,
+            note = "pricing",
+            expandedNote = " Dana proposes €12.\n\n- Bob agrees. "
+        )
+        assertEquals(
+            "[01:05] \u2691 Mark: pricing\n    Dana proposes €12.\n    - Bob agrees.",
+            TranscriptFormatter.markText(mark)
+        )
+    }
+
+    @Test
+    fun marks_carryTheFullNoteAndWhetherItIsOutdated() {
+        val row = MarkEntity(
+            id = 3,
+            sessionId = 1,
+            atMs = 1_000L,
+            note = "n",
+            createdAt = 0,
+            expandedNote = "full",
+            expandedStale = true
+        )
+        assertEquals(
+            listOf(TranscriptMark(3, 1_000L, "n", "full", expandedStale = true)),
+            TranscriptFormatter.marks(listOf(row))
+        )
+    }
 }
