@@ -255,7 +255,8 @@ fun SettingsScreen(navController: NavHostController) {
                 )
             },
             onDeleteCleanup = vm::deleteCleanupModel,
-            onCleanAudioDefaultChange = vm::setCleanAudioDefault
+            onCleanAudioDefaultChange = vm::setCleanAudioDefault,
+            onAutoMarkNotesChange = vm::setAutoMarkNotes
         )
     )
 }
@@ -284,7 +285,8 @@ internal class SettingsActions(
     val onOpenSummaryTemplates: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
-    val onCleanAudioDefaultChange: (Boolean) -> Unit = {}
+    val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
+    val onAutoMarkNotesChange: (Boolean) -> Unit = {}
 )
 
 /**
@@ -357,7 +359,9 @@ internal fun SettingsBody(
                 templates = state.summaryTemplates,
                 defaultKey = state.defaultSummaryTemplate,
                 onDefaultChange = actions.onDefaultSummaryTemplateChange,
-                onOpenTemplates = actions.onOpenSummaryTemplates
+                onOpenTemplates = actions.onOpenSummaryTemplates,
+                autoMarkNotes = state.autoMarkNotes,
+                onAutoMarkNotesChange = actions.onAutoMarkNotesChange
             )
             TranscriptionSection(
                 engine = state.asrEngine,
@@ -668,14 +672,18 @@ private fun LanguageModelSection(
  */
 /**
  * "Summaries" section (issue #27): the template new conversations
- * start with (written immediately), and Templates to add or edit them.
+ * start with (written immediately), Templates to add or edit them, and
+ * whether the notes of marks are written once speakers are identified
+ * (issue #48, written immediately).
  */
 @Composable
 private fun SummariesSection(
     templates: List<SummaryTemplate>,
     defaultKey: String,
     onDefaultChange: (String) -> Unit,
-    onOpenTemplates: () -> Unit
+    onOpenTemplates: () -> Unit,
+    autoMarkNotes: Boolean,
+    onAutoMarkNotesChange: (Boolean) -> Unit
 ) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
@@ -700,6 +708,22 @@ private fun SummariesSection(
             OutlinedButton(onClick = onOpenTemplates) {
                 Text(text = stringResource(R.string.settings_summaries_templates_button))
             }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(value = autoMarkNotes, role = Role.Switch, onValueChange = onAutoMarkNotesChange),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_auto_mark_notes_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                SupportingText(text = stringResource(R.string.settings_auto_mark_notes_help))
+            }
+            Switch(checked = autoMarkNotes, onCheckedChange = null)
         }
     }
 }

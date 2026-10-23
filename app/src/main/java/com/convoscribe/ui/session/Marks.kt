@@ -2,6 +2,7 @@ package com.convoscribe.ui.session
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -91,7 +92,8 @@ internal fun MarkFlag(mark: TranscriptMark, onTapped: (() -> Unit)?) {
 }
 
 /**
- * The *Marks* list: every mark with its time and note. Tapping one
+ * The *Marks* list: every mark with its time, note and the start of
+ * its full note (issue #48). Tapping one
  * seeks there and closes the list ([onSeek] `null` when the recording
  * cannot be played); each row can have its note edited or be deleted.
  */
@@ -131,18 +133,29 @@ internal fun MarksDialog(
                                 style = AppTheme.typography.figures,
                                 color = MaterialTheme.colorScheme.primary
                             )
-                            Text(
-                                text = mark.note ?: stringResource(R.string.session_mark_no_note),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (mark.note == null) {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = mark.note ?: stringResource(R.string.session_mark_no_note),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = if (mark.note == null) {
+                                        MaterialTheme.colorScheme.onSurfaceVariant
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                // The full note (issue #48), shortened; the Summary tab has all of it.
+                                mark.expandedNote?.let { full ->
+                                    Text(
+                                        text = full,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 4,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
                             IconButton(onClick = { editing = mark }) {
                                 Icon(
                                     imageVector = Icons.Filled.Edit,

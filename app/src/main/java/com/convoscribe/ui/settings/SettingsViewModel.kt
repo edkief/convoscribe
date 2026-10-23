@@ -147,7 +147,9 @@ data class SettingsUiState(
     /** The noise cleanup model is downloaded (issue #37). */
     val cleanupInstalled: Boolean = false,
     /** New conversations clean their audio live (issue #37); written immediately. */
-    val cleanAudioDefault: Boolean = false
+    val cleanAudioDefault: Boolean = false,
+    /** Notes of marks are written once speakers are identified (issue #48); written immediately. */
+    val autoMarkNotes: Boolean = true
 )
 
 /**
@@ -426,6 +428,11 @@ class SettingsViewModel(
         }
     }
 
+    /** Persist *Write notes for marks automatically* immediately (issue #48). */
+    fun setAutoMarkNotes(enabled: Boolean) {
+        repo.update { it.copy(autoMarkNotes = enabled) }
+    }
+
     /** Persist the default summary template immediately (issue #27). */
     fun setDefaultSummaryTemplate(key: String) {
         repo.update { it.copy(defaultSummaryTemplate = key) }
@@ -511,6 +518,7 @@ class SettingsViewModel(
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
             cleanAudioDefault = current.cleanAudioDefault,
+            autoMarkNotes = current.autoMarkNotes,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )

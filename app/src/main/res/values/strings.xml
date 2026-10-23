@@ -232,6 +232,8 @@
     <string name="settings_section_speakers">Speakers</string>
     <string name="settings_section_summaries">Summaries</string>
     <string name="settings_summaries_default_label">Default template</string>
+    <string name="settings_auto_mark_notes_label">Write notes for marks automatically</string>
+    <string name="settings_auto_mark_notes_help">Once a conversation\'s speakers are identified, the language model turns each mark\'s note into a full note from what was said around it. The Summary tab can always write them.</string>
     <string name="settings_summaries_default_help">New conversations start with this template. You can change it before recording, or on the Summary tab.</string>
     <string name="settings_summaries_templates_row">Templates</string>
     <string name="settings_summaries_templates_button">Manage</string>
@@ -456,6 +458,13 @@
     <string name="session_summary_stop">Stop</string>
     <string name="session_summary_copy">Copy</string>
     <string name="session_summary_retry">Retry</string>
+    <string name="session_notes_title">Notes from marks (%1$d)</string>
+    <string name="session_notes_write">Write notes</string>
+    <string name="session_notes_regenerate">Regenerate notes</string>
+    <string name="session_notes_writing">Writing note %1$d of %2$d…</string>
+    <string name="session_notes_dismiss">Dismiss</string>
+    <string name="session_notes_not_written">Not written yet</string>
+    <string name="session_notes_outdated">Outdated: the transcript or speaker names changed. Regenerate to update.</string>
     <string name="session_summary_empty_error">The transcript is empty.</string>
     <string name="session_summary_not_configured">Set up a language model endpoint in Settings.</string>
     <string name="session_summary_open_settings">Open Settings</string>

@@ -317,6 +317,18 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun autoMarkNotes_isOnAndTurningItOffPersists() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertTrue(vm.state.value.autoMarkNotes)
+
+        vm.setAutoMarkNotes(false)
+        advanceUntilIdle()
+        assertFalse(repo.settings.value.autoMarkNotes)
+        assertFalse(vm.state.value.autoMarkNotes)
+    }
+
+    @Test
     fun cleanupModel_showsAsInstalled_andCanBeDeleted_andCleanByDefaultPersists() = runTest(dispatcher) {
         val repo = newRepo()
         val vm = newVm(repo = repo)

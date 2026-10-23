@@ -40,6 +40,7 @@ import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.LiveCleanupVerdict
+import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.overlay.FloatingControlContent
@@ -485,6 +486,16 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun sessionSummaryNotes() = capture("session_summary_notes") {
+        session(tab = 1, marks = NOTED_MARKS, summary = SummaryUiState(notes = MarkNotesProgress(done = 2, total = 3)))
+    }
+
+    @Test
+    fun sessionMarksListNotes() = captureScreen("session_marks_list_notes") {
+        session(marks = NOTED_MARKS, marksOpen = true)
+    }
+
+    @Test
     fun sessionAsk() = capture("session_ask") {
         session(tab = 2)
     }
@@ -855,6 +866,23 @@ class ScreenshotTest(private val variant: Variant) {
         private val MARKS = listOf(
             TranscriptMark(id = 1, atMs = 6_000L, note = "Release date moves a week"),
             TranscriptMark(id = 2, atMs = 402_000L)
+        )
+
+        private val NOTED_MARKS = listOf(
+            TranscriptMark(
+                id = 1,
+                atMs = 6_000L,
+                note = "Release date moves a week",
+                expandedNote = "Alice says the release moves from the end of the month to the week after, " +
+                    "because QA needs another week. Bob is fine with it if the e-ink build is ready too."
+            ),
+            TranscriptMark(
+                id = 2,
+                atMs = 402_000L,
+                expandedNote = "- Bob takes the e-ink build.\n- Alice checks the store listing by Friday.",
+                expandedStale = true
+            ),
+            TranscriptMark(id = 3, atMs = 610_000L, note = "Pricing")
         )
 
         private val TRANSCRIPT = listOf(
