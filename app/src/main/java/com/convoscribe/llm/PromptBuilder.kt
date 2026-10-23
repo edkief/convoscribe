@@ -1,6 +1,7 @@
 package com.convoscribe.llm
 
 import com.convoscribe.data.TranscriptFormatter
+import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
 
 /**
@@ -203,6 +204,43 @@ object PromptBuilder {
             val note = it.note?.takeIf { n -> n.isNotBlank() } ?: MARK_WITHOUT_NOTE
             "[${TranscriptFormatter.timestamp(it.atMs)}] $note\n"
         }
+    }
+
+    /**
+     * System prompt for the full note of one mark (issue #48): the
+     * user's short note says what they cared about, the transcript
+     * around the mark says what was said.
+     */
+    const val MARK_NOTE_SYSTEM: String =
+        "You turn a short note the user jotted while recording a conversation into a full note, " +
+            "using the part of the transcript around the moment they marked. " +
+            "Write in the same language as the transcript. " +
+            "Write 1 to 4 sentences or short bullet points about what was said at that moment, " +
+            "focused on what the user's note points at, with no heading or introduction. " +
+            SUMMARY_GUARDRAILS
+
+    /** Stands in for the note of a mark that has none, in [markNote]. */
+    const val MARK_NOTE_WITHOUT_NOTE: String =
+        "The user left no note: say what was being discussed at that moment."
+
+    /**
+     * Messages for the full note of [mark] (issue #48): [MARK_NOTE_SYSTEM],
+     * then a user turn with the mark's time and note (or
+     * [MARK_NOTE_WITHOUT_NOTE]) and the [window] of transcript around
+     * it ([MarkWindow]), fitted to [maxChars].
+     */
+    fun markNote(mark: TranscriptMark, window: List<TranscriptLine>, maxChars: Int): List<LlmMessage> {
+        val note = mark.note?.takeIf { it.isNotBlank() }
+        val ask = if (note == null) MARK_NOTE_WITHOUT_NOTE else "The user's note: \"$note\""
+        return listOf(
+            LlmMessage(LlmMessage.ROLE_SYSTEM, MARK_NOTE_SYSTEM),
+            LlmMessage(
+                LlmMessage.ROLE_USER,
+                "Marked at [${TranscriptFormatter.timestamp(mark.atMs)}]. $ask\n\n" +
+                    "Transcript around it:\n\n" +
+                    TranscriptTruncator.fit(TranscriptFormatter.toText(window), maxChars)
+            )
+        )
     }
 
     /**
