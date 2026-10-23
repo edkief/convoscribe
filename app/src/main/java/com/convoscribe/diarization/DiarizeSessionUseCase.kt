@@ -99,6 +99,10 @@ import kotlinx.coroutines.withContext
  *   [SpeakerIdMode.CHARGING].
  * @property onPending called after a session became pending, so the
  *   charging job is scheduled.
+ * @property onDiarized called with the session id once its speakers
+ *   were identified, so the notes of its marks can be written with
+ *   their names (issue #48). It must only start that work, not wait
+ *   for it.
  */
 class DiarizeSessionUseCase(
     private val repository: SessionRepository,
@@ -110,7 +114,8 @@ class DiarizeSessionUseCase(
     private val enrolled: EnrolledSpeakerStore = EmptyEnrolledStore,
     private val readSamples: (File) -> FloatArray = WavReader::readMono16k,
     private val isCharging: () -> Boolean = { true },
-    private val onPending: () -> Unit = {}
+    private val onPending: () -> Unit = {},
+    private val onDiarized: (Long) -> Unit = {}
 ) {
     private val lock = Mutex()
 
@@ -336,6 +341,7 @@ class DiarizeSessionUseCase(
                 "diarization completed session=$sessionId durationMs=$durationMs" +
                     " speakers=$speakerCount splitLines=${replacements.size} manualLines=${kept.size}"
             )
+            onDiarized(sessionId)
         } catch (ce: CancellationException) {
             // Cooperative cancellation: re-throw so structured
             // concurrency still sees the cancel; [guarded] puts the

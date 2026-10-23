@@ -331,6 +331,13 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun autoMarkNotes_isOnThenPersists() {
+        assertTrue(newRepository().settings.value.autoMarkNotes)
+        newRepository().update { it.copy(autoMarkNotes = false) }
+        assertFalse(newRepository().settings.value.autoMarkNotes)
+    }
+
+    @Test
     fun cleanAudioDefault_isOffThenPersists() {
         assertFalse(newRepository().settings.value.cleanAudioDefault)
         newRepository().update { it.copy(cleanAudioDefault = true) }

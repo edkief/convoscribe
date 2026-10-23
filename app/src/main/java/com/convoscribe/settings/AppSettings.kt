@@ -54,6 +54,10 @@ import com.convoscribe.llm.SummaryTemplates
  * cleanup on (issue #37); it only applies once the cleanup model is
  * downloaded, and the Record screen can change it per conversation.
  *
+ * [autoMarkNotes] writes the full note of each mark (issue #48) once a
+ * session's speakers are identified, when an LLM endpoint is set up;
+ * the Summary tab can always write them by hand.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -76,6 +80,7 @@ data class AppSettings(
     val defaultParticipants: List<String>? = null,
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     val cleanAudioDefault: Boolean = false,
+    val autoMarkNotes: Boolean = true,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,

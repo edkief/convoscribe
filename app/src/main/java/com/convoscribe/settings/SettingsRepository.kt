@@ -92,6 +92,7 @@ class SettingsRepository(
             putBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, next.updateIncludePrereleases)
             putString(KEY_DEFAULT_SUMMARY_TEMPLATE, next.defaultSummaryTemplate)
             putBoolean(KEY_CLEAN_AUDIO_DEFAULT, next.cleanAudioDefault)
+            putBoolean(KEY_AUTO_MARK_NOTES, next.autoMarkNotes)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
             if (participants == null) {
                 remove(
@@ -144,7 +145,8 @@ class SettingsRepository(
             updateCheckAuto = prefs.getBoolean(KEY_UPDATE_CHECK_AUTO, true),
             updateIncludePrereleases = prefs.getBoolean(KEY_UPDATE_INCLUDE_PRERELEASES, false),
             defaultSummaryTemplate = summaryTemplateKey(prefs.getString(KEY_DEFAULT_SUMMARY_TEMPLATE, null)),
-            cleanAudioDefault = prefs.getBoolean(KEY_CLEAN_AUDIO_DEFAULT, false)
+            cleanAudioDefault = prefs.getBoolean(KEY_CLEAN_AUDIO_DEFAULT, false),
+            autoMarkNotes = prefs.getBoolean(KEY_AUTO_MARK_NOTES, true)
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -215,6 +217,7 @@ class SettingsRepository(
         const val KEY_UPDATE_INCLUDE_PRERELEASES = "updateIncludePrereleases"
         const val KEY_DEFAULT_SUMMARY_TEMPLATE = "defaultSummaryTemplate"
         const val KEY_CLEAN_AUDIO_DEFAULT = "cleanAudioDefault"
+        const val KEY_AUTO_MARK_NOTES = "autoMarkNotes"
     }
 }
 
