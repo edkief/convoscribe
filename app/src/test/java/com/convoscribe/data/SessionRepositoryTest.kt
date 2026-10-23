@@ -566,6 +566,45 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun setMarkExpansion_savesTheFullNoteAndEditingTheNoteRemovesIt() = runTest {
+        val id = repo.createSession(title = "Marks", language = "en")
+        val mark = repo.addMark(id, atMs = 1_000L, note = "budget")
+
+        repo.setMarkExpansion(mark, "Alice caps the budget at 10k.")
+        val written = repo.getMarks(id).single()
+        assertEquals("Alice caps the budget at 10k.", written.expandedNote)
+        assertNotNull(written.expandedAt)
+        assertFalse(written.expandedStale)
+
+        repo.setMarkNote(mark, "budget cap")
+        val edited = repo.getMarks(id).single()
+        assertNull(edited.expandedNote)
+        assertNull(edited.expandedAt)
+    }
+
+    @Test
+    fun fullNotesGoOutdatedWhenSpeakersOrTranscriptChange() = runTest {
+        val id = repo.createSession(title = "Marks", language = "en")
+        val segment = repo.addSegment(id, startMs = 0L, endMs = 1_000L, text = "hello", tokens = emptyList())
+        val written = repo.addMark(id, atMs = 500L)
+        val unwritten = repo.addMark(id, atMs = 700L)
+        repo.setMarkExpansion(written, "full")
+        suspend fun stale() = repo.getMarks(id).associate { it.id to it.expandedStale }
+
+        repo.applyDiarization(id, assignments = mapOf(segment to 0), speakerCount = 1)
+        assertEquals(mapOf(written to true, unwritten to false), stale())
+
+        repo.setMarkExpansion(written, "full")
+        repo.renameSpeaker(id, 0, "Alice")
+        assertTrue(stale().getValue(written))
+
+        repo.setMarkExpansion(written, "full")
+        repo.replaceTranscript(id, "en", listOf(SegmentPiece(0, 1_000, "hi", emptyList(), null)), "cpu", "m")
+        assertTrue(stale().getValue(written))
+        assertFalse(stale().getValue(unwritten))
+    }
+
+    @Test
     fun deleteMark_andDeleteSession_removeMarks() = runTest {
         val id = repo.createSession(title = "Marks", language = "en")
         val first = repo.addMark(id, atMs = 1_000L)

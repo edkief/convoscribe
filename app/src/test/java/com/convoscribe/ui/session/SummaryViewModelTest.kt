@@ -13,6 +13,8 @@ import com.convoscribe.data.TranscriptMark
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
+import com.convoscribe.llm.MarkNotesProgress
+import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.PromptBuilder
 import com.convoscribe.llm.SummaryStep
 import com.convoscribe.llm.SummaryTemplates
@@ -21,8 +23,13 @@ import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.ui.UiText
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
@@ -600,6 +607,39 @@ class SummaryViewModelTest {
             listOf("old summary"),
             db.chatMessageDao().observe(id, MessageKind.SUMMARY).first().map { it.content }
         )
+    }
+
+    @Test
+    fun writeNotes_showsTheWritersProgressAndCancelNotesStopsIt() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        repo.addMark(id, atMs = 500L, note = "greeting")
+        val settings = newSettings().also { configureSettings(it) }
+        val started = CompletableDeferred<Unit>()
+        val client = ScriptedChatClient {
+            flow {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val vm = SummaryViewModel(
+            sessionId = id,
+            repository = repo,
+            chatClient = client,
+            settings = settings,
+            templates = templates,
+            markNotes = MarkNotesWriter(repo, client, settings, scope)
+        )
+
+        vm.writeNotes()
+        started.await()
+        assertEquals(MarkNotesProgress(done = 0, total = 1), vm.state.first { it.notes != null }.notes)
+
+        vm.cancelNotes()
+        vm.state.first { it.notes == null }
+        assertNull(repo.getMarks(id).single().expandedNote)
+        scope.cancel()
     }
 
     /** Answers each call with [reply] and records the messages of every call. */

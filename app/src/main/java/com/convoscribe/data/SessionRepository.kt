@@ -177,11 +177,16 @@ class SessionRepository(
 
     /**
      * Replace a mark's note. It is trimmed and cut to
-     * [MARK_NOTE_MAX_LEN]; a blank note removes it.
+     * [MARK_NOTE_MAX_LEN]; a blank note removes it. The full note
+     * written from the old one is removed too (issue #48).
      */
     suspend fun setMarkNote(markId: Long, note: String?) = markDao.setNote(markId, normaliseNote(note))
 
     suspend fun deleteMark(markId: Long) = markDao.delete(markId)
+
+    /** Save the full note the LLM wrote for mark [markId] (issue #48); it is current again. */
+    suspend fun setMarkExpansion(markId: Long, text: String) =
+        markDao.setExpanded(markId, text, System.currentTimeMillis())
 
     /**
      * Recording finished. Stamp the duration and move the session
@@ -415,7 +420,11 @@ class SessionRepository(
     suspend fun renameSpeaker(sessionId: Long, speakerIndex: Int, label: String) {
         val trimmed = label.trim()
         if (trimmed.isEmpty()) return
-        speakerDao.rename(sessionId, speakerIndex, trimmed)
+        db.withTransaction {
+            speakerDao.rename(sessionId, speakerIndex, trimmed)
+            // Full notes name the speakers (issue #48).
+            markDao.markExpansionsStale(sessionId)
+        }
     }
 
     /**
@@ -519,6 +528,7 @@ class SessionRepository(
             sessionDao.setEngine(sessionId, engine, model)
             sessionDao.setTranscriptEdited(sessionId, false)
             sessionDao.setStatus(sessionId, SessionStatus.TRANSCRIBED)
+            markDao.markExpansionsStale(sessionId)
             if (cleaned != null) {
                 val row = sessionDao.get(sessionId) ?: error("No session row for id $sessionId")
                 sessionDao.setCleanedWith(sessionId, cleaned.model)
@@ -609,6 +619,7 @@ class SessionRepository(
             if (rows.isNotEmpty()) {
                 speakerDao.upsert(rows)
             }
+            markDao.markExpansionsStale(sessionId)
             sessionDao.setStatus(sessionId, SessionStatus.DIARIZED)
         }
     }

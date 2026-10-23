@@ -13,6 +13,8 @@ import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LongSummariser
+import com.convoscribe.llm.MarkNotesProgress
+import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.PromptBuilder
 import com.convoscribe.llm.SummaryStep
 import com.convoscribe.llm.SummaryTemplate
@@ -53,6 +55,9 @@ import kotlinx.coroutines.launch
  * @property step what a summary of a transcript over the budget is
  *   doing (issue #28); `null` for a single-call summary and when
  *   nothing is running.
+ * @property notes how writing the full notes of the session's marks
+ *   is going (issue #48), from the Summary tab or after speakers were
+ *   identified; `null` when nothing is running and nothing failed.
  */
 data class SummaryUiState(
     val saved: String? = null,
@@ -63,7 +68,8 @@ data class SummaryUiState(
     val savedTemplateName: String? = null,
     val templates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     val selectedKey: String = SummaryTemplates.MEETING_KEY,
-    val step: SummaryStep? = null
+    val step: SummaryStep? = null,
+    val notes: MarkNotesProgress? = null
 )
 
 /**
@@ -113,13 +119,17 @@ data class SummaryUiState(
  *   `llmBaseUrl` / `llmModel`, and `defaultSummaryTemplate` applies
  *   to sessions that have no template of their own.
  * @param templates the summary templates (issue #27).
+ * @param markNotes writes the full notes of marks (issue #48);
+ *   [writeNotes] and [cancelNotes] do nothing without it, which the
+ *   tests that don't cover notes rely on.
  */
 class SummaryViewModel(
     private val sessionId: Long,
     private val repository: SessionRepository,
     private val chatClient: ChatClient,
     private val settings: SettingsRepository,
-    private val templates: SummaryTemplateStore
+    private val templates: SummaryTemplateStore,
+    private val markNotes: MarkNotesWriter? = null
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SummaryUiState> =
@@ -148,6 +158,11 @@ class SummaryViewModel(
                     saved = assistant?.content,
                     savedTemplateName = assistant?.templateName
                 )
+            }
+        }
+        markNotes?.let { writer ->
+            viewModelScope.launch {
+                writer.progress.collect { all -> _state.update { it.copy(notes = all[sessionId]) } }
             }
         }
         viewModelScope.launch {
@@ -285,6 +300,16 @@ class SummaryViewModel(
     fun cancel() {
         job?.cancel()
         job = null
+    }
+
+    /** Write (or rewrite) the full note of every mark (issue #48); it goes on if the screen closes. */
+    fun writeNotes() {
+        markNotes?.start(sessionId)
+    }
+
+    /** Stop writing notes, or dismiss a failure; the notes already written stay. */
+    fun cancelNotes() {
+        markNotes?.cancel(sessionId)
     }
 
     /**

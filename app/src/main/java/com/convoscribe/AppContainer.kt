@@ -29,6 +29,7 @@ import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.enginecheck.NpuAvailability
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmConfig
+import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
 import com.convoscribe.models.ModelDownloadManager
 import com.convoscribe.models.ModelDownloader
@@ -322,7 +323,8 @@ class AppContainer(val context: Context) {
         embedderFactory = speakerEmbedderFactory,
         enrolled = enrolledSpeakers,
         isCharging = ::isPluggedIn,
-        onPending = { pendingDiarizationScheduler.sync() }
+        onPending = { pendingDiarizationScheduler.sync() },
+        onDiarized = { markNotesWriter.onDiarized(it) }
     )
 
     /**
@@ -482,6 +484,13 @@ class AppContainer(val context: Context) {
             model = s.llmModel
         )
     }
+
+    /**
+     * Writes the full notes of marks (issue #48), after speakers are
+     * identified ([diarizeSessionUseCase]) and from the Summary tab.
+     */
+    val markNotesWriter: MarkNotesWriter =
+        MarkNotesWriter(sessionRepository, chatClient, settingsRepository, applicationScope)
 
     /**
      * The installed version, from the package manager (`buildConfig`

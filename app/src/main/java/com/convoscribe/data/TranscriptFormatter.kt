@@ -32,11 +32,15 @@ data class TranscriptLine(
 /**
  * A marked moment as the session screen and the exports show it
  * (issue #30): [atMs] in the recorded audio and the optional [note].
+ * [expandedNote] is the full note written from the transcript around
+ * it (issue #48), [expandedStale] whether it is outdated.
  */
 data class TranscriptMark(
     val id: Long,
     val atMs: Long,
-    val note: String? = null
+    val note: String? = null,
+    val expandedNote: String? = null,
+    val expandedStale: Boolean = false
 )
 
 /**
@@ -105,7 +109,8 @@ object TranscriptFormatter {
         }
 
     /** The [MarkEntity] rows as the UI shows them, in the same order. */
-    fun marks(rows: List<MarkEntity>): List<TranscriptMark> = rows.map { TranscriptMark(it.id, it.atMs, it.note) }
+    fun marks(rows: List<MarkEntity>): List<TranscriptMark> =
+        rows.map { TranscriptMark(it.id, it.atMs, it.note, it.expandedNote, it.expandedStale) }
 
     /**
      * Index in [lines] of the line a mark at [atMs] belongs to: the
@@ -121,11 +126,19 @@ object TranscriptFormatter {
 
     /**
      * One mark as a plain-text line, `"[<timestamp>] ⚑ Mark: <note>"`,
-     * or `"[<timestamp>] ⚑ Mark"` without a note.
+     * or `"[<timestamp>] ⚑ Mark"` without a note. Its full note (issue
+     * #48), when written, follows on lines indented by
+     * [MARK_NOTE_INDENT].
      */
     fun markText(mark: TranscriptMark): String {
         val head = "[${timestamp(mark.atMs)}] $MARK_FLAG Mark"
-        return if (mark.note.isNullOrBlank()) head else "$head: ${mark.note}"
+        val line = if (mark.note.isNullOrBlank()) head else "$head: ${mark.note}"
+        val full = mark.expandedNote?.trim()
+        if (full.isNullOrEmpty()) return line
+        return full.lines()
+            .filter { it.isNotBlank() }
+            .joinToString(separator = "") { "\n$MARK_NOTE_INDENT${it.trim()}" }
+            .let { line + it }
     }
 
     /**
@@ -165,4 +178,7 @@ object TranscriptFormatter {
 
     /** The flag in front of a mark in plain text. */
     const val MARK_FLAG: String = "\u2691"
+
+    /** In front of each line of a mark's full note in plain text. */
+    const val MARK_NOTE_INDENT: String = "    "
 }

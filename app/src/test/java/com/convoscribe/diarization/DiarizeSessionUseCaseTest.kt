@@ -306,6 +306,27 @@ class DiarizeSessionUseCaseTest {
      * pause) is split into one row per speaker.
      */
     @Test
+    fun run_reportsTheSessionOnceItsSpeakersAreIdentifiedButNotOnFailure() = runTest {
+        val id = repo.createSession(title = "Test", language = "en")
+        repo.addSegment(id, startMs = 0L, endMs = 1000L, text = "first")
+        val diarized = mutableListOf<Long>()
+        fun useCase(diarizer: Diarizer) = DiarizeSessionUseCase(
+            repository = repo,
+            diarizerFactory = ScriptedDiarizerFactory(diarizer),
+            settings = settings,
+            readSamples = { FloatArray(16_000) },
+            onDiarized = { diarized += it }
+        )
+
+        useCase(ThrowingDiarizer()).run(id)
+        assertEquals(SessionStatus.DIARIZATION_FAILED, repo.getSession(id)!!.status)
+        assertEquals(emptyList<Long>(), diarized)
+
+        useCase(ScriptedDiarizer(listOf(SpeakerTurn(startMs = 0L, endMs = 1000L, speaker = 0)))).run(id)
+        assertEquals(listOf(id), diarized)
+    }
+
+    @Test
     fun run_lineWithTokenTimesSpanningTwoSpeakers_isSplitIntoLabelledLines() = runTest {
         val id = repo.createSession(title = "Test", language = "en")
         repo.addSegment(

@@ -1119,6 +1119,57 @@ recording for an hour.
 - Step 8: a single summary call and answers with no *Based on …* line,
   as before the upgrade.
 
+## 33. Notes from marks (issue #48)
+
+Needs a working LLM endpoint and *Identify speakers* on **Auto**.
+Install over the previous version without clearing data.
+
+**Steps**
+
+1. Open a session with marks recorded before the upgrade, Summary tab.
+2. Record about two minutes with two people. Mark once with the note
+   `budget` while the budget is discussed, and once without a note.
+   Stop, and wait for the speakers to be identified.
+3. Open the session, Summary tab, without tapping anything.
+4. Rename *Speaker 1* (e.g. to `Alice`), back to the Summary tab.
+5. Tap *Regenerate notes*; tap Stop while it says *Writing note 1 of 2…*.
+6. Tap *Regenerate notes*, leave the session at once, and come back
+   after a minute.
+7. Tap a mark's time in a card.
+8. Open *Marks (n)* in the player, edit the `budget` note, back to the
+   Summary tab.
+9. Share the transcript.
+10. Turn the LLM server (or Wi-Fi) off, tap *Regenerate notes*.
+11. Settings → Summaries: turn *Write notes for marks automatically*
+    off. Record a short session with a mark, stop.
+12. Settings → *Identify speakers* **While charging**, unplugged:
+    turn the automatic notes back on and record a short session with a
+    mark. Plug in, close the app, wait for the charging job, reopen.
+13. On the Boox (e-ink): step 5 again, watching the screen.
+
+**Expected**
+
+- Step 1: the old marks are listed under *Notes from marks (n)*, each
+  *Not written yet*; the old summary is unchanged.
+- Step 3: both cards have a full note within a minute or so, using
+  speaker names; the `budget` one is about the budget, the other says
+  what was being discussed. `adb logcat -s ConvoScribe` shows
+  `mark notes written session=<id> notes=2`.
+- Step 4: both cards say *Outdated: … Regenerate to update.*
+- Step 5: the progress line and Stop show; after Stop nothing is half
+  written and the notes not yet rewritten stay as they were.
+- Step 6: the notes were written while you were away, with `Alice`.
+- Step 7: the Transcript tab opens with the player at the mark.
+- Step 8: the edited mark's card is back to *Not written yet*; the
+  Marks list shows the start of the other note under its time.
+- Step 9: each `⚑ Mark` line is followed by its full note, indented.
+- Step 10: an error banner with Retry and Dismiss; the notes stay.
+- Step 11: the new session's card says *Not written yet*.
+- Step 12: the note is written after the speakers are identified by the
+  charging job.
+- Step 13: each card changes once, when its note is complete; the
+  screen is not redrawn word by word.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

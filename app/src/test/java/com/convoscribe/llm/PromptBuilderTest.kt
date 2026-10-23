@@ -1,5 +1,6 @@
 package com.convoscribe.llm
 
+import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -375,5 +376,44 @@ class PromptBuilderTest {
             messages[0].content
         )
         assertEquals(listOf("q1", "a1", "why?"), messages.drop(1).map { it.content })
+    }
+
+    @Test
+    fun markNote_sendsTheNoteThenTheTranscriptAroundIt() {
+        val window = listOf(
+            TranscriptLine(startMs = 60_000L, speaker = "Dana", text = "Twelve euros a seat."),
+            TranscriptLine(startMs = 64_000L, speaker = "Bob", text = "Fine by me.")
+        )
+        val messages = PromptBuilder.markNote(TranscriptMark(1, 65_000L, "pricing"), window, maxChars = 1_000)
+
+        assertEquals(listOf(LlmMessage.ROLE_SYSTEM, LlmMessage.ROLE_USER), messages.map { it.role })
+        assertEquals(PromptBuilder.MARK_NOTE_SYSTEM, messages[0].content)
+        assertTrue(messages[0].content.endsWith(PromptBuilder.SUMMARY_GUARDRAILS))
+        assertEquals(
+            "Marked at [01:05]. The user's note: \"pricing\"\n\n" +
+                "Transcript around it:\n\n" +
+                "[01:00] Dana: Twelve euros a seat.\n" +
+                "[01:04] Bob: Fine by me.",
+            messages[1].content
+        )
+    }
+
+    @Test
+    fun markNote_withoutANoteAsksWhatWasDiscussed() {
+        val window = listOf(TranscriptLine(startMs = 0L, speaker = null, text = "Hello."))
+        val user = PromptBuilder.markNote(TranscriptMark(1, 2_000L, "  "), window, maxChars = 1_000)[1].content
+
+        assertTrue(user.startsWith("Marked at [00:02]. " + PromptBuilder.MARK_NOTE_WITHOUT_NOTE))
+    }
+
+    @Test
+    fun markNote_fitsTheWindowToTheBudget() {
+        val window = (0 until 200).map {
+            TranscriptLine(startMs = it * 1_000L, speaker = null, text = "word ".repeat(10))
+        }
+        val user = PromptBuilder.markNote(TranscriptMark(1, 0L), window, maxChars = 2_000)[1].content
+        val transcript = user.substringAfter("Transcript around it:\n\n")
+
+        assertTrue(transcript.length <= 2_000)
     }
 }

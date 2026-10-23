@@ -147,7 +147,8 @@ fun SessionScreen(
                     repository = container.sessionRepository,
                     chatClient = container.chatClient,
                     settings = container.settingsRepository,
-                    templates = container.summaryTemplates
+                    templates = container.summaryTemplates,
+                    markNotes = container.markNotesWriter
                 )
             }
         }
@@ -383,6 +384,8 @@ fun SessionScreen(
         onSummarise = { summaryVm.summarise() },
         onCancelSummary = { summaryVm.cancel() },
         onSelectSummaryTemplate = summaryVm::selectTemplate,
+        onWriteNotes = { summaryVm.writeNotes() },
+        onCancelNotes = { summaryVm.cancelNotes() },
         onAsk = { question -> askVm.ask(question) },
         onRetryAsk = { askVm.retryLast() },
         onCancelAsk = { askVm.cancel() },
@@ -445,6 +448,8 @@ internal fun SessionBody(
     onSummarise: () -> Unit,
     onCancelSummary: () -> Unit,
     onSelectSummaryTemplate: (String) -> Unit = {},
+    onWriteNotes: () -> Unit = {},
+    onCancelNotes: () -> Unit = {},
     onAsk: (String) -> Unit,
     onRetryAsk: () -> Unit,
     onCancelAsk: () -> Unit,
@@ -680,7 +685,15 @@ internal fun SessionBody(
                     onSummarise = onSummarise,
                     onCancel = onCancelSummary,
                     onSelectTemplate = onSelectSummaryTemplate,
-                    onOpenSettings = onOpenSettings
+                    onOpenSettings = onOpenSettings,
+                    marks = marks,
+                    onWriteNotes = onWriteNotes,
+                    onCancelNotes = onCancelNotes,
+                    // To the transcript, at the mark when it can be played.
+                    onOpenMark = { mark ->
+                        selectedTab = 0
+                        if (canPlay) playback.onSeek(mark.atMs)
+                    }
                 )
                 else -> AskTab(
                     state = askState,

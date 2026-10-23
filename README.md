@@ -113,6 +113,21 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   there. *Marks (n)* in the player (or *Marks* in the menu) lists them
   to jump to, edit the note of or delete. Summaries are asked to give
   marked moments priority, and the shared transcript includes them.
+- **Notes from marks.** Once a session's speakers are identified, the
+  language model turns each mark's short note into a full note, written
+  from what was said in the minute before the mark and the half-minute
+  after it, with speaker names (a mark without a note gets a note on
+  what was being discussed). The notes are listed under the summary on
+  the Summary tab: tap a mark's time to open the transcript there, and
+  *Write notes* / *Regenerate notes* writes them again at any time,
+  with progress and Stop. They are written one at a time and go on if
+  you leave the session. Re-identifying speakers, renaming a speaker or
+  re-transcribing marks a note *Outdated*; editing a mark's note removes
+  its full note. The *Marks* list shows the start of each note and the
+  shared transcript includes them. Turn the automatic notes off in
+  Settings → Summaries (*Write notes for marks automatically*). Nothing
+  is sent without an endpoint, and an unreachable one leaves the notes
+  unwritten without an error.
 - **Record from anywhere.** While a session is open and you switch to
   another app, a small **floating control** shows *Recording* or
   *Paused*, the time, Mark, Pause / Resume and Stop; drag it anywhere (it
