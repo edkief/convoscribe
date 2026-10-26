@@ -149,7 +149,9 @@ data class SettingsUiState(
     /** New conversations clean their audio live (issue #37); written immediately. */
     val cleanAudioDefault: Boolean = false,
     /** Notes of marks are written once speakers are identified (issue #48); written immediately. */
-    val autoMarkNotes: Boolean = true
+    val autoMarkNotes: Boolean = true,
+    /** Conversations are named from their summary (issue #32); written immediately. */
+    val autoTitle: Boolean = true
 )
 
 /**
@@ -433,6 +435,11 @@ class SettingsViewModel(
         repo.update { it.copy(autoMarkNotes = enabled) }
     }
 
+    /** Persist *Name conversations automatically* immediately (issue #32). */
+    fun setAutoTitle(enabled: Boolean) {
+        repo.update { it.copy(autoTitle = enabled) }
+    }
+
     /** Persist the default summary template immediately (issue #27). */
     fun setDefaultSummaryTemplate(key: String) {
         repo.update { it.copy(defaultSummaryTemplate = key) }
@@ -519,6 +526,7 @@ class SettingsViewModel(
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
             cleanAudioDefault = current.cleanAudioDefault,
             autoMarkNotes = current.autoMarkNotes,
+            autoTitle = current.autoTitle,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )

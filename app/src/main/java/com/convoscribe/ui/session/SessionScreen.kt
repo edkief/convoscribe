@@ -85,6 +85,7 @@ import com.convoscribe.ui.home.languageTag
 import com.convoscribe.ui.record.ParticipantsDialog
 import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
 
 /**
@@ -150,7 +151,8 @@ fun SessionScreen(
                     chatClient = container.chatClient,
                     settings = container.settingsRepository,
                     templates = container.summaryTemplates,
-                    markNotes = container.markNotesWriter
+                    markNotes = container.markNotesWriter,
+                    autoTitler = container.autoTitler
                 )
             }
         }
@@ -224,6 +226,18 @@ fun SessionScreen(
         }
     }
 
+    LaunchedEffect(vm) {
+        // The LLM just named this session (issue #32): offer to undo it.
+        container.autoTitler.titled.filter { it.sessionId == sessionId }.collectLatest { titled ->
+            val result = snackbarHostState.showSnackbar(
+                message = context.getString(R.string.session_auto_titled, titled.title),
+                actionLabel = context.getString(R.string.session_line_undo),
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) vm.undoAutoTitle()
+        }
+    }
+
     // Continuing needs the recorder to be free: one recording at a
     // time, whichever session it belongs to.
     val recorderState by container.recordingController.state.collectAsStateWithLifecycle()
@@ -274,6 +288,8 @@ fun SessionScreen(
             onDelete = { mark -> vm.deleteMark(mark) }
         ),
         tagging = TagsUi(tags = state.tags, allTags = allTags, onSetTags = vm::setTags),
+        replacedTitle = state.replacedTitle,
+        onRestoreTitle = vm::undoAutoTitle,
         notFound = state.notFound,
         summaryState = summaryState,
         askState = askState,
@@ -476,7 +492,9 @@ internal fun SessionBody(
     marks: List<TranscriptMark> = emptyList(),
     markActions: MarkActions = MarkActions(),
     initialMarksOpen: Boolean = false,
-    tagging: TagsUi = TagsUi()
+    tagging: TagsUi = TagsUi(),
+    replacedTitle: String? = null,
+    onRestoreTitle: () -> Unit = {}
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -536,6 +554,15 @@ internal fun SessionBody(
                         renameSessionOpen = true
                     }
                 )
+                if (replacedTitle != null) {
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(R.string.session_overflow_restore_title, replacedTitle)) },
+                        onClick = {
+                            overflowExpanded = false
+                            onRestoreTitle()
+                        }
+                    )
+                }
                 DropdownMenuItem(
                     text = { Text(text = stringResource(R.string.session_overflow_tags)) },
                     enabled = !notFound,

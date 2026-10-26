@@ -39,7 +39,7 @@ data class MarkNotesProgress(
  * Runs in the app's [scope] rather than a screen's, so it goes on when
  * the session is closed and the charging job can start it. One run per
  * session, and one LLM call at a time overall: the endpoint is often a
- * single small server. Each note is saved as soon as it is complete; a
+ * single small server; [calls] is that lock, shared with [AutoTitler]. Each note is saved as soon as it is complete; a
  * call that fails or is cancelled saves nothing for its mark.
  *
  * [onDiarized] is the automatic path, called once a session's speakers
@@ -52,7 +52,8 @@ class MarkNotesWriter(
     private val repository: SessionRepository,
     private val chatClient: ChatClient,
     private val settings: SettingsRepository,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val calls: Mutex = Mutex()
 ) {
     private val _progress = MutableStateFlow<Map<Long, MarkNotesProgress>>(emptyMap())
 
@@ -60,7 +61,6 @@ class MarkNotesWriter(
     val progress: StateFlow<Map<Long, MarkNotesProgress>> = _progress.asStateFlow()
 
     private val jobs = mutableMapOf<Long, Job>()
-    private val calls = Mutex()
 
     /** Whether an LLM endpoint is set up. */
     fun configured(): Boolean = settings.settings.value.let { it.llmBaseUrl.isNotBlank() && it.llmModel.isNotBlank() }

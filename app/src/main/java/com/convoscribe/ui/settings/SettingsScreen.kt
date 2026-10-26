@@ -257,7 +257,8 @@ fun SettingsScreen(navController: NavHostController) {
             },
             onDeleteCleanup = vm::deleteCleanupModel,
             onCleanAudioDefaultChange = vm::setCleanAudioDefault,
-            onAutoMarkNotesChange = vm::setAutoMarkNotes
+            onAutoMarkNotesChange = vm::setAutoMarkNotes,
+            onAutoTitleChange = vm::setAutoTitle
         )
     )
 }
@@ -288,7 +289,8 @@ internal class SettingsActions(
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
-    val onAutoMarkNotesChange: (Boolean) -> Unit = {}
+    val onAutoMarkNotesChange: (Boolean) -> Unit = {},
+    val onAutoTitleChange: (Boolean) -> Unit = {}
 )
 
 /**
@@ -363,7 +365,9 @@ internal fun SettingsBody(
                 onDefaultChange = actions.onDefaultSummaryTemplateChange,
                 onOpenTemplates = actions.onOpenSummaryTemplates,
                 autoMarkNotes = state.autoMarkNotes,
-                onAutoMarkNotesChange = actions.onAutoMarkNotesChange
+                onAutoMarkNotesChange = actions.onAutoMarkNotesChange,
+                autoTitle = state.autoTitle,
+                onAutoTitleChange = actions.onAutoTitleChange
             )
             OrganiseSection(onOpenTags = actions.onOpenTags)
             TranscriptionSection(
@@ -686,7 +690,9 @@ private fun SummariesSection(
     onDefaultChange: (String) -> Unit,
     onOpenTemplates: () -> Unit,
     autoMarkNotes: Boolean,
-    onAutoMarkNotesChange: (Boolean) -> Unit
+    onAutoMarkNotesChange: (Boolean) -> Unit,
+    autoTitle: Boolean,
+    onAutoTitleChange: (Boolean) -> Unit
 ) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
@@ -727,6 +733,22 @@ private fun SummariesSection(
                 SupportingText(text = stringResource(R.string.settings_auto_mark_notes_help))
             }
             Switch(checked = autoMarkNotes, onCheckedChange = null)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(value = autoTitle, role = Role.Switch, onValueChange = onAutoTitleChange),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_auto_title_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                SupportingText(text = stringResource(R.string.settings_auto_title_help))
+            }
+            Switch(checked = autoTitle, onCheckedChange = null)
         }
     }
 }

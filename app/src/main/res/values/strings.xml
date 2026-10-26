@@ -265,6 +265,8 @@
     <string name="settings_organise_tags_help">Rename or delete the tags on your conversations.</string>
     <string name="settings_summaries_default_label">Default template</string>
     <string name="settings_auto_mark_notes_label">Write notes for marks automatically</string>
+    <string name="settings_auto_title_label">Name conversations automatically</string>
+    <string name="settings_auto_title_help">After the first summary, the language model gives a conversation that still has its date as its title a short name. A title you typed is never changed.</string>
     <string name="settings_auto_mark_notes_help">Once a conversation\'s speakers are identified, the language model turns each mark\'s note into a full note from what was said around it. The Summary tab can always write them.</string>
     <string name="settings_summaries_default_help">New conversations start with this template. You can change it before recording, or on the Summary tab.</string>
     <string name="settings_summaries_templates_row">Templates</string>
@@ -405,6 +407,8 @@
     <string name="session_overflow">More</string>
     <string name="session_overflow_rename">Rename session</string>
     <string name="session_overflow_tags">Tags…</string>
+    <string name="session_overflow_restore_title">Restore “%1$s”</string>
+    <string name="session_auto_titled">Renamed to “%1$s”</string>
     <string name="session_overflow_reidentify">Re-identify speakers…</string>
     <string name="session_overflow_participants">Participants…</string>
     <string name="session_overflow_retranscribe">Re-transcribe in another language…</string>

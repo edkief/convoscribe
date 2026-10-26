@@ -458,12 +458,9 @@ class SessionRepository(
      * title, or one was already written, this does nothing. Returns
      * whether the title changed.
      */
-    suspend fun applyAutoTitle(sessionId: Long, title: String): Boolean = db.withTransaction {
-        val capped = capTitle(title)
-        val row = sessionDao.get(sessionId)
-        if (capped == null || row == null || row.titleSource != TitleSource.DEFAULT) return@withTransaction false
-        sessionDao.rename(sessionId, capped, TitleSource.AUTO, previous = row.title)
-        true
+    suspend fun applyAutoTitle(sessionId: Long, title: String): Boolean {
+        val capped = capTitle(title) ?: return false
+        return sessionDao.applyAutoTitle(sessionId, capped) > 0
     }
 
     /**

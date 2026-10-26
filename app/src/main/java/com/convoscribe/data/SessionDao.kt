@@ -91,4 +91,16 @@ interface SessionDao {
      */
     @Query("UPDATE sessions SET title = :title, titleSource = :source, previousTitle = :previous WHERE id = :id")
     suspend fun rename(id: Long, title: String, source: String, previous: String?)
+
+    /**
+     * Give a session whose title is still the default an automatic
+     * [title], keeping the old one as `previousTitle` (issue #32).
+     * Returns the number of rows changed: `0` when the title was not
+     * the default.
+     */
+    @Query(
+        "UPDATE sessions SET previousTitle = title, title = :title, titleSource = '${TitleSource.AUTO}' " +
+            "WHERE id = :id AND titleSource = '${TitleSource.DEFAULT}'"
+    )
+    suspend fun applyAutoTitle(id: Long, title: String): Int
 }

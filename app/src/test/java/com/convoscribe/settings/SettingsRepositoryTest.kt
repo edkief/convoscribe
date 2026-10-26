@@ -331,6 +331,13 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun autoTitle_isOnThenPersists() {
+        assertTrue(newRepository().settings.value.autoTitle)
+        newRepository().update { it.copy(autoTitle = false) }
+        assertFalse(newRepository().settings.value.autoTitle)
+    }
+
+    @Test
     fun autoMarkNotes_isOnThenPersists() {
         assertTrue(newRepository().settings.value.autoMarkNotes)
         newRepository().update { it.copy(autoMarkNotes = false) }

@@ -29,6 +29,7 @@ import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.enginecheck.NpuAvailability
+import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.MarkNotesWriter
@@ -67,6 +68,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.sync.Mutex
 import okhttp3.OkHttpClient
 
 class AppContainer(val context: Context) {
@@ -490,12 +492,19 @@ class AppContainer(val context: Context) {
         )
     }
 
+    /** One background LLM call at a time: the endpoint is often a single small server. */
+    private val llmCalls: Mutex = Mutex()
+
     /**
      * Writes the full notes of marks (issue #48), after speakers are
      * identified ([diarizeSessionUseCase]) and from the Summary tab.
      */
     val markNotesWriter: MarkNotesWriter =
-        MarkNotesWriter(sessionRepository, chatClient, settingsRepository, applicationScope)
+        MarkNotesWriter(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
+
+    /** Names sessions from their summary (issue #32). */
+    val autoTitler: AutoTitler =
+        AutoTitler(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
 
     /**
      * The installed version, from the package manager (`buildConfig`

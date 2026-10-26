@@ -13,6 +13,7 @@ import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
+import com.convoscribe.data.TitleSource
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
@@ -87,7 +88,12 @@ data class SessionUiState(
     /** Path of the cleaned recording; blank when not cleaned. */
     val cleanAudioPath: String = "",
     /** The session's tags (issue #32), alphabetically. */
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    /**
+     * The title an automatic one replaced (issue #32), to offer
+     * restoring it; `null` unless the title was written automatically.
+     */
+    val replacedTitle: String? = null
 )
 
 /**
@@ -180,7 +186,8 @@ class SessionViewModel(
                         hasEdits = session.transcriptEdited,
                         cleanedWith = session.cleanedWith,
                         cleanAudioPath = if (session.cleanedWith != null) session.cleanAudioFile().absolutePath else "",
-                        tags = tags.map { it.name }
+                        tags = tags.map { it.name },
+                        replacedTitle = session.previousTitle.takeIf { session.titleSource == TitleSource.AUTO }
                     )
                 }
             }
@@ -324,6 +331,11 @@ class SessionViewModel(
         viewModelScope.launch {
             repository.renameSession(sessionId = sessionId, title = title)
         }
+    }
+
+    /** Put back the title an automatic one replaced (issue #32). */
+    fun undoAutoTitle() {
+        viewModelScope.launch { repository.undoAutoTitle(sessionId) }
     }
 
     /** Every existing tag name, for the tag picker (issue #32). */
