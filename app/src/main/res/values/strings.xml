@@ -209,6 +209,23 @@
     <string name="tags_add">Add tag</string>
     <string name="tags_empty_help">No tags yet. Type a name, such as a project or a client, and add it.</string>
     <string name="tags_done">Done</string>
+    <string name="tags_screen_title">Tags</string>
+    <string name="tags_screen_explanation">Tags group conversations by project, client or anything else. Add them on the Record screen or from a conversation\'s menu.</string>
+    <string name="tags_screen_empty_title">No tags yet</string>
+    <string name="tags_screen_empty_body">Add tags on the Record screen, or from a conversation\'s menu under Tags….</string>
+    <plurals name="tags_session_count">
+        <item quantity="one">%d conversation</item>
+        <item quantity="other">%d conversations</item>
+    </plurals>
+    <string name="tags_rename">Rename</string>
+    <string name="tags_rename_title">Rename tag</string>
+    <string name="tags_rename_help">Using the name of another tag merges the two.</string>
+    <string name="tags_delete">Delete</string>
+    <string name="tags_delete_title">Delete “%1$s”?</string>
+    <plurals name="tags_delete_message">
+        <item quantity="one">It is removed from %d conversation. The conversation itself is kept.</item>
+        <item quantity="other">It is removed from %d conversations. The conversations themselves are kept.</item>
+    </plurals>
     <string name="search_title">Search</string>
     <string name="search_hint">Titles, transcripts, speakers, summaries</string>
     <string name="search_clear">Clear search</string>
@@ -243,6 +260,9 @@
     <string name="settings_section_transcription">Transcription</string>
     <string name="settings_section_speakers">Speakers</string>
     <string name="settings_section_summaries">Summaries</string>
+    <string name="settings_section_organise">Organise</string>
+    <string name="settings_organise_tags_row">Tags</string>
+    <string name="settings_organise_tags_help">Rename or delete the tags on your conversations.</string>
     <string name="settings_summaries_default_label">Default template</string>
     <string name="settings_auto_mark_notes_label">Write notes for marks automatically</string>
     <string name="settings_auto_mark_notes_help">Once a conversation\'s speakers are identified, the language model turns each mark\'s note into a full note from what was said around it. The Summary tab can always write them.</string>

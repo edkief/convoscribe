@@ -248,6 +248,7 @@ fun SettingsScreen(navController: NavHostController) {
             onSpeakerIdModeChange = vm::setSpeakerIdMode,
             onDefaultSummaryTemplateChange = vm::setDefaultSummaryTemplate,
             onOpenSummaryTemplates = { navController.navigate("summary-templates") },
+            onOpenTags = { navController.navigate("tags") },
             onDownloadCleanup = {
                 ContextCompat.startForegroundService(
                     context,
@@ -283,6 +284,7 @@ internal class SettingsActions(
     val onSpeakerIdModeChange: (String) -> Unit = {},
     val onDefaultSummaryTemplateChange: (String) -> Unit = {},
     val onOpenSummaryTemplates: () -> Unit = {},
+    val onOpenTags: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
@@ -363,6 +365,7 @@ internal fun SettingsBody(
                 autoMarkNotes = state.autoMarkNotes,
                 onAutoMarkNotesChange = actions.onAutoMarkNotesChange
             )
+            OrganiseSection(onOpenTags = actions.onOpenTags)
             TranscriptionSection(
                 engine = state.asrEngine,
                 language = state.asrLanguage,
@@ -724,6 +727,39 @@ private fun SummariesSection(
                 SupportingText(text = stringResource(R.string.settings_auto_mark_notes_help))
             }
             Switch(checked = autoMarkNotes, onCheckedChange = null)
+        }
+    }
+}
+
+/** Tags (and presets) of conversations (issue #32), each managed on its own screen. */
+@Composable
+private fun OrganiseSection(onOpenTags: () -> Unit) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_organise)
+    ) {
+        ManageRow(
+            label = stringResource(R.string.settings_organise_tags_row),
+            help = stringResource(R.string.settings_organise_tags_help),
+            onClick = onOpenTags
+        )
+    }
+}
+
+/** A setting kept on its own screen: [label], [help] below it, and Manage. */
+@Composable
+private fun ManageRow(label: String, help: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            SupportingText(text = help)
+        }
+        OutlinedButton(onClick = onClick) {
+            Text(text = stringResource(R.string.settings_summaries_templates_button))
         }
     }
 }

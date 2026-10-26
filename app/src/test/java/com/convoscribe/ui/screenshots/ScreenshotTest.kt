@@ -35,6 +35,7 @@ import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.Tag
+import com.convoscribe.data.TagUsage
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
 import com.convoscribe.enginecheck.CleanupCheckResult
@@ -58,6 +59,7 @@ import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
 import com.convoscribe.ui.home.SessionRow
 import com.convoscribe.ui.home.TagFilter
+import com.convoscribe.ui.organise.TagsBody
 import com.convoscribe.ui.record.CleanupOption
 import com.convoscribe.ui.record.RecordBody
 import com.convoscribe.ui.search.DateRange
@@ -289,6 +291,16 @@ class ScreenshotTest(private val variant: Variant) {
                 onDismiss = {}
             )
         }
+    }
+
+    @Test
+    fun tagsScreen() = capture("tags") {
+        TagsBody(tags = TAG_USAGE, onBack = {}, onRename = { _, _ -> }, onDelete = {})
+    }
+
+    @Test
+    fun tagsScreenEmpty() = capture("tags_empty") {
+        TagsBody(tags = emptyList(), onBack = {}, onRename = { _, _ -> }, onDelete = {})
     }
 
     @Test
@@ -938,6 +950,8 @@ class ScreenshotTest(private val variant: Variant) {
         )
 
         private val TAGS = listOf(Tag(1, "Acme"), Tag(2, "Weekly"), Tag(3, "Hiring"))
+
+        private val TAG_USAGE = listOf(TagUsage(1, "Acme", 12), TagUsage(2, "Weekly", 1), TagUsage(3, "Hiring", 0))
 
         private val TAGGED_SESSIONS = listOf(
             row(
