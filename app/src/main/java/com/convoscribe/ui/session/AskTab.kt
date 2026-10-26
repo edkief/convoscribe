@@ -43,6 +43,7 @@ import com.convoscribe.R
 import com.convoscribe.data.MessageRole
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ErrorBanner
+import com.convoscribe.ui.components.MarkdownText
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -180,7 +181,8 @@ internal fun AskTab(
 /**
  * One chat bubble: questions on the right in the primary container
  * colour, answers on the left on a quiet surface (outlined on e-ink).
- * The text is selectable so a phrase can be copied. [note] is a small
+ * The text is selectable so a phrase can be copied; answers are
+ * rendered as Markdown (issue #53), questions as typed. [note] is a small
  * line under the text: for an answer about a long transcript
  * (issue #28), how much of the conversation it was based on.
  */
@@ -201,7 +203,11 @@ private fun ChatBubble(text: String, isUser: Boolean, note: String? = null) {
         ) {
             Column(modifier = Modifier.padding(horizontal = AppTheme.spacing.m, vertical = AppTheme.spacing.s)) {
                 SelectionContainer {
-                    Text(text = text, style = MaterialTheme.typography.bodyLarge)
+                    if (isUser) {
+                        Text(text = text, style = MaterialTheme.typography.bodyLarge)
+                    } else {
+                        MarkdownText(text = text, style = MaterialTheme.typography.bodyLarge)
+                    }
                 }
                 note?.let {
                     Text(

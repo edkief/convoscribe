@@ -1,7 +1,6 @@
 package com.convoscribe.ui.components
 
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -43,7 +42,7 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier, style: TextStyle =
     val code = style.copy(fontFamily = FontFamily.Monospace)
     Markdown(
         content = text,
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         colors = markdownColor(
             text = content,
             codeText = content,

@@ -41,6 +41,7 @@ import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.components.MarkdownText
 import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
@@ -59,9 +60,9 @@ import com.convoscribe.ui.theme.AppTheme
  * Above every state but the first, a template picker (issue #27)
  * chooses the template the next Summarise or Regenerate uses.
  *
- * A failure shows an error banner with Retry. The text is selectable;
- * Copy puts all of it on the clipboard. The LLM's raw text is shown
- * verbatim (no markdown rendering).
+ * A failure shows an error banner with Retry. The summary is rendered
+ * as Markdown (issue #53) and is selectable; Copy puts the raw Markdown
+ * on the clipboard.
  *
  * A session with [marks] also gets a Notes section below the summary
  * (issue #48), and skips the empty state so its notes show without a
@@ -186,11 +187,7 @@ internal fun SummaryTab(
             if (text.isNotBlank()) {
                 AppCard(modifier = Modifier.fillMaxWidth()) {
                     SelectionContainer {
-                        Text(
-                            text = text,
-                            style = AppTheme.typography.transcript,
-                            modifier = Modifier.padding(spacing.l)
-                        )
+                        MarkdownText(text = text, modifier = Modifier.padding(spacing.l))
                     }
                 }
             }
@@ -308,7 +305,7 @@ private fun MarkNoteCard(mark: TranscriptMark, onOpen: () -> Unit) {
                 )
             } else {
                 SelectionContainer {
-                    Text(text = full, style = AppTheme.typography.transcript)
+                    MarkdownText(text = full)
                 }
                 if (mark.expandedStale) {
                     Text(
