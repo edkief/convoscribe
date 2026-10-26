@@ -20,6 +20,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.unit.dp
+import com.convoscribe.PresetPickerDialog
 import com.convoscribe.R
 import com.convoscribe.audio.PlayerState
 import com.convoscribe.data.ChatMessageEntity
@@ -366,6 +367,11 @@ class ScreenshotTest(private val variant: Variant) {
             onStart = {},
             onStop = {}
         )
+    }
+
+    @Test
+    fun presetPicker() = captureScreen("preset_picker") {
+        PresetPickerDialog(presets = PRESETS, onPick = {}, onDismiss = {})
     }
 
     @Test

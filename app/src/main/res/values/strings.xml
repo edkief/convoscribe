@@ -13,6 +13,8 @@
     <string name="overlay_collapse">Show less</string>
     <string name="overlay_listening">Listening…</string>
     <string name="tile_label">ConvoScribe</string>
+    <string name="preset_picker_title">Start recording with</string>
+    <string name="preset_picker_empty">Save presets on the Record screen or in Settings → Presets to start them from here.</string>
     <string name="tile_subtitle_idle">Record</string>
     <string name="tile_description_idle">Start a recording</string>
     <string name="tile_description_recording">Recording. Tap to pause.</string>

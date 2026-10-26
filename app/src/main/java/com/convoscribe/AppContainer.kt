@@ -426,6 +426,13 @@ class AppContainer(val context: Context) {
     val pendingOpenRecord = MutableStateFlow(false)
 
     /**
+     * A preset picked from the Quick Settings tile's long-press that
+     * could not start straight away (issue #32); the Record screen
+     * applies it and clears this.
+     */
+    val pendingRecordPreset = MutableStateFlow<Long?>(null)
+
+    /**
      * Use case that records a voice sample and enrolls it as a
      * named speaker, so a fresh recording can label matched
      * voices with the user's name in the diarized transcript

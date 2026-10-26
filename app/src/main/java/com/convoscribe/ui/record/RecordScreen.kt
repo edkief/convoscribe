@@ -157,6 +157,13 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     // The mark being given a note (issue #30): its id and time.
     var noteFor by rememberSaveable { mutableStateOf<Pair<Long, Long>?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
+    val pendingPreset by container.pendingRecordPreset.collectAsStateWithLifecycle()
+    LaunchedEffect(pendingPreset) {
+        // Picked from the tile's long-press but could not start at once (issue #32).
+        val id = pendingPreset ?: return@LaunchedEffect
+        container.pendingRecordPreset.value = null
+        if (resumeSessionId == null) vm.applyPreset(id)
+    }
     LaunchedEffect(vm) {
         // A newer mark replaces the snackbar (collectLatest cancels the one showing).
         vm.marks.collectLatest { mark ->

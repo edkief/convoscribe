@@ -55,8 +55,13 @@ class HomeViewModelTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         context = ApplicationProvider.getApplicationContext()
+        // Room on the calling thread, so no query resumes the test's
+        // Main dispatcher from a background thread after resetMain.
+        val sync = java.util.concurrent.Executor { it.run() }
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
+            .setQueryExecutor(sync)
+            .setTransactionExecutor(sync)
             .build()
         recordingsDir = File(context.filesDir, "home-vm-test-${System.nanoTime()}")
         recordingsDir.mkdirs()
