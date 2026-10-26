@@ -4,12 +4,16 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.data.Preset
+import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingState
+import com.convoscribe.recording.toOptions
+import com.convoscribe.recording.toPreset
 import com.convoscribe.settings.SettingsRepository
 import java.util.Locale
 import kotlin.math.max
@@ -19,6 +23,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -40,7 +46,9 @@ import kotlinx.coroutines.launch
  *  - the new conversation's [options] (issue #6), pre-filled from
  *    the Settings defaults. Editing them never touches Settings;
  *    [saveAsDefault] writes them back. [enrolledNames] feeds the
- *    participants picker, [summaryTemplates] the template picker, and [modelsMissing] tells the screen to
+ *    participants picker, [summaryTemplates] the template picker,
+ *    [allTags] the tag picker (issue #32), [presets] the preset picker
+ *    ([applyPreset], [saveAsPreset]), and [modelsMissing] tells the screen to
  *    send the user to setup before Start;
  *  - [mark] (issue #30), which reports each new mark on [marks] so
  *    the screen can offer a note, saved with [setMarkNote].
@@ -54,9 +62,11 @@ class RecordViewModel(
     controller: RecordingController,
     private val settings: SettingsRepository,
     enrolled: EnrolledSpeakerStore,
-    templates: SummaryTemplateStore,
+    private val templates: SummaryTemplateStore,
     private val missingModels: (language: String) -> Boolean = { false },
-    private val saveMarkNote: suspend (markId: Long, note: String?) -> Unit = { _, _ -> }
+    private val saveMarkNote: suspend (markId: Long, note: String?) -> Unit = { _, _ -> },
+    tagNames: Flow<List<String>> = flowOf(emptyList()),
+    private val presetStore: PresetStore? = null
 ) : ViewModel() {
 
     private val recordingController = controller
@@ -78,6 +88,49 @@ class RecordViewModel(
     val summaryTemplates: StateFlow<List<SummaryTemplate>> = templates.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SummaryTemplates.BUILT_IN)
 
+    /** Every existing tag name, for the tag picker (issue #32). */
+    val allTags: StateFlow<List<String>> = tagNames
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Saved presets (issue #32), for the preset picker. */
+    val presets: StateFlow<List<Preset>> = (presetStore?.observeAll() ?: flowOf(emptyList()))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The preset the current options match exactly, if any; editing an option clears it. */
+    val activePreset: StateFlow<Preset?> = combine(_options, presets, summaryTemplates) { options, presets, templates ->
+        presets.firstOrNull { presetOptions(it, templates) == options }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Start from [preset]'s options, or from the Settings defaults for `null`. */
+    fun applyPreset(preset: Preset?) {
+        _options.value = if (preset == null) {
+            ConversationOptions.fromSettings(settings.settings.value)
+        } else {
+            presetOptions(preset, summaryTemplates.value)
+        }
+    }
+
+    /** Apply the preset with [id], when it still exists (the tile long-press opens it this way). */
+    fun applyPreset(id: Long) {
+        val store = presetStore ?: return
+        viewModelScope.launch {
+            val preset = store.get(id) ?: return@launch
+            // The template list may not be loaded yet: read it here.
+            _options.value = presetOptions(preset, SummaryTemplates.BUILT_IN + templates.getUserTemplates())
+        }
+    }
+
+    /** Save the current options, title included as the title pattern, as a preset named [name]. */
+    fun saveAsPreset(name: String) {
+        val store = presetStore ?: return
+        if (name.isBlank()) return
+        val options = _options.value
+        viewModelScope.launch { store.save(options.toPreset(name)) }
+    }
+
+    private fun presetOptions(preset: Preset, templates: List<SummaryTemplate>): ConversationOptions =
+        preset.toOptions(templates.map { it.key }, settings.settings.value.defaultSummaryTemplate)
+
     fun setLanguage(language: String) {
         if (language == "en" || language == "fr") _options.update { it.copy(language = language) }
     }
@@ -97,6 +150,11 @@ class RecordViewModel(
 
     fun setSummaryTemplate(key: String) {
         _options.update { it.copy(summaryTemplate = key) }
+    }
+
+    /** The tags the new session gets (issue #32); created on Start when missing. */
+    fun setTags(names: List<String>) {
+        _options.update { it.withTags(names) }
     }
 
     /** Clean this conversation's audio live (issue #37). */

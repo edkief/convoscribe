@@ -192,4 +192,23 @@ class SessionSearchTest {
         assertEquals(listOf("fr", "en"), options.languages)
         assertEquals(listOf("Bob", "Zoé"), options.speakers)
     }
+
+    @Test
+    fun tagFilter_keepsSessionsWithAnyOfTheTags_andOptionsListUsedTags() = runTest {
+        val acme = session("Budget Acme", createdAt = 3_000)
+        val other = session("Budget other", createdAt = 2_000)
+        val weekly = session("Budget weekly", createdAt = 1_000)
+        repo.setSessionTags(acme, listOf("Acme"))
+        repo.setSessionTags(weekly, listOf("Weekly"))
+        repo.setSessionTags(other, listOf("Unused"))
+        repo.setSessionTags(other, emptyList())
+        val tags = search.options().tags
+        assertEquals(listOf("Acme", "Weekly"), tags.map { it.name })
+
+        val ids = tags.mapTo(HashSet()) { it.id }
+        assertEquals(listOf(acme, weekly), search.search("budget", SearchFilters(tagIds = ids)).map { it.session.id })
+        val acmeOnly = SearchFilters(tagIds = setOf(tags.first().id))
+        assertEquals(listOf(acme), search.search("budget", acmeOnly).map { it.session.id })
+        assertEquals(3, search.search("budget").size)
+    }
 }

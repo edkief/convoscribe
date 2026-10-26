@@ -9,7 +9,9 @@ import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateRepository
+import com.convoscribe.data.TitleSource
 import com.convoscribe.data.TranscriptMark
+import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
@@ -173,6 +175,35 @@ class SummaryViewModelTest {
         assertEquals(MessageKind.SUMMARY, rows[0].kind)
         assertEquals("ABC", rows[0].content)
         assertEquals(1, client.streamCalls.get())
+    }
+
+    @Test
+    fun summarise_titlesADefaultTitledSessionFromTheSavedSummary() = runTest(dispatcher) {
+        val id = repo.createSession(title = "Recording 2026-03-04 09:05", language = "en")
+        val typed = repo.createSession(title = "Standup", language = "en", titleSource = TitleSource.USER)
+        seedTranscript(id)
+        seedTranscript(typed)
+        val settings = newSettings().also { configureSettings(it) }
+        val client = FakeChatClient(tokens = listOf("Budget ", "review"))
+        val titler = AutoTitler(repo, client, settings, backgroundScope)
+
+        for (session in listOf(id, typed)) {
+            SummaryViewModel(
+                sessionId = session,
+                repository = repo,
+                chatClient = client,
+                settings = settings,
+                templates = templates,
+                autoTitler = titler
+            ).summarise()
+            advanceUntilIdle()
+        }
+
+        assertEquals("Budget review", repo.getSession(id)!!.title)
+        assertEquals(TitleSource.AUTO, repo.getSession(id)!!.titleSource)
+        assertEquals("Standup", repo.getSession(typed)!!.title)
+        // Two summaries and one title.
+        assertEquals(3, client.streamCalls.get())
     }
 
     @Test

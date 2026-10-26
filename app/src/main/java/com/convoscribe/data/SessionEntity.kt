@@ -65,8 +65,33 @@ data class SessionEntity(
      * [cleanAudioFile], sample-aligned with it, and the transcript was
      * made from it. A session cleaned live keeps cleaning when continued.
      */
-    val cleanedWith: String? = null
+    val cleanedWith: String? = null,
+    /**
+     * Where [title] came from (issue #32), one of [TitleSource]: the
+     * date-based default, typed by the user (or a preset), or written
+     * by the LLM after a summary. Only a default title is replaced
+     * automatically.
+     */
+    @ColumnInfo(defaultValue = TitleSource.DEFAULT)
+    val titleSource: String = TitleSource.DEFAULT,
+    /**
+     * The title an automatic title replaced, so it can be restored;
+     * `null` unless [titleSource] is [TitleSource.AUTO].
+     */
+    val previousTitle: String? = null
 )
+
+/** Values of [SessionEntity.titleSource] (issue #32). */
+object TitleSource {
+    /** `"Recording yyyy-MM-dd HH:mm"`; replaced by an automatic title. */
+    const val DEFAULT: String = "default"
+
+    /** Typed by the user, from a preset or an imported file's name; never replaced. */
+    const val USER: String = "user"
+
+    /** Written by the LLM after a summary; the previous title can be restored. */
+    const val AUTO: String = "auto"
+}
 
 /**
  * Where [audioPath]'s cleaned copy lives (issue #37):

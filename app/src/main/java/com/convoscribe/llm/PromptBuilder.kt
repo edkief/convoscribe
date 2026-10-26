@@ -244,6 +244,30 @@ object PromptBuilder {
     }
 
     /**
+     * System prompt for a session title (issue #32); [title] adds the
+     * language. Kept short: the answer is a few words.
+     */
+    const val TITLE_SYSTEM: String =
+        "You name recorded conversations. Reply with a title of at most 6 words that tells this " +
+            "conversation apart from others: its main topic, not the kind of meeting. " +
+            "No quotes, no punctuation at the end, nothing else."
+
+    /** How much of the summary goes into a title request; the opening is what matters. */
+    const val TITLE_SUMMARY_MAX_CHARS: Int = 4_000
+
+    /**
+     * Messages for a session title (issue #32) from its saved
+     * [summary], in [language] (`"fr"` French, anything else English).
+     */
+    fun title(summary: String, language: String): List<LlmMessage> {
+        val name = if (language == "fr") "French" else "English"
+        return listOf(
+            LlmMessage(LlmMessage.ROLE_SYSTEM, "$TITLE_SYSTEM Write it in $name."),
+            LlmMessage(LlmMessage.ROLE_USER, "Summary:\n\n" + summary.trim().take(TITLE_SUMMARY_MAX_CHARS))
+        )
+    }
+
+    /**
      * Build the messages list for a Q&A turn about a transcript.
      *
      * The list is:

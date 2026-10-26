@@ -7,8 +7,11 @@ import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.audio.AudioSource
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.FakePresetStore
 import com.convoscribe.data.FakeSummaryTemplateStore
+import com.convoscribe.data.Preset
 import com.convoscribe.diarization.SpeakerMatcher
+import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingStore
@@ -19,9 +22,11 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -66,6 +71,23 @@ class RecordViewModelTest {
     /** Notes passed to the ViewModel's save hook, in order. */
     private val savedNotes = mutableListOf<Pair<Long, String?>>()
 
+    private val presetStore = FakePresetStore(
+        listOf(
+            Preset(
+                id = 7,
+                name = "Weekly",
+                titlePattern = "Weekly {date}",
+                language = "fr",
+                numSpeakers = 4,
+                participants = listOf("Alice"),
+                tags = listOf("Acme"),
+                summaryTemplate = SummaryTemplates.INTERVIEW_KEY,
+                cleanAudio = true
+            ),
+            Preset(id = 8, name = "Gone template", language = "en", summaryTemplate = "user:404")
+        )
+    )
+
     private fun newViewModel(missing: (String) -> Boolean = { false }) = RecordViewModel(
         controller = RecordingController(
             audioSource = object : AudioSource {
@@ -80,8 +102,77 @@ class RecordViewModelTest {
         enrolled = enrolled,
         templates = FakeSummaryTemplateStore(),
         missingModels = missing,
-        saveMarkNote = { id, note -> savedNotes += id to note }
+        saveMarkNote = { id, note -> savedNotes += id to note },
+        tagNames = flowOf(listOf("Acme", "Weekly")),
+        presetStore = presetStore
     )
+
+    @Test
+    fun applyPreset_fillsTheOptionsAndIsShownAsActiveUntilEdited() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.activePreset.collect {} }
+        val weekly = vm.presets.first { it.isNotEmpty() }.first()
+
+        vm.applyPreset(weekly)
+        val options = vm.options.value
+        assertEquals("fr", options.language)
+        assertEquals(4, options.numSpeakers)
+        assertEquals(listOf("Alice"), options.participants)
+        assertEquals("Weekly {date}", options.title)
+        assertEquals(listOf("Acme"), options.tags)
+        assertEquals(SummaryTemplates.INTERVIEW_KEY, options.summaryTemplate)
+        assertTrue(options.cleanAudio)
+        assertEquals(weekly, vm.activePreset.value)
+
+        vm.setNumSpeakers(2)
+        assertNull(vm.activePreset.value)
+
+        vm.applyPreset(null)
+        assertEquals(ConversationOptions.fromSettings(settings.settings.value), vm.options.value)
+        job.cancel()
+    }
+
+    @Test
+    fun applyPresetById_fallsBackForADeletedTemplate() = runTest(dispatcher) {
+        val vm = newViewModel()
+        vm.applyPreset(8L)
+        advanceUntilIdle()
+        assertEquals(settings.settings.value.defaultSummaryTemplate, vm.options.value.summaryTemplate)
+
+        // Unknown ids leave the options alone.
+        vm.setTitle("Mine")
+        vm.applyPreset(99L)
+        advanceUntilIdle()
+        assertEquals("Mine", vm.options.value.title)
+    }
+
+    @Test
+    fun saveAsPreset_keepsTheCurrentOptions() = runTest(dispatcher) {
+        val vm = newViewModel()
+        vm.setTitle("Standup {time}")
+        vm.setTags(listOf("Acme"))
+        vm.saveAsPreset("  ")
+        vm.saveAsPreset("Standup")
+        advanceUntilIdle()
+
+        val saved = presetStore.presets.value.last()
+        assertEquals("Standup", saved.name)
+        assertEquals("Standup {time}", saved.titlePattern)
+        assertEquals(listOf("Acme"), saved.tags)
+        assertEquals(3, presetStore.presets.value.size)
+    }
+
+    @Test
+    fun setTags_cleansNamesAndOffersExistingTags() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.allTags.collect {} }
+        advanceUntilIdle()
+        assertEquals(listOf("Acme", "Weekly"), vm.allTags.value)
+
+        vm.setTags(listOf(" Acme ", "ACME", "New"))
+        assertEquals(listOf("Acme", "New"), vm.options.value.tags)
+        job.cancel()
+    }
 
     @Test
     fun mark_withoutAnOpenSession_reportsNothing() = runTest(dispatcher) {
@@ -202,7 +293,9 @@ class RecordViewModelTest {
             numSpeakers: Int?,
             participants: List<String>?,
             summaryTemplate: String?,
-            cleanedWith: String?
+            cleanedWith: String?,
+            tags: List<String>,
+            titleSource: String
         ): Long = error("not used")
         override suspend fun cleanedWith(sessionId: Long): String? = null
         override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) = Unit

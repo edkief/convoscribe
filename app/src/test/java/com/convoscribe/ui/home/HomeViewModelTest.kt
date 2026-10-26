@@ -11,12 +11,14 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Before
@@ -53,8 +55,13 @@ class HomeViewModelTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         context = ApplicationProvider.getApplicationContext()
+        // Room on the calling thread, so no query resumes the test's
+        // Main dispatcher from a background thread after resetMain.
+        val sync = java.util.concurrent.Executor { it.run() }
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
+            .setQueryExecutor(sync)
+            .setTransactionExecutor(sync)
             .build()
         recordingsDir = File(context.filesDir, "home-vm-test-${System.nanoTime()}")
         recordingsDir.mkdirs()
@@ -167,5 +174,40 @@ class HomeViewModelTest {
 
         val after = vm.sessions.first { it.size == 1 }
         assertNotNull(after.firstOrNull { it.id == keep })
+    }
+
+    @Test
+    fun tagFilter_showsSessionsWithAnyTickedTag() = runTest(dispatcher) {
+        val acme = repo.createSession(title = "acme", language = "en", tags = listOf("Acme"))
+        val both = repo.createSession(title = "both", language = "en", tags = listOf("Acme", "Weekly"))
+        val weekly = repo.createSession(title = "weekly", language = "en", tags = listOf("Weekly"))
+        val plain = repo.createSession(title = "plain", language = "en")
+        repo.setSessionTags(plain, listOf("Gone"))
+        repo.setSessionTags(plain, emptyList())
+        val vm = HomeViewModel(repo)
+        val job = launch { vm.sessions.collect {} }
+
+        val filter = vm.tagFilter.first { it.tags.size == 2 }
+        assertEquals(listOf("Acme", "Weekly"), filter.tags.map { it.name })
+        assertEquals(listOf("Acme", "Weekly"), vm.sessions.first { it.size == 4 }.single { it.id == both }.tags)
+
+        val acmeTag = filter.tags.first().id
+        vm.toggleTag(acmeTag)
+        assertEquals(setOf(acme, both), vm.sessions.first { it.size == 2 }.map { it.id }.toSet())
+
+        vm.toggleTag(filter.tags.last().id)
+        assertEquals(setOf(acme, both, weekly), vm.sessions.first { it.size == 3 }.map { it.id }.toSet())
+
+        vm.clearTagFilter()
+        assertEquals(4, vm.sessions.first { it.size == 4 }.size)
+        assertFalse(vm.tagFilter.value.active)
+
+        // A ticked tag that is deleted drops out of the filter.
+        vm.toggleTag(acmeTag)
+        vm.sessions.first { it.size == 2 }
+        repo.deleteTag(acmeTag)
+        assertFalse(vm.tagFilter.first { it.tags.size == 1 }.active)
+        assertEquals(4, vm.sessions.first { it.size == 4 }.size)
+        job.cancel()
     }
 }

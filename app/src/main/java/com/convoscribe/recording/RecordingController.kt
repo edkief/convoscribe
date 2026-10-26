@@ -187,7 +187,9 @@ class RecordingController(
                         numSpeakers = newOptions.numSpeakers,
                         participants = newOptions.participants,
                         summaryTemplate = newOptions.summaryTemplate,
-                        cleanedWith = if (cleaning) cleanerFactory?.modelId() else null
+                        cleanedWith = if (cleaning) cleanerFactory?.modelId() else null,
+                        tags = newOptions.tags,
+                        titleSource = newOptions.titleSource
                     )
                     wav = WavWriter(File(store.audioPath(id)))
                 }

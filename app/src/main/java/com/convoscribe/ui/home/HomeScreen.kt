@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
@@ -24,6 +27,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -74,6 +78,7 @@ import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.StatusBadge
+import com.convoscribe.ui.components.TagChipRow
 import com.convoscribe.ui.components.statusLabel
 import com.convoscribe.ui.theme.AppTheme
 import com.convoscribe.ui.update.UpdateActions
@@ -102,9 +107,12 @@ import kotlinx.coroutines.launch
  * View notes, Update, Not now and Skip this version, then the
  * download's progress and Install.
  *
+ * Once sessions are tagged (issue #32), a row of tag chips above the
+ * list filters it to sessions with any of the ticked tags.
+ *
  * The top bar has Settings and an overflow menu with Engine check. Each
- * session is a card (title, date, duration, speakers, language and a
- * status badge); tapping it opens `session/{id}`, and Delete is in the
+ * session is a card (title, date, duration, speakers, language, a
+ * status badge and its tags); tapping it opens `session/{id}`, and Delete is in the
  * card's overflow menu (long-press still works) behind a confirmation.
  *
  * @param navController app-level controller; passed in (rather than
@@ -134,6 +142,7 @@ fun HomeScreen(navController: NavHostController) {
         navController.navigate(target)
     }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
+    val tagFilter by vm.tagFilter.collectAsStateWithLifecycle()
     val importer = container.importAudioUseCase
     val importState by importer.state.collectAsStateWithLifecycle()
     val createdSessionId by importer.createdSessionId.collectAsStateWithLifecycle()
@@ -200,6 +209,9 @@ fun HomeScreen(navController: NavHostController) {
 
     HomeBody(
         sessions = sessions,
+        tagFilter = tagFilter,
+        onToggleTag = vm::toggleTag,
+        onClearTagFilter = vm::clearTagFilter,
         importing = importState as? ImportState.Running,
         update = if (updateDismissed) UpdateState.Idle else updateState,
         updateActions = updateActions,
@@ -223,6 +235,9 @@ fun HomeScreen(navController: NavHostController) {
 @Composable
 internal fun HomeBody(
     sessions: List<SessionRow>,
+    tagFilter: TagFilter = TagFilter(),
+    onToggleTag: (Long) -> Unit = {},
+    onClearTagFilter: () -> Unit = {},
     importing: ImportState.Running? = null,
     update: UpdateState = UpdateState.Idle,
     updateActions: UpdateActions = UpdateActions(),
@@ -238,8 +253,10 @@ internal fun HomeBody(
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    // A filter that matches nothing still means there are sessions.
+    val hasSessions = sessions.isNotEmpty() || tagFilter.active
     // Search is a field above the list where there is room, an icon otherwise.
-    val searchable = sessions.isNotEmpty()
+    val searchable = hasSessions
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_DP
 
     ScreenScaffold(
@@ -289,7 +306,7 @@ internal fun HomeBody(
         },
         floatingActionButton = {
             // Hidden while the list is empty: the empty state carries the same action.
-            if (sessions.isNotEmpty()) NewRecordingButton(onClick = onNewRecording)
+            if (hasSessions) NewRecordingButton(onClick = onNewRecording)
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
@@ -307,8 +324,13 @@ internal fun HomeBody(
             }
             importing?.let { ImportBanner(state = it, onCancel = onCancelImport) }
             if (searchable && wide) SearchEntry(onClick = onSearch)
+            if (tagFilter.tags.isNotEmpty()) {
+                TagFilterRow(filter = tagFilter, onToggle = onToggleTag)
+            }
             SessionList(
                 sessions = sessions,
+                filtered = tagFilter.active,
+                onClearFilter = onClearTagFilter,
                 onNewRecording = onNewRecording,
                 onImport = onImport,
                 onOpenSession = onOpenSession,
@@ -369,16 +391,60 @@ private fun SearchEntry(onClick: () -> Unit) {
     }
 }
 
-/** The session cards, or the empty state with New recording and Import audio. */
+/**
+ * One chip per tag (issue #32), scrolling sideways; ticking chips
+ * narrows the list to sessions with any of them.
+ */
+@Composable
+private fun TagFilterRow(filter: TagFilter, onToggle: (Long) -> Unit) {
+    val spacing = AppTheme.spacing
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = spacing.screen),
+        horizontalArrangement = Arrangement.spacedBy(spacing.s)
+    ) {
+        filter.tags.forEach { tag ->
+            val selected = tag.id in filter.selected
+            FilterChip(
+                selected = selected,
+                onClick = { onToggle(tag.id) },
+                label = { Text(text = tag.name, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = if (selected) {
+                    { Icon(imageVector = Icons.Filled.Check, contentDescription = null) }
+                } else {
+                    null
+                }
+            )
+        }
+    }
+}
+
+/**
+ * The session cards, or the empty state: with New recording and
+ * Import audio, or, when the tag filter hides everything, with Clear
+ * filter.
+ */
 @Composable
 private fun SessionList(
     sessions: List<SessionRow>,
+    filtered: Boolean,
+    onClearFilter: () -> Unit,
     onNewRecording: () -> Unit,
     onImport: () -> Unit,
     onOpenSession: (Long) -> Unit,
     onRequestDelete: (Long) -> Unit
 ) {
-    if (sessions.isEmpty()) {
+    if (sessions.isEmpty() && filtered) {
+        EmptyState(
+            icon = painterResource(R.drawable.ic_conversation),
+            title = stringResource(R.string.home_filter_empty_title),
+            body = stringResource(R.string.home_filter_empty_body),
+            actionLabel = stringResource(R.string.home_filter_clear),
+            onAction = onClearFilter
+        )
+    } else if (sessions.isEmpty()) {
         EmptyState(
             icon = painterResource(R.drawable.ic_conversation),
             title = stringResource(R.string.home_empty_title),
@@ -540,6 +606,7 @@ private fun SessionCard(
                 if (statusLabel(row.status) != null) {
                     StatusBadge(status = row.status, modifier = Modifier.padding(top = spacing.xs))
                 }
+                TagChipRow(tags = row.tags, modifier = Modifier.padding(top = spacing.xs))
             }
             Box {
                 IconButton(onClick = { menuOpen = true }) {

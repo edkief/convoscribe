@@ -13,6 +13,8 @@ import com.convoscribe.audio.MicAudioSource
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.PresetRepository
+import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionSearch
 import com.convoscribe.data.SummaryTemplateRepository
@@ -27,6 +29,7 @@ import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.enginecheck.NpuAvailability
+import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.MarkNotesWriter
@@ -65,6 +68,7 @@ import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.sync.Mutex
 import okhttp3.OkHttpClient
 
 class AppContainer(val context: Context) {
@@ -173,6 +177,9 @@ class AppContainer(val context: Context) {
 
     /** Built-in and user-written summary templates (issue #27). */
     val summaryTemplates: SummaryTemplateStore = SummaryTemplateRepository(database.summaryTemplateDao())
+
+    /** Saved conversation options (issue #32). */
+    val presets: PresetStore = PresetRepository(database)
 
     /**
      * Encodes a session's WAV to M4A for sharing and saving. Exports
@@ -419,6 +426,13 @@ class AppContainer(val context: Context) {
     val pendingOpenRecord = MutableStateFlow(false)
 
     /**
+     * A preset picked from the Quick Settings tile's long-press that
+     * could not start straight away (issue #32); the Record screen
+     * applies it and clears this.
+     */
+    val pendingRecordPreset = MutableStateFlow<Long?>(null)
+
+    /**
      * Use case that records a voice sample and enrolls it as a
      * named speaker, so a fresh recording can label matched
      * voices with the user's name in the diarized transcript
@@ -485,12 +499,19 @@ class AppContainer(val context: Context) {
         )
     }
 
+    /** One background LLM call at a time: the endpoint is often a single small server. */
+    private val llmCalls: Mutex = Mutex()
+
     /**
      * Writes the full notes of marks (issue #48), after speakers are
      * identified ([diarizeSessionUseCase]) and from the Summary tab.
      */
     val markNotesWriter: MarkNotesWriter =
-        MarkNotesWriter(sessionRepository, chatClient, settingsRepository, applicationScope)
+        MarkNotesWriter(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
+
+    /** Names sessions from their summary (issue #32). */
+    val autoTitler: AutoTitler =
+        AutoTitler(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
 
     /**
      * The installed version, from the package manager (`buildConfig`

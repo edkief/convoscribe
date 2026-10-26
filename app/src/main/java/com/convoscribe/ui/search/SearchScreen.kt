@@ -112,6 +112,7 @@ fun SearchScreen(navController: NavHostController) {
         onLanguage = vm::setLanguage,
         onDateRange = vm::setDateRange,
         onSpeaker = vm::setSpeaker,
+        onTag = vm::setTag,
         onOpen = { id, tab, line ->
             navController.navigate(sessionRoute(id, tab = tab, lineId = line?.segmentId, atMs = line?.startMs))
         },
@@ -137,7 +138,8 @@ internal fun SearchBody(
     onSpeaker: (String?) -> Unit,
     onOpen: (sessionId: Long, tab: Int, line: SearchLine?) -> Unit,
     onBack: () -> Unit,
-    autoFocus: Boolean = true
+    autoFocus: Boolean = true,
+    onTag: (Long?) -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
     ScreenScaffold(title = stringResource(R.string.search_title), onBack = onBack) { innerPadding ->
@@ -159,7 +161,8 @@ internal fun SearchBody(
                     options = options,
                     onLanguage = onLanguage,
                     onDateRange = onDateRange,
-                    onSpeaker = onSpeaker
+                    onSpeaker = onSpeaker,
+                    onTag = onTag
                 )
             }
             when {
@@ -227,14 +230,15 @@ private fun QueryField(query: String, onQueryChange: (String) -> Unit, onSubmit:
     )
 }
 
-/** Language, date and person chips, each opening a menu of choices. */
+/** Language, date, person and tag chips, each opening a menu of choices. */
 @Composable
 private fun FilterRow(
     filters: FilterState,
     options: SearchOptions,
     onLanguage: (String?) -> Unit,
     onDateRange: (DateRange) -> Unit,
-    onSpeaker: (String?) -> Unit
+    onSpeaker: (String?) -> Unit,
+    onTag: (Long?) -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -265,6 +269,15 @@ private fun FilterRow(
                 selected = filters.speaker != null,
                 choices = listOf<Pair<String?, String>>(null to anyone) + options.speakers.map { it to it },
                 onChoose = onSpeaker
+            )
+        }
+        if (options.tags.isNotEmpty() || filters.tagId != null) {
+            val anyTag = stringResource(R.string.search_filter_tag_any)
+            FilterMenuChip(
+                label = options.tags.firstOrNull { it.id == filters.tagId }?.name ?: anyTag,
+                selected = filters.tagId != null,
+                choices = listOf<Pair<Long?, String>>(null to anyTag) + options.tags.map { it.id to it.name },
+                onChoose = onTag
             )
         }
     }

@@ -248,6 +248,8 @@ fun SettingsScreen(navController: NavHostController) {
             onSpeakerIdModeChange = vm::setSpeakerIdMode,
             onDefaultSummaryTemplateChange = vm::setDefaultSummaryTemplate,
             onOpenSummaryTemplates = { navController.navigate("summary-templates") },
+            onOpenTags = { navController.navigate("tags") },
+            onOpenPresets = { navController.navigate("presets") },
             onDownloadCleanup = {
                 ContextCompat.startForegroundService(
                     context,
@@ -256,7 +258,8 @@ fun SettingsScreen(navController: NavHostController) {
             },
             onDeleteCleanup = vm::deleteCleanupModel,
             onCleanAudioDefaultChange = vm::setCleanAudioDefault,
-            onAutoMarkNotesChange = vm::setAutoMarkNotes
+            onAutoMarkNotesChange = vm::setAutoMarkNotes,
+            onAutoTitleChange = vm::setAutoTitle
         )
     )
 }
@@ -283,10 +286,13 @@ internal class SettingsActions(
     val onSpeakerIdModeChange: (String) -> Unit = {},
     val onDefaultSummaryTemplateChange: (String) -> Unit = {},
     val onOpenSummaryTemplates: () -> Unit = {},
+    val onOpenTags: () -> Unit = {},
+    val onOpenPresets: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
-    val onAutoMarkNotesChange: (Boolean) -> Unit = {}
+    val onAutoMarkNotesChange: (Boolean) -> Unit = {},
+    val onAutoTitleChange: (Boolean) -> Unit = {}
 )
 
 /**
@@ -361,8 +367,11 @@ internal fun SettingsBody(
                 onDefaultChange = actions.onDefaultSummaryTemplateChange,
                 onOpenTemplates = actions.onOpenSummaryTemplates,
                 autoMarkNotes = state.autoMarkNotes,
-                onAutoMarkNotesChange = actions.onAutoMarkNotesChange
+                onAutoMarkNotesChange = actions.onAutoMarkNotesChange,
+                autoTitle = state.autoTitle,
+                onAutoTitleChange = actions.onAutoTitleChange
             )
+            OrganiseSection(onOpenTags = actions.onOpenTags, onOpenPresets = actions.onOpenPresets)
             TranscriptionSection(
                 engine = state.asrEngine,
                 language = state.asrLanguage,
@@ -683,7 +692,9 @@ private fun SummariesSection(
     onDefaultChange: (String) -> Unit,
     onOpenTemplates: () -> Unit,
     autoMarkNotes: Boolean,
-    onAutoMarkNotesChange: (Boolean) -> Unit
+    onAutoMarkNotesChange: (Boolean) -> Unit,
+    autoTitle: Boolean,
+    onAutoTitleChange: (Boolean) -> Unit
 ) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
@@ -724,6 +735,60 @@ private fun SummariesSection(
                 SupportingText(text = stringResource(R.string.settings_auto_mark_notes_help))
             }
             Switch(checked = autoMarkNotes, onCheckedChange = null)
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(value = autoTitle, role = Role.Switch, onValueChange = onAutoTitleChange),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_auto_title_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                SupportingText(text = stringResource(R.string.settings_auto_title_help))
+            }
+            Switch(checked = autoTitle, onCheckedChange = null)
+        }
+    }
+}
+
+/** Tags (and presets) of conversations (issue #32), each managed on its own screen. */
+@Composable
+private fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_organise)
+    ) {
+        ManageRow(
+            label = stringResource(R.string.settings_organise_tags_row),
+            help = stringResource(R.string.settings_organise_tags_help),
+            onClick = onOpenTags
+        )
+        ManageRow(
+            label = stringResource(R.string.settings_organise_presets_row),
+            help = stringResource(R.string.settings_organise_presets_help),
+            onClick = onOpenPresets
+        )
+    }
+}
+
+/** A setting kept on its own screen: [label], [help] below it, and Manage. */
+@Composable
+private fun ManageRow(label: String, help: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            SupportingText(text = help)
+        }
+        OutlinedButton(onClick = onClick) {
+            Text(text = stringResource(R.string.settings_summaries_templates_button))
         }
     }
 }

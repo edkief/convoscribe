@@ -329,6 +329,18 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun autoTitle_isOnAndTurningItOffPersists() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertTrue(vm.state.value.autoTitle)
+
+        vm.setAutoTitle(false)
+        advanceUntilIdle()
+        assertFalse(repo.settings.value.autoTitle)
+        assertFalse(vm.state.value.autoTitle)
+    }
+
+    @Test
     fun cleanupModel_showsAsInstalled_andCanBeDeleted_andCleanByDefaultPersists() = runTest(dispatcher) {
         val repo = newRepo()
         val vm = newVm(repo = repo)

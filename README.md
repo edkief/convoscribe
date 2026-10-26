@@ -145,7 +145,8 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   it, the notification is the control. A **Quick Settings tile**
   (*ConvoScribe*) starts a new recording with the Settings defaults
   from anywhere, and pauses or resumes an open one; it shows whether a
-  session is recording or paused.
+  session is recording or paused. Long-press it to start with a
+  preset instead (see *Organise conversations*).
 - **Crash-safe sessions** — sessions persist across restarts in a
   Room database; a recording interrupted by an `am force-stop` (also
   while paused) is recovered on next launch and lands in the session list with
@@ -196,6 +197,32 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   `scripts/eval/eval_cleanup.py`). Speakers are identified from the
   original. *Engine check* → *Check noise cleanup* says whether the
   device can clean while recording; otherwise clean afterwards.
+- **Organise conversations.**
+  - **Tags** group conversations by project, client or anything else.
+    Add them on the Record screen (*Tags*) or from a conversation's menu
+    (*Tags…*); type a new name or tick existing ones (matched ignoring
+    case). Tags show on the session cards and under a conversation's
+    header. Once conversations are tagged, a row of tag chips above the
+    Home list narrows it to conversations with *any* ticked tag, and
+    Search has a tag filter. Settings → Organise → Tags renames tags
+    (onto another tag's name merges them) and deletes them; the
+    conversations themselves are kept.
+  - **Automatic titles.** After the first summary, a conversation that
+    still has its date as its title (*Recording 2026-03-04 09:05*) is
+    renamed by the language model to a short title in its language,
+    with *Undo* on the snackbar and *Restore “…”* in the menu
+    afterwards. A title you typed, a preset's title, an imported file's
+    name or a rename is never changed. Turn it off in Settings →
+    Summaries (*Name conversations automatically*).
+  - **Presets** keep the options of a recurring conversation: language,
+    speakers, participants, a title, tags, the summary template and
+    noise cleanup. The title can hold `{date}` and `{time}`, filled in
+    when recording starts (*Weekly sync {date}*). Save one with *Save
+    as preset…* on the Record screen, pick it in *Preset* above the
+    options, or manage them in Settings → Organise → Presets.
+    Long-pressing the Quick Settings tile lists the presets and starts
+    a recording with the one you pick (or opens the Record screen with
+    it when the microphone permission or the models are missing).
 - **Share or save the audio** from the session menu (*Share audio*,
   *Save audio…*) as an M4A (AAC, about 0.5 MB a minute), encoded on
   demand with a progress dialog you can cancel.
@@ -382,7 +409,8 @@ that validates the PRD acceptance criteria is at
 covering install, model download, both engines, recording,
 diarization, renaming, sharing, the LLM endpoint, summaries, Q&A,
 French, deletion, crash recovery, performance, engine switching,
-per-conversation options and the display modes. A troubleshooting section shows how to read
+per-conversation options, the display modes and organising
+conversations. A troubleshooting section shows how to read
 `adb logcat`, where models live on disk, and how to clear app
 data.
 
@@ -461,12 +489,18 @@ one package per concern:
   diarization honours the line flags.
   Marks (issue #30, schema v8) are `MarkEntity` rows: a recorded-audio
   time and an optional note per session, independent of the segments.
+  Tags (issue #32, schema v12) are `TagEntity` rows (unique by their
+  case-folded name) linked to sessions by `SessionTagEntity`; presets
+  are `PresetEntity` rows behind `PresetStore`; `sessions.titleSource`
+  says whether a title is the date default, typed, or automatic.
 - `settings/` — `SettingsRepository` (SharedPreferences),
   `AppSettings`, `SecretStore` (EncryptedSharedPreferences) for
   the LLM API key.
 - `llm/` — `ChatClient` (OkHttp + kotlinx.serialization, SSE
   streaming), `LlmException`, `LlmMessage`, `PromptBuilder`,
-  `SseParser`, `TranscriptTruncator`.
+  `SseParser`, `TranscriptTruncator`; `MarkNotesWriter` and
+  `AutoTitler` run their LLM calls on the application scope, one at a
+  time.
 - `recording/` — `RecordingController` (the audio + ASR loop),
   `RecordingState`, `RecordingStore`, `SessionRecovery` (the
   crash-recovery boot pass).
@@ -486,7 +520,7 @@ one package per concern:
   storage), `EngineCheckRunner`, `Report`.
 - `ui/<screen>/` — one package per screen, Composable + ViewModel
   pair (`home`, `record`, `session`, `settings`, `setup`,
-  `enginecheck`); `ui/update/` holds the update banner shared by Home
+  `enginecheck`, `organise` for Settings → Tags and Presets); `ui/update/` holds the update banner shared by Home
   and Settings; `ui/AppNavHost.kt` is the navigation graph;
   `ui/theme/` is the Material 3 theme.
 

@@ -655,4 +655,88 @@ class SessionRepositoryTest {
         assertFalse(File(liveRow.audioPath).exists())
         assertFalse(liveRow.cleanAudioFile().exists())
     }
+
+    @Test
+    fun setSessionTags_createsByNameAndMatchesCase() = runTest {
+        val a = repo.createSession(title = "A", language = "en", tags = listOf("  Acme ", "weekly"))
+        val b = repo.createSession(title = "B", language = "en")
+        repo.setSessionTags(b, listOf("ACME", "acme", "", "Client   X"))
+
+        assertEquals(listOf("Acme", "Client X", "weekly"), repo.observeTags().first().map { it.name })
+        assertEquals(listOf("Acme", "weekly"), repo.observeTagsFor(a).first().map { it.name })
+        val byId = repo.observeSessionTags().first()
+        assertEquals(listOf("Acme", "Client X"), byId[b]!!.map { it.name })
+        assertEquals(byId[a]!!.first().id, byId[b]!!.first().id)
+    }
+
+    @Test
+    fun setSessionTags_capsLengthAndReplacesLinks() = runTest {
+        val id = repo.createSession(title = "A", language = "en", tags = listOf("x".repeat(50)))
+        assertEquals(TagNames.MAX_LEN, repo.observeTagsFor(id).first().single().name.length)
+
+        repo.setSessionTags(id, emptyList())
+        assertTrue(repo.observeTagsFor(id).first().isEmpty())
+        assertEquals(1, repo.observeTagUsage().first().size)
+        assertEquals(0, repo.observeTagUsage().first().single().sessionCount)
+    }
+
+    @Test
+    fun renameTag_renamesOrMergesIntoExisting() = runTest {
+        val a = repo.createSession(title = "A", language = "en", tags = listOf("Acme"))
+        val b = repo.createSession(title = "B", language = "en", tags = listOf("Acme Corp", "Acme"))
+        val tags = repo.observeTags().first().associateBy { it.name }
+
+        repo.renameTag(tags.getValue("Acme").id, "ACME Inc")
+        assertEquals(listOf("Acme Corp", "ACME Inc"), repo.observeTags().first().map { it.name })
+
+        repo.renameTag(tags.getValue("Acme Corp").id, "acme inc")
+        assertEquals(listOf("ACME Inc"), repo.observeTags().first().map { it.name })
+        assertEquals(listOf("ACME Inc"), repo.observeTagsFor(a).first().map { it.name })
+        assertEquals(listOf("ACME Inc"), repo.observeTagsFor(b).first().map { it.name })
+        assertEquals(2, repo.observeTagUsage().first().single().sessionCount)
+
+        repo.renameTag(tags.getValue("Acme").id, "   ")
+        assertEquals(listOf("ACME Inc"), repo.observeTags().first().map { it.name })
+    }
+
+    @Test
+    fun deleteTag_removesItFromSessions() = runTest {
+        val id = repo.createSession(title = "A", language = "en", tags = listOf("Acme", "Weekly"))
+        repo.deleteTag(repo.observeTags().first().first { it.name == "Acme" }.id)
+        assertEquals(listOf("Weekly"), repo.observeTagsFor(id).first().map { it.name })
+        assertNotNull(repo.observeSession(id).first())
+    }
+
+    @Test
+    fun applyAutoTitle_onlyReplacesDefaultTitleAndCanBeUndone() = runTest {
+        val id = repo.createSession(title = "Recording 2026-01-02 10:00", language = "en")
+        assertTrue(repo.applyAutoTitle(id, "Budget planning"))
+        val titled = repo.observeSession(id).first()!!
+        assertEquals("Budget planning", titled.title)
+        assertEquals(TitleSource.AUTO, titled.titleSource)
+        assertEquals("Recording 2026-01-02 10:00", titled.previousTitle)
+
+        // Already automatic: a second summary does not rename it again.
+        assertFalse(repo.applyAutoTitle(id, "Something else"))
+
+        repo.undoAutoTitle(id)
+        val undone = repo.observeSession(id).first()!!
+        assertEquals("Recording 2026-01-02 10:00", undone.title)
+        assertEquals(TitleSource.USER, undone.titleSource)
+        assertNull(undone.previousTitle)
+        assertFalse(repo.applyAutoTitle(id, "Budget planning"))
+    }
+
+    @Test
+    fun applyAutoTitle_neverReplacesUserTitle() = runTest {
+        val typed = repo.createSession(title = "Standup", language = "en", titleSource = TitleSource.USER)
+        assertFalse(repo.applyAutoTitle(typed, "Budget planning"))
+        assertEquals("Standup", repo.observeSession(typed).first()!!.title)
+
+        val renamed = repo.createSession(title = "Recording 2026-01-02 10:00", language = "en")
+        repo.renameSession(renamed, "Mine")
+        assertEquals(TitleSource.USER, repo.observeSession(renamed).first()!!.titleSource)
+        assertFalse(repo.applyAutoTitle(renamed, "Budget planning"))
+        assertFalse(repo.applyAutoTitle(renamed + 100, "Unknown"))
+    }
 }

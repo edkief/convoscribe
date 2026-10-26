@@ -31,6 +31,9 @@ import kotlinx.coroutines.flow.onEach
  * foreground service start only while the app is visible, and an
  * activity launched from the tile is. Pause / resume go straight to
  * the recording service, which is already in the foreground then.
+ *
+ * A long-press opens [com.convoscribe.PresetPickerActivity] (issue
+ * #32) through its `QS_TILE_PREFERENCES` filter, to start with a preset.
  */
 class RecordTileService : TileService() {
 

@@ -3,6 +3,8 @@ package com.convoscribe.ui.record
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.rememberScrollState
@@ -30,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import com.convoscribe.R
+import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.recording.ConversationOptions
@@ -37,6 +40,8 @@ import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.components.TagPickerDialog
+import com.convoscribe.ui.components.tagsSummary
 import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
@@ -49,9 +54,12 @@ import com.convoscribe.ui.theme.AppTheme
  *
  * @param enrolledNames people the participants picker offers.
  * @param summaryTemplates templates the summary template picker offers.
+ * @param allTags existing tag names the tag picker offers (issue #32).
  * @param onSaveAsDefault `null` hides the "Set as default" button.
+ * @param onSaveAsPreset saves the options under a name (issue #32);
+ *   `null` hides "Save as preset…".
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun ConversationOptionsForm(
     options: ConversationOptions,
@@ -65,9 +73,15 @@ fun ConversationOptionsForm(
     onSaveAsDefault: (() -> Unit)?,
     modifier: Modifier = Modifier,
     cleanup: CleanupOption? = null,
-    onCleanAudioChange: (Boolean) -> Unit = {}
+    onCleanAudioChange: (Boolean) -> Unit = {},
+    allTags: List<String> = emptyList(),
+    onTagsChange: (List<String>) -> Unit = {},
+    onSaveAsPreset: ((String) -> Unit)? = null
 ) {
     var participantsOpen by remember { mutableStateOf(false) }
+    var tagsOpen by remember { mutableStateOf(false) }
+    var presetNameOpen by remember { mutableStateOf(false) }
+    var savedAsPreset by rememberSaveable { mutableStateOf(false) }
     var savedAsDefault by rememberSaveable { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
@@ -100,7 +114,14 @@ fun ConversationOptionsForm(
             onValueChange = { onTitleChange(it.take(SessionRepository.SESSION_TITLE_MAX_LEN)) },
             label = { Text(text = stringResource(R.string.conversation_title_label)) },
             singleLine = true,
+            supportingText = { Text(text = stringResource(R.string.conversation_title_help)) },
             modifier = Modifier.fillMaxWidth()
+        )
+
+        PickerField(
+            label = stringResource(R.string.conversation_tags_label),
+            value = tagsSummary(options.tags),
+            onClick = { tagsOpen = true }
         )
 
         SummaryTemplatePicker(
@@ -147,23 +168,35 @@ fun ConversationOptionsForm(
             }
         }
 
-        if (onSaveAsDefault != null) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(
-                    onClick = {
-                        onSaveAsDefault()
-                        savedAsDefault = true
+        if (onSaveAsDefault != null || onSaveAsPreset != null) {
+            FlowRow(verticalArrangement = Arrangement.Center) {
+                if (onSaveAsDefault != null) {
+                    TextButton(
+                        onClick = {
+                            onSaveAsDefault()
+                            savedAsDefault = true
+                        }
+                    ) {
+                        Text(text = stringResource(R.string.conversation_set_default))
                     }
-                ) {
-                    Text(text = stringResource(R.string.conversation_set_default))
                 }
-                if (savedAsDefault) {
-                    Text(
-                        text = stringResource(R.string.conversation_set_default_done),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                if (onSaveAsPreset != null) {
+                    TextButton(onClick = { presetNameOpen = true }) {
+                        Text(text = stringResource(R.string.conversation_save_preset))
+                    }
                 }
+            }
+            val done = when {
+                savedAsPreset -> R.string.conversation_save_preset_done
+                savedAsDefault -> R.string.conversation_set_default_done
+                else -> null
+            }
+            if (done != null) {
+                Text(
+                    text = stringResource(done),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -180,6 +213,62 @@ fun ConversationOptionsForm(
             onDismiss = { participantsOpen = false }
         )
     }
+
+    if (presetNameOpen && onSaveAsPreset != null) {
+        PresetNameDialog(
+            onSave = { name ->
+                presetNameOpen = false
+                savedAsDefault = false
+                savedAsPreset = true
+                onSaveAsPreset(name)
+            },
+            onDismiss = { presetNameOpen = false }
+        )
+    }
+
+    if (tagsOpen) {
+        TagPickerDialog(
+            allTags = allTags,
+            selected = options.tags,
+            onConfirm = {
+                tagsOpen = false
+                onTagsChange(it)
+            },
+            onDismiss = { tagsOpen = false }
+        )
+    }
+}
+
+/** Name for "Save as preset…" (issue #32); Save stays off until there is one. */
+@Composable
+internal fun PresetNameDialog(onSave: (String) -> Unit, onDismiss: () -> Unit, initialName: String = "") {
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.conversation_save_preset_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it.take(PresetStore.NAME_MAX_LEN) },
+                    singleLine = true,
+                    label = { Text(text = stringResource(R.string.session_rename_label)) },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                SupportingText(text = stringResource(R.string.conversation_save_preset_help))
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name.trim()) }, enabled = name.isNotBlank()) {
+                Text(text = stringResource(R.string.session_rename_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(R.string.conversation_cancel))
+            }
+        }
+    )
 }
 
 /**

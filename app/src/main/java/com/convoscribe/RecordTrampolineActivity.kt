@@ -25,21 +25,33 @@ class RecordTrampolineActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val container = (applicationContext as ConvoApp).container
-        val settings = container.settingsRepository.settings.value
-        val micGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) ==
-            PackageManager.PERMISSION_GRANTED
-        val modelsReady = container.modelStore
-            .missing(ModelCatalog.requiredFor(settings.asrLanguage, settings.asrEngine))
-            .isEmpty()
-        val free = container.recordingController.state.value.phase == RecordingPhase.IDLE &&
-            !container.retranscribeUseCase.isRunning &&
-            !container.importAudioUseCase.isRunning
-        if (micGranted && modelsReady && free) {
+        val settings = (applicationContext as ConvoApp).container.settingsRepository.settings.value
+        if (canStartNow(this, settings.asrLanguage)) {
             ContextCompat.startForegroundService(this, RecordingService.startIntent(this))
         } else {
             startActivity(MainActivity.openRecordIntent(this))
         }
         finish()
+    }
+
+    companion object {
+        /**
+         * Whether a new recording in [language] can start without the
+         * Record screen: the microphone is allowed, the language's
+         * models are on disk and nothing else holds the recorder.
+         */
+        fun canStartNow(activity: ComponentActivity, language: String): Boolean {
+            val container = (activity.applicationContext as ConvoApp).container
+            val settings = container.settingsRepository.settings.value
+            val micGranted = ContextCompat.checkSelfPermission(activity, Manifest.permission.RECORD_AUDIO) ==
+                PackageManager.PERMISSION_GRANTED
+            val modelsReady = container.modelStore
+                .missing(ModelCatalog.requiredFor(language, settings.asrEngine))
+                .isEmpty()
+            val free = container.recordingController.state.value.phase == RecordingPhase.IDLE &&
+                !container.retranscribeUseCase.isRunning &&
+                !container.importAudioUseCase.isRunning
+            return micGranted && modelsReady && free
+        }
     }
 }

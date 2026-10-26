@@ -11,6 +11,7 @@ import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LongSummariser
 import com.convoscribe.llm.MarkNotesProgress
@@ -122,6 +123,8 @@ data class SummaryUiState(
  * @param markNotes writes the full notes of marks (issue #48);
  *   [writeNotes] and [cancelNotes] do nothing without it, which the
  *   tests that don't cover notes rely on.
+ * @param autoTitler names the session from a new summary (issue #32);
+ *   nothing happens without it.
  */
 class SummaryViewModel(
     private val sessionId: Long,
@@ -129,7 +132,8 @@ class SummaryViewModel(
     private val chatClient: ChatClient,
     private val settings: SettingsRepository,
     private val templates: SummaryTemplateStore,
-    private val markNotes: MarkNotesWriter? = null
+    private val markNotes: MarkNotesWriter? = null,
+    private val autoTitler: AutoTitler? = null
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SummaryUiState> =
@@ -269,6 +273,7 @@ class SummaryViewModel(
                         content = full,
                         templateName = template.name
                     )
+                    autoTitler?.onSummarySaved(sessionId, full)
                 }
                 _state.value = _state.value.copy(running = false, streaming = "", step = null)
             } catch (_: kotlinx.coroutines.CancellationException) {

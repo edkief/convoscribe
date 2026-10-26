@@ -7,7 +7,9 @@ import com.convoscribe.data.SegmentHit
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionSearch
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.SessionTagEntity
 import com.convoscribe.data.SpeakerEntity
+import com.convoscribe.data.TagEntity
 import java.time.ZoneOffset
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -23,6 +25,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
@@ -137,6 +140,24 @@ class SearchViewModelTest {
     }
 
     @Test
+    fun tagFilter_keepsOnlySessionsWithTheTag() = runTest(dispatcher) {
+        val (vm, emissions) = viewModel()
+        vm.onQueryChange("budget")
+        advanceTimeBy(400)
+        runCurrent()
+        val id = emissions.last().items.single().session.id
+
+        vm.setTag(5L)
+        runCurrent()
+        assertEquals(listOf(id), emissions.last().items.map { it.session.id })
+        assertTrue(vm.filters.value.isActive)
+
+        vm.setTag(6L)
+        runCurrent()
+        assertEquals(emptyList<Long>(), emissions.last().items.map { it.session.id })
+    }
+
+    @Test
     fun blankQuery_clearsResultsWithoutSearching() = runTest(dispatcher) {
         val (vm, emissions) = viewModel()
         vm.onQueryChange("   ")
@@ -184,6 +205,10 @@ class SearchViewModelTest {
         override suspend fun speakers(): List<SpeakerEntity> = emptyList()
 
         override suspend fun summaries(): List<ChatMessageEntity> = emptyList()
+
+        override suspend fun sessionTags(): List<SessionTagEntity> = listOf(SessionTagEntity(session.id, 5L))
+
+        override suspend fun usedTags(): List<TagEntity> = listOf(TagEntity(5L, "Acme", "acme", 0L))
     }
 
     private companion object {

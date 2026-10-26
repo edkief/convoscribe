@@ -58,6 +58,9 @@ import com.convoscribe.llm.SummaryTemplates
  * session's speakers are identified, when an LLM endpoint is set up;
  * the Summary tab can always write them by hand.
  *
+ * [autoTitle] names a conversation from its summary (issue #32) while
+ * it still has its date-based title, when an LLM endpoint is set up.
+ *
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
@@ -81,6 +84,7 @@ data class AppSettings(
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     val cleanAudioDefault: Boolean = false,
     val autoMarkNotes: Boolean = true,
+    val autoTitle: Boolean = true,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,

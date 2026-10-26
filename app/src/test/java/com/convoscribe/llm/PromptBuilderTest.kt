@@ -416,4 +416,17 @@ class PromptBuilderTest {
 
         assertTrue(transcript.length <= 2_000)
     }
+
+    @Test
+    fun title_asksForAShortTitleInTheSessionLanguage() {
+        val english = PromptBuilder.title("  Overview: the team set the Q3 budget.  ", "en")
+        assertEquals(2, english.size)
+        assertEquals(LlmMessage.ROLE_SYSTEM, english[0].role)
+        assertEquals(PromptBuilder.TITLE_SYSTEM + " Write it in English.", english[0].content)
+        assertEquals("Summary:\n\nOverview: the team set the Q3 budget.", english[1].content)
+
+        val french = PromptBuilder.title("x".repeat(10_000), "fr")
+        assertEquals(PromptBuilder.TITLE_SYSTEM + " Write it in French.", french[0].content)
+        assertEquals("Summary:\n\n".length + PromptBuilder.TITLE_SUMMARY_MAX_CHARS, french[1].content.length)
+    }
 }

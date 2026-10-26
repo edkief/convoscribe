@@ -127,6 +127,22 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
         <!--
+            Opened by a long-press on the Quick Settings tile (issue #32):
+            start a recording with the Settings defaults or a preset.
+            Exported because the system launches it for the tile.
+        -->
+        <activity
+            android:name=".PresetPickerActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
+        </activity>
+        <!--
             Foreground recording service (TASK-12). `exported` is
             `false` because the only legitimate caller is our own
             app code, via the typed `start` / `stop` PendingIntents

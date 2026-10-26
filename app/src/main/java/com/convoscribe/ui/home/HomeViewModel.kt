@@ -5,22 +5,26 @@ import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.Tag
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
  * One card in the session list. The screen words it: [createdAt] and
  * [durationMs] through [formatSessionDate] / [formatDuration], [status]
  * as a badge, [speakerCount] (0 until speakers are identified) and
- * [language] through [languageTag].
+ * [language] through [languageTag], and its [tags] (issue #32).
  */
 data class SessionRow(
     val id: Long,
@@ -29,14 +33,28 @@ data class SessionRow(
     val durationMs: Long,
     val status: SessionStatus,
     val language: String = "en",
-    val speakerCount: Int = 0
+    val speakerCount: Int = 0,
+    val tags: List<String> = emptyList()
 )
+
+/**
+ * The tag filter above the session list (issue #32): the [tags] that
+ * are on at least one session, and the [selected] ones. A session
+ * shows when it has any selected tag; nothing selected shows all.
+ */
+data class TagFilter(
+    val tags: List<Tag> = emptyList(),
+    val selected: Set<Long> = emptySet()
+) {
+    val active: Boolean get() = selected.isNotEmpty()
+}
 
 /**
  * ViewModel for the landing screen. Reads the session list from
  * [repository] (already ordered newest first by the DAO) together with
- * each session's speaker count and maps them to [SessionRow]s; also
- * exposes [delete] for the card's Delete action.
+ * each session's speaker count and tags and maps them to
+ * [SessionRow]s, keeping those [tagFilter] lets through; also exposes
+ * [delete] for the card's Delete action.
  *
  * The list is a `StateFlow` with `WhileSubscribed(5000)` so the
  * upstream Room observer stops collecting when the screen is off the
@@ -47,15 +65,40 @@ class HomeViewModel(
     private val repository: SessionRepository
 ) : ViewModel() {
 
+    private val selectedTags = MutableStateFlow<Set<Long>>(emptySet())
+
+    private val usedTags = repository.observeTagUsage()
+        .map { usage -> usage.filter { it.sessionCount > 0 }.map { Tag(it.id, it.name) } }
+
+    /** Tags to filter by and the chosen ones; a tag that is gone drops out of the choice. */
+    val tagFilter: StateFlow<TagFilter> = combine(usedTags, selectedTags) { tags, selected ->
+        TagFilter(tags = tags, selected = selected.filterTo(HashSet()) { id -> tags.any { it.id == id } })
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TagFilter())
+
     val sessions: StateFlow<List<SessionRow>> = combine(
         repository.observeAllSessions(),
-        repository.observeSpeakerCounts()
-    ) { rows, counts -> rows.map { it.toRow(counts[it.id] ?: 0) } }
+        repository.observeSpeakerCounts(),
+        repository.observeSessionTags(),
+        tagFilter
+    ) { rows, counts, tags, filter ->
+        rows.filter { row -> !filter.active || tags[row.id].orEmpty().any { it.id in filter.selected } }
+            .map { it.toRow(counts[it.id] ?: 0, tags[it.id].orEmpty().map { tag -> tag.name }) }
+    }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
+
+    /** Add tag [id] to the filter, or take it out. */
+    fun toggleTag(id: Long) {
+        selectedTags.update { if (id in it) it - id else it + id }
+    }
+
+    /** Show every session again. */
+    fun clearTagFilter() {
+        selectedTags.value = emptySet()
+    }
 
     /**
      * Delete [id] and its WAV. Called from the delete confirmation
@@ -69,14 +112,15 @@ class HomeViewModel(
     }
 }
 
-private fun SessionEntity.toRow(speakerCount: Int): SessionRow = SessionRow(
+private fun SessionEntity.toRow(speakerCount: Int, tags: List<String>): SessionRow = SessionRow(
     id = id,
     title = title,
     createdAt = createdAt,
     durationMs = durationMs,
     status = status,
     language = language,
-    speakerCount = speakerCount
+    speakerCount = speakerCount,
+    tags = tags
 )
 
 /**
