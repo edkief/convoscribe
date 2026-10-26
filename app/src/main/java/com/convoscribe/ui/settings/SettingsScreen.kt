@@ -249,6 +249,7 @@ fun SettingsScreen(navController: NavHostController) {
             onDefaultSummaryTemplateChange = vm::setDefaultSummaryTemplate,
             onOpenSummaryTemplates = { navController.navigate("summary-templates") },
             onOpenTags = { navController.navigate("tags") },
+            onOpenPresets = { navController.navigate("presets") },
             onDownloadCleanup = {
                 ContextCompat.startForegroundService(
                     context,
@@ -286,6 +287,7 @@ internal class SettingsActions(
     val onDefaultSummaryTemplateChange: (String) -> Unit = {},
     val onOpenSummaryTemplates: () -> Unit = {},
     val onOpenTags: () -> Unit = {},
+    val onOpenPresets: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
@@ -369,7 +371,7 @@ internal fun SettingsBody(
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
             )
-            OrganiseSection(onOpenTags = actions.onOpenTags)
+            OrganiseSection(onOpenTags = actions.onOpenTags, onOpenPresets = actions.onOpenPresets)
             TranscriptionSection(
                 engine = state.asrEngine,
                 language = state.asrLanguage,
@@ -755,7 +757,7 @@ private fun SummariesSection(
 
 /** Tags (and presets) of conversations (issue #32), each managed on its own screen. */
 @Composable
-private fun OrganiseSection(onOpenTags: () -> Unit) {
+private fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_organise)
@@ -764,6 +766,11 @@ private fun OrganiseSection(onOpenTags: () -> Unit) {
             label = stringResource(R.string.settings_organise_tags_row),
             help = stringResource(R.string.settings_organise_tags_help),
             onClick = onOpenTags
+        )
+        ManageRow(
+            label = stringResource(R.string.settings_organise_presets_row),
+            help = stringResource(R.string.settings_organise_presets_help),
+            onClick = onOpenPresets
         )
     }
 }

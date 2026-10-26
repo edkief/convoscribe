@@ -13,6 +13,7 @@ import androidx.navigation.navArgument
 import com.convoscribe.ConvoApp
 import com.convoscribe.ui.enginecheck.EngineCheckScreen
 import com.convoscribe.ui.home.HomeScreen
+import com.convoscribe.ui.organise.PresetsScreen
 import com.convoscribe.ui.organise.TagsScreen
 import com.convoscribe.ui.record.RecordScreen
 import com.convoscribe.ui.search.SearchScreen
@@ -34,6 +35,7 @@ private const val ROUTE_SPEAKERS = "speakers"
 private const val ROUTE_SUMMARY_TEMPLATES = "summary-templates"
 private const val ROUTE_SEARCH = "search"
 private const val ROUTE_TAGS = "tags"
+private const val ROUTE_PRESETS = "presets"
 
 private const val NO_ARG = -1L
 
@@ -182,6 +184,9 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
         composable(ROUTE_TAGS) {
             TagsScreen(navController = navController)
+        }
+        composable(ROUTE_PRESETS) {
+            PresetsScreen(navController = navController)
         }
         composable(
             route = ROUTE_SESSION_DETAIL,

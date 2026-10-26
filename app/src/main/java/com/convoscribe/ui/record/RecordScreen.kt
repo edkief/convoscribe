@@ -23,6 +23,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +55,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.data.Preset
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
@@ -70,6 +73,7 @@ import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.MarkNoteDialog
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.PausedBadge
+import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.ProgressBlock
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
@@ -127,7 +131,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                         container.modelStore.missing(ModelCatalog.requiredFor(language, engine)).isNotEmpty()
                     },
                     saveMarkNote = container.sessionRepository::setMarkNote,
-                    tagNames = container.sessionRepository.observeTags().map { tags -> tags.map { it.name } }
+                    tagNames = container.sessionRepository.observeTags().map { tags -> tags.map { it.name } },
+                    presetStore = container.presets
                 )
             }
         }
@@ -137,6 +142,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
     val summaryTemplates by vm.summaryTemplates.collectAsStateWithLifecycle()
     val allTags by vm.allTags.collectAsStateWithLifecycle()
+    val presets by vm.presets.collectAsStateWithLifecycle()
+    val activePreset by vm.activePreset.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
@@ -221,6 +228,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         enrolledNames = enrolledNames,
         summaryTemplates = summaryTemplates,
         allTags = allTags,
+        presets = presets,
+        activePreset = activePreset,
         optionActions = ConversationOptionActions(
             onLanguageChange = vm::setLanguage,
             onNumSpeakersChange = vm::setNumSpeakers,
@@ -229,7 +238,9 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             onSummaryTemplateChange = vm::setSummaryTemplate,
             onSaveAsDefault = vm::saveAsDefault,
             onCleanAudioChange = vm::setCleanAudio,
-            onTagsChange = vm::setTags
+            onTagsChange = vm::setTags,
+            onApplyPreset = vm::applyPreset,
+            onSaveAsPreset = vm::saveAsPreset
         ),
         cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let {
             val engine = ModelCatalog.effectiveEngine(
@@ -335,6 +346,8 @@ internal fun RecordBody(
     enrolledNames: List<String> = emptyList(),
     summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     allTags: List<String> = emptyList(),
+    presets: List<Preset> = emptyList(),
+    activePreset: Preset? = null,
     optionActions: ConversationOptionActions = ConversationOptionActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
@@ -377,6 +390,13 @@ internal fun RecordBody(
                         verticalArrangement = Arrangement.spacedBy(spacing.m)
                     ) {
                         SectionCard(title = stringResource(R.string.record_section_conversation)) {
+                            if (presets.isNotEmpty()) {
+                                PresetPicker(
+                                    presets = presets,
+                                    active = activePreset,
+                                    onApply = optionActions.onApplyPreset
+                                )
+                            }
                             ConversationOptionsForm(
                                 options = options,
                                 enrolledNames = enrolledNames,
@@ -390,7 +410,8 @@ internal fun RecordBody(
                                 cleanup = cleanup,
                                 onCleanAudioChange = optionActions.onCleanAudioChange,
                                 allTags = allTags,
-                                onTagsChange = optionActions.onTagsChange
+                                onTagsChange = optionActions.onTagsChange,
+                                onSaveAsPreset = optionActions.onSaveAsPreset
                             )
                         }
                     }
@@ -646,8 +667,44 @@ internal data class ConversationOptionActions(
     val onSummaryTemplateChange: (String) -> Unit = {},
     val onSaveAsDefault: () -> Unit = {},
     val onCleanAudioChange: (Boolean) -> Unit = {},
-    val onTagsChange: (List<String>) -> Unit = {}
+    val onTagsChange: (List<String>) -> Unit = {},
+    val onApplyPreset: (Preset?) -> Unit = {},
+    val onSaveAsPreset: (String) -> Unit = {}
 )
+
+/**
+ * The saved presets (issue #32): picking one fills in the options
+ * below, "Settings defaults" starts over. Shows the preset the options
+ * still match, if any.
+ */
+@Composable
+private fun PresetPicker(presets: List<Preset>, active: Preset?, onApply: (Preset?) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    PickerField(
+        label = stringResource(R.string.record_preset_label),
+        value = active?.name ?: stringResource(R.string.record_preset_none),
+        onClick = { expanded = true }
+    ) {
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(text = stringResource(R.string.record_preset_defaults)) },
+                onClick = {
+                    expanded = false
+                    onApply(null)
+                }
+            )
+            presets.forEach { preset ->
+                DropdownMenuItem(
+                    text = { Text(text = preset.name) },
+                    onClick = {
+                        expanded = false
+                        onApply(preset)
+                    }
+                )
+            }
+        }
+    }
+}
 
 /**
  * Runtime permissions the Start button asks for. Mic + the Android

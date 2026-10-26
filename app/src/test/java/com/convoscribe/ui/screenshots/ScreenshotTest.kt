@@ -27,6 +27,7 @@ import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.Highlighted
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
+import com.convoscribe.data.Preset
 import com.convoscribe.data.SearchLine
 import com.convoscribe.data.SearchOptions
 import com.convoscribe.data.SearchResult
@@ -59,6 +60,8 @@ import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
 import com.convoscribe.ui.home.SessionRow
 import com.convoscribe.ui.home.TagFilter
+import com.convoscribe.ui.organise.PresetDraft
+import com.convoscribe.ui.organise.PresetsBody
 import com.convoscribe.ui.organise.TagsBody
 import com.convoscribe.ui.record.CleanupOption
 import com.convoscribe.ui.record.RecordBody
@@ -301,6 +304,68 @@ class ScreenshotTest(private val variant: Variant) {
     @Test
     fun tagsScreenEmpty() = capture("tags_empty") {
         TagsBody(tags = emptyList(), onBack = {}, onRename = { _, _ -> }, onDelete = {})
+    }
+
+    @Test
+    fun presets() = capture("presets") {
+        PresetsBody(
+            presets = PRESETS,
+            enrolledNames = listOf("Alice", "Bob"),
+            summaryTemplates = SummaryTemplates.BUILT_IN,
+            allTags = TAGS.map { it.name },
+            cleanup = null,
+            onBack = {},
+            newDraft = { PresetDraft(options = ConversationOptions(language = "en")) },
+            draftOf = { PresetDraft(it.id, it.name, ConversationOptions(language = it.language)) },
+            onSave = {},
+            onDelete = {}
+        )
+    }
+
+    @Test
+    fun presetEditor() = capture("preset_editor") {
+        PresetsBody(
+            presets = PRESETS,
+            enrolledNames = listOf("Alice", "Bob"),
+            summaryTemplates = SummaryTemplates.BUILT_IN,
+            allTags = TAGS.map { it.name },
+            cleanup = null,
+            onBack = {},
+            newDraft = { PresetDraft(options = ConversationOptions(language = "en")) },
+            draftOf = { PresetDraft(it.id, it.name, ConversationOptions(language = it.language)) },
+            onSave = {},
+            onDelete = {},
+            initialDraft = PresetDraft(
+                id = 1,
+                name = "Acme weekly",
+                options = ConversationOptions(
+                    language = "en",
+                    numSpeakers = 4,
+                    participants = listOf("Alice", "Bob"),
+                    title = "Acme weekly {date}",
+                    tags = listOf("Acme", "Weekly")
+                )
+            )
+        )
+    }
+
+    @Test
+    fun recordIdlePreset() = capture("record_idle_preset") {
+        RecordBody(
+            phase = RecordingPhase.IDLE,
+            preparingNpu = false,
+            elapsedMs = 0L,
+            finalLines = emptyList(),
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            options = ConversationOptions(language = "en", title = "Acme weekly {date}", tags = listOf("Acme")),
+            presets = PRESETS,
+            activePreset = PRESETS.first(),
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
     }
 
     @Test
@@ -950,6 +1015,26 @@ class ScreenshotTest(private val variant: Variant) {
         )
 
         private val TAGS = listOf(Tag(1, "Acme"), Tag(2, "Weekly"), Tag(3, "Hiring"))
+
+        private val PRESETS = listOf(
+            Preset(
+                id = 1,
+                name = "Acme weekly",
+                titlePattern = "Acme weekly {date}",
+                language = "en",
+                numSpeakers = 4,
+                participants = listOf("Alice", "Bob"),
+                tags = listOf("Acme", "Weekly"),
+                summaryTemplate = SummaryTemplates.MEETING_KEY
+            ),
+            Preset(
+                id = 2,
+                name = "Entretien",
+                language = "fr",
+                tags = listOf("Hiring"),
+                summaryTemplate = SummaryTemplates.INTERVIEW_KEY
+            )
+        )
 
         private val TAG_USAGE = listOf(TagUsage(1, "Acme", 12), TagUsage(2, "Weekly", 1), TagUsage(3, "Hiring", 0))
 
