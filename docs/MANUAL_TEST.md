@@ -1170,6 +1170,81 @@ Install over the previous version without clearing data.
 - Step 13: each card changes once, when its note is complete; the
   screen is not redrawn word by word.
 
+## 34. Organise conversations: tags, automatic titles, presets (issue #32)
+
+Needs a working LLM endpoint for steps 6–9. Install over the previous
+version without clearing data, with some conversations already
+recorded, one of them renamed by hand.
+
+**Steps**
+
+1. Open Home.
+2. New recording: *Tags* → type `Acme`, add it, tick it, Done. Record a
+   few seconds and stop. Open another old conversation, menu → *Tags…*,
+   type `acme` and `Weekly`, Done.
+3. Back on Home, tick the `Acme` chip, then also `Weekly`, then untick
+   both. Tick `Weekly` and, from a conversation's menu, remove its tag.
+4. Search for a word from a tagged conversation and set the tag filter.
+5. Settings → Organise → Tags: rename `Weekly` to `ACME`; then delete
+   `Acme`.
+6. Record about a minute about one topic with the title left empty,
+   stop, Summary tab → Summarise, and wait.
+7. Tap *Undo* on the snackbar. Summarise again.
+8. Do step 6 again, leave the session as soon as the summary finishes,
+   and come back. Menu → *Restore “Recording …”*.
+9. Summarise the conversation renamed by hand before the upgrade, and an
+   imported one. Then Settings → Summaries: turn *Name conversations
+   automatically* off and do step 6 again.
+10. On the Record screen set French, 3 speakers, a participant, title
+    `Weekly sync {date} {time}`, tag `Acme`, template *Interview*.
+    *Save as preset…* → `Weekly`. Leave and come back to the Record
+    screen; pick *Preset* → `Weekly`, change the speaker count, then
+    pick `Weekly` again. Record and stop.
+11. Settings → Organise → Presets: edit `Weekly` (rename it, change the
+    tags), add a new preset, delete one.
+12. Long-press the Quick Settings tile; pick `Weekly`. Stop from the
+    notification. Long-press it again while a recording is open.
+13. Revoke the microphone permission in system settings, long-press the
+    tile and pick `Weekly`.
+14. On the Boox (e-ink): steps 1–3 and 10.
+
+**Expected**
+
+- Step 1: the conversation renamed by hand and imported ones keep their
+  titles; nothing else looks different; no tag chips yet.
+- Step 2: both conversations show `Acme` (one tag, first spelling kept)
+  on their cards and under the header; the second also `Weekly`.
+- Step 3: the list shows only the `Acme` conversations, then those with
+  either tag, then all. A filter that matches nothing shows *No
+  conversations with these tags* with *Clear filter*; a tag that is on
+  no conversation disappears from the chips.
+- Step 4: only conversations with that tag are in the results.
+- Step 5: the rename merges the two (one `Acme`-named tag with both
+  conversations); after the delete the conversations have no tags and
+  are still there.
+- Step 6: a few seconds after the summary the title changes to a short
+  topic title (at most six words, in the conversation's language) and
+  a snackbar *Renamed to “…”* offers *Undo*. `adb logcat -s AutoTitler`
+  shows `auto title session=<id>`.
+- Step 7: the date title is back and the second summary does not
+  rename it.
+- Step 8: the title changed while you were away; the menu restores the
+  date title.
+- Step 9: none of these titles change.
+- Step 10: the new conversation is titled `Weekly sync 2026-… …` with
+  today's date and time, tagged `Acme`, in French with the Interview
+  template. *Preset* shows `Weekly` until an option is changed, then
+  *None*.
+- Step 11: the list shows the changes; the Record screen's *Preset*
+  picker offers the same presets.
+- Step 12: the picker lists *Settings defaults* and the presets; picking
+  one starts recording at once (notification) with its options. With a
+  recording open, the long-press opens the Record screen instead.
+- Step 13: the Record screen opens with the preset applied and asks for
+  the permission on Start.
+- Step 14: chips and dialogs are outlined, black on white, and redraw
+  once per change.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
