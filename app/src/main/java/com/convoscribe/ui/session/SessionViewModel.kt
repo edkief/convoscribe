@@ -85,7 +85,9 @@ data class SessionUiState(
     /** Cleanup model the audio was cleaned with (issue #37); `null` when not cleaned. */
     val cleanedWith: String? = null,
     /** Path of the cleaned recording; blank when not cleaned. */
-    val cleanAudioPath: String = ""
+    val cleanAudioPath: String = "",
+    /** The session's tags (issue #32), alphabetically. */
+    val tags: List<String> = emptyList()
 )
 
 /**
@@ -158,8 +160,9 @@ class SessionViewModel(
                 combine(
                     repository.observeSegments(sessionId),
                     repository.observeSpeakers(sessionId),
-                    repository.observeMarks(sessionId)
-                ) { segments, speakers, marks ->
+                    repository.observeMarks(sessionId),
+                    repository.observeTagsFor(sessionId)
+                ) { segments, speakers, marks, tags ->
                     SessionUiState(
                         title = session.title,
                         status = session.status,
@@ -176,7 +179,8 @@ class SessionViewModel(
                         durationMs = session.durationMs,
                         hasEdits = session.transcriptEdited,
                         cleanedWith = session.cleanedWith,
-                        cleanAudioPath = if (session.cleanedWith != null) session.cleanAudioFile().absolutePath else ""
+                        cleanAudioPath = if (session.cleanedWith != null) session.cleanAudioFile().absolutePath else "",
+                        tags = tags.map { it.name }
                     )
                 }
             }
@@ -320,6 +324,16 @@ class SessionViewModel(
         viewModelScope.launch {
             repository.renameSession(sessionId = sessionId, title = title)
         }
+    }
+
+    /** Every existing tag name, for the tag picker (issue #32). */
+    val allTags: StateFlow<List<String>> = repository.observeTags()
+        .map { tags -> tags.map { it.name } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Make [names] this session's tags, creating the missing ones (issue #32). */
+    fun setTags(names: List<String>) {
+        viewModelScope.launch { repository.setSessionTags(sessionId, names) }
     }
 
     /**

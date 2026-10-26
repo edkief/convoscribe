@@ -77,6 +77,8 @@ import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.StatusBadge
+import com.convoscribe.ui.components.TagChipRow
+import com.convoscribe.ui.components.TagPickerDialog
 import com.convoscribe.ui.home.formatDuration
 import com.convoscribe.ui.home.formatSessionDate
 import com.convoscribe.ui.home.languageTag
@@ -172,6 +174,7 @@ fun SessionScreen(
     val activeLineIndex by vm.activeLineIndex.collectAsStateWithLifecycle()
     val following by vm.following.collectAsStateWithLifecycle()
     val exportState by vm.exportState.collectAsStateWithLifecycle()
+    val allTags by vm.allTags.collectAsStateWithLifecycle()
     val saveAudioLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("audio/mp4")
     ) { uri -> if (uri != null) vm.saveAudio(uri) }
@@ -270,6 +273,7 @@ fun SessionScreen(
             onEditNote = { mark, note -> vm.editMarkNote(mark, note) },
             onDelete = { mark -> vm.deleteMark(mark) }
         ),
+        tagging = TagsUi(tags = state.tags, allTags = allTags, onSetTags = vm::setTags),
         notFound = state.notFound,
         summaryState = summaryState,
         askState = askState,
@@ -471,7 +475,8 @@ internal fun SessionBody(
     initialLineDialog: LineDialog? = null,
     marks: List<TranscriptMark> = emptyList(),
     markActions: MarkActions = MarkActions(),
-    initialMarksOpen: Boolean = false
+    initialMarksOpen: Boolean = false,
+    tagging: TagsUi = TagsUi()
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -492,6 +497,7 @@ internal fun SessionBody(
     var marksOpen by remember { mutableStateOf(initialMarksOpen) }
     var cleanupOpen by remember { mutableStateOf(false) }
     var removeCleaningOpen by remember { mutableStateOf(false) }
+    var tagsOpen by remember { mutableStateOf(false) }
     ScreenScaffold(
         title = title,
         onBack = onBack,
@@ -528,6 +534,14 @@ internal fun SessionBody(
                     onClick = {
                         overflowExpanded = false
                         renameSessionOpen = true
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_tags)) },
+                    enabled = !notFound,
+                    onClick = {
+                        overflowExpanded = false
+                        tagsOpen = true
                     }
                 )
                 val hasAudio = status != SessionStatus.RECORDING && playerState.ready
@@ -631,7 +645,8 @@ internal fun SessionBody(
                     durationMs = durationMs,
                     speakerCount = speakers.size,
                     language = details.language,
-                    status = status
+                    status = status,
+                    tags = tagging.tags
                 )
             }
             retranscribe.progress?.let { progress ->
@@ -759,6 +774,18 @@ internal fun SessionBody(
             onDismiss = { renameSpeakerIndex = null }
         )
     }
+    if (tagsOpen) {
+        TagPickerDialog(
+            allTags = tagging.allTags,
+            selected = tagging.tags,
+            onConfirm = {
+                tagsOpen = false
+                tagging.onSetTags(it)
+            },
+            onDismiss = { tagsOpen = false }
+        )
+    }
+
     // Rename-the-session dialog.
     if (renameSessionOpen) {
         RenameDialog(
@@ -897,10 +924,17 @@ internal fun SessionBody(
     }
 }
 
+/** A session's tags (issue #32), every existing tag for the picker, and how to change them. */
+internal data class TagsUi(
+    val tags: List<String> = emptyList(),
+    val allTags: List<String> = emptyList(),
+    val onSetTags: (List<String>) -> Unit = {}
+)
+
 /**
  * Below the top bar: when the session was recorded, how long it is,
  * how many speakers were found and its language, with a badge while
- * it is recording, identifying speakers or failed.
+ * it is recording, identifying speakers or failed, then its tags.
  */
 @Composable
 private fun SessionHeader(
@@ -908,7 +942,8 @@ private fun SessionHeader(
     durationMs: Long,
     speakerCount: Int,
     language: String,
-    status: SessionStatus?
+    status: SessionStatus?,
+    tags: List<String>
 ) {
     val spacing = AppTheme.spacing
     val meta = listOfNotNull(
@@ -932,6 +967,12 @@ private fun SessionHeader(
         )
         if (status != null) StatusBadge(status = status)
     }
+    TagChipRow(
+        tags = tags,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = spacing.screen, end = spacing.screen, bottom = spacing.s)
+    )
 }
 
 /**

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -40,7 +41,8 @@ import kotlinx.coroutines.launch
  *  - the new conversation's [options] (issue #6), pre-filled from
  *    the Settings defaults. Editing them never touches Settings;
  *    [saveAsDefault] writes them back. [enrolledNames] feeds the
- *    participants picker, [summaryTemplates] the template picker, and [modelsMissing] tells the screen to
+ *    participants picker, [summaryTemplates] the template picker,
+ *    [allTags] the tag picker (issue #32), and [modelsMissing] tells the screen to
  *    send the user to setup before Start;
  *  - [mark] (issue #30), which reports each new mark on [marks] so
  *    the screen can offer a note, saved with [setMarkNote].
@@ -56,7 +58,8 @@ class RecordViewModel(
     enrolled: EnrolledSpeakerStore,
     templates: SummaryTemplateStore,
     private val missingModels: (language: String) -> Boolean = { false },
-    private val saveMarkNote: suspend (markId: Long, note: String?) -> Unit = { _, _ -> }
+    private val saveMarkNote: suspend (markId: Long, note: String?) -> Unit = { _, _ -> },
+    tagNames: Flow<List<String>> = flowOf(emptyList())
 ) : ViewModel() {
 
     private val recordingController = controller
@@ -78,6 +81,10 @@ class RecordViewModel(
     val summaryTemplates: StateFlow<List<SummaryTemplate>> = templates.observeAll()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SummaryTemplates.BUILT_IN)
 
+    /** Every existing tag name, for the tag picker (issue #32). */
+    val allTags: StateFlow<List<String>> = tagNames
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     fun setLanguage(language: String) {
         if (language == "en" || language == "fr") _options.update { it.copy(language = language) }
     }
@@ -97,6 +104,11 @@ class RecordViewModel(
 
     fun setSummaryTemplate(key: String) {
         _options.update { it.copy(summaryTemplate = key) }
+    }
+
+    /** The tags the new session gets (issue #32); created on Start when missing. */
+    fun setTags(names: List<String>) {
+        _options.update { it.withTags(names) }
     }
 
     /** Clean this conversation's audio live (issue #37). */

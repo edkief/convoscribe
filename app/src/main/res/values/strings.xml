@@ -168,6 +168,8 @@
     <string name="conversation_participants_confirm">Done</string>
     <string name="conversation_cancel">Cancel</string>
     <string name="conversation_title_label">Title (optional)</string>
+    <string name="conversation_title_help">{date} and {time} are filled in when recording starts.</string>
+    <string name="conversation_tags_label">Tags</string>
     <string name="conversation_summary_template_label">Summary template</string>
     <string name="conversation_cleanup_label">Clean up noise</string>
     <string name="conversation_cleanup_help">Reduce background noise while recording. The original audio is kept too.</string>
@@ -198,6 +200,15 @@
     <string name="home_engine_check">Engine check</string>
     <string name="home_search">Search</string>
     <string name="home_search_field">Search conversations…</string>
+    <string name="home_filter_empty_title">No conversations with these tags</string>
+    <string name="home_filter_empty_body">Untick a tag, or clear the filter to see every conversation.</string>
+    <string name="home_filter_clear">Clear filter</string>
+    <string name="tags_title">Tags</string>
+    <string name="tags_none">None</string>
+    <string name="tags_new_label">New tag</string>
+    <string name="tags_add">Add tag</string>
+    <string name="tags_empty_help">No tags yet. Type a name, such as a project or a client, and add it.</string>
+    <string name="tags_done">Done</string>
     <string name="search_title">Search</string>
     <string name="search_hint">Titles, transcripts, speakers, summaries</string>
     <string name="search_clear">Clear search</string>
@@ -212,6 +223,7 @@
     <string name="search_filter_date_month">Last 30 days</string>
     <string name="search_filter_date_year">This year</string>
     <string name="search_filter_speaker_any">Anyone</string>
+    <string name="search_filter_tag_any">Any tag</string>
     <string name="search_speakers_label">Speakers</string>
     <string name="search_summary_label">Summary</string>
     <string name="search_open_at">Open at %1$s</string>
@@ -372,6 +384,7 @@
     <string name="session_not_found">Session not found.</string>
     <string name="session_overflow">More</string>
     <string name="session_overflow_rename">Rename session</string>
+    <string name="session_overflow_tags">Tags…</string>
     <string name="session_overflow_reidentify">Re-identify speakers…</string>
     <string name="session_overflow_participants">Participants…</string>
     <string name="session_overflow_retranscribe">Re-transcribe in another language…</string>

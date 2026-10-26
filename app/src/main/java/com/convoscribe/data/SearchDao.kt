@@ -55,6 +55,14 @@ interface SearchDao {
             "ORDER BY createdAt ASC, id ASC"
     )
     suspend fun summaries(): List<ChatMessageEntity>
+
+    /** Every session–tag link (issue #32). */
+    @Query("SELECT * FROM session_tags")
+    suspend fun sessionTags(): List<SessionTagEntity>
+
+    /** Tags on at least one session, alphabetically. */
+    @Query("SELECT * FROM tags WHERE id IN (SELECT tagId FROM session_tags) ORDER BY nameKey ASC")
+    suspend fun usedTags(): List<TagEntity>
 }
 
 /** Row of [SearchDao.findSegments]. */

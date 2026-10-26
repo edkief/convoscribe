@@ -37,6 +37,8 @@ import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.components.TagPickerDialog
+import com.convoscribe.ui.components.tagsSummary
 import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
@@ -49,6 +51,7 @@ import com.convoscribe.ui.theme.AppTheme
  *
  * @param enrolledNames people the participants picker offers.
  * @param summaryTemplates templates the summary template picker offers.
+ * @param allTags existing tag names the tag picker offers (issue #32).
  * @param onSaveAsDefault `null` hides the "Set as default" button.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -65,9 +68,12 @@ fun ConversationOptionsForm(
     onSaveAsDefault: (() -> Unit)?,
     modifier: Modifier = Modifier,
     cleanup: CleanupOption? = null,
-    onCleanAudioChange: (Boolean) -> Unit = {}
+    onCleanAudioChange: (Boolean) -> Unit = {},
+    allTags: List<String> = emptyList(),
+    onTagsChange: (List<String>) -> Unit = {}
 ) {
     var participantsOpen by remember { mutableStateOf(false) }
+    var tagsOpen by remember { mutableStateOf(false) }
     var savedAsDefault by rememberSaveable { mutableStateOf(false) }
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
@@ -100,7 +106,14 @@ fun ConversationOptionsForm(
             onValueChange = { onTitleChange(it.take(SessionRepository.SESSION_TITLE_MAX_LEN)) },
             label = { Text(text = stringResource(R.string.conversation_title_label)) },
             singleLine = true,
+            supportingText = { Text(text = stringResource(R.string.conversation_title_help)) },
             modifier = Modifier.fillMaxWidth()
+        )
+
+        PickerField(
+            label = stringResource(R.string.conversation_tags_label),
+            value = tagsSummary(options.tags),
+            onClick = { tagsOpen = true }
         )
 
         SummaryTemplatePicker(
@@ -178,6 +191,18 @@ fun ConversationOptionsForm(
                 onParticipantsChange(it)
             },
             onDismiss = { participantsOpen = false }
+        )
+    }
+
+    if (tagsOpen) {
+        TagPickerDialog(
+            allTags = allTags,
+            selected = options.tags,
+            onConfirm = {
+                tagsOpen = false
+                onTagsChange(it)
+            },
+            onDismiss = { tagsOpen = false }
         )
     }
 }

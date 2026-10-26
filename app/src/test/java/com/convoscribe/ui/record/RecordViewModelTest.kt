@@ -19,9 +19,11 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -80,8 +82,21 @@ class RecordViewModelTest {
         enrolled = enrolled,
         templates = FakeSummaryTemplateStore(),
         missingModels = missing,
-        saveMarkNote = { id, note -> savedNotes += id to note }
+        saveMarkNote = { id, note -> savedNotes += id to note },
+        tagNames = flowOf(listOf("Acme", "Weekly"))
     )
+
+    @Test
+    fun setTags_cleansNamesAndOffersExistingTags() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.allTags.collect {} }
+        advanceUntilIdle()
+        assertEquals(listOf("Acme", "Weekly"), vm.allTags.value)
+
+        vm.setTags(listOf(" Acme ", "ACME", "New"))
+        assertEquals(listOf("Acme", "New"), vm.options.value.tags)
+        job.cancel()
+    }
 
     @Test
     fun mark_withoutAnOpenSession_reportsNothing() = runTest(dispatcher) {

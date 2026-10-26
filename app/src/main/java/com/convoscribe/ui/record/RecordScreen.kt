@@ -77,6 +77,7 @@ import com.convoscribe.ui.components.StatusBadge
 import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.map
 
 /**
  * Top-level destination entered from the home FAB to record a fresh
@@ -125,7 +126,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                         val engine = container.settingsRepository.settings.value.asrEngine
                         container.modelStore.missing(ModelCatalog.requiredFor(language, engine)).isNotEmpty()
                     },
-                    saveMarkNote = container.sessionRepository::setMarkNote
+                    saveMarkNote = container.sessionRepository::setMarkNote,
+                    tagNames = container.sessionRepository.observeTags().map { tags -> tags.map { it.name } }
                 )
             }
         }
@@ -134,6 +136,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val options by vm.options.collectAsStateWithLifecycle()
     val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
     val summaryTemplates by vm.summaryTemplates.collectAsStateWithLifecycle()
+    val allTags by vm.allTags.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
@@ -217,6 +220,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         options = options,
         enrolledNames = enrolledNames,
         summaryTemplates = summaryTemplates,
+        allTags = allTags,
         optionActions = ConversationOptionActions(
             onLanguageChange = vm::setLanguage,
             onNumSpeakersChange = vm::setNumSpeakers,
@@ -224,7 +228,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             onTitleChange = vm::setTitle,
             onSummaryTemplateChange = vm::setSummaryTemplate,
             onSaveAsDefault = vm::saveAsDefault,
-            onCleanAudioChange = vm::setCleanAudio
+            onCleanAudioChange = vm::setCleanAudio,
+            onTagsChange = vm::setTags
         ),
         cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let {
             val engine = ModelCatalog.effectiveEngine(
@@ -329,6 +334,7 @@ internal fun RecordBody(
     options: ConversationOptions? = null,
     enrolledNames: List<String> = emptyList(),
     summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
+    allTags: List<String> = emptyList(),
     optionActions: ConversationOptionActions = ConversationOptionActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
@@ -382,7 +388,9 @@ internal fun RecordBody(
                                 onSummaryTemplateChange = optionActions.onSummaryTemplateChange,
                                 onSaveAsDefault = optionActions.onSaveAsDefault,
                                 cleanup = cleanup,
-                                onCleanAudioChange = optionActions.onCleanAudioChange
+                                onCleanAudioChange = optionActions.onCleanAudioChange,
+                                allTags = allTags,
+                                onTagsChange = optionActions.onTagsChange
                             )
                         }
                     }
@@ -637,7 +645,8 @@ internal data class ConversationOptionActions(
     val onTitleChange: (String) -> Unit = {},
     val onSummaryTemplateChange: (String) -> Unit = {},
     val onSaveAsDefault: () -> Unit = {},
-    val onCleanAudioChange: (Boolean) -> Unit = {}
+    val onCleanAudioChange: (Boolean) -> Unit = {},
+    val onTagsChange: (List<String>) -> Unit = {}
 )
 
 /**

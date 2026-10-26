@@ -34,6 +34,7 @@ import com.convoscribe.data.SearchText
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
+import com.convoscribe.data.Tag
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
 import com.convoscribe.enginecheck.CleanupCheckResult
@@ -51,10 +52,12 @@ import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.settings.FloatingShape
 import com.convoscribe.ui.components.MarkNoteDialog
+import com.convoscribe.ui.components.TagPickerDialog
 import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
 import com.convoscribe.ui.home.SessionRow
+import com.convoscribe.ui.home.TagFilter
 import com.convoscribe.ui.record.CleanupOption
 import com.convoscribe.ui.record.RecordBody
 import com.convoscribe.ui.search.DateRange
@@ -69,6 +72,7 @@ import com.convoscribe.ui.session.LineEditActions
 import com.convoscribe.ui.session.PlaybackActions
 import com.convoscribe.ui.session.SessionBody
 import com.convoscribe.ui.session.SummaryUiState
+import com.convoscribe.ui.session.TagsUi
 import com.convoscribe.ui.settings.SettingsActions
 import com.convoscribe.ui.settings.SettingsBody
 import com.convoscribe.ui.settings.SettingsForm
@@ -232,6 +236,84 @@ class ScreenshotTest(private val variant: Variant) {
             onDelete = {},
             onSettings = {},
             onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeTags() = capture("home_tags") {
+        HomeBody(
+            sessions = TAGGED_SESSIONS,
+            tagFilter = TagFilter(tags = TAGS),
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeTagFiltered() = capture("home_tag_filtered") {
+        HomeBody(
+            sessions = TAGGED_SESSIONS.filter { "Acme" in it.tags },
+            tagFilter = TagFilter(tags = TAGS, selected = setOf(1L)),
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun homeTagFilterEmpty() = capture("home_tag_filter_empty") {
+        HomeBody(
+            sessions = emptyList(),
+            tagFilter = TagFilter(tags = TAGS, selected = setOf(3L)),
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
+    @Test
+    fun tagPicker() {
+        assumeTextFieldDialogsRender()
+        captureScreen("tag_picker") {
+            TagPickerDialog(
+                allTags = TAGS.map { it.name },
+                selected = listOf("Acme"),
+                onConfirm = {},
+                onDismiss = {}
+            )
+        }
+    }
+
+    @Test
+    fun sessionTags() = capture("session_tags") {
+        session(tags = listOf("Acme", "Weekly"))
+    }
+
+    @Test
+    fun recordIdleTags() = capture("record_idle_tags") {
+        RecordBody(
+            phase = RecordingPhase.IDLE,
+            preparingNpu = false,
+            elapsedMs = 0L,
+            finalLines = emptyList(),
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            options = ConversationOptions(
+                language = "en",
+                title = "Weekly sync {date}",
+                tags = listOf("Acme", "Weekly")
+            ),
+            onBack = {},
+            onStart = {},
+            onStop = {}
         )
     }
 
@@ -686,7 +768,8 @@ class ScreenshotTest(private val variant: Variant) {
         lineDialog: LineDialog? = null,
         marks: List<TranscriptMark> = emptyList(),
         marksOpen: Boolean = false,
-        cleanup: CleanupUi = CleanupUi()
+        cleanup: CleanupUi = CleanupUi(),
+        tags: List<String> = emptyList()
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -735,7 +818,8 @@ class ScreenshotTest(private val variant: Variant) {
             initialLineDialog = lineDialog,
             marks = marks,
             initialMarksOpen = marksOpen,
-            cleanup = cleanup
+            cleanup = cleanup,
+            tagging = TagsUi(tags = tags, allTags = TAGS.map { it.name })
         )
     }
 
@@ -817,7 +901,8 @@ class ScreenshotTest(private val variant: Variant) {
             durationMs: Long,
             status: SessionStatus,
             language: String = "en",
-            speakers: Int = 0
+            speakers: Int = 0,
+            tags: List<String> = emptyList()
         ) = SessionRow(
             id = id,
             title = title,
@@ -825,7 +910,8 @@ class ScreenshotTest(private val variant: Variant) {
             durationMs = durationMs,
             status = status,
             language = language,
-            speakerCount = speakers
+            speakerCount = speakers,
+            tags = tags
         )
 
         private val UPDATE = UpdateOffer(
@@ -849,6 +935,31 @@ class ScreenshotTest(private val variant: Variant) {
             row(3, "Réunion budget", T0 + DAY, 1_932_000L, SessionStatus.DIARIZED, language = "fr", speakers = 4),
             row(2, "Interview with Carol", T0, 3_725_000L, SessionStatus.DIARIZATION_FAILED),
             row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.DIARIZED, speakers = 2)
+        )
+
+        private val TAGS = listOf(Tag(1, "Acme"), Tag(2, "Weekly"), Tag(3, "Hiring"))
+
+        private val TAGGED_SESSIONS = listOf(
+            row(
+                4,
+                "Weekly sync",
+                T0 + 2 * DAY,
+                754_000L,
+                SessionStatus.DIARIZED,
+                speakers = 3,
+                tags = listOf("Acme", "Weekly")
+            ),
+            row(
+                3,
+                "Réunion budget",
+                T0 + DAY,
+                1_932_000L,
+                SessionStatus.DIARIZED,
+                language = "fr",
+                tags = listOf("Acme")
+            ),
+            row(2, "Interview with Carol", T0, 3_725_000L, SessionStatus.DIARIZED, tags = listOf("Hiring")),
+            row(1, "Recording 2025-03-13 09:30", T0 - DAY, 61_000L, SessionStatus.DIARIZED)
         )
 
         private val LIVE_LINES = listOf(

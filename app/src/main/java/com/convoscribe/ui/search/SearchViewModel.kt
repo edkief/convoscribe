@@ -46,13 +46,15 @@ enum class DateRange {
     }
 }
 
-/** What the filter chips hold: `null` language or speaker means any. */
+/** What the filter chips hold: `null` language, speaker or tag means any. */
 data class FilterState(
     val language: String? = null,
     val dateRange: DateRange = DateRange.ANY,
-    val speaker: String? = null
+    val speaker: String? = null,
+    val tagId: Long? = null
 ) {
-    val isActive: Boolean get() = language != null || dateRange != DateRange.ANY || speaker != null
+    val isActive: Boolean
+        get() = language != null || dateRange != DateRange.ANY || speaker != null || tagId != null
 }
 
 /** The results of searching [query]; an empty [query] is "nothing searched yet". */
@@ -113,10 +115,14 @@ class SearchViewModel(
 
     fun setSpeaker(speaker: String?) = _filters.update { it.copy(speaker = speaker) }
 
+    /** Only sessions with tag [tagId] (issue #32); `null` any. */
+    fun setTag(tagId: Long?) = _filters.update { it.copy(tagId = tagId) }
+
     private fun FilterState.toSearchFilters() = SearchFilters(
         language = language,
         since = dateRange.since(clock(), zone),
-        speaker = speaker
+        speaker = speaker,
+        tagIds = setOfNotNull(tagId)
     )
 
     companion object {

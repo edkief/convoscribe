@@ -4,12 +4,14 @@ package com.convoscribe.data
  * Narrows a search: [language] `null` is any, only sessions created
  * at or after [since] count, and [speaker] (a speaker name or
  * expected participant, compared ignoring case and accents) `null`
- * is anyone.
+ * is anyone. With [tagIds] (issue #32) only sessions carrying at least
+ * one of those tags count; empty is any.
  */
 data class SearchFilters(
     val language: String? = null,
     val since: Long = 0L,
-    val speaker: String? = null
+    val speaker: String? = null,
+    val tagIds: Set<Long> = emptySet()
 )
 
 /** A matching transcript line: where it starts, who said it, and the snippet. */
@@ -35,10 +37,11 @@ data class SearchResult(
     val lines: List<SearchLine>
 )
 
-/** What the filters can offer: languages and names found across sessions. */
+/** What the filters can offer: languages and names found across sessions, and the tags. */
 data class SearchOptions(
     val languages: List<String> = emptyList(),
-    val speakers: List<String> = emptyList()
+    val speakers: List<String> = emptyList(),
+    val tags: List<Tag> = emptyList()
 )
 
 /**
@@ -54,10 +57,16 @@ class SessionSearch(private val dao: SearchDao) {
         val terms = SearchText.terms(query)
         if (terms.isEmpty()) return emptyList()
         val speakers = dao.speakers().groupBy { it.sessionId }
+        val tagged = if (filters.tagIds.isEmpty()) {
+            null
+        } else {
+            dao.sessionTags().filter { it.tagId in filters.tagIds }.mapTo(HashSet()) { it.sessionId }
+        }
         val sessions = dao.sessions().filter { session ->
             (filters.language == null || session.language == filters.language) &&
                 session.createdAt >= filters.since &&
-                (filters.speaker == null || session.hasPerson(filters.speaker, speakers[session.id].orEmpty()))
+                (filters.speaker == null || session.hasPerson(filters.speaker, speakers[session.id].orEmpty())) &&
+                (tagged == null || session.id in tagged)
         }
         if (sessions.isEmpty()) return emptyList()
         val allowed = sessions.mapTo(HashSet()) { it.id }
@@ -105,7 +114,8 @@ class SessionSearch(private val dao: SearchDao) {
     /**
      * Languages used by sessions (in first-seen order, newest session
      * first) and the names of their speakers and expected
-     * participants, sorted, without the default "Speaker N" labels.
+     * participants, sorted, without the default "Speaker N" labels;
+     * and the tags that are on at least one session.
      */
     suspend fun options(): SearchOptions {
         val sessions = dao.sessions()
@@ -118,7 +128,8 @@ class SessionSearch(private val dao: SearchDao) {
             speakers = names.map { it.trim() }
                 .filter { it.isNotEmpty() && it !in defaults }
                 .distinctBy { SearchText.fold(it) }
-                .sortedBy { SearchText.fold(it) }
+                .sortedBy { SearchText.fold(it) },
+            tags = dao.usedTags().map { it.toTag() }
         )
     }
 
