@@ -10,6 +10,7 @@ import com.convoscribe.audio.AudioSpec
 import com.convoscribe.audio.StreamingCleaner
 import com.convoscribe.audio.WavReader
 import com.convoscribe.audio.WavWriter
+import com.convoscribe.data.TitleSource
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -107,7 +108,9 @@ class RecordingControllerTest {
             val numSpeakers: Int?,
             val participants: List<String>?,
             val summaryTemplate: String? = null,
-            val cleanedWith: String? = null
+            val cleanedWith: String? = null,
+            val tags: List<String> = emptyList(),
+            val titleSource: String = TitleSource.DEFAULT
         )
 
         /** A call to [recordEngine], in order. */
@@ -126,7 +129,8 @@ class RecordingControllerTest {
             tags: List<String>,
             titleSource: String
         ): Long {
-            createCalls += Create(title, language, numSpeakers, participants, summaryTemplate, cleanedWith)
+            createCalls +=
+                Create(title, language, numSpeakers, participants, summaryTemplate, cleanedWith, tags, titleSource)
             val id = nextId.incrementAndGet()
             cleaned[id] = cleanedWith
             // Match the production `SessionRepository`: a file at
@@ -629,13 +633,24 @@ class RecordingControllerTest {
                 numSpeakers = 2,
                 participants = listOf("Alice"),
                 title = "  Interview  ",
-                summaryTemplate = "interview"
+                summaryTemplate = "interview",
+                tags = listOf("Acme")
             )
         )
         advanceUntilIdle()
 
         assertEquals(
-            listOf(FakeRecordingStore.Create("Interview", "fr", 2, listOf("Alice"), "interview")),
+            listOf(
+                FakeRecordingStore.Create(
+                    "Interview",
+                    "fr",
+                    2,
+                    listOf("Alice"),
+                    "interview",
+                    tags = listOf("Acme"),
+                    titleSource = TitleSource.USER
+                )
+            ),
             h.store.createCalls
         )
         assertEquals("fr", h.factory.lastLanguage)
@@ -654,6 +669,7 @@ class RecordingControllerTest {
         assertEquals("en", create.language)
         assertEquals(3, create.numSpeakers)
         assertTrue(create.title, create.title.startsWith("Recording "))
+        assertEquals(TitleSource.DEFAULT, create.titleSource)
         h.controller.stop()
     }
 
