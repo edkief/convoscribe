@@ -155,6 +155,10 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   OpenAI-compatible `/v1/chat/completions` endpoint (vLLM,
   llama.cpp server, Ollama with `http://<host>:11434/v1`, OpenAI,
   …); answers stream token-by-token and are saved with the session.
+  Summaries, notes and answers are shown formatted (headings, bold,
+  lists) from the model's Markdown; Copy and share keep the Markdown.
+  While a question waits for its first words, the Ask tab shows pulsing
+  dots (still dots and *Generating answer…* on e-ink).
   A conversation longer than *Max transcript characters* is still
   covered in full: the summary is written in parts (notes on each part
   of the transcript, then the summary from the notes, with *Summarising
