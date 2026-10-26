@@ -19,6 +19,8 @@ turbine = "1.2.0"
 ktlintPlugin = "12.1.2"
 commonsCompress = "1.27.1"
 roborazzi = "1.40.1"
+# 0.28.0 is the last release built on Kotlin 2.0 / Compose 1.7; newer ones need Kotlin 2.1+.
+markdownRenderer = "0.28.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -49,6 +51,7 @@ junit = { module = "junit:junit", version.ref = "junit" }
 robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
+markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
