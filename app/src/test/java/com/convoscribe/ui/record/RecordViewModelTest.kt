@@ -202,7 +202,9 @@ class RecordViewModelTest {
             numSpeakers: Int?,
             participants: List<String>?,
             summaryTemplate: String?,
-            cleanedWith: String?
+            cleanedWith: String?,
+            tags: List<String>,
+            titleSource: String
         ): Long = error("not used")
         override suspend fun cleanedWith(sessionId: Long): String? = null
         override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) = Unit

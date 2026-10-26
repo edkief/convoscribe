@@ -13,6 +13,8 @@ import com.convoscribe.audio.MicAudioSource
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.PresetRepository
+import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionSearch
 import com.convoscribe.data.SummaryTemplateRepository
@@ -173,6 +175,9 @@ class AppContainer(val context: Context) {
 
     /** Built-in and user-written summary templates (issue #27). */
     val summaryTemplates: SummaryTemplateStore = SummaryTemplateRepository(database.summaryTemplateDao())
+
+    /** Saved conversation options (issue #32). */
+    val presets: PresetStore = PresetRepository(database)
 
     /**
      * Encodes a session's WAV to M4A for sharing and saving. Exports

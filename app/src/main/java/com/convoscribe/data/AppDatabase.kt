@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
  * index over transcript lines, (v7) summary templates and (v8)
- * marks. The current version is 11; the generated JSON for every version is committed
+ * marks, (v12) tags and presets. The current version is 12; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -62,6 +62,14 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * `marks.expandedStale` defaulting to `0`, so existing marks have no
  * full note yet.
  *
+ * The 11 → 12 migration (issue #32) adds the `tags`, `session_tags`
+ * and `presets` tables, `sessions.titleSource` defaulting to
+ * `"default"` and nullable `sessions.previousTitle`. A title renamed
+ * before the upgrade cannot be told from a default one by its column,
+ * so [Migration11To12] marks every title that is not
+ * `"Recording yyyy-MM-dd HH:mm"` as typed by the user; only default
+ * titles are ever replaced by an automatic one.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -74,9 +82,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         EnrolledSpeakerEntity::class,
         SegmentFtsEntity::class,
         SummaryTemplateEntity::class,
-        MarkEntity::class
+        MarkEntity::class,
+        TagEntity::class,
+        SessionTagEntity::class,
+        PresetEntity::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -88,7 +99,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AutoMigration(from = 7, to = 8),
         AutoMigration(from = 8, to = 9),
         AutoMigration(from = 9, to = 10),
-        AutoMigration(from = 10, to = 11)
+        AutoMigration(from = 10, to = 11),
+        AutoMigration(from = 11, to = 12, spec = Migration11To12::class)
     ]
 )
 @TypeConverters(Converters::class)
@@ -101,6 +113,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun searchDao(): SearchDao
     abstract fun summaryTemplateDao(): SummaryTemplateDao
     abstract fun markDao(): MarkDao
+    abstract fun tagDao(): TagDao
+    abstract fun presetDao(): PresetDao
 
     companion object {
         const val NAME: String = "convoscribe.db"
@@ -114,5 +128,20 @@ abstract class AppDatabase : RoomDatabase() {
 class Migration4To5 : AutoMigrationSpec {
     override fun onPostMigrate(db: SupportSQLiteDatabase) {
         db.execSQL("INSERT INTO segments_fts(segments_fts) VALUES('rebuild')")
+    }
+}
+
+/**
+ * Existing titles all read as `"default"` after the upgrade, but some
+ * were typed by hand. Keep only the date-based ones as default, so an
+ * automatic title never replaces something the user wrote; imported
+ * sessions, titled after their file, count as typed too.
+ */
+class Migration11To12 : AutoMigrationSpec {
+    override fun onPostMigrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "UPDATE sessions SET titleSource = '${TitleSource.USER}' WHERE title NOT GLOB " +
+                "'Recording [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]'"
+        )
     }
 }

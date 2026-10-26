@@ -1,6 +1,7 @@
 package com.convoscribe.recording
 
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.data.TitleSource
 import com.convoscribe.data.cleanAudioPathFor
 
 /**
@@ -24,6 +25,9 @@ interface RecordingStore {
      * options chosen before Start, as is [summaryTemplate] (`null`
      * follows the default). [cleanedWith] is the cleanup model when
      * the audio is cleaned live (issue #37), `null` otherwise.
+     * [tags] are tag names, created when missing, and [titleSource]
+     * says whether [title] is the date-based default or was chosen
+     * (issue #32, see [com.convoscribe.data.TitleSource]).
      */
     suspend fun createSession(
         title: String,
@@ -31,7 +35,9 @@ interface RecordingStore {
         numSpeakers: Int? = null,
         participants: List<String>? = null,
         summaryTemplate: String? = null,
-        cleanedWith: String? = null
+        cleanedWith: String? = null,
+        tags: List<String> = emptyList(),
+        titleSource: String = TitleSource.DEFAULT
     ): Long
 
     /**

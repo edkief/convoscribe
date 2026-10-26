@@ -86,8 +86,9 @@ interface SessionDao {
      * Update the user-visible [title] of a session. Called by the
      * session-detail screen's "Rename session" menu; the
      * repository enforces the 100-character cap so the DAO stays
-     * free of business rules.
+     * free of business rules. [source] is a [TitleSource] and
+     * [previous] the title an automatic one replaced.
      */
-    @Query("UPDATE sessions SET title = :title WHERE id = :id")
-    suspend fun rename(id: Long, title: String)
+    @Query("UPDATE sessions SET title = :title, titleSource = :source, previousTitle = :previous WHERE id = :id")
+    suspend fun rename(id: Long, title: String, source: String, previous: String?)
 }

@@ -122,7 +122,9 @@ class RecordingControllerTest {
             numSpeakers: Int?,
             participants: List<String>?,
             summaryTemplate: String?,
-            cleanedWith: String?
+            cleanedWith: String?,
+            tags: List<String>,
+            titleSource: String
         ): Long {
             createCalls += Create(title, language, numSpeakers, participants, summaryTemplate, cleanedWith)
             val id = nextId.incrementAndGet()

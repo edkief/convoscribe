@@ -251,6 +251,72 @@ class MigrationTest {
         }
     }
 
+    @Test
+    fun migrate11To12_keepsOnlyDateTitlesAsDefault() = runTest {
+        helper.createDatabase(DB_NAME, 11).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Recording 2026-03-04 09:15', 1000, 5000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (2, 'Budget review', 2000, 5000, 'en', '/r/2.wav', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (3, 'Recording 2026-03-04 09:15 (call)', 3000, 5000, 'en', '/r/3.wav', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 12, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals(TitleSource.DEFAULT, db.sessionDao().get(1)!!.titleSource)
+            assertEquals(TitleSource.USER, db.sessionDao().get(2)!!.titleSource)
+            assertEquals(TitleSource.USER, db.sessionDao().get(3)!!.titleSource)
+            assertNull(db.sessionDao().get(1)!!.previousTitle)
+            assertEquals(emptyList<TagEntity>(), db.tagDao().getAll())
+            assertEquals(emptyList<Long>(), db.tagDao().tagIdsFor(1))
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrate11To12_tagLinksCascadeOnDelete() = runTest {
+        helper.createDatabase(DB_NAME, 11).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'One', 1000, 5000, 'en', '', 'DIARIZED')"
+            )
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (2, 'Two', 2000, 5000, 'en', '', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 12, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val filesDir = ApplicationProvider.getApplicationContext<android.content.Context>().filesDir
+            val repo = SessionRepository(db, filesDir)
+            repo.setSessionTags(1, listOf("Acme", "Weekly"))
+            repo.setSessionTags(2, listOf("Acme"))
+            val acme = db.tagDao().findByKey("acme")!!.id
+            repo.deleteSession(1)
+            assertEquals(listOf(2L), db.tagDao().sessionIdsFor(acme))
+            repo.deleteTag(acme)
+            assertEquals(emptyList<Long>(), db.tagDao().tagIdsFor(2))
+            assertEquals(listOf("Weekly"), db.tagDao().getAll().map { it.name })
+        } finally {
+            db.close()
+        }
+    }
+
     private companion object {
         const val DB_NAME = "migration-test.db"
     }
