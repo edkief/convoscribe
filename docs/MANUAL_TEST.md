@@ -257,7 +257,10 @@ and a chip list appears with the model ids. On failure
 
 **Expected** — a streaming summary appears token by token; the
 final summary is saved with the session so a future open shows it
-without regenerating.
+without regenerating. It is formatted: section headings, bold text
+and bullet / numbered lists render as such, with no raw `#`, `**` or
+`- ` markers (same for the notes under marks). **Copy** puts the raw
+Markdown on the clipboard.
 
 ## 11. Ask questions (context)
 
@@ -267,9 +270,14 @@ without regenerating.
 2. Ask "When did they say they would follow up?"
 3. Ask "Who said that?" (a follow-up that needs prior context).
 
-**Expected** — both questions stream token by token; the second
+**Expected** — right after Send, a bubble with three pulsing dots
+appears on the answer side (on e-ink: three still dots and
+*Generating answer…*) until the first words arrive; then both
+questions stream token by token, with the answers formatted
+(lists, bold) rather than raw Markdown. The second
 answer uses the first question's answer / the transcript as
 context (no "I don't have context for this question" error).
+Stop while the dots show removes them.
 
 ## 12. French
 

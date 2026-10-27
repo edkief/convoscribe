@@ -666,6 +666,12 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun sessionAskWaiting() = capture("session_ask_waiting") {
+        val question = CHAT.first().copy(id = 3, content = "Who is shipping the e-ink build?")
+        session(tab = 2, ask = AskUiState(messages = CHAT + question, running = true))
+    }
+
+    @Test
     fun settings() = capture("settings") {
         SettingsBody(
             state = SettingsUiState(
@@ -852,7 +858,8 @@ class ScreenshotTest(private val variant: Variant) {
         marks: List<TranscriptMark> = emptyList(),
         marksOpen: Boolean = false,
         cleanup: CleanupUi = CleanupUi(),
-        tags: List<String> = emptyList()
+        tags: List<String> = emptyList(),
+        ask: AskUiState = AskUiState(messages = CHAT)
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -864,7 +871,7 @@ class ScreenshotTest(private val variant: Variant) {
             notFound = false,
             summaryState = summary,
             initialTab = tab,
-            askState = AskUiState(messages = CHAT),
+            askState = ask,
             playerState = PlayerState(
                 ready = true,
                 isPlaying = playing,
@@ -1146,9 +1153,15 @@ class ScreenshotTest(private val variant: Variant) {
             )
         )
 
-        private val SUMMARY = "The team moved the release to the first week of next month so QA can test " +
-            "the Boox build for another week. The e-ink mode is in scope for the release.\n\n" +
-            "Budget: spending is about ten percent under plan; the numbers are in the shared sheet."
+        // Markdown, as the LLM writes it (issue #53).
+        private val SUMMARY = "## Summary\n\nThe team moved the release to the **first week of next month** so " +
+            "QA can test the Boox build for another week. The e-ink mode is in scope for the release.\n\n" +
+            "## Decisions\n\n" +
+            "- Release moves a week.\n" +
+            "- Budget: spending is about *ten percent* under plan; the numbers are in the shared sheet.\n\n" +
+            "## Action items\n\n" +
+            "1. Bob — ship the e-ink build.\n" +
+            "2. Alice — check the store listing by Friday."
 
         private val CHAT = listOf(
             ChatMessageEntity(
@@ -1164,8 +1177,8 @@ class ScreenshotTest(private val variant: Variant) {
                 sessionId = 4,
                 kind = MessageKind.QA,
                 role = MessageRole.ASSISTANT,
-                content = "The release moves to the first week of next month, so QA has another " +
-                    "week for the Boox build.",
+                content = "The release moves to the **first week of next month**:\n\n" +
+                    "- QA gets another week for the Boox build.\n- The e-ink mode ships with it.",
                 createdAt = 0L
             )
         )
