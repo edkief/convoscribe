@@ -97,10 +97,10 @@ object ModelCatalog {
 
     // The misspelling `recongition` is in the upstream GitHub release URL
     // and must be preserved; sherpa-onnx's docs link to it as-is.
-    @Suppress("ktlint:standard:max-line-length")
-    private const val EMBEDDING_URL =
-        "https://github.com/k2-fsa/sherpa-onnx/releases/download/" +
-            "speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx"
+    private const val SPEAKER_MODELS_BASE =
+        "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+
+    private const val EMBEDDING_URL = SPEAKER_MODELS_BASE + "wespeaker_en_voxceleb_resnet34_LM.onnx"
 
     val ASR_EN: ModelBundle = ModelBundle(
         id = "asr-en-kroko-2025-08-06",
@@ -164,6 +164,27 @@ object ModelCatalog {
     )
 
     /**
+     * Optional voice model for speaker identification: WeSpeaker CAM++,
+     * trained on the same data as [EMBEDDING] with fewer operations per
+     * pass. Downloaded from Settings → Speakers when chosen; known voices
+     * are still matched with [EMBEDDING], so enrollments stay valid.
+     */
+    val EMBEDDING_CAMPPLUS: ModelBundle = ModelBundle(
+        id = "emb-wespeaker-campplus-lm",
+        displayName = "Speaker embeddings (CAM++)",
+        kind = ModelKind.EMBEDDING,
+        language = null,
+        files = listOf(
+            // `+` must be escaped in the URL path; the file keeps its name.
+            ModelFile(
+                "wespeaker_en_voxceleb_CAM++_LM.onnx",
+                SPEAKER_MODELS_BASE + "wespeaker_en_voxceleb_CAM%2B%2B_LM.onnx",
+                29_292_687
+            )
+        )
+    )
+
+    /**
      * English Nemotron Speech Streaming EN 0.6B model that runs on
      * the Hexagon NPU via sherpa-onnx's QNN backend. The upstream
      * ships it as a single `.tar.bz2` archive containing
@@ -223,7 +244,21 @@ object ModelCatalog {
         )
     )
 
-    val all: List<ModelBundle> = listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, CLEANUP)
+    val all: List<ModelBundle> =
+        listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, EMBEDDING_CAMPPLUS, CLEANUP)
+
+    /**
+     * Voice models speaker identification can cluster with, by their
+     * [com.convoscribe.settings.AppSettings.diarizationEmbedding] key.
+     * The first, [EMBEDDING], is the default and always installed.
+     */
+    val diarizationEmbeddings: Map<String, ModelBundle> = linkedMapOf(
+        "resnet34" to EMBEDDING,
+        "campplus" to EMBEDDING_CAMPPLUS
+    )
+
+    /** The voice model stored as [key], or [EMBEDDING] for an unknown key. */
+    fun embeddingFor(key: String): ModelBundle = diarizationEmbeddings[key] ?: EMBEDDING
 
     /**
      * Resolve the user-facing engine selection (currently `"npu"` or

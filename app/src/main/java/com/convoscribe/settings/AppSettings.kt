@@ -64,6 +64,15 @@ import com.convoscribe.llm.SummaryTemplates
  * [clusterThreshold] defaults to the value chosen with
  * `scripts/eval/eval_speakers.py --bench` (see its README).
  *
+ * [diarizationEmbedding] is the voice model speaker identification
+ * clusters with, a key of
+ * [com.convoscribe.models.ModelCatalog.diarizationEmbeddings]
+ * (`"resnet34"`, the default, or `"campplus"`); known voices are always
+ * matched with the default one. [diarizationStepSeconds] is how far the
+ * segmentation model's 10 s window moves each step: 1 s (the default)
+ * looks at each moment ten times, a longer step fewer times and is
+ * faster. Both are there to compare speed and accuracy.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -80,6 +89,8 @@ data class AppSettings(
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    val diarizationEmbedding: String = DEFAULT_DIARIZATION_EMBEDDING,
+    val diarizationStepSeconds: Float = DEFAULT_DIARIZATION_STEP_SECONDS,
     val defaultParticipants: List<String>? = null,
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     val cleanAudioDefault: Boolean = false,
@@ -93,3 +104,12 @@ data class AppSettings(
     val updateCheckAuto: Boolean = true,
     val updateIncludePrereleases: Boolean = false
 )
+
+/** [AppSettings.diarizationEmbedding] of a fresh install: WeSpeaker ResNet34. */
+const val DEFAULT_DIARIZATION_EMBEDDING = "resnet34"
+
+/** [AppSettings.diarizationStepSeconds] of a fresh install: sherpa-onnx's own 1 s. */
+const val DEFAULT_DIARIZATION_STEP_SECONDS = 1f
+
+/** Steps offered in Settings → Speakers, in seconds. */
+val DIARIZATION_STEPS_SECONDS: List<Float> = listOf(1f, 2f, 3f, 5f)

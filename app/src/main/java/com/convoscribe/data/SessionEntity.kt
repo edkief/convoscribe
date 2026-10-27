@@ -78,8 +78,24 @@ data class SessionEntity(
      * The title an automatic title replaced, so it can be restored;
      * `null` unless [titleSource] is [TitleSource.AUTO].
      */
-    val previousTitle: String? = null
+    val previousTitle: String? = null,
+    /**
+     * Id of the voice model the last speaker identification clustered
+     * with ([com.convoscribe.models.ModelCatalog.diarizationEmbeddings]),
+     * with its segmentation step ([diarizationStepMs]) and how long the
+     * engine took ([diarizationMs]), to compare settings. All `null` on
+     * sessions identified before they were kept.
+     */
+    val diarizedWith: String? = null,
+    val diarizationStepMs: Int? = null,
+    val diarizationMs: Long? = null
 )
+
+/** The last speaker identification run, or `null` when it was not kept. */
+fun SessionEntity.diarizationRun(): DiarizationRun? {
+    val model = diarizedWith ?: return null
+    return DiarizationRun(model, diarizationStepMs ?: return null, diarizationMs ?: return null)
+}
 
 /** Values of [SessionEntity.titleSource] (issue #32). */
 object TitleSource {

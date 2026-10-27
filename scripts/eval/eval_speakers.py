@@ -54,10 +54,19 @@ ASR_BASE = {
     "fr": f"{HF}/sherpa-onnx-streaming-zipformer-fr-kroko-2025-08-06/resolve/main/",
 }
 SEGMENTATION_URL = f"{HF}/sherpa-onnx-pyannote-segmentation-3-0/resolve/main/model.int8.onnx"
-EMBEDDING_URL = (
-    "https://github.com/k2-fsa/sherpa-onnx/releases/download/"
-    "speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx"
-)
+SPEAKER_MODELS = "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"
+# Speaker identification voice models, by the app's
+# AppSettings.diarizationEmbedding key (ModelCatalog.embeddingFor);
+# resnet34 is the default. A few more are listed to compare with.
+EMBEDDINGS = {
+    "resnet34": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+    "campplus": "wespeaker_en_voxceleb_CAM++_LM.onnx",
+    "campplus-3d": "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+    "eres2net-3d": "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx",
+    "titanet-small": "nemo_en_titanet_small.onnx",
+}
+SEGMENTATION_WINDOW_S = 10.0  # pyannote-3.0's window; the step is a share of it
+DEFAULT_STEP_S = 1.0  # AppSettings.diarizationStepSeconds
 # Two LibriSpeech speakers, for --make-demo.
 DEMO_CLIPS = [
     f"{HF}/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/main/test_wavs/0.wav",
@@ -109,13 +118,14 @@ def fetch(url: str, dest: Path) -> Path:
     return dest
 
 
-def models(lang: str) -> dict[str, Path]:
+def models(lang: str, embedding: str = "resnet34") -> dict[str, Path]:
     root = cache_dir()
     asr = root / f"kroko-{lang}"
     out = {name: fetch(ASR_BASE[lang] + name, asr / name)
            for name in ("encoder.onnx", "decoder.onnx", "joiner.onnx", "tokens.txt")}
     out["segmentation"] = fetch(SEGMENTATION_URL, root / "pyannote-segmentation-3-0.int8.onnx")
-    out["embedding"] = fetch(EMBEDDING_URL, root / "wespeaker_en_voxceleb_resnet34_LM.onnx")
+    name = EMBEDDINGS[embedding]
+    out["embedding"] = fetch(SPEAKER_MODELS + name.replace("+", "%2B"), root / name)
     return out
 
 
@@ -226,10 +236,11 @@ class Diarizer:  # the Python binding has set_config but no getter
     config: so.OfflineSpeakerDiarizationConfig
 
 
-def make_diarizer(m: dict[str, Path], threads: int) -> Diarizer:
+def make_diarizer(m: dict[str, Path], threads: int, step: float = DEFAULT_STEP_S) -> Diarizer:
     cfg = so.OfflineSpeakerDiarizationConfig(
         segmentation=so.OfflineSpeakerSegmentationModelConfig(
-            pyannote=so.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(m["segmentation"])),
+            pyannote=so.OfflineSpeakerSegmentationPyannoteModelConfig(
+                model=str(m["segmentation"]), window_shift_ratio=step / SEGMENTATION_WINDOW_S),
             num_threads=threads,
         ),
         embedding=so.SpeakerEmbeddingExtractorConfig(model=str(m["embedding"]), num_threads=threads),
@@ -502,14 +513,14 @@ def check_sherpa(m: dict[str, Path], threads: int) -> None:
 
 
 def evaluate(args) -> None:
-    m = models(args.lang)
+    m = models(args.lang, args.embedding)
     audio = read_wav(Path(args.wav))
     labels = read_labels(Path(args.labels))
     true_count = len({n for _, _, n in labels})
     print(f"{args.wav}: {len(audio) / SAMPLE_RATE:.1f} s, {true_count} labelled speakers", file=sys.stderr)
     segments = transcribe(audio, m, args.threads)
     print(f"{len(segments)} transcript lines, {sum(len(words_of(s)) for s in segments)} words", file=sys.stderr)
-    sd = make_diarizer(m, args.threads)
+    sd = make_diarizer(m, args.threads, args.step)
     counts = [-1] + ([true_count] if args.num_speakers is None else [args.num_speakers])
     counts = list(dict.fromkeys(counts))
     print(f"{'threshold':>9} {'speakers':>8} {'found':>5} {'line acc':>8} {'split acc':>9} {'mean conf':>9}")
@@ -607,16 +618,31 @@ def file_key(wav: Path, extra: str) -> str:
     return hashlib.sha1(f"{wav.resolve()}|{st.st_size}|{st.st_mtime_ns}|{extra}".encode()).hexdigest()[:16]
 
 
-def cached_turns(wav: Path, audio: np.ndarray, sd_factory, num_speakers: int, threshold: float) -> list[Turn]:
-    """Diarizer turns for one setting; cached because a long meeting takes minutes."""
+def cached_turns(wav: Path, audio: np.ndarray, sd_factory, num_speakers: int, threshold: float,
+                 embedding: str = "resnet34", step: float = DEFAULT_STEP_S) -> tuple[list[Turn], float]:
+    """Diarizer turns for one setting and the seconds the run took.
+
+    Cached because a long meeting takes minutes. The default model and
+    step keep the cache key of earlier runs.
+    """
     import json
-    path = cache_dir() / "turns" / f"{file_key(wav, f'{num_speakers}|{threshold:.3f}')}.json"
+    import time
+    extra = f"{num_speakers}|{threshold:.3f}"
+    if (embedding, step) != ("resnet34", DEFAULT_STEP_S):
+        extra += f"|{embedding}|{step:g}"
+    path = cache_dir() / "turns" / f"{file_key(wav, extra)}.json"
     if path.exists():
-        return [Turn(*row) for row in json.loads(path.read_text())]
-    turns = diarize(sd_factory(), audio, num_speakers, threshold)
+        data = json.loads(path.read_text())
+        rows, seconds = (data, float("nan")) if isinstance(data, list) else (data["turns"], data["seconds"])
+        return [Turn(*row) for row in rows], seconds
+    sd = sd_factory()
+    started = time.perf_counter()
+    turns = diarize(sd, audio, num_speakers, threshold)
+    seconds = time.perf_counter() - started
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps([[t.start_ms, t.end_ms, t.speaker, t.confidence] for t in turns]))
-    return turns
+    path.write_text(json.dumps({"turns": [[t.start_ms, t.end_ms, t.speaker, t.confidence] for t in turns],
+                                "seconds": seconds}))
+    return turns, seconds
 
 
 def cached_transcript(wav: Path, audio: np.ndarray, m, threads: int, lang: str) -> list[Segment]:
@@ -633,8 +659,8 @@ def cached_transcript(wav: Path, audio: np.ndarray, m, threads: int, lang: str) 
 
 
 def bench_one(job) -> list[dict]:
-    wav, label, thresholds, threads, lang, asr = job
-    m = models(lang)
+    wav, label, thresholds, threads, lang, asr, embedding, step = job
+    m = models(lang, embedding)
     audio = read_wav(wav)
     labels = read_labels(label)
     true_count = len({n for _, _, n in labels})
@@ -643,17 +669,18 @@ def bench_one(job) -> list[dict]:
 
     def sd_factory():
         nonlocal sd
-        sd = sd or make_diarizer(m, threads)
+        sd = sd or make_diarizer(m, threads, step)
         return sd
 
     rows = []
     for threshold, n in [(t, -1) for t in thresholds] + [(None, true_count)]:
-        turns = cached_turns(wav, audio, sd_factory, n, DEFAULT_THRESHOLD if threshold is None else threshold)
+        turns, seconds = cached_turns(wav, audio, sd_factory, n, DEFAULT_THRESHOLD if threshold is None else threshold,
+                                      embedding, step)
         _, split_acc = score(segments, turns, labels) if segments else (None, float("nan"))
         rows.append({"file": wav.stem, "group": wav.stem.rsplit("-", 1)[0], "true": true_count,
                      "threshold": threshold, "found": len({t.speaker for t in turns}),
                      "time": time_accuracy(turns, labels), "f1": cluster_f1(turns, labels),
-                     "split": split_acc})
+                     "split": split_acc, "rtf": seconds / (len(audio) / SAMPLE_RATE)})
     print(f"  done {wav.stem}", file=sys.stderr)
     return rows
 
@@ -663,16 +690,19 @@ def run_bench(args) -> None:
     files = bench_files(Path(args.bench))
     if not files:
         sys.exit(f"{args.bench}: no WAV files with labels")
-    models(args.lang)  # download once, before the workers start
-    jobs = [(w, lab, args.thresholds, args.threads, args.lang, not args.no_asr) for w, lab in files]
+    models(args.lang, args.embedding)  # download once, before the workers start
+    jobs = [(w, lab, args.thresholds, args.threads, args.lang, not args.no_asr, args.embedding, args.step)
+            for w, lab in files]
     workers = max(1, min(len(jobs), (os.cpu_count() or 4) // args.threads))
-    print(f"{len(jobs)} recordings, {workers} at a time", file=sys.stderr)
+    print(f"{len(jobs)} recordings, {workers} at a time, embedding={args.embedding} step={args.step:g} s",
+          file=sys.stderr)
     with Pool(workers) as p:
         rows = [r for rs in p.map(bench_one, jobs) for r in rs]
 
     def table(title: str, sel: list[dict]) -> None:
         print(f"\n{title}")
-        print(f"{'threshold':>9} {'F1':>6} {'time acc':>8} {'split acc':>9} {'count ok':>8} {'count err':>9}")
+        print(f"{'threshold':>9} {'F1':>6} {'time acc':>8} {'split acc':>9} {'count ok':>8} {'count err':>9} "
+              f"{'RTF':>6}")
         keys = list(dict.fromkeys(r["threshold"] for r in sel))
         for k in keys:
             rs = [r for r in sel if r["threshold"] == k]
@@ -681,7 +711,7 @@ def run_bench(args) -> None:
             err = np.mean([r["found"] - r["true"] for r in rs])
             print(f"{name} {np.mean([r['f1'] for r in rs]):6.1%} {np.mean([r['time'] for r in rs]):8.1%} "
                   f"{np.nanmean([r['split'] for r in rs]) if not args.no_asr else float('nan'):9.1%} "
-                  f"{ok:8.0%} {err:+9.2f}")
+                  f"{ok:8.0%} {err:+9.2f} {np.nanmean([r['rtf'] for r in rs]):6.3f}")
 
     if args.verbose:
         print(f"\n{'file':<22} {'threshold':>9} {'true':>4} {'found':>5} {'F1':>6} {'time acc':>8} {'split acc':>9}")
@@ -696,6 +726,8 @@ def run_bench(args) -> None:
     print("\n'fixed n' = speaker count set to the labelled count (the best Re-identify can do).")
     print("F1 = cluster purity/coverage F1, the figure to tune the threshold on;")
     print("count err = mean (found - labelled) speakers; positive means too many.")
+    print(f"RTF = diarization seconds per second of audio with --threads {args.threads}, while other")
+    print("recordings run alongside (nan when the turns came from the cache of an older run).")
 
 
 def main() -> None:
@@ -706,6 +738,10 @@ def main() -> None:
     p.add_argument("--threads", type=int, default=4)
     p.add_argument("--thresholds", type=float, nargs="+", default=[0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9])
     p.add_argument("--num-speakers", type=int, help="fixed count to compare with auto (default: labelled count)")
+    p.add_argument("--embedding", choices=list(EMBEDDINGS), default="resnet34",
+                   help="speaker identification voice model (Settings -> Speakers -> Voice model)")
+    p.add_argument("--step", type=float, default=DEFAULT_STEP_S,
+                   help="segmentation step in seconds over its 10 s window (Settings -> Speakers -> Analysis step)")
     p.add_argument("--make-demo", metavar="DIR", help="write a two-speaker demo WAV + labels to DIR and exit")
     p.add_argument("--check-sherpa", action="store_true", help="verify sherpa-onnx behaviour the app relies on")
     p.add_argument("--make-bench", metavar="DIR",

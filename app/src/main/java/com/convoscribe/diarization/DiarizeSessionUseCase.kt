@@ -2,7 +2,9 @@ package com.convoscribe.diarization
 
 import android.util.Log
 import com.convoscribe.TAG
+import com.convoscribe.audio.AudioSpec
 import com.convoscribe.audio.WavReader
+import com.convoscribe.data.DiarizationRun
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SegmentEntity
@@ -14,6 +16,7 @@ import com.convoscribe.data.defaultSpeakerLabel
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
 import java.io.File
+import java.util.Locale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -250,15 +253,27 @@ class DiarizeSessionUseCase(
                 readSamples(File(session.audioPath))
             }
             val speakerSettings = settings.settings.value
+            var run: DiarizationRun? = null
             val turns = withContext(Dispatchers.Default) {
                 diarizerFactory.create().use { diarizer ->
+                    val engineStarted = System.nanoTime()
                     diarizer.diarize(
                         samples = samples,
                         numSpeakers = session.numSpeakers ?: speakerSettings.numSpeakers,
                         threshold = speakerSettings.clusterThreshold,
                         onProgress = onProgress,
                         isCancelled = { job?.isActive == false }
-                    )
+                    ).also {
+                        val engineMs = (System.nanoTime() - engineStarted) / 1_000_000L
+                        run = diarizer.setup?.let { DiarizationRun(it.embeddingModelId, it.stepMs, engineMs) }
+                        val audioMs = samples.size * 1000L / AudioSpec.SAMPLE_RATE
+                        val rtf = String.format(Locale.ROOT, "%.3f", engineMs.toDouble() / audioMs.coerceAtLeast(1))
+                        Log.i(
+                            TAG,
+                            "diarization engine session=$sessionId engineMs=$engineMs audioMs=$audioMs" +
+                                " rtf=$rtf setup=${diarizer.setup}"
+                        )
+                    }
                 }
             }
             currentCoroutineContext().ensureActive()
@@ -333,7 +348,8 @@ class DiarizeSessionUseCase(
                 assignments = assignments,
                 speakerCount = speakerCount,
                 labels = labels,
-                replacements = replacements
+                replacements = replacements,
+                run = run
             )
             val durationMs = (System.nanoTime() - startedNanos) / 1_000_000L
             Log.i(

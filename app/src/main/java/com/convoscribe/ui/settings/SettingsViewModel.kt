@@ -12,6 +12,8 @@ import com.convoscribe.llm.toUserMessage
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
 import com.convoscribe.settings.AppSettings
+import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
+import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
@@ -140,6 +142,12 @@ data class SettingsUiState(
     val updateIncludePrereleases: Boolean = false,
     /** [com.convoscribe.settings.SpeakerIdMode.key] (issue #11); written immediately. */
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    /** Voice model key ([ModelCatalog.diarizationEmbeddings]); written immediately. */
+    val diarizationEmbedding: String = DEFAULT_DIARIZATION_EMBEDDING,
+    /** Whether [diarizationEmbedding]'s model is downloaded. */
+    val diarizationEmbeddingInstalled: Boolean = true,
+    /** Segmentation step in seconds; written immediately. */
+    val diarizationStepSeconds: Float = DEFAULT_DIARIZATION_STEP_SECONDS,
     /** Summary template new conversations start with (issue #27); written immediately. */
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     /** Built-in and user templates, for the default template picker. */
@@ -409,6 +417,20 @@ class SettingsViewModel(
         repo.update { it.copy(speakerIdMode = mode) }
     }
 
+    /**
+     * Persist the speaker identification voice model immediately; it
+     * applies from the next identification. A model not downloaded yet
+     * is downloaded from the screen.
+     */
+    fun setDiarizationEmbedding(key: String) {
+        repo.update { it.copy(diarizationEmbedding = key) }
+    }
+
+    /** Persist the speaker identification step immediately; it applies from the next identification. */
+    fun setDiarizationStep(seconds: Float) {
+        repo.update { it.copy(diarizationStepSeconds = seconds) }
+    }
+
     /** Persist *Clean new recordings* immediately (issue #37). */
     fun setCleanAudioDefault(enabled: Boolean) {
         repo.update { it.copy(cleanAudioDefault = enabled) }
@@ -521,6 +543,11 @@ class SettingsViewModel(
             updateCheckAuto = current.updateCheckAuto,
             updateIncludePrereleases = current.updateIncludePrereleases,
             speakerIdMode = current.speakerIdMode,
+            diarizationEmbedding = current.diarizationEmbedding,
+            diarizationEmbeddingInstalled = modelStore.isInstalled(
+                ModelCatalog.embeddingFor(current.diarizationEmbedding)
+            ),
+            diarizationStepSeconds = current.diarizationStepSeconds,
             defaultSummaryTemplate = current.defaultSummaryTemplate,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),

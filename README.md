@@ -42,6 +42,14 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   a crash also waits. Android 14+ gives a background job about 10
   minutes, so a very long session may not finish in the background; a
   notification then asks you to start it from the app.
+- **Speed up speaker identification** (to compare, issue #56).
+  Settings → Speakers → *Voice model*: **ResNet34** (default) or
+  **CAM++**, a lighter model (29 MB download, offered there). Known
+  voices are always matched with ResNet34, so enrollments keep working.
+  *Analysis step*: how far the 10 s analysis window moves each time,
+  **1 s** (default), 2, 3 or 5 s; a longer step does less work. Session
+  info shows the model, step and time of each session's last
+  identification, with its real-time factor.
 - **Known voices.** Enroll people in Settings → Speakers, or use
   *Remember this voice* when renaming a speaker. Each enrollment adds a
   voice sample (up to 5 per person); new recordings label matching

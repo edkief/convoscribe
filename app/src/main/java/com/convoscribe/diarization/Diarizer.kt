@@ -20,6 +20,13 @@ import java.io.Closeable
 interface Diarizer : Closeable {
 
     /**
+     * The voice model and segmentation step this instance runs with,
+     * kept on the session so runs can be compared; `null` when the
+     * engine has no such settings (test fakes).
+     */
+    val setup: DiarizerSetup? get() = null
+
+    /**
      * Run diarization on [samples] (mono 16 kHz float PCM, the
      * same shape the recorder writes). [numSpeakers] is forwarded
      * to the engine's clustering config: `-1` lets the engine
@@ -48,6 +55,13 @@ interface Diarizer : Closeable {
         isCancelled: () -> Boolean
     ): List<SpeakerTurn>
 }
+
+/**
+ * What a [Diarizer] runs with: [embeddingModelId], the
+ * [com.convoscribe.models.ModelBundle.id] of its voice model, and
+ * [stepMs], how far its segmentation window moves each step.
+ */
+data class DiarizerSetup(val embeddingModelId: String, val stepMs: Int)
 
 /**
  * Builds a fresh [Diarizer] when a recording finishes and needs

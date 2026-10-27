@@ -8,6 +8,7 @@ import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.diarizationRun
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
@@ -27,6 +28,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -101,7 +103,8 @@ class DiarizeSessionUseCaseTest {
      * diarizer has been "created" yet via its `created` counter.
      */
     private class ScriptedDiarizer(
-        private val turns: List<SpeakerTurn>
+        private val turns: List<SpeakerTurn>,
+        override val setup: DiarizerSetup? = null
     ) : Diarizer {
         var diarizeCount: Int = 0
             private set
@@ -305,6 +308,31 @@ class DiarizeSessionUseCaseTest {
      * A line spanning a speaker change (quick exchange, no 0.8 s
      * pause) is split into one row per speaker.
      */
+    @Test
+    fun run_keepsTheEngineSetupAndTimeOnTheSession() = runTest {
+        val id = repo.createSession(title = "Test", language = "en")
+        repo.addSegment(id, startMs = 0L, endMs = 1000L, text = "first")
+        val turns = listOf(SpeakerTurn(startMs = 0L, endMs = 1000L, speaker = 0))
+        fun useCase(diarizer: Diarizer) = DiarizeSessionUseCase(
+            repository = repo,
+            diarizerFactory = ScriptedDiarizerFactory(diarizer),
+            settings = settings,
+            readSamples = { FloatArray(16_000) }
+        )
+
+        useCase(ScriptedDiarizer(turns, DiarizerSetup("emb-wespeaker-campplus-lm", stepMs = 2000))).run(id)
+
+        val run = repo.getSession(id)!!.diarizationRun()!!
+        assertEquals("emb-wespeaker-campplus-lm", run.embeddingModelId)
+        assertEquals(2000, run.stepMs)
+        assertTrue(run.durationMs >= 0L)
+
+        // An engine without a setup clears the previous run rather than
+        // leaving another engine's figures on the session.
+        useCase(ScriptedDiarizer(turns)).run(id)
+        assertNull(repo.getSession(id)!!.diarizationRun())
+    }
+
     @Test
     fun run_reportsTheSessionOnceItsSpeakersAreIdentifiedButNotOnFailure() = runTest {
         val id = repo.createSession(title = "Test", language = "en")

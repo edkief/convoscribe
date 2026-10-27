@@ -1253,6 +1253,51 @@ recorded, one of them renamed by hand.
 - Step 14: chips and dialogs are outlined, black on white, and redraw
   once per change.
 
+## 35. Voice model and analysis step (issue #56)
+
+Install over the previous version without clearing data, with at least
+one enrolled known speaker and a recorded conversation of a few minutes
+with two or more people.
+
+**Steps**
+
+1. Open an older conversation → menu → *Session info*.
+2. Settings → Speakers. Check *Voice model* and *Analysis step*.
+3. On that conversation, *Re-identify speakers…* → Automatic. Open
+   *Session info*.
+4. Settings → Speakers → *Voice model* → CAM++. Re-identify the same
+   conversation before downloading it, then open *Session info*.
+5. Tap *Download CAM++*; wait for it to finish. Re-identify again and
+   open *Session info*.
+6. Set *Analysis step* to 3 s. Re-identify again and open *Session
+   info*. Compare the speakers with step 3.
+7. Record a short conversation with the enrolled person speaking.
+8. Set *Voice model* back to ResNet34 and *Analysis step* to 1 s.
+9. On the Boox (e-ink): step 2.
+
+**Expected**
+
+- Step 1: *Speaker identification* shows `unknown`.
+- Step 2: ResNet34 and 1 s are selected on an existing install, as on a
+  fresh one.
+- Step 3: *Speaker identification* reads `ResNet34, 1 s step, took
+  mm:ss (… × real time)`. `adb logcat -s ConvoScribe` shows `diarizer
+  embedding=emb-wespeaker-resnet34-lm stepS=1.0` and a `diarization
+  engine … rtf=…` line.
+- Step 4: the section says ResNet34 is used until CAM++ is downloaded
+  and offers *Download CAM++ (29.3 MB)*. The run still succeeds and
+  Session info says ResNet34; logcat shows `voice model
+  emb-wespeaker-campplus-lm not downloaded`.
+- Step 5: while downloading the section shows *Downloading CAM++…*,
+  then the button goes. Session info says CAM++, with a shorter time
+  than step 3.
+- Step 6: Session info says `3 s step`, with a shorter time than
+  step 5. Speakers may differ slightly at short turns.
+- Step 7: the enrolled person is still named (known voices use
+  ResNet34 whatever the setting).
+- Step 8: the next identification is the same as in step 3.
+- Step 9: the choices are outlined, black on white.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

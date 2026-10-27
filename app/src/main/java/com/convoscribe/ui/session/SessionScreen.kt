@@ -346,7 +346,9 @@ fun SessionScreen(
             participants = state.participants,
             asrEngine = state.asrEngine,
             asrModel = state.asrModel,
-            cleanedWith = state.cleanedWith
+            cleanedWith = state.cleanedWith,
+            diarizationRun = state.diarizationRun,
+            durationMs = state.durationMs
         ),
         enrolledNames = enrolledNames,
         onSetParticipants = { vm.setParticipants(it) },

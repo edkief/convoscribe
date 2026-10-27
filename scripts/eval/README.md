@@ -121,6 +121,25 @@ Far-field meetings are much harder than the clean synthetic conversations: aroun
 around 75%. Add a few labelled recordings from your own phone to `bench/` to check the choice
 holds for your rooms.
 
+## Benchmark: voice model and analysis step
+
+Settings → Speakers → *Voice model* and *Analysis step* (issue #56) trade accuracy for speed. To
+compare them on the same recordings:
+
+```sh
+.venv-eval/bin/python scripts/eval/eval_speakers.py --bench bench --no-asr --threads 2 \
+    --embedding campplus --step 2 --thresholds 0.7 0.75 0.8
+```
+
+- `--embedding`: `resnet34` (the app's default), `campplus` (the app's CAM++), or, to compare
+  with, `campplus-3d`, `eres2net-3d`, `titanet-small`. The model is downloaded on first use.
+- `--step`: seconds the 10 s segmentation window moves each step (the app's default is 1).
+
+The table gains an `RTF` column: diarization seconds per second of audio. Recordings run in
+parallel, so it is noisier than one run on its own, and a desktop is several times faster than a
+phone; compare settings with each other, not with the device. Runs with a non-default model or
+step are cached separately.
+
 ## After upgrading sherpa-onnx
 
 ```sh

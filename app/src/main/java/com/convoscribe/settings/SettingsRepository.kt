@@ -3,6 +3,7 @@ package com.convoscribe.settings
 import android.content.SharedPreferences
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.models.ModelCatalog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -54,6 +55,10 @@ class SettingsRepository(
      *    keeps the previous value
      *  - `speakerIdMode` must be a [SpeakerIdMode.key]; anything else
      *    keeps the previous value
+     *  - `diarizationEmbedding` must be a key of
+     *    [ModelCatalog.diarizationEmbeddings]; anything else keeps the
+     *    previous value
+     *  - `diarizationStepSeconds` clamped to 0.5..10 (the window is 10 s)
      *  - `floatingShape` must be a [FloatingShape.key] or `null`;
      *    anything else keeps the previous value
      *  - `defaultSummaryTemplate` trimmed; blank becomes Meeting. A
@@ -77,6 +82,8 @@ class SettingsRepository(
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
             putString(KEY_SPEAKER_ID_MODE, next.speakerIdMode)
+            putString(KEY_DIARIZATION_EMBEDDING, next.diarizationEmbedding)
+            putFloat(KEY_DIARIZATION_STEP_SECONDS, next.diarizationStepSeconds)
             putString(KEY_DISPLAY_MODE, next.displayMode)
             putBoolean(KEY_DYNAMIC_COLOR, next.dynamicColor)
             putBoolean(KEY_FLOATING_CONTROL, next.floatingControl)
@@ -137,6 +144,10 @@ class SettingsRepository(
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
             speakerIdMode = prefs.getString(KEY_SPEAKER_ID_MODE, null) ?: SpeakerIdMode.AUTO.key,
+            diarizationEmbedding = prefs.getString(KEY_DIARIZATION_EMBEDDING, null)
+                ?.takeIf { it in ModelCatalog.diarizationEmbeddings }
+                ?: DEFAULT_DIARIZATION_EMBEDDING,
+            diarizationStepSeconds = prefs.getFloat(KEY_DIARIZATION_STEP_SECONDS, DEFAULT_DIARIZATION_STEP_SECONDS),
             defaultParticipants = ParticipantsCodec.decode(prefs.getString(KEY_DEFAULT_PARTICIPANTS, null)),
             displayMode = prefs.getString(KEY_DISPLAY_MODE, null) ?: DisplayMode.AUTO.key,
             dynamicColor = prefs.getBoolean(KEY_DYNAMIC_COLOR, false),
@@ -209,6 +220,8 @@ class SettingsRepository(
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
         const val KEY_SPEAKER_MATCH_THRESHOLD = "speakerMatchThreshold"
         const val KEY_SPEAKER_ID_MODE = "speakerIdMode"
+        const val KEY_DIARIZATION_EMBEDDING = "diarizationEmbedding"
+        const val KEY_DIARIZATION_STEP_SECONDS = "diarizationStepSeconds"
         const val KEY_DEFAULT_PARTICIPANTS = "defaultParticipants"
         const val KEY_DISPLAY_MODE = "displayMode"
         const val KEY_DYNAMIC_COLOR = "dynamicColor"
@@ -231,7 +244,8 @@ class SettingsRepository(
  * not "en" or "fr"; `asrEngine` keeps the previous value when it is
  * not "npu" or "cpu"; `displayMode` and `speakerIdMode` keep the
  * previous value when they are not a [DisplayMode.key] /
- * [SpeakerIdMode.key]; `floatingShape` keeps the previous value when
+ * [SpeakerIdMode.key]; `diarizationEmbedding` keeps it when it is not a
+ * voice model key; `floatingShape` keeps the previous value when
  * it is neither `null` nor a [FloatingShape.key].
  */
 private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
@@ -239,11 +253,14 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val engine = if (asrEngine == "npu" || asrEngine == "cpu") asrEngine else previous.asrEngine
     val mode = if (DisplayMode.fromKey(displayMode) != null) displayMode else previous.displayMode
     val idMode = if (SpeakerIdMode.fromKey(speakerIdMode) != null) speakerIdMode else previous.speakerIdMode
+    val embedding = diarizationEmbedding.takeIf { it in ModelCatalog.diarizationEmbeddings }
+        ?: previous.diarizationEmbedding
     val shapeValid = floatingShape == null || FloatingShape.fromKey(floatingShape) != null
     val shape = if (shapeValid) floatingShape else previous.floatingShape
     return this.normaliseNumeric().copy(
         displayMode = mode,
         speakerIdMode = idMode,
+        diarizationEmbedding = embedding,
         floatingShape = shape,
         defaultSummaryTemplate = summaryTemplateKey(defaultSummaryTemplate),
         llmBaseUrl = llmBaseUrl.trim().trimEnd('/'),
@@ -277,6 +294,8 @@ internal fun AppSettings.normaliseNumeric(): AppSettings {
         numThreads = numThreads.coerceIn(1, 8),
         numSpeakers = speakers,
         clusterThreshold = clusterThreshold.coerceIn(0.05f, 0.95f),
-        speakerMatchThreshold = speakerMatchThreshold.coerceIn(0.05f, 0.95f)
+        speakerMatchThreshold = speakerMatchThreshold.coerceIn(0.05f, 0.95f),
+        diarizationStepSeconds = diarizationStepSeconds.takeUnless { it.isNaN() }
+            ?.coerceIn(0.5f, 10f) ?: DEFAULT_DIARIZATION_STEP_SECONDS
     )
 }

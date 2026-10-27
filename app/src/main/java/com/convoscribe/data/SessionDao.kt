@@ -73,6 +73,11 @@ interface SessionDao {
     @Query("UPDATE sessions SET cleanedWith = :model WHERE id = :id")
     suspend fun setCleanedWith(id: Long, model: String?)
 
+    @Query(
+        "UPDATE sessions SET diarizedWith = :model, diarizationStepMs = :stepMs, diarizationMs = :ms WHERE id = :id"
+    )
+    suspend fun setDiarizationRun(id: Long, model: String?, stepMs: Int?, ms: Long?)
+
     @Query("UPDATE sessions SET transcriptEdited = :edited WHERE id = :id")
     suspend fun setTranscriptEdited(id: Long, edited: Boolean)
 

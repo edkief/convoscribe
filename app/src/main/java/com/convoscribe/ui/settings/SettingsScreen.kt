@@ -69,6 +69,9 @@ import com.convoscribe.models.ModelDownloadState
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.service.ModelDownloadService
+import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
+import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
+import com.convoscribe.settings.DIARIZATION_STEPS_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.FloatingShape
 import com.convoscribe.settings.SpeakerIdMode
@@ -81,6 +84,7 @@ import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.session.voiceModelName
 import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 import com.convoscribe.ui.update.UpdateActions
@@ -88,6 +92,7 @@ import com.convoscribe.ui.update.UpdateBanner
 import com.convoscribe.ui.update.hasBanner
 import com.convoscribe.ui.update.rememberUpdateActions
 import com.convoscribe.update.UpdateState
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
@@ -200,6 +205,9 @@ fun SettingsScreen(navController: NavHostController) {
     val downloadState by container.modelDownloadManager.state.collectAsStateWithLifecycle()
     val cleanupDownloading = (downloadState as? ModelDownloadState.Running)
         ?.bundleIds?.contains(ModelCatalog.CLEANUP.id) == true
+    val voiceModel = ModelCatalog.embeddingFor(state.diarizationEmbedding)
+    val voiceModelDownloading = (downloadState as? ModelDownloadState.Running)
+        ?.bundleIds?.contains(voiceModel.id) == true
     LaunchedEffect(downloadState) {
         if (downloadState is ModelDownloadState.Completed) vm.refreshModels()
     }
@@ -217,6 +225,7 @@ fun SettingsScreen(navController: NavHostController) {
     SettingsBody(
         state = state,
         cleanupDownloading = cleanupDownloading,
+        voiceModelDownloading = voiceModelDownloading,
         liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = updateState,
@@ -257,6 +266,14 @@ fun SettingsScreen(navController: NavHostController) {
                 )
             },
             onDeleteCleanup = vm::deleteCleanupModel,
+            onDiarizationEmbeddingChange = vm::setDiarizationEmbedding,
+            onDownloadVoiceModel = {
+                ContextCompat.startForegroundService(
+                    context,
+                    ModelDownloadService.startIntent(context, listOf(voiceModel))
+                )
+            },
+            onDiarizationStepChange = vm::setDiarizationStep,
             onCleanAudioDefaultChange = vm::setCleanAudioDefault,
             onAutoMarkNotesChange = vm::setAutoMarkNotes,
             onAutoTitleChange = vm::setAutoTitle
@@ -290,6 +307,9 @@ internal class SettingsActions(
     val onOpenPresets: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
+    val onDiarizationEmbeddingChange: (String) -> Unit = {},
+    val onDownloadVoiceModel: () -> Unit = {},
+    val onDiarizationStepChange: (Float) -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
     val onAutoMarkNotesChange: (Boolean) -> Unit = {},
     val onAutoTitleChange: (Boolean) -> Unit = {}
@@ -309,6 +329,7 @@ internal fun SettingsBody(
     state: SettingsUiState,
     actions: SettingsActions,
     cleanupDownloading: Boolean = false,
+    voiceModelDownloading: Boolean = false,
     liveCleanupVerdict: LiveCleanupVerdict? = null,
     overlayGranted: Boolean = true,
     update: UpdateState = UpdateState.Idle,
@@ -413,7 +434,16 @@ internal fun SettingsBody(
                 onMatchThresholdChange = { value ->
                     actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
                 },
-                onOpenKnownSpeakers = actions.onOpenKnownSpeakers
+                onOpenKnownSpeakers = actions.onOpenKnownSpeakers,
+                voiceModel = VoiceModelUi(
+                    selected = state.diarizationEmbedding,
+                    installed = state.diarizationEmbeddingInstalled,
+                    downloading = voiceModelDownloading,
+                    stepSeconds = state.diarizationStepSeconds,
+                    onSelect = actions.onDiarizationEmbeddingChange,
+                    onDownload = actions.onDownloadVoiceModel,
+                    onStepChange = actions.onDiarizationStepChange
+                )
             )
             AboutSection(
                 installedVersion = installedVersion,
@@ -967,6 +997,72 @@ private fun NoiseCleanupSection(
 }
 
 /**
+ * Speaker identification's voice model ([selected], a key of
+ * [ModelCatalog.diarizationEmbeddings]) and segmentation step
+ * ([stepSeconds]), both written immediately, to compare speed and
+ * accuracy. [installed] is whether the selected model is downloaded;
+ * until it is, the default one is used.
+ */
+internal data class VoiceModelUi(
+    val selected: String = DEFAULT_DIARIZATION_EMBEDDING,
+    val installed: Boolean = true,
+    val downloading: Boolean = false,
+    val stepSeconds: Float = DEFAULT_DIARIZATION_STEP_SECONDS,
+    val onSelect: (String) -> Unit = {},
+    val onDownload: () -> Unit = {},
+    val onStepChange: (Float) -> Unit = {}
+)
+
+/** The *Voice model* and *Analysis step* choices of the Speakers section, from [ui]. */
+@Composable
+private fun VoiceModelFields(ui: VoiceModelUi) {
+    FieldLabel(text = stringResource(R.string.settings_speakers_voice_model_label))
+    ChoiceGroup(
+        options = ModelCatalog.diarizationEmbeddings.keys.map { key -> key to voiceModelName(key) },
+        selected = ui.selected,
+        onSelect = ui.onSelect
+    )
+    SupportingText(text = stringResource(R.string.settings_speakers_voice_model_help))
+    val name = voiceModelName(ui.selected)
+    when {
+        ui.installed -> Unit
+        ui.downloading -> Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+        ) {
+            InlineProgress()
+            NoticeText(text = stringResource(R.string.settings_speakers_voice_model_downloading, name))
+        }
+        else -> {
+            NoticeText(text = stringResource(R.string.settings_speakers_voice_model_missing))
+            OutlinedButton(onClick = ui.onDownload) {
+                Text(
+                    text = stringResource(
+                        R.string.settings_speakers_voice_model_download,
+                        name,
+                        ModelCatalog.embeddingFor(ui.selected).totalBytes.toFloat() / 1_000_000f
+                    )
+                )
+            }
+        }
+    }
+    FieldLabel(text = stringResource(R.string.settings_speakers_step_label))
+    // A step set outside the offered ones (none today) is still shown selected.
+    val steps = (DIARIZATION_STEPS_SECONDS + ui.stepSeconds).distinct().sorted()
+    ChoiceGroup(
+        options = steps.map { step ->
+            step to stringResource(R.string.settings_speakers_step_value, stepLabel(step))
+        },
+        selected = ui.stepSeconds,
+        onSelect = ui.onStepChange
+    )
+    SupportingText(text = stringResource(R.string.settings_speakers_step_help))
+}
+
+/** `2` for 2 s, `2.5` for 2.5 s. */
+private fun stepLabel(seconds: Float): String = String.format(Locale.ROOT, "%.1f", seconds).removeSuffix(".0")
+
+/**
  * "Speakers" section: when speakers are identified ([speakerIdMode],
  * issue #11, written immediately), number-of-speakers dropdown (Automatic,
  * 2..6 — `-1` is the "automatic" sentinel persisted by the
@@ -988,7 +1084,8 @@ private fun SpeakersSection(
     onNumSpeakersChange: (Int) -> Unit,
     onThresholdChange: (Float) -> Unit,
     onMatchThresholdChange: (Float) -> Unit,
-    onOpenKnownSpeakers: () -> Unit
+    onOpenKnownSpeakers: () -> Unit,
+    voiceModel: VoiceModelUi = VoiceModelUi()
 ) {
     var speakersExpanded by remember { mutableStateOf(false) }
     SectionCard(
@@ -1058,6 +1155,7 @@ private fun SpeakersSection(
             style = MaterialTheme.typography.bodySmall
         )
         SupportingText(text = stringResource(R.string.settings_speakers_match_threshold_help))
+        VoiceModelFields(voiceModel)
         // "Known speakers" row: navigates to the SpeakersScreen where
         // the user records a 15-second voice sample and labels
         // diarization clusters with the speaker's real name. Lives

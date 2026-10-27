@@ -659,6 +659,10 @@ class SessionRepository(
      * inserted with their own speaker. Segments not in it keep their
      * row and take their index from [assignments].
      *
+     * [run] is what the engine ran with and how long it took, kept on
+     * the session ([SessionEntity.diarizedWith]); `null` clears it
+     * (no engine ran, or one with no such settings).
+     *
      * Everything happens in one transaction so a crash mid-write
      * does not leave the session half-diarized: either every
      * segment has the new index and the speakers table is replaced,
@@ -669,9 +673,11 @@ class SessionRepository(
         assignments: Map<Long, Int?>,
         speakerCount: Int,
         labels: Map<Int, String> = emptyMap(),
-        replacements: Map<Long, List<SegmentPiece>> = emptyMap()
+        replacements: Map<Long, List<SegmentPiece>> = emptyMap(),
+        run: DiarizationRun? = null
     ) {
         db.withTransaction {
+            sessionDao.setDiarizationRun(sessionId, run?.embeddingModelId, run?.stepMs, run?.durationMs)
             assignments.forEach { (segmentId, speakerIndex) ->
                 segmentDao.setSpeaker(segmentId, speakerIndex)
             }
@@ -779,3 +785,10 @@ data class EditUndo(
  * [file] to be swapped in by [SessionRepository.replaceTranscript].
  */
 data class CleanedAudio(val file: File, val model: String)
+
+/**
+ * One speaker identification run, for [SessionRepository.applyDiarization]:
+ * the voice model id, the segmentation step and the engine's wall-clock
+ * time.
+ */
+data class DiarizationRun(val embeddingModelId: String, val stepMs: Int, val durationMs: Long)
