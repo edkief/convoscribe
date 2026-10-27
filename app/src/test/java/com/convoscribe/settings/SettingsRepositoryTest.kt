@@ -437,4 +437,40 @@ class SettingsRepositoryTest {
         prefs.edit().putString(SettingsRepository.KEY_FLOATING_SHAPE, "huge").apply()
         assertNull(newRepository().settings.value.floatingShape)
     }
+
+    @Test
+    fun diarizationSettings_defaultToResNet34AndOneSecond_andPersist() {
+        val repo = newRepository()
+        assertEquals("resnet34", repo.settings.value.diarizationEmbedding)
+        assertEquals(1f, repo.settings.value.diarizationStepSeconds, 0.0001f)
+        repo.update { it.copy(diarizationEmbedding = "campplus", diarizationStepSeconds = 3f) }
+        val reloaded = newRepository().settings.value
+        assertEquals("campplus", reloaded.diarizationEmbedding)
+        assertEquals(3f, reloaded.diarizationStepSeconds, 0.0001f)
+    }
+
+    @Test
+    fun update_unknownVoiceModelKeepsPreviousValue() {
+        val repo = newRepository()
+        repo.update { it.copy(diarizationEmbedding = "campplus") }
+        repo.update { it.copy(diarizationEmbedding = "titanet") }
+        assertEquals("campplus", repo.settings.value.diarizationEmbedding)
+    }
+
+    @Test
+    fun update_clampsDiarizationStepToTheWindow() {
+        val repo = newRepository()
+        repo.update { it.copy(diarizationStepSeconds = 0f) }
+        assertEquals(0.5f, repo.settings.value.diarizationStepSeconds, 0.0001f)
+        repo.update { it.copy(diarizationStepSeconds = 30f) }
+        assertEquals(10f, repo.settings.value.diarizationStepSeconds, 0.0001f)
+        repo.update { it.copy(diarizationStepSeconds = Float.NaN) }
+        assertEquals(1f, repo.settings.value.diarizationStepSeconds, 0.0001f)
+    }
+
+    @Test
+    fun load_unknownStoredVoiceModelFallsBackToDefault() {
+        prefs.edit().putString(SettingsRepository.KEY_DIARIZATION_EMBEDDING, "gone").apply()
+        assertEquals("resnet34", newRepository().settings.value.diarizationEmbedding)
+    }
 }

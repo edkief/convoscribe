@@ -1,6 +1,7 @@
 package com.convoscribe.engine.sherpa
 
 import com.convoscribe.diarization.Diarizer
+import com.convoscribe.diarization.DiarizerSetup
 import com.convoscribe.diarization.SpeakerTurn
 import com.convoscribe.settings.SettingsRepository
 import com.k2fsa.sherpa.onnx.FastClusteringConfig
@@ -35,11 +36,19 @@ import java.io.File
  *   `ModelCatalog.EMBEDDING` tracks).
  * @param numThreads forwarded to both sub-configs; today the
  *   CPU is the only supported backend for diarization.
+ * @param stepSeconds how far the segmentation model's
+ *   [SEGMENTATION_WINDOW_SECONDS] window moves each step. sherpa-onnx's
+ *   default is a tenth of the window (1 s), so every moment is segmented,
+ *   and each speaker in it embedded, about ten times; a longer step does
+ *   proportionally less work.
+ * @param setup reported as [Diarizer.setup].
  */
 class SherpaDiarizer(
     segmentationModel: File,
     embeddingModel: File,
-    numThreads: Int
+    numThreads: Int,
+    stepSeconds: Float = 1f,
+    override val setup: DiarizerSetup? = null
 ) : Diarizer {
 
     private val sd: OfflineSpeakerDiarization
@@ -48,7 +57,8 @@ class SherpaDiarizer(
         val config = OfflineSpeakerDiarizationConfig(
             segmentation = OfflineSpeakerSegmentationModelConfig(
                 pyannote = OfflineSpeakerSegmentationPyannoteModelConfig(
-                    model = segmentationModel.absolutePath
+                    model = segmentationModel.absolutePath,
+                    windowShiftRatio = stepSeconds / SEGMENTATION_WINDOW_SECONDS
                 ),
                 numThreads = numThreads
             ),
@@ -107,6 +117,11 @@ class SherpaDiarizer(
 
     override fun close() {
         sd.release()
+    }
+
+    companion object {
+        /** pyannote-3.0's segmentation window ([com.convoscribe.models.ModelCatalog.SEGMENTATION]). */
+        const val SEGMENTATION_WINDOW_SECONDS = 10f
     }
 
     /**
