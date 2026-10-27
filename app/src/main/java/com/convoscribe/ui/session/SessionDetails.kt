@@ -22,10 +22,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import com.convoscribe.R
+import com.convoscribe.data.DiarizationRun
 import com.convoscribe.data.SessionRepository
+import com.convoscribe.models.ModelCatalog
 import com.convoscribe.ui.components.InfoRow
+import com.convoscribe.ui.home.formatDuration
 import com.convoscribe.ui.record.participantsSummary
 import com.convoscribe.ui.theme.AppTheme
+import java.util.Locale
 
 /**
  * What a session was set up and transcribed with (issue #6), for the
@@ -44,7 +48,11 @@ data class SessionDetails(
     val asrEngine: String? = null,
     val asrModel: String? = null,
     /** Noise cleanup model (issue #37); `null` when the audio is not cleaned. */
-    val cleanedWith: String? = null
+    val cleanedWith: String? = null,
+    /** How speakers were last identified; `null` when not recorded. */
+    val diarizationRun: DiarizationRun? = null,
+    /** The recording's length, for the identification's real-time factor. */
+    val durationMs: Long = 0L
 )
 
 /** Read-only "Session info" dialog. */
@@ -72,6 +80,10 @@ internal fun SessionInfoDialog(details: SessionDetails, onDismiss: () -> Unit) {
                     stringResource(R.string.session_info_cleanup),
                     details.cleanedWith ?: stringResource(R.string.session_info_cleanup_none)
                 )
+                InfoRow(
+                    stringResource(R.string.session_info_speaker_id),
+                    details.diarizationRun?.let { diarizationRunSummary(it, details.durationMs) } ?: unknown
+                )
             }
         },
         confirmButton = {
@@ -80,6 +92,37 @@ internal fun SessionInfoDialog(details: SessionDetails, onDismiss: () -> Unit) {
             }
         }
     )
+}
+
+/**
+ * "CAM++, 2 s step, 00:48 (0.027 × real time)": the voice model, the
+ * segmentation step and how long the engine took for the recording.
+ */
+@Composable
+private fun diarizationRunSummary(run: DiarizationRun, durationMs: Long): String {
+    val key = ModelCatalog.diarizationEmbeddings.entries.firstOrNull { it.value.id == run.embeddingModelId }?.key
+    val model = key?.let { voiceModelName(it) } ?: run.embeddingModelId
+    val step = String.format(Locale.ROOT, "%.1f", run.stepMs / 1000f).removeSuffix(".0")
+    val took = formatDuration(run.durationMs.coerceAtLeast(1_000L))
+    return if (durationMs > 0L) {
+        stringResource(
+            R.string.session_info_speaker_id_value_rtf,
+            model,
+            step,
+            took,
+            run.durationMs.toFloat() / durationMs
+        )
+    } else {
+        stringResource(R.string.session_info_speaker_id_value, model, step, took)
+    }
+}
+
+/** Short name of the voice model stored as [key] in [ModelCatalog.diarizationEmbeddings]. */
+@Composable
+internal fun voiceModelName(key: String): String = when (key) {
+    "resnet34" -> stringResource(R.string.voice_model_resnet34)
+    "campplus" -> stringResource(R.string.voice_model_campplus)
+    else -> key
 }
 
 @Composable

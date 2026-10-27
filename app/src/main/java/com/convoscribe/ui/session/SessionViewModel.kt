@@ -7,6 +7,7 @@ import com.convoscribe.R
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.AudioPlayer
 import com.convoscribe.audio.PlayerState
+import com.convoscribe.data.DiarizationRun
 import com.convoscribe.data.EditUndo
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionEntity
@@ -18,6 +19,7 @@ import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
 import com.convoscribe.data.cleanAudioFile
+import com.convoscribe.data.diarizationRun
 import com.convoscribe.diarization.EnrollFromSessionUseCase
 import com.convoscribe.ui.UiText
 import java.io.File
@@ -85,6 +87,8 @@ data class SessionUiState(
     val hasEdits: Boolean = false,
     /** Cleanup model the audio was cleaned with (issue #37); `null` when not cleaned. */
     val cleanedWith: String? = null,
+    /** How speakers were last identified; `null` when not recorded. */
+    val diarizationRun: DiarizationRun? = null,
     /** Path of the cleaned recording; blank when not cleaned. */
     val cleanAudioPath: String = "",
     /** The session's tags (issue #32), alphabetically. */
@@ -185,6 +189,7 @@ class SessionViewModel(
                         durationMs = session.durationMs,
                         hasEdits = session.transcriptEdited,
                         cleanedWith = session.cleanedWith,
+                        diarizationRun = session.diarizationRun(),
                         cleanAudioPath = if (session.cleanedWith != null) session.cleanAudioFile().absolutePath else "",
                         tags = tags.map { it.name },
                         replacedTitle = session.previousTitle.takeIf { session.titleSource == TitleSource.AUTO }

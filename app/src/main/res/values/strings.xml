@@ -348,6 +348,16 @@
     <string name="settings_speakers_match_threshold_label">Voice match threshold</string>
     <string name="settings_speakers_match_threshold_value">%1$.2f</string>
     <string name="settings_speakers_match_threshold_help">Higher = stricter name matching</string>
+    <string name="settings_speakers_voice_model_label">Voice model</string>
+    <string name="voice_model_resnet34">ResNet34</string>
+    <string name="voice_model_campplus">CAM++</string>
+    <string name="settings_speakers_voice_model_help">The model that tells voices apart. ResNet34 is the default; CAM++ is lighter, so faster. Known speakers are always matched with ResNet34. Session info shows how long each identification took.</string>
+    <string name="settings_speakers_voice_model_download">Download %1$s (%2$.1f MB)</string>
+    <string name="settings_speakers_voice_model_downloading">Downloading %1$s…</string>
+    <string name="settings_speakers_voice_model_missing">Until it is downloaded, ResNet34 is used.</string>
+    <string name="settings_speakers_step_label">Analysis step</string>
+    <string name="settings_speakers_step_value">%1$s s</string>
+    <string name="settings_speakers_step_help">How far the 10 s analysis window moves each time. 1 s, the default, looks at every moment ten times; a longer step is faster but may miss short turns.</string>
     <string name="settings_saved">Saved</string>
     <plurals name="settings_test_connected">
         <item quantity="one">Connected – %1$d model: %2$s</item>
@@ -455,6 +465,9 @@
     <string name="session_info_close">Close</string>
     <string name="session_info_cleanup">Noise cleanup</string>
     <string name="session_info_cleanup_none">Not cleaned</string>
+    <string name="session_info_speaker_id">Speaker identification</string>
+    <string name="session_info_speaker_id_value">%1$s, %2$s s step, took %3$s</string>
+    <string name="session_info_speaker_id_value_rtf">%1$s, %2$s s step, took %3$s (%4$.3f × real time)</string>
     <string name="session_overflow_cleanup">Clean up audio</string>
     <string name="session_overflow_remove_cleanup">Remove cleaning</string>
     <string name="session_cleanup_title">Clean up audio</string>
