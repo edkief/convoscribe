@@ -320,4 +320,32 @@ class MigrationTest {
     private companion object {
         const val DB_NAME = "migration-test.db"
     }
+
+    @Test
+    fun migrate12To13_existingSessionsHaveNoDiarizationRun() = runTest {
+        helper.createDatabase(DB_NAME, 12).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Standup', 1000, 60000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 13, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val session = db.sessionDao().get(1)!!
+            assertEquals("Standup", session.title)
+            assertNull(session.diarizedWith)
+            assertNull(session.diarizationRun())
+            db.sessionDao().setDiarizationRun(1, "emb-wespeaker-campplus-lm", 2000, 4200L)
+            assertEquals(
+                DiarizationRun("emb-wespeaker-campplus-lm", 2000, 4200L),
+                db.sessionDao().get(1)!!.diarizationRun()
+            )
+        } finally {
+            db.close()
+        }
+    }
 }
