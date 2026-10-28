@@ -18,7 +18,6 @@ import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
-import com.convoscribe.settings.isAllowedServerUrl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -169,8 +168,6 @@ data class SettingsUiState(
     val autoMarkNotes: Boolean = true,
     /** Conversations are named from their summary (issue #32); written immediately. */
     val autoTitle: Boolean = true,
-    /** The last Save refused the server URL because it is not HTTPS (issue #58). */
-    val serverUrlError: Boolean = false,
     /** A transcription server URL is saved. */
     val serverConfigured: Boolean = false,
     /** Improve recordings and imports on the server (issue #58); written immediately. */
@@ -299,7 +296,6 @@ class SettingsViewModel(
                 clusterThreshold = form.clusterThreshold,
                 speakerMatchThreshold = form.speakerMatchThreshold,
                 asrLanguage = _state.value.asrLanguage,
-                // Refused (previous value kept) unless blank or HTTPS.
                 asrServerUrl = form.serverUrl,
                 asrServerModel = form.serverModel
             )
@@ -311,7 +307,6 @@ class SettingsViewModel(
         }
         repo.setApiKey(form.apiKey)
         repo.setAsrServerKey(form.serverKey)
-        val serverUrlError = !isAllowedServerUrl(form.serverUrl)
 
         // Re-seed the form from the freshly persisted settings so
         // the screen shows canonical values (e.g. trailing-slash
@@ -322,11 +317,7 @@ class SettingsViewModel(
         _state.value = computeModelState(
             current = refreshed,
             base = _state.value.copy(
-                form = SettingsForm.from(refreshed, repo.apiKey(), repo.asrServerKey()).let { fresh ->
-                    // Keep a refused URL on screen so it can be corrected.
-                    if (serverUrlError) fresh.copy(serverUrl = form.serverUrl) else fresh
-                },
-                serverUrlError = serverUrlError,
+                form = SettingsForm.from(refreshed, repo.apiKey(), repo.asrServerKey()),
                 saved = true
             )
         )
@@ -549,13 +540,11 @@ class SettingsViewModel(
 
     /**
      * Like [testConnection], for the transcription server (issue #58):
-     * save, then list its models. A refused (non-HTTPS) URL is not
-     * tested.
+     * save, then list its models.
      */
     fun testServer() {
         if (_state.value.serverTesting) return
         save()
-        if (_state.value.serverUrlError) return
         _state.value = _state.value.copy(serverTesting = true, serverTestResult = null)
         viewModelScope.launch {
             val result = runCatching { listServerModels() }

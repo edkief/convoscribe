@@ -75,6 +75,7 @@ import com.convoscribe.settings.DIARIZATION_STEPS_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.FloatingShape
 import com.convoscribe.settings.SpeakerIdMode
+import com.convoscribe.settings.isUnencryptedUrl
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.FieldLabel
@@ -703,8 +704,8 @@ private fun LanguageModelSection(
 }
 
 /**
- * "Transcription server" section (issue #58): the base URL (HTTPS
- * only; a refused one shows an error under the field), API key and
+ * "Transcription server" section (issue #58): the base URL (with a
+ * warning under a plain `http://` one), API key and
  * model, saved by Save like the LLM's, a Test that lists the server's
  * models, and *Improve recordings on the server* (written immediately,
  * enabled once a URL is saved).
@@ -726,9 +727,8 @@ private fun TranscriptionServerSection(state: SettingsUiState, actions: Settings
             label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
             placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
             singleLine = true,
-            isError = state.serverUrlError,
-            supportingText = if (state.serverUrlError) {
-                { Text(text = stringResource(R.string.settings_server_url_https)) }
+            supportingText = if (isUnencryptedUrl(form.serverUrl)) {
+                { Text(text = stringResource(R.string.settings_server_url_cleartext)) }
             } else {
                 null
             },

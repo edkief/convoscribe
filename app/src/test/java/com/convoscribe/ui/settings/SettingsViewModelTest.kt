@@ -190,21 +190,7 @@ class SettingsViewModelTest {
         assertEquals("https://asr.example.com/v1", repo.settings.value.asrServerUrl)
         assertEquals("p", repo.settings.value.asrServerModel)
         assertEquals("sk-asr", repo.asrServerKey())
-        assertFalse(vm.state.value.serverUrlError)
         assertTrue(vm.state.value.serverConfigured)
-    }
-
-    @Test
-    fun save_refusesAnHttpServerUrlAndKeepsItOnScreen() {
-        val repo = newRepo()
-        val vm = newVm(repo = repo)
-        vm.update(SettingsForm(serverUrl = "http://parakeet-asr.asr:8000/v1"))
-
-        vm.save()
-
-        assertEquals("", repo.settings.value.asrServerUrl)
-        assertTrue(vm.state.value.serverUrlError)
-        assertEquals("http://parakeet-asr.asr:8000/v1", vm.state.value.form.serverUrl)
     }
 
     @Test
@@ -235,20 +221,16 @@ class SettingsViewModelTest {
     }
 
     @Test
-    fun testServer_withAnHttpUrlDoesNotCallTheServer() = runTest(dispatcher) {
-        var called = false
-        val vm = newVm(listServerModels = {
-            called = true
-            emptyList()
-        })
-        vm.update(SettingsForm(serverUrl = "http://asr.example.com/v1"))
+    fun testServer_savesAndTestsAPlainHttpUrl() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo, listServerModels = { listOf("m") })
+        vm.update(SettingsForm(serverUrl = "http://parakeet-asr.asr:8000/v1"))
 
         vm.testServer()
         advanceUntilIdle()
 
-        assertFalse(called)
-        assertTrue(vm.state.value.serverUrlError)
-        assertEquals(null, vm.state.value.serverTestResult)
+        assertEquals("http://parakeet-asr.asr:8000/v1", repo.settings.value.asrServerUrl)
+        assertEquals(ConnectionTestResult.Connected(count = 1, models = listOf("m")), vm.state.value.serverTestResult)
     }
 
     @Test

@@ -75,7 +75,8 @@ import com.convoscribe.llm.SummaryTemplates
  *
  * [asrServerUrl] is the OpenAI-style base URL of a self-hosted
  * transcription server (issue #58), typically ending in `/v1`; blank
- * means none. It must use HTTPS. [asrServerModel] is the model asked
+ * means none. Plain `http://` is allowed, as for the LLM endpoint,
+ * and Settings warns about it. [asrServerModel] is the model asked
  * for (blank: the server's first one); its API key lives in
  * [SecretStore]. [asrServerAuto] sends each stopped recording and each
  * import to the server, keeping the device transcript if that fails.
@@ -122,10 +123,10 @@ data class AppSettings(
 }
 
 /**
- * Whether [url] may be saved as [AppSettings.asrServerUrl]: blank (no
- * server) or HTTPS. Audio is never sent in clear text.
+ * Whether [url] sends what it is given unencrypted (`http://`), for the
+ * warning under the transcription server address (issue #58).
  */
-fun isAllowedServerUrl(url: String): Boolean = url.isBlank() || url.trim().startsWith("https://", ignoreCase = true)
+fun isUnencryptedUrl(url: String): Boolean = url.trim().startsWith("http://", ignoreCase = true)
 
 /** [AppSettings.diarizationEmbedding] of a fresh install: WeSpeaker ResNet34. */
 const val DEFAULT_DIARIZATION_EMBEDDING = "resnet34"

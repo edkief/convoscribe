@@ -234,15 +234,16 @@ class SettingsRepositoryTest {
     }
 
     @Test
-    fun asrServer_httpUrlKeepsThePreviousValue() {
+    fun asrServer_acceptsPlainHttpLikeTheLlmEndpoint() {
         val repo = newRepository()
-        repo.update { it.copy(asrServerUrl = "https://asr.example.com/v1") }
 
-        repo.update { it.copy(asrServerUrl = "http://parakeet-asr.asr:8000/v1") }
+        repo.update { it.copy(asrServerUrl = "http://parakeet-asr.asr:8000/v1/") }
 
-        assertEquals("https://asr.example.com/v1", repo.settings.value.asrServerUrl)
+        assertEquals("http://parakeet-asr.asr:8000/v1", newRepository().settings.value.asrServerUrl)
+        assertTrue(isUnencryptedUrl(repo.settings.value.asrServerUrl))
+        assertFalse(isUnencryptedUrl("https://asr.example.com/v1"))
         repo.update { it.copy(asrServerUrl = "") }
-        assertEquals("", repo.settings.value.asrServerUrl)
+        assertFalse(repo.settings.value.asrServerConfigured)
     }
 
     @Test

@@ -582,7 +582,7 @@
     <string name="settings_section_server">Transcription server</string>
     <string name="settings_server_help">Optional. A self-hosted, OpenAI-compatible transcription server (for example Parakeet on a GPU) can transcribe recordings again, more accurately. The recording is uploaded to it; live transcription always stays on this device.</string>
     <string name="settings_server_url_placeholder">https://asr.example.com/v1</string>
-    <string name="settings_server_url_https">Use an https:// address: recordings are never sent unencrypted. The previous address was kept.</string>
+    <string name="settings_server_url_cleartext">Recordings are sent to an http:// address unencrypted. Use https:// unless the server is on a network you trust.</string>
     <string name="settings_server_key_label">API key (optional)</string>
     <string name="settings_server_model_placeholder">The server\'s default</string>
     <string name="settings_server_auto_label">Improve recordings on the server</string>
