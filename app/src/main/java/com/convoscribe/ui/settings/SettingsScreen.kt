@@ -1088,7 +1088,7 @@ private fun TranscriptionSection(
  * many sessions the charging job has indexed so far.
  */
 @Composable
-private fun SemanticSearchSection(
+internal fun SemanticSearchSection(
     installed: Boolean,
     downloading: Boolean,
     progress: IndexProgress,
