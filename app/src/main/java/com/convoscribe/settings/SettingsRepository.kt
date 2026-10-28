@@ -44,6 +44,9 @@ class SettingsRepository(
      *    becomes -1
      *  - thresholds clamped to 0.05..0.95
      *  - `llmBaseUrl` trimmed and trailing `/` removed
+     *  - `asrServerUrl` trimmed and trailing `/` removed; anything
+     *    but blank or `https://` keeps the previous value
+     *    ([isAllowedServerUrl]); `asrServerModel` trimmed
      *  - `defaultParticipants` trimmed and de-duplicated; empty
      *    becomes `null` (anyone)
      *  - `asrLanguage` must be "en" or "fr"; anything else keeps
@@ -77,6 +80,9 @@ class SettingsRepository(
             putBoolean(KEY_ASR_ENGINE_CHOSEN, next.asrEngineChosen)
             if (next.asrEngineChosen) putString(KEY_ASR_ENGINE, next.asrEngine) else remove(KEY_ASR_ENGINE)
             putInt(KEY_NUM_THREADS, next.numThreads)
+            putString(KEY_ASR_SERVER_URL, next.asrServerUrl)
+            putString(KEY_ASR_SERVER_MODEL, next.asrServerModel)
+            putBoolean(KEY_ASR_SERVER_AUTO, next.asrServerAuto)
             putInt(KEY_NUM_SPEAKERS, next.numSpeakers)
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
@@ -131,6 +137,13 @@ class SettingsRepository(
         secrets.setApiKey(value)
     }
 
+    /** API key of the transcription server (issue #58), kept apart from the LLM's. */
+    fun asrServerKey(): String = secrets.getAsrServerKey()
+
+    fun setAsrServerKey(value: String) {
+        secrets.setAsrServerKey(value)
+    }
+
     private fun load(): AppSettings {
         val rawLang = prefs.getString(KEY_ASR_LANGUAGE, null) ?: "en"
         val raw = AppSettings(
@@ -140,6 +153,10 @@ class SettingsRepository(
             asrLanguage = rawLang,
             asrEngine = prefs.getString(KEY_ASR_ENGINE, null) ?: "",
             numThreads = prefs.getInt(KEY_NUM_THREADS, 4),
+            asrServerUrl = (prefs.getString(KEY_ASR_SERVER_URL, "") ?: "").trim().trimEnd('/')
+                .takeIf(::isAllowedServerUrl).orEmpty(),
+            asrServerModel = prefs.getString(KEY_ASR_SERVER_MODEL, "") ?: "",
+            asrServerAuto = prefs.getBoolean(KEY_ASR_SERVER_AUTO, false),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
@@ -215,6 +232,9 @@ class SettingsRepository(
         const val KEY_ASR_ENGINE = "asrEngine"
         const val KEY_ASR_ENGINE_CHOSEN = "asrEngineChosen"
         const val KEY_NUM_THREADS = "numThreads"
+        const val KEY_ASR_SERVER_URL = "asrServerUrl"
+        const val KEY_ASR_SERVER_MODEL = "asrServerModel"
+        const val KEY_ASR_SERVER_AUTO = "asrServerAuto"
         const val KEY_NUM_SPEAKERS = "numSpeakers"
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
@@ -240,7 +260,8 @@ class SettingsRepository(
 /**
  * Validate [this] against the previous [previous] settings. Numeric
  * fields are clamped; `llmBaseUrl` is trimmed and stripped of its
- * trailing `/`; `asrLanguage` keeps the previous value when it is
+ * trailing `/`, and so is `asrServerUrl`, which keeps the previous
+ * value unless it is blank or HTTPS; `asrLanguage` keeps the previous value when it is
  * not "en" or "fr"; `asrEngine` keeps the previous value when it is
  * not "npu" or "cpu"; `displayMode` and `speakerIdMode` keep the
  * previous value when they are not a [DisplayMode.key] /
@@ -257,7 +278,10 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
         ?: previous.diarizationEmbedding
     val shapeValid = floatingShape == null || FloatingShape.fromKey(floatingShape) != null
     val shape = if (shapeValid) floatingShape else previous.floatingShape
+    val serverUrl = if (isAllowedServerUrl(asrServerUrl)) asrServerUrl.trim().trimEnd('/') else previous.asrServerUrl
     return this.normaliseNumeric().copy(
+        asrServerUrl = serverUrl,
+        asrServerModel = asrServerModel.trim(),
         displayMode = mode,
         speakerIdMode = idMode,
         diarizationEmbedding = embedding,

@@ -146,7 +146,8 @@ fun SettingsScreen(navController: NavHostController) {
                     repo = container.settingsRepository,
                     chatClient = container.chatClient,
                     modelStore = container.modelStore,
-                    templates = container.summaryTemplates
+                    templates = container.summaryTemplates,
+                    listServerModels = container.serverTranscriber::listModels
                 )
             }
         }
@@ -238,6 +239,8 @@ fun SettingsScreen(navController: NavHostController) {
             onSave = leave,
             onFormChange = vm::update,
             onTestConnection = { coroutineScope.launch { vm.testConnection() } },
+            onTestServer = vm::testServer,
+            onServerAutoChange = vm::setServerAuto,
             onEngineChange = vm::setEngine,
             onLanguageChange = vm::setLanguage,
             onEngineCheck = { navController.navigate("engine-check") },
@@ -312,7 +315,9 @@ internal class SettingsActions(
     val onDiarizationStepChange: (Float) -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
     val onAutoMarkNotesChange: (Boolean) -> Unit = {},
-    val onAutoTitleChange: (Boolean) -> Unit = {}
+    val onAutoTitleChange: (Boolean) -> Unit = {},
+    val onTestServer: () -> Unit = {},
+    val onServerAutoChange: (Boolean) -> Unit = {}
 )
 
 /**
@@ -408,6 +413,7 @@ internal fun SettingsBody(
                 onEngineCheck = actions.onEngineCheck,
                 onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
+            TranscriptionServerSection(state = state, actions = actions)
             NoiseCleanupSection(
                 installed = state.cleanupInstalled,
                 downloading = cleanupDownloading,
@@ -692,6 +698,135 @@ private fun LanguageModelSection(
                     )
                 }
             }
+        }
+    }
+}
+
+/**
+ * "Transcription server" section (issue #58): the base URL (HTTPS
+ * only; a refused one shows an error under the field), API key and
+ * model, saved by Save like the LLM's, a Test that lists the server's
+ * models, and *Improve recordings on the server* (written immediately,
+ * enabled once a URL is saved).
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun TranscriptionServerSection(state: SettingsUiState, actions: SettingsActions) {
+    val form = state.form
+    val onFormChange = actions.onFormChange
+    var keyVisible by rememberSaveable { mutableStateOf(false) }
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_server)
+    ) {
+        SupportingText(text = stringResource(R.string.settings_server_help))
+        OutlinedTextField(
+            value = form.serverUrl,
+            onValueChange = { onFormChange(form.copy(serverUrl = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
+            placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
+            singleLine = true,
+            isError = state.serverUrlError,
+            supportingText = if (state.serverUrlError) {
+                { Text(text = stringResource(R.string.settings_server_url_https)) }
+            } else {
+                null
+            },
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = form.serverKey,
+            onValueChange = { onFormChange(form.copy(serverKey = it)) },
+            label = { Text(text = stringResource(R.string.settings_server_key_label)) },
+            singleLine = true,
+            visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+            trailingIcon = {
+                IconButton(onClick = { keyVisible = !keyVisible }) {
+                    Text(
+                        text = stringResource(
+                            if (keyVisible) R.string.settings_llm_api_key_hide else R.string.settings_llm_api_key_show
+                        ),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = form.serverModel,
+            onValueChange = { onFormChange(form.copy(serverModel = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
+            placeholder = { Text(text = stringResource(R.string.settings_server_model_placeholder)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            OutlinedButton(
+                onClick = actions.onTestServer,
+                enabled = !state.serverTesting && form.serverUrl.isNotBlank(),
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(text = stringResource(R.string.settings_llm_test))
+            }
+            if (state.serverTesting) InlineProgress()
+        }
+        when (val result = state.serverTestResult) {
+            is ConnectionTestResult.Connected -> NoticeText(
+                text = pluralStringResource(
+                    R.plurals.settings_test_connected,
+                    result.count,
+                    result.count,
+                    result.models.joinToString(", ")
+                )
+            )
+            is ConnectionTestResult.Failed -> ErrorBanner(
+                message = stringResource(R.string.settings_test_failed, result.message)
+            )
+            null -> Unit
+        }
+        if (state.serverModels.isNotEmpty()) {
+            androidx.compose.foundation.layout.FlowRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+            ) {
+                state.serverModels.forEach { id ->
+                    SuggestionChip(
+                        onClick = { onFormChange(form.copy(serverModel = id)) },
+                        label = { Text(text = id) }
+                    )
+                }
+            }
+        }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .toggleable(
+                    value = state.serverAuto && state.serverConfigured,
+                    enabled = state.serverConfigured,
+                    role = Role.Switch,
+                    onValueChange = actions.onServerAutoChange
+                ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_server_auto_label),
+                    style = MaterialTheme.typography.bodyLarge
+                )
+                SupportingText(text = stringResource(R.string.settings_server_auto_help))
+            }
+            Switch(
+                checked = state.serverAuto && state.serverConfigured,
+                onCheckedChange = null,
+                enabled = state.serverConfigured
+            )
         }
     }
 }

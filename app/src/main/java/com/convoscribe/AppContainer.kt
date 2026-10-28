@@ -6,6 +6,8 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.asr.server.ServerAsrConfig
+import com.convoscribe.asr.server.ServerTranscriber
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.MediaCodecAudioDecoder
@@ -340,6 +342,26 @@ class AppContainer(val context: Context) {
      * recovery cannot reset a session the job has just started.
      */
     val recoveryDone = CompletableDeferred<Unit>()
+
+    /**
+     * Uploads to the transcription server (issue #58): whole recordings,
+     * so the read and write timeouts allow a long upload and a long
+     * wait while the server transcribes.
+     */
+    val asrServerHttpClient: OkHttpClient = httpClient.newBuilder()
+        .readTimeout(15, TimeUnit.MINUTES)
+        .writeTimeout(15, TimeUnit.MINUTES)
+        .build()
+
+    /**
+     * Transcribes stored recordings on the user's self-hosted server
+     * (issue #58), configured in Settings → Transcription server and
+     * read on every call.
+     */
+    val serverTranscriber: ServerTranscriber = ServerTranscriber(asrServerHttpClient) {
+        val s = settingsRepository.settings.value
+        ServerAsrConfig(baseUrl = s.asrServerUrl, apiKey = settingsRepository.asrServerKey(), model = s.asrServerModel)
+    }
 
     /**
      * Re-transcribes a session's stored audio in another language and

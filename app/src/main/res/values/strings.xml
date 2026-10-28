@@ -575,6 +575,14 @@
     <string name="settings_cleanup_installed">Cleanup model installed. Finished conversations can be cleaned from their menu.</string>
     <string name="settings_cleanup_delete">Delete the cleanup model</string>
     <string name="settings_cleanup_not_checked">Run Noise cleanup in Engine check to see whether this device can clean while recording.</string>
+    <string name="settings_section_server">Transcription server</string>
+    <string name="settings_server_help">Optional. A self-hosted, OpenAI-compatible transcription server (for example Parakeet on a GPU) can transcribe recordings again, more accurately. The recording is uploaded to it; live transcription always stays on this device.</string>
+    <string name="settings_server_url_placeholder">https://asr.example.com/v1</string>
+    <string name="settings_server_url_https">Use an https:// address: recordings are never sent unencrypted. The previous address was kept.</string>
+    <string name="settings_server_key_label">API key (optional)</string>
+    <string name="settings_server_model_placeholder">The server\'s default</string>
+    <string name="settings_server_auto_label">Improve recordings on the server</string>
+    <string name="settings_server_auto_help">After you stop a recording, and when you import audio, transcribe it on the server before speakers are identified. If the server cannot be reached, the transcript made on this device is kept.</string>
     <string name="settings_cleanup_default_label">Clean new recordings</string>
     <string name="settings_cleanup_default_help">Clean the audio live while recording, so the live transcript benefits too. You can change it for each conversation before Start.</string>
     <string name="settings_floating_control_label">Floating control over other apps</string>

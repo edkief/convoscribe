@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.TAG
+import com.convoscribe.asr.server.ServerAsrException
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.SummaryTemplate
@@ -17,6 +18,7 @@ import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
+import com.convoscribe.settings.isAllowedServerUrl
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -46,7 +48,11 @@ data class SettingsForm(
     val numThreads: Int = 4,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
-    val speakerMatchThreshold: Float = 0.5f
+    val speakerMatchThreshold: Float = 0.5f,
+    /** Transcription server (issue #58): base URL, API key and model, saved by Save like the LLM's. */
+    val serverUrl: String = "",
+    val serverKey: String = "",
+    val serverModel: String = ""
 ) {
     /**
      * Build a [SettingsForm] from a persisted [AppSettings]. The
@@ -55,9 +61,12 @@ data class SettingsForm(
      * pre-filled here for editing.
      */
     companion object {
-        fun from(settings: AppSettings, apiKey: String): SettingsForm = SettingsForm(
+        fun from(settings: AppSettings, apiKey: String, serverKey: String = ""): SettingsForm = SettingsForm(
             baseUrl = settings.llmBaseUrl,
             apiKey = apiKey,
+            serverUrl = settings.asrServerUrl,
+            serverKey = serverKey,
+            serverModel = settings.asrServerModel,
             model = settings.llmModel,
             maxChars = settings.maxTranscriptChars.toString(),
             numThreads = settings.numThreads,
@@ -159,7 +168,19 @@ data class SettingsUiState(
     /** Notes of marks are written once speakers are identified (issue #48); written immediately. */
     val autoMarkNotes: Boolean = true,
     /** Conversations are named from their summary (issue #32); written immediately. */
-    val autoTitle: Boolean = true
+    val autoTitle: Boolean = true,
+    /** The last Save refused the server URL because it is not HTTPS (issue #58). */
+    val serverUrlError: Boolean = false,
+    /** A transcription server URL is saved. */
+    val serverConfigured: Boolean = false,
+    /** Improve recordings and imports on the server (issue #58); written immediately. */
+    val serverAuto: Boolean = false,
+    /** `true` while [SettingsViewModel.testServer] is in flight. */
+    val serverTesting: Boolean = false,
+    /** Last server test outcome; `null` before the first. */
+    val serverTestResult: ConnectionTestResult? = null,
+    /** Model ids the server listed in the last successful test. */
+    val serverModels: List<String> = emptyList()
 )
 
 /**
@@ -195,6 +216,8 @@ data class SettingsUiState(
  *   construction to seed the form.
  * @param chatClient LLM client whose `listModels` powers the
  *   connection test. Injected so tests can pass a fake.
+ * @param listServerModels the transcription server's model ids, for
+ *   [testServer] (issue #58).
  * @param modelStore on-disk model store, used to check
  *   installation and to free space when the user deletes the
  *   French bundle.
@@ -203,7 +226,8 @@ class SettingsViewModel(
     private val repo: SettingsRepository,
     private val chatClient: ChatClient,
     private val modelStore: ModelStore,
-    templates: SummaryTemplateStore
+    templates: SummaryTemplateStore,
+    private val listServerModels: suspend () -> List<String> = { emptyList() }
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SettingsUiState>
@@ -211,7 +235,7 @@ class SettingsViewModel(
 
     init {
         val current = repo.settings.value
-        val form = SettingsForm.from(current, repo.apiKey())
+        val form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey())
         val initial = computeModelState(
             current = current,
             base = SettingsUiState(
@@ -274,7 +298,10 @@ class SettingsViewModel(
                 numSpeakers = form.numSpeakers,
                 clusterThreshold = form.clusterThreshold,
                 speakerMatchThreshold = form.speakerMatchThreshold,
-                asrLanguage = _state.value.asrLanguage
+                asrLanguage = _state.value.asrLanguage,
+                // Refused (previous value kept) unless blank or HTTPS.
+                asrServerUrl = form.serverUrl,
+                asrServerModel = form.serverModel
             )
         }
         if (_state.value.asrEngine != current.asrEngine) {
@@ -283,6 +310,8 @@ class SettingsViewModel(
             }
         }
         repo.setApiKey(form.apiKey)
+        repo.setAsrServerKey(form.serverKey)
+        val serverUrlError = !isAllowedServerUrl(form.serverUrl)
 
         // Re-seed the form from the freshly persisted settings so
         // the screen shows canonical values (e.g. trailing-slash
@@ -293,7 +322,11 @@ class SettingsViewModel(
         _state.value = computeModelState(
             current = refreshed,
             base = _state.value.copy(
-                form = SettingsForm.from(refreshed, refreshed.let { repo.apiKey() }),
+                form = SettingsForm.from(refreshed, repo.apiKey(), repo.asrServerKey()).let { fresh ->
+                    // Keep a refused URL on screen so it can be corrected.
+                    if (serverUrlError) fresh.copy(serverUrl = form.serverUrl) else fresh
+                },
+                serverUrlError = serverUrlError,
                 saved = true
             )
         )
@@ -462,6 +495,11 @@ class SettingsViewModel(
         repo.update { it.copy(autoTitle = enabled) }
     }
 
+    /** Persist *Improve recordings on the server* immediately (issue #58). */
+    fun setServerAuto(enabled: Boolean) {
+        repo.update { it.copy(asrServerAuto = enabled) }
+    }
+
     /** Persist the default summary template immediately (issue #27). */
     fun setDefaultSummaryTemplate(key: String) {
         repo.update { it.copy(defaultSummaryTemplate = key) }
@@ -505,6 +543,36 @@ class SettingsViewModel(
                     }
                 ),
                 availableModels = result.getOrDefault(emptyList())
+            )
+        }
+    }
+
+    /**
+     * Like [testConnection], for the transcription server (issue #58):
+     * save, then list its models. A refused (non-HTTPS) URL is not
+     * tested.
+     */
+    fun testServer() {
+        if (_state.value.serverTesting) return
+        save()
+        if (_state.value.serverUrlError) return
+        _state.value = _state.value.copy(serverTesting = true, serverTestResult = null)
+        viewModelScope.launch {
+            val result = runCatching { listServerModels() }
+            _state.value = _state.value.copy(
+                serverTesting = false,
+                serverTestResult = result.fold(
+                    onSuccess = { models ->
+                        ConnectionTestResult.Connected(count = models.size, models = models.take(5))
+                    },
+                    onFailure = { failure ->
+                        Log.w(TAG, "settings: transcription server test failed", failure)
+                        ConnectionTestResult.Failed(
+                            (failure as? ServerAsrException)?.message ?: failure.toUserMessage()
+                        )
+                    }
+                ),
+                serverModels = result.getOrDefault(emptyList())
             )
         }
     }
@@ -554,6 +622,8 @@ class SettingsViewModel(
             cleanAudioDefault = current.cleanAudioDefault,
             autoMarkNotes = current.autoMarkNotes,
             autoTitle = current.autoTitle,
+            serverConfigured = current.asrServerConfigured,
+            serverAuto = current.asrServerAuto,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )
