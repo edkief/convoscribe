@@ -405,11 +405,12 @@ them from the sherpa image with podman or docker. Two images
 (Containerfiles in `docker/`, build context the repo root) make this
 work in CI:
 
-- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>` is a
-  `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so` and
-  `/sherpa/libs/*.jar`. Its tag comes from the pins in
-  `scripts/build-sherpa-onnx.sh`, so you rebuild it only when a pin
-  changes.
+- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>-jni<tag>` is a
+  `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so`
+  (sherpa-onnx's libraries and the onnxruntime JNI library rebuilt
+  against them) and `/sherpa/libs/*.jar`. Its tag comes from the pins in
+  `scripts/build-sherpa-onnx.sh` and `scripts/build-onnxruntime-jni.sh`,
+  so you rebuild it only when a pin changes.
 - `convoscribe-android-builder:<sherpa tag>-tc<hash>` has JDK 17, the
   SDK (no NDK) and `gh`, with the sherpa outputs at `/opt/sherpa`.
   Tekton runs `scripts/release.sh publish` in this image. The exact tag
