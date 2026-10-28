@@ -289,6 +289,12 @@ class RecordingService : Service() {
             // text changes to "Identifying speakers…" so the user
             // sees the service is still working.
             ensureNotificationChannel()
+            // With *Improve recordings on the server* (issue #58) the
+            // transcript is redone on the server first. It runs as
+            // the re-transcription job, so the session screen shows
+            // its progress and Cancel; a cancel or a failure keeps the
+            // device transcript, and speakers are identified anyway.
+            if (completedId != null) improveOnServer(completedId)
             ServiceCompat.startForeground(
                 this@RecordingService,
                 NOTIFICATION_ID,
@@ -312,6 +318,42 @@ class RecordingService : Service() {
                 ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
+        }
+    }
+
+    /**
+     * Transcribe the just-stopped [sessionId] again on the server when
+     * [com.convoscribe.recording.RetranscribeUseCase.wantsServer], and wait for it. Shows the
+     * re-transcription notification with its progress meanwhile.
+     */
+    private suspend fun improveOnServer(sessionId: Long) {
+        val useCase = (application as ConvoApp).container.retranscribeUseCase
+        if (!useCase.wantsServer(sessionId)) return
+        ServiceCompat.startForeground(
+            this,
+            NOTIFICATION_ID,
+            buildRetranscribeNotification(0f, onServer = true),
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        )
+        val job = scope.launch {
+            val progress = useCase.state
+                .onEach { state ->
+                    if (state is RetranscribeState.Running) {
+                        maybeRefreshRetranscribeNotification(state.progress, cleaning = false, onServer = true)
+                    }
+                }
+                .launchIn(this)
+            try {
+                useCase.improveOnServer(sessionId)
+            } finally {
+                progress.cancel()
+            }
+        }
+        retranscribeJob = job
+        try {
+            job.join()
+        } finally {
+            retranscribeJob = null
         }
     }
 

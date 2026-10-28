@@ -29,6 +29,7 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -114,14 +115,16 @@ class RetranscribeUseCaseTest {
     private fun useCase(
         factory: TranscriberFactory,
         cleaners: AudioCleanerFactory? = null,
-        server: FileRecognizer? = null
+        server: FileRecognizer? = null,
+        serverAuto: Boolean = false
     ) = RetranscribeUseCase(
         repository = repo,
         transcriberFactory = factory,
         diarize = diarizer(),
         asrDispatcher = Dispatchers.Unconfined,
         cleanerFactory = cleaners,
-        server = server
+        server = server,
+        serverAuto = { serverAuto }
     )
 
     /** The transcription server (issue #58): two timed lines, or [failure]. */
@@ -323,6 +326,91 @@ class RetranscribeUseCaseTest {
 
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
         assertTrue(uc.state.value is RetranscribeState.Failed)
+    }
+
+    @Test
+    fun improveOnServer_replacesTheTranscriptInTheSessionsLanguageWithoutIdentifyingSpeakers() = runTest {
+        val id = englishSession()
+        val server = FakeServer()
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
+
+        assertTrue(uc.wantsServer(id))
+        assertTrue(uc.improveOnServer(id))
+
+        assertEquals("en", server.calls.single().second)
+        assertEquals(listOf("Hello there.", "General Kenobi."), repo.getSegments(id).map { it.text })
+        assertEquals("server", repo.getSession(id)!!.asrEngine)
+        // Speakers are the caller's job; the old speaker carries over meanwhile.
+        assertEquals(listOf(0, 0), repo.getSegments(id).map { it.speakerIndex })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun improveOnServer_doesNothingWhenOff() = runTest {
+        val id = englishSession()
+        val server = FakeServer()
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = false)
+
+        assertFalse(uc.wantsServer(id))
+        assertFalse(uc.improveOnServer(id))
+
+        assertTrue(server.calls.isEmpty())
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun improveOnServer_neverReplacesAnEditedTranscript() = runTest {
+        val id = englishSession()
+        repo.editLineText(repo.getSegments(id).single().id, "hello there, corrected")
+        val server = FakeServer()
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
+
+        assertFalse(uc.wantsServer(id))
+        assertFalse(uc.improveOnServer(id))
+
+        assertTrue(server.calls.isEmpty())
+        assertEquals(listOf("hello there, corrected"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun improveOnServer_failureKeepsTheDeviceTranscriptWithoutAnError() = runTest {
+        val id = englishSession()
+        val uc = useCase(
+            factory { FrenchTranscriber() },
+            server = FakeServer(ServerAsrException("Network error calling x: timeout")),
+            serverAuto = true
+        )
+
+        assertFalse(uc.improveOnServer(id))
+
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun improveOnServer_cancelKeepsTheDeviceTranscript() = runTest {
+        val id = englishSession()
+        val job = Job()
+        val server = object : FileRecognizer {
+            override suspend fun transcribe(
+                file: File,
+                language: String,
+                onProgress: (Float) -> Unit
+            ): List<TranscriptEvent.Final> {
+                job.cancel()
+                awaitCancellation()
+            }
+            override fun describe() = EngineInfo("server", "m")
+        }
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
+        try {
+            withContext(job) { uc.improveOnServer(id) }
+            fail("expected cancellation")
+        } catch (_: CancellationException) {
+        }
+
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
     }
 
     @Test

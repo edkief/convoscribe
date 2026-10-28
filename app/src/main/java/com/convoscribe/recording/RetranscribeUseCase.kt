@@ -72,7 +72,10 @@ sealed interface RetranscribeState {
  *
  * With `onServer` (issue #58) the same audio goes to the transcription
  * server ([server]) instead of [transcriberFactory], and the session
- * records the server's engine and model.
+ * records the server's engine and model. [improveOnServer] is the
+ * automatic form run after Stop when [serverAuto] says so: it never
+ * replaces a transcript edited by hand, and a failure only keeps the
+ * device transcript, without an error on screen.
  */
 class RetranscribeUseCase(
     private val repository: SessionRepository,
@@ -80,7 +83,8 @@ class RetranscribeUseCase(
     private val diarize: DiarizeSessionUseCase,
     private val asrDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val cleanerFactory: AudioCleanerFactory? = null,
-    private val server: FileRecognizer? = null
+    private val server: FileRecognizer? = null,
+    private val serverAuto: () -> Boolean = { false }
 ) {
     private val _state = MutableStateFlow<RetranscribeState>(RetranscribeState.Idle)
     val state: StateFlow<RetranscribeState> = _state.asStateFlow()
@@ -96,6 +100,48 @@ class RetranscribeUseCase(
      * after resetting [state].
      */
     suspend fun run(sessionId: Long, language: String, clean: Boolean = false, onServer: Boolean = false): Boolean {
+        if (!transcribeAndReplace(sessionId, language, clean, onServer, showFailure = true)) return false
+        diarize.runOrDefer(sessionId)
+        return true
+    }
+
+    /**
+     * Whether [improveOnServer] would send [sessionId] to the server:
+     * *Improve recordings on the server* is on with a server set up,
+     * and the transcript was not edited by hand (a continued session
+     * may have been).
+     */
+    suspend fun wantsServer(sessionId: Long): Boolean {
+        if (server == null || !serverAuto()) return false
+        val session = repository.getSession(sessionId) ?: return false
+        return !session.transcriptEdited
+    }
+
+    /**
+     * After Stop (issue #58): transcribe [sessionId] again on the
+     * server, in its own language, when [wantsServer]. Returns `true`
+     * when the transcript was replaced. A failure is logged and keeps
+     * the device transcript; [state] goes back to Idle, not Failed.
+     * Speakers are left to the caller, who identifies them either way.
+     * Rethrows cancellation after resetting [state].
+     */
+    suspend fun improveOnServer(sessionId: Long): Boolean {
+        if (!wantsServer(sessionId)) return false
+        val language = repository.getSession(sessionId)?.language ?: return false
+        return transcribeAndReplace(sessionId, language, clean = false, onServer = true, showFailure = false)
+    }
+
+    /**
+     * Transcribe and swap in the new transcript; `false` on failure,
+     * shown as [RetranscribeState.Failed] when [showFailure].
+     */
+    private suspend fun transcribeAndReplace(
+        sessionId: Long,
+        language: String,
+        clean: Boolean,
+        onServer: Boolean,
+        showFailure: Boolean
+    ): Boolean {
         _state.value = RetranscribeState.Running(sessionId, 0f, cleaning = clean, onServer = onServer)
         var work: File? = null
         try {
@@ -166,11 +212,14 @@ class RetranscribeUseCase(
             throw ce
         } catch (t: Throwable) {
             work?.delete()
-            Log.w(TAG, "re-transcription failed for session $sessionId", t)
-            _state.value = RetranscribeState.Failed(sessionId, t.message ?: t.javaClass.simpleName)
+            Log.w(TAG, "re-transcription failed for session $sessionId (server=$onServer)", t)
+            _state.value = if (showFailure) {
+                RetranscribeState.Failed(sessionId, t.message ?: t.javaClass.simpleName)
+            } else {
+                RetranscribeState.Idle
+            }
             return false
         }
-        diarize.runOrDefer(sessionId)
         return true
     }
 

@@ -374,13 +374,15 @@ class AppContainer(val context: Context) {
         transcriberFactory = transcriberFactory,
         diarize = diarizeSessionUseCase,
         cleanerFactory = audioCleanerFactory,
-        server = serverTranscriber
+        server = serverTranscriber,
+        serverAuto = { settingsRepository.settings.value.asrServerAutoActive }
     )
 
     /**
      * Imports an audio file as a new session (issue #3): decodes it
      * with the platform codecs, transcribes it in the Settings
-     * language and identifies speakers. Run by the foreground
+     * language (on the transcription server when *Improve recordings on
+     * the server* is on, issue #58) and identifies speakers. Run by the foreground
      * service; its [ImportAudioUseCase.state] drives the home screen's
      * progress banner. Work files live in `cacheDir/imports/`.
      */
@@ -390,7 +392,9 @@ class AppContainer(val context: Context) {
         diarize = diarizeSessionUseCase,
         decoder = MediaCodecAudioDecoder(),
         workDir = File(context.cacheDir, "imports"),
-        defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) }
+        defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) },
+        server = serverTranscriber,
+        useServer = { settingsRepository.settings.value.asrServerAutoActive }
     )
 
     /**

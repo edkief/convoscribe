@@ -2,8 +2,11 @@ package com.convoscribe.recording
 
 import android.util.Log
 import com.convoscribe.TAG
+import com.convoscribe.asr.EngineInfo
+import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.FileTranscriber
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.asr.TranscriptEvent
 import com.convoscribe.audio.AudioDecoder
 import com.convoscribe.audio.AudioImportException
 import com.convoscribe.audio.PcmConverter
@@ -74,7 +77,9 @@ class ImportSource(val displayName: String?, val sizeBytes: Long?, val open: () 
  *  2. decode it with [decoder] and convert it to 16 kHz mono
  *     ([PcmConverter]) into a WAV in [workDir];
  *  3. transcribe the WAV with [FileTranscriber], in the language of
- *     [defaultOptions] (the Settings defaults);
+ *     [defaultOptions] (the Settings defaults); on the transcription
+ *     [server] instead when [useServer] says so (issue #58), falling
+ *     back to the device if the server fails;
  *  4. create the session, its transcript and its recording in one
  *     transaction ([SessionRepository.createImportedSession]);
  *  5. identify speakers with [diarize], as after a recording.
@@ -92,7 +97,9 @@ class ImportAudioUseCase(
     private val defaultOptions: () -> ConversationOptions,
     private val asrDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
-    private val clock: () -> Long = System::currentTimeMillis
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val server: FileRecognizer? = null,
+    private val useServer: () -> Boolean = { false }
 ) {
     private val _state = MutableStateFlow<ImportState>(ImportState.Idle)
     val state: StateFlow<ImportState> = _state.asStateFlow()
@@ -165,15 +172,8 @@ class ImportAudioUseCase(
 
         _state.value = ImportState.Running(name, ImportStep.TRANSCRIBING, 0f)
         val options = defaultOptions()
-        val finals = withContext(asrDispatcher) {
-            transcriberFactory.create(options.language).use { transcriber ->
-                FileTranscriber.transcribe(wav, transcriber) { p ->
-                    _state.value = ImportState.Running(name, ImportStep.TRANSCRIBING, p)
-                }
-            }
-        }
+        val (finals, engine) = transcribe(wav, options.language, name)
         currentCoroutineContext().ensureActive()
-        val engine = transcriberFactory.describe(options.language)
         val id = repository.createImportedSession(
             title = options.copy(title = titleFor(name)).sessionTitle(clock()),
             language = options.language,
@@ -188,6 +188,34 @@ class ImportAudioUseCase(
         )
         Log.i(TAG, "imported session=$id lines=${finals.size} durationMs=${samplesToMs(samples)}")
         return id
+    }
+
+    /**
+     * Transcribe [wav] on the server when [useServer] says so, else (or
+     * if the server fails) on the device, with the engine that did it.
+     */
+    private suspend fun transcribe(
+        wav: File,
+        language: String,
+        name: String?
+    ): Pair<List<TranscriptEvent.Final>, EngineInfo> {
+        val report = { p: Float -> _state.value = ImportState.Running(name, ImportStep.TRANSCRIBING, p) }
+        if (server != null && useServer()) {
+            try {
+                return server.transcribe(wav, language, report) to server.describe()
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "server transcription failed for import $name; transcribing on the device", t)
+                report(0f)
+            }
+        }
+        val finals = withContext(asrDispatcher) {
+            transcriberFactory.create(language).use { transcriber ->
+                FileTranscriber.transcribe(wav, transcriber, onProgress = report)
+            }
+        }
+        return finals to transcriberFactory.describe(language)
     }
 
     /** Copy [source] to [into], reporting progress when its size is known. */
