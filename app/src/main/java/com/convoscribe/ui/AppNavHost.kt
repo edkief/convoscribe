@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.convoscribe.ConvoApp
+import com.convoscribe.ui.ask.AskAcrossScreen
 import com.convoscribe.ui.enginecheck.EngineCheckScreen
 import com.convoscribe.ui.home.HomeScreen
 import com.convoscribe.ui.organise.PresetsScreen
@@ -36,6 +37,7 @@ private const val ROUTE_SUMMARY_TEMPLATES = "summary-templates"
 private const val ROUTE_SEARCH = "search"
 private const val ROUTE_TAGS = "tags"
 private const val ROUTE_PRESETS = "presets"
+private const val ROUTE_ASK_ACROSS = "ask"
 
 private const val NO_ARG = -1L
 
@@ -81,6 +83,8 @@ internal fun sessionRoute(id: Long, tab: Int = 0, lineId: Long? = null, atMs: Lo
  *    model is not installed.
  *  - `search` — search across sessions (issue #24), reached from
  *    the home top bar;
+ *  - `ask` — ask a question across sessions (issue #49), reached from
+ *    the home top bar and the search screen;
  *  - `session/{id}` — session-detail screen (transcript tab,
  *    summary tab and ask tab). The route id is a `Long` so the
  *    home list's `session/${row.id}` push lands on the right row.
@@ -181,6 +185,9 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
         composable(ROUTE_SEARCH) {
             SearchScreen(navController = navController)
+        }
+        composable(ROUTE_ASK_ACROSS) {
+            AskAcrossScreen(navController = navController)
         }
         composable(ROUTE_TAGS) {
             TagsScreen(navController = navController)

@@ -82,7 +82,8 @@ private const val TAB_TRANSCRIPT = 0
 private const val TAB_SUMMARY = 1
 
 /**
- * Cross-session search (issue #24), reached from Home. The field
+ * Cross-session search (issue #24), reached from Home; its top bar
+ * leads on to *Ask across sessions* (issue #49). The field
  * searches as the user types (after a pause, longer on e-ink) or on
  * the keyboard's Search key; filter chips narrow by language, date and
  * person. A transcript hit opens its session on the Transcript tab at
@@ -116,7 +117,8 @@ fun SearchScreen(navController: NavHostController) {
         onOpen = { id, tab, line ->
             navController.navigate(sessionRoute(id, tab = tab, lineId = line?.segmentId, atMs = line?.startMs))
         },
-        onBack = { navController.popBackStack() }
+        onBack = { navController.popBackStack() },
+        onAskAcross = { navController.navigate("ask") }
     )
 }
 
@@ -139,10 +141,23 @@ internal fun SearchBody(
     onOpen: (sessionId: Long, tab: Int, line: SearchLine?) -> Unit,
     onBack: () -> Unit,
     autoFocus: Boolean = true,
-    onTag: (Long?) -> Unit = {}
+    onTag: (Long?) -> Unit = {},
+    onAskAcross: () -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
-    ScreenScaffold(title = stringResource(R.string.search_title), onBack = onBack) { innerPadding ->
+    ScreenScaffold(
+        title = stringResource(R.string.search_title),
+        onBack = onBack,
+        actions = {
+            // Ask a question about the sessions rather than find words in them (issue #49).
+            IconButton(onClick = onAskAcross) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_conversation),
+                    contentDescription = stringResource(R.string.ask_across_open)
+                )
+            }
+        }
+    ) { innerPadding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -230,9 +245,12 @@ private fun QueryField(query: String, onQueryChange: (String) -> Unit, onSubmit:
     )
 }
 
-/** Language, date, person and tag chips, each opening a menu of choices. */
+/**
+ * Language, date, person and tag chips, each opening a menu of choices;
+ * also above *Ask across sessions* (issue #49).
+ */
 @Composable
-private fun FilterRow(
+internal fun FilterRow(
     filters: FilterState,
     options: SearchOptions,
     onLanguage: (String?) -> Unit,
