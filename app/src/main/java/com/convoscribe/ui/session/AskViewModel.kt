@@ -102,12 +102,18 @@ data class AskUiState(
  * @param settings persisted settings; the QA budget comes from
  *   `maxTranscriptChars`, and `configured` is derived from
  *   `llmBaseUrl` / `llmModel`.
+ * @param streamIntervalMs how often the streaming answer is redrawn
+ *   ([StreamPacer]); `0` for every token, [StreamPacer.EINK_INTERVAL_MS]
+ *   on e-ink.
+ * @param clock milliseconds for the [StreamPacer]; tests pass virtual time.
  */
 class AskViewModel(
     private val sessionId: Long,
     private val repository: SessionRepository,
     private val chatClient: ChatClient,
-    private val settings: SettingsRepository
+    private val settings: SettingsRepository,
+    private val streamIntervalMs: Long = 0L,
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000L }
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<AskUiState> =
@@ -260,11 +266,12 @@ class AskViewModel(
         )
 
         val accumulated = StringBuilder()
+        val pacer = StreamPacer(streamIntervalMs, clock)
         try {
             chatClient.stream(messages)
                 .onEach { token ->
                     accumulated.append(token)
-                    _state.value = _state.value.copy(streaming = accumulated.toString())
+                    if (pacer.due()) _state.value = _state.value.copy(streaming = accumulated.toString())
                 }
                 .catch { failure ->
                     // Cancellation ("Stop") is not an error. Any

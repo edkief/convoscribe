@@ -128,6 +128,8 @@ fun SessionScreen(
 ) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
+    // Streamed answers redraw once a second on e-ink rather than per token (issue #49).
+    val streamIntervalMs = if (AppTheme.isEink) StreamPacer.EINK_INTERVAL_MS else 0L
     val vm: SessionViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
@@ -164,7 +166,8 @@ fun SessionScreen(
                     sessionId = sessionId,
                     repository = container.sessionRepository,
                     chatClient = container.chatClient,
-                    settings = container.settingsRepository
+                    settings = container.settingsRepository,
+                    streamIntervalMs = streamIntervalMs
                 )
             }
         }
