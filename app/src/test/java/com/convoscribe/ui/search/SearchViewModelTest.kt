@@ -5,6 +5,7 @@ import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.SearchDao
 import com.convoscribe.data.SegmentHit
 import com.convoscribe.data.SessionEntity
+import com.convoscribe.data.SessionHits
 import com.convoscribe.data.SessionSearch
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SessionTagEntity
@@ -199,6 +200,13 @@ class SearchViewModelTest {
             queries += match
             return listOf(SegmentHit(1, 10, 0, null, "${open}budget$close"))
         }
+
+        override suspend fun matchingSessions(
+            match: String,
+            language: String?,
+            since: Long,
+            limit: Int
+        ): List<SessionHits> = listOf(SessionHits(1, 1))
 
         override suspend fun sessions(): List<SessionEntity> = listOf(session)
 
