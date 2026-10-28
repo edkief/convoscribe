@@ -12,13 +12,16 @@ import com.convoscribe.data.TranscriptLine
  * line after this chunk), or the end of the last line for the final
  * chunk, so chunks without overlap tile the conversation's timeline.
  * [firstLine] and [lastLine] are indices into the input lines.
+ * [sessionId] tells chunks of different sessions apart when they are
+ * ranked together (issue #49); `0` for chunks of a single session.
  */
 data class TranscriptChunk(
     val text: String,
     val startMs: Long,
     val endMs: Long,
     val firstLine: Int,
-    val lastLine: Int
+    val lastLine: Int,
+    val sessionId: Long = 0L
 )
 
 /**

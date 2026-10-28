@@ -41,6 +41,25 @@ interface SearchDao {
         limit: Int
     ): List<SegmentHit>
 
+    /**
+     * Sessions with transcript lines matching [match] (issue #49),
+     * the most matching lines first, then newest first; at most
+     * [limit]. [language] and [since] narrow them as in [findSegments].
+     */
+    @Query(
+        "SELECT s.sessionId AS sessionId, COUNT(*) AS hits " +
+            "FROM segments_fts " +
+            "JOIN segments s ON s.id = segments_fts.rowid " +
+            "JOIN sessions ss ON ss.id = s.sessionId " +
+            "WHERE segments_fts MATCH :match " +
+            "AND (:language IS NULL OR ss.language = :language) " +
+            "AND ss.createdAt >= :since " +
+            "GROUP BY s.sessionId " +
+            "ORDER BY hits DESC, ss.createdAt DESC, ss.id DESC " +
+            "LIMIT :limit"
+    )
+    suspend fun matchingSessions(match: String, language: String?, since: Long, limit: Int): List<SessionHits>
+
     /** Every session, newest first. */
     @Query("SELECT * FROM sessions ORDER BY createdAt DESC, id DESC")
     suspend fun sessions(): List<SessionEntity>
@@ -73,3 +92,6 @@ data class SegmentHit(
     val speakerIndex: Int?,
     val snippet: String
 )
+
+/** Row of [SearchDao.matchingSessions]: how many lines of a session matched. */
+data class SessionHits(val sessionId: Long, val hits: Int)

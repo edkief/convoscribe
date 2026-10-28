@@ -1,5 +1,6 @@
 package com.convoscribe.llm
 
+import com.convoscribe.data.SearchText
 import kotlin.math.ln
 
 /**
@@ -45,10 +46,17 @@ object ChunkRetriever {
     fun words(text: String): List<String> =
         WORD.findAll(text.lowercase()).map { it.value }.filter { it.length >= 2 }.toList()
 
+    /**
+     * The words [scores] compares: [words] of [text] with accents
+     * removed, so "reunion" matches "Réunion" as it does in search
+     * (issue #49).
+     */
+    private fun terms(text: String): List<String> = words(SearchText.fold(text))
+
     /** BM25 score of each of [chunks] for [query], in the same order. */
     fun scores(chunks: List<TranscriptChunk>, query: String): DoubleArray {
-        val terms = words(query).toSet()
-        val docs = chunks.map { chunk -> words(chunk.text).groupingBy { it }.eachCount() }
+        val terms = terms(query).toSet()
+        val docs = chunks.map { chunk -> terms(chunk.text).groupingBy { it }.eachCount() }
         val lengths = docs.map { doc -> doc.values.sum() }
         val average = lengths.average().takeIf { it > 0.0 } ?: 1.0
         val n = chunks.size.toDouble()
@@ -77,8 +85,19 @@ object ChunkRetriever {
      * When no chunk shares a word with the query ("what was this
      * about?") chunks spread evenly over the conversation are taken
      * instead, so the answer still sees all of it in outline.
+     *
+     * [chunks] may hold several sessions (issue #49), each in time
+     * order and one after the other: neighbours are then only taken
+     * within a session, and no session gets more than
+     * [perSessionMaxChars] of the budget, so one long meeting cannot
+     * crowd out the rest.
      */
-    fun select(chunks: List<TranscriptChunk>, query: String, maxChars: Int): Excerpts {
+    fun select(
+        chunks: List<TranscriptChunk>,
+        query: String,
+        maxChars: Int,
+        perSessionMaxChars: Int = maxChars
+    ): Excerpts {
         if (chunks.isEmpty()) return Excerpts(emptyList(), 0L, 0L)
         val scores = scores(chunks, query)
         val ranked = chunks.indices.filter { scores[it] > 0.0 }.sortedByDescending { scores[it] }
@@ -89,25 +108,32 @@ object ChunkRetriever {
             // far below a real match; the strong matches' neighbours
             // are worth more than those.
             val (strong, weak) = ranked.partition { scores[it] >= scores[ranked.first()] * STRONG_SHARE }
-            strong + neighbours(strong, chunks.size) + weak
+            strong + neighbours(strong, chunks) + weak
         }
 
         val picked = sortedSetOf<Int>()
         var used = 0
+        val usedBySession = HashMap<Long, Int>()
         for (index in order) {
             if (index in picked) continue
-            val cost = chunks[index].text.length + SEPARATOR_CHARS
-            if (used + cost > maxChars) continue
+            val chunk = chunks[index]
+            val cost = chunk.text.length + SEPARATOR_CHARS
+            val sessionUsed = usedBySession[chunk.sessionId] ?: 0
+            if (used + cost > maxChars || sessionUsed + cost > perSessionMaxChars) continue
             picked += index
             used += cost
+            usedBySession[chunk.sessionId] = sessionUsed + cost
         }
         val selected = picked.map { chunks[it] }
         return Excerpts(selected, covered(selected), chunks.last().endMs)
     }
 
-    /** The chunks right before and after each of [ranked], in rank order. */
-    private fun neighbours(ranked: List<Int>, size: Int): List<Int> =
-        ranked.flatMap { listOf(it - 1, it + 1) }.filter { it in 0 until size }
+    /** The chunks right before and after each of [ranked] in the same session, in rank order. */
+    private fun neighbours(ranked: List<Int>, chunks: List<TranscriptChunk>): List<Int> = ranked.flatMap { index ->
+        listOf(index - 1, index + 1).filter {
+            it in chunks.indices && chunks[it].sessionId == chunks[index].sessionId
+        }
+    }
 
     /** Chunk indices spaced evenly over the conversation, as many as about fit [maxChars]. */
     private fun spread(chunks: List<TranscriptChunk>, maxChars: Int): List<Int> {
@@ -117,11 +143,19 @@ object ChunkRetriever {
         return (0 until count).map { (it * step + step / 2).toInt().coerceAtMost(chunks.size - 1) }
     }
 
-    /** Length of the union of the [chunks]' time spans; they are in time order. */
+    /**
+     * Length of the union of the [chunks]' time spans, summed over
+     * sessions; within a session they are in time order.
+     */
     private fun covered(chunks: List<TranscriptChunk>): Long {
         var total = 0L
         var reached = Long.MIN_VALUE
+        var session: Long? = null
         for (chunk in chunks) {
+            if (chunk.sessionId != session) {
+                session = chunk.sessionId
+                reached = Long.MIN_VALUE
+            }
             val from = maxOf(chunk.startMs, reached)
             if (chunk.endMs > from) total += chunk.endMs - from
             reached = maxOf(reached, chunk.endMs)

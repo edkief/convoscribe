@@ -211,4 +211,52 @@ class SessionSearchTest {
         assertEquals(listOf(acme), search.search("budget", acmeOnly).map { it.session.id })
         assertEquals(3, search.search("budget").size)
     }
+
+    @Test
+    fun candidates_rankByMatchingLines_ignoreStopWords_andCarrySummaries() = runTest {
+        val one = session("One", createdAt = 3_000L)
+        val two = session("Two", createdAt = 2_000L)
+        val none = session("None", createdAt = 1_000L)
+        repo.addSegment(one, startMs = 0, endMs = 1_000, text = "The budget was discussed")
+        repo.addSegment(two, startMs = 0, endMs = 1_000, text = "Budget first")
+        repo.addSegment(two, startMs = 1_000, endMs = 2_000, text = "and the budget again")
+        repo.addSegment(none, startMs = 0, endMs = 1_000, text = "What was the weather like")
+        repo.addMessage(two, MessageKind.SUMMARY, MessageRole.ASSISTANT, "Budget talks.")
+
+        val result = search.candidates("What did they say about the budget?")
+        assertEquals(listOf(two, one), result.map { it.session.id })
+        assertEquals(listOf(2, 1), result.map { it.hits })
+        assertEquals("Budget talks.", result.first().summary)
+        assertNull(result.last().summary)
+    }
+
+    @Test
+    fun candidates_respectFiltersAndLimit() = runTest {
+        val en = session("En", createdAt = 5_000L)
+        val fr = session("Fr", language = "fr", createdAt = 5_000L)
+        val old = session("Old", createdAt = 100L)
+        val bob = session("Bob's", createdAt = 4_000L)
+        val tagged = session("Tagged", createdAt = 4_000L)
+        for (id in listOf(en, fr, old, bob, tagged)) repo.addSegment(id, startMs = 0, endMs = 1_000, text = "budget")
+        db.speakerDao().upsert(listOf(SpeakerEntity(bob, 0, "Bob")))
+        repo.setSessionTags(tagged, listOf("Acme"))
+
+        suspend fun ids(filters: SearchFilters) = search.candidates("budget", filters).map { it.session.id }
+        assertEquals(listOf(fr), ids(SearchFilters(language = "fr")))
+        assertTrue(old !in ids(SearchFilters(since = 1_000L)))
+        assertEquals(listOf(bob), ids(SearchFilters(speaker = "bob")))
+        val tag = search.options().tags.single().id
+        assertEquals(listOf(tagged), ids(SearchFilters(tagIds = setOf(tag))))
+        assertEquals(2, search.candidates("budget", limit = 2).size)
+    }
+
+    @Test
+    fun candidates_withoutAnyMatch_fallBackToTheNewestSessions() = runTest {
+        val ids = (1..7).map { session("S$it", createdAt = it * 1_000L) }
+        ids.forEach { repo.addSegment(it, startMs = 0, endMs = 1_000, text = "weather") }
+
+        val result = search.candidates("What was decided?")
+        assertEquals(ids.reversed().take(SessionSearch.FALLBACK_SESSIONS), result.map { it.session.id })
+        assertTrue(result.all { it.hits == 0 })
+    }
 }

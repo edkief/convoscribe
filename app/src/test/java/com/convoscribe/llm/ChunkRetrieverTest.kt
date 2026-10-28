@@ -75,4 +75,43 @@ class ChunkRetrieverTest {
         val result = ChunkRetriever.select(emptyList(), "anything", 1000)
         assertEquals(Excerpts(emptyList(), 0L, 0L), result)
     }
+
+    @Test
+    fun scores_matchIgnoringAccents() {
+        val list = chunks(mapOf(3 to "[03:00] Bob: la Réunion budgétaire est jeudi"))
+        val scores = ChunkRetriever.scores(list, "reunion budgetaire")
+        assertEquals(3, scores.indices.maxBy { scores[it] })
+    }
+
+    @Test
+    fun select_neighboursStayInTheirSession() {
+        // Chunks 0–4 are session 1 and 5–9 session 2; the match is the
+        // first chunk of session 2, so chunk 4 (session 1) is not its neighbour.
+        val list = chunks(mapOf(5 to "[05:00] Bob: the invoice for Kowalski is overdue"))
+            .mapIndexed { i, c -> c.copy(sessionId = if (i < 5) 1L else 2L) }
+        val budget = list[0].text.length * 3 + 20
+        val result = ChunkRetriever.select(list, "Kowalski invoice", budget)
+        assertTrue(4 !in result.chunks.map { it.firstLine })
+        assertTrue(6 in result.chunks.map { it.firstLine })
+    }
+
+    @Test
+    fun select_capsEachSessionsShareOfTheBudget() {
+        // Every chunk of session 1 matches strongly; session 2 matches weakly.
+        val strong = "[00:00] Bob: Kowalski Kowalski invoice"
+        val list = chunks((0 until 5).associateWith { strong } + (5 until 10).associateWith { "[00:00] Ann: Kowalski" })
+            .mapIndexed { i, c -> c.copy(sessionId = if (i < 5) 1L else 2L) }
+        val cost = list.maxOf { it.text.length } + 5
+        val result = ChunkRetriever.select(list, "Kowalski invoice", cost * 6, perSessionMaxChars = cost * 2)
+        val bySession = result.chunks.groupingBy { it.sessionId }.eachCount()
+        assertTrue((bySession[1L] ?: 0) <= 2)
+        assertTrue((bySession[2L] ?: 0) >= 1)
+    }
+
+    @Test
+    fun select_coverageAddsUpOverSessions() {
+        val list = chunks().mapIndexed { i, c -> c.copy(sessionId = i.toLong(), startMs = 0L, endMs = 60_000L) }
+        val result = ChunkRetriever.select(list, "weather", Int.MAX_VALUE)
+        assertEquals(600_000L, result.coveredMs)
+    }
 }

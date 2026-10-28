@@ -43,6 +43,35 @@ object SearchText {
     fun ftsQuery(terms: List<String>): String = terms.joinToString(" ") { "$it*" }
 
     /**
+     * FTS4 `MATCH` expression that finds lines with *any* of the
+     * [terms] of a question (issue #49), each as a prefix term.
+     */
+    fun ftsAnyQuery(terms: List<String>): String = terms.joinToString(" OR ") { "$it*" }
+
+    /**
+     * The folded words of a question worth looking up (issue #49):
+     * [terms] without [STOP_WORDS] and single letters, which would
+     * match nearly every line.
+     */
+    fun questionTerms(question: String): List<String> = terms(question).filter { it.length >= 2 && it !in STOP_WORDS }
+
+    /** Common English and French words, folded, that say nothing about what a question is about. */
+    val STOP_WORDS: Set<String> = setOf(
+        // English
+        "a", "about", "after", "all", "an", "and", "any", "are", "as", "at", "be", "been", "before", "but", "by",
+        "can", "could", "did", "do", "does", "for", "from", "had", "has", "have", "he", "her", "him", "his", "how",
+        "i", "if", "in", "into", "is", "it", "its", "me", "my", "no", "not", "of", "on", "or", "our", "out", "she",
+        "so", "than", "that", "the", "their", "them", "then", "there", "these", "they", "this", "those", "to",
+        "up", "us", "was", "we", "were", "what", "when", "where", "which", "who", "whom", "why", "will", "with",
+        "would", "you", "your", "say", "said", "tell", "told", "talk", "talked", "mention", "mentioned",
+        // French
+        "au", "aux", "avec", "ce", "ces", "cette", "dans", "de", "des", "du", "elle", "en", "est", "et", "il",
+        "ils", "je", "la", "le", "les", "leur", "lui", "ma", "mais", "me", "mes", "moi", "mon", "ne", "nous", "on",
+        "ou", "par", "pas", "pour", "qu", "que", "qui", "quoi", "quand", "quel", "quelle", "sa", "se", "ses",
+        "son", "sur", "ta", "te", "tu", "un", "une", "vous", "comment", "pourquoi", "dit", "parle", "ete", "fait"
+    )
+
+    /**
      * The words of [text] that one of [terms] is a prefix of, as
      * ranges into [text]; empty unless every term matches some word.
      */

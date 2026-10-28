@@ -223,7 +223,8 @@ fun HomeScreen(navController: NavHostController) {
         onDelete = vm::delete,
         onSettings = { navController.navigate("settings") },
         onEngineCheck = { navController.navigate("engine-check") },
-        onSearch = { navController.navigate("search") }
+        onSearch = { navController.navigate("search") },
+        onAskAcross = { navController.navigate("ask") }
     )
 }
 
@@ -249,7 +250,8 @@ internal fun HomeBody(
     onDelete: (Long) -> Unit,
     onSettings: () -> Unit,
     onEngineCheck: () -> Unit,
-    onSearch: () -> Unit = {}
+    onSearch: () -> Unit = {},
+    onAskAcross: () -> Unit = {}
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
     var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
@@ -262,6 +264,15 @@ internal fun HomeBody(
     ScreenScaffold(
         title = stringResource(R.string.app_name),
         actions = {
+            // Ask across sessions (issue #49), once there is something to ask about.
+            if (searchable) {
+                IconButton(onClick = onAskAcross) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_conversation),
+                        contentDescription = stringResource(R.string.ask_across_open)
+                    )
+                }
+            }
             if (searchable && !wide) {
                 IconButton(onClick = onSearch) {
                     Icon(

@@ -565,6 +565,25 @@
         <item quantity="one">Based on %1$d of %2$d minute, the parts most relevant to the question</item>
         <item quantity="other">Based on %1$d of %2$d minutes, the parts most relevant to the question</item>
     </plurals>
+    <!-- Ask across sessions (issue #49) -->
+    <string name="ask_across_title">Ask across sessions</string>
+    <string name="ask_across_open">Ask across sessions</string>
+    <string name="ask_across_input_label">Ask about your conversations…</string>
+    <string name="ask_across_empty_title">Ask about all your conversations</string>
+    <string name="ask_across_empty">Ask a question and the answer draws on the most relevant parts of any session, citing each one. Use the filters to narrow it to a person, a language, a period or a tag.</string>
+    <plurals name="ask_across_based_on">
+        <item quantity="one">Based on %1$d excerpt from %2$s</item>
+        <item quantity="other">Based on %1$d excerpts from %2$s</item>
+    </plurals>
+    <plurals name="ask_across_sessions">
+        <item quantity="one">%1$d session</item>
+        <item quantity="other">%1$d sessions</item>
+    </plurals>
+    <string name="ask_across_based_on_nothing">No session matched the question and filters</string>
+    <string name="ask_across_session_deleted">Session deleted · %1$s</string>
+    <string name="ask_across_clear">Clear history</string>
+    <string name="ask_across_clear_title">Clear the history?</string>
+    <string name="ask_across_clear_message">This removes every question and answer asked across sessions. Sessions are not affected.</string>
     <string name="session_overflow_clear_questions">Clear questions</string>
     <string name="session_ask_clear_title">Clear all questions?</string>
     <string name="session_ask_clear_message">This removes every question and answer for this session.</string>

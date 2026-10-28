@@ -436,6 +436,34 @@ class AskViewModelTest {
      * after construction. Tests that need to vary the response
      * between calls use [replaceTokens] / [replaceError].
      */
+    @Test
+    fun ask_onEinkTheStreamingAnswerIsRedrawnAtMostOncePerInterval() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        val settings = newSettings().also { configureSettings(it) }
+        val gate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        // Three tokens, then the answer waits so the streaming text can be read.
+        val client = object : ChatClient {
+            override fun stream(messages: List<LlmMessage>): Flow<String> = flow {
+                listOf("a", "b", "c").forEach { emit(it) }
+                gate.await()
+            }
+
+            override suspend fun listModels(): List<String> = emptyList()
+        }
+        // Time stands still, so only the first token is due.
+        val vm = AskViewModel(id, repo, client, settings, streamIntervalMs = 1_000L, clock = { 0L })
+
+        vm.ask("q")
+        advanceUntilIdle()
+        assertEquals("a", vm.state.value.streaming)
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        assertEquals("abc", vm.state.value.messages.last().content)
+        assertEquals("", vm.state.value.streaming)
+    }
+
     private class FakeChatClient(
         tokens: List<String>,
         private val initialError: Throwable? = null

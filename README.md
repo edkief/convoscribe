@@ -178,7 +178,8 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   Summaries, notes and answers are shown formatted (headings, bold,
   lists) from the model's Markdown; Copy and share keep the Markdown.
   While a question waits for its first words, the Ask tab shows pulsing
-  dots (still dots and *Generating answer…* on e-ink).
+  dots (still dots and *Generating answer…* on e-ink); on e-ink the
+  answer is then redrawn once a second rather than word by word.
   A conversation longer than *Max transcript characters* is still
   covered in full: the summary is written in parts (notes on each part
   of the transcript, then the summary from the notes, with *Summarising
@@ -186,6 +187,19 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   parts of the transcript most relevant to it, picked on the device.
   Such answers say what they were based on (*Based on 18 of 92
   minutes…*).
+- **Ask across sessions** — ask a question about all your past
+  conversations (*What did Alice say about the budget last month?*)
+  from the speech-bubble icon on Home or on the Search screen. Narrow it
+  with the Search filters (person, language, date, tag). The sessions
+  sharing the most words with the question are picked from the search
+  index, their most relevant parts and saved summaries are sent to the
+  language model, and the answer cites each session it used as chips
+  (*Title · date · mm:ss*) that open the transcript at that line. Each
+  answer says what it was based on (*Based on 7 excerpts from 4
+  sessions*). The history is kept until *Clear history*; deleting a
+  session keeps the answers that cite it, marked *Session deleted*.
+  Matching is by words (ignoring case and accents), so a question
+  worded differently from what was said may miss it.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*

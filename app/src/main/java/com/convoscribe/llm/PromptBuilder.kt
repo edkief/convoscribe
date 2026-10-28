@@ -20,7 +20,8 @@ import com.convoscribe.data.TranscriptMark
  * summarised in parts — [summaryPart] for each chunk, [mergeNotes]
  * while the notes are still too long, then [summaryFromParts] — and
  * questions about it are answered from the most relevant parts with
- * [questionFromExcerpts].
+ * [questionFromExcerpts]. A question across sessions (issue #49) is
+ * answered from excerpts of several with [questionAcrossSessions].
  */
 object PromptBuilder {
 
@@ -317,6 +318,50 @@ object PromptBuilder {
             text.append(chunk.text)
         }
         return qa(QA_EXCERPTS_PREFIX + text, history, question)
+    }
+
+    /**
+     * Opening of the system prompt for a question across sessions
+     * (issue #49); the excerpts follow it, grouped by session. The
+     * citation format is what [CitationParser] reads back.
+     */
+    const val QA_ACROSS_PREFIX: String =
+        "You answer questions about the user's past recorded conversations. Below are excerpts " +
+            "from several conversations, each under a heading `## <title> — <date> (<language>)`; " +
+            "lines start with their time in that conversation, like [12:34], and the speaker. " +
+            "[…] marks a gap within a conversation, and a line starting with \"Summary:\" is " +
+            "that conversation's saved summary. Answer only from these excerpts; if the answer " +
+            "is not in them, say that it is not in the conversations you were given. " +
+            "Answer in the language of the question. After each fact, cite where it comes from " +
+            "as (<title>, <date>, mm:ss), with the title and date exactly as in the heading " +
+            "and the time of the line.\n\nExcerpts:\n"
+
+    /**
+     * Build the messages for a question across sessions (issue #49):
+     * as [question], with the system prompt [QA_ACROSS_PREFIX]
+     * followed by each session's excerpts under a
+     * `## <title> — <date> (<language>)` heading, sessions separated
+     * by a blank line, and within a session consecutive chunks joined
+     * by a newline and the others by [EXCERPT_GAP].
+     */
+    fun questionAcrossSessions(excerpts: CrossExcerpts, history: List<LlmMessage>, question: String): List<LlmMessage> {
+        val text = excerpts.sessions.joinToString(separator = "\n\n") { session ->
+            buildString {
+                append("## ").append(session.title).append(" — ").append(session.date)
+                append(" (").append(session.language).append(")\n")
+                session.chunks.forEachIndexed { index, chunk ->
+                    if (index > 0) {
+                        val previous = session.chunks[index - 1]
+                        // The summary comes first and runs straight into the transcript.
+                        val joined = previous.firstLine == CrossSessionRetriever.SUMMARY_LINE ||
+                            chunk.firstLine <= previous.lastLine + 1
+                        append(if (joined) "\n" else EXCERPT_GAP)
+                    }
+                    append(chunk.text)
+                }
+            }
+        }
+        return qa(QA_ACROSS_PREFIX + text, history, question)
     }
 
     /** [system], the recent user/assistant turns of [history], then the trimmed [question]. */

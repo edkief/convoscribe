@@ -1355,6 +1355,61 @@ recorded English conversation of a few minutes with two people.
   `server`). Stopping the server first falls back to the device engine.
 - Step 11: no server pass; the engine is `cpu` or `npu`.
 
+## 37. Ask across sessions (issue #49)
+
+Run this on a phone and on the **Boox**, with a language model endpoint
+set up in Settings. You need several sessions: a fact said in only one
+**older** session (e.g. a name or a project), a French and an English
+session, a renamed speaker (e.g. *Élodie*), a tagged session and a
+session with a saved summary. To check the upgrade, install this build
+**over** v0.13.0 with those sessions recorded, without clearing data.
+
+**Steps**
+
+1. On Home, tap the speech-bubble icon in the top bar. Go back, open
+   Search and tap the same icon there.
+2. Ask about the fact said only in the older session.
+3. Tap each citation chip under the answer.
+4. Ask a follow-up that does not repeat the topic (*Who said that?*).
+5. Choose *Français* in the language chip and ask a question; then set
+   it back and choose the renamed speaker in the person chip, then a
+   tag, then *Last 7 days*.
+6. Ask something none of the sessions talks about.
+7. Ask a question and tap Stop while the answer streams; then turn
+   Wi-Fi off, ask again, turn it back on and tap *Retry*.
+8. Delete a session that an answer cites, and come back to the screen.
+9. Leave the screen and come back; then menu → *Clear history*.
+10. On the Boox, ask a question that gets a long answer and watch the
+    screen; do the same on a session's Ask tab.
+
+**Expected**
+
+- Step 1: *Ask across sessions* opens, with the filter chips at the top
+  and an empty state explaining it.
+- Step 2: the answer states the fact, cites the older session as
+  *(Title, yyyy-mm-dd, mm:ss)* in the text, and shows a chip
+  *Title · yyyy-mm-dd · mm:ss* for it. Under the answer: *Based on N
+  excerpts from M sessions*.
+- Step 3: the session opens on the Transcript tab, scrolled to the cited
+  line, with the player cued there and **not playing**.
+- Step 4: the answer still knows what the previous question was about.
+- Step 5: only sessions passing the filters are used (the citations show
+  it); with a person chosen, lines by that person are preferred.
+- Step 6: the answer says it is not in the conversations it was given;
+  no invented facts.
+- Step 7: Stop keeps the question and saves no answer; without network
+  an error banner shows *Retry*, which answers with the filters the
+  question was asked with.
+- Step 8: the answer is still there; its chip for the deleted session
+  reads *Session deleted · …* and cannot be tapped.
+- Step 9: the questions and answers are still there after coming back;
+  *Clear history* asks first, then empties the screen. Sessions and the
+  session Ask tabs are untouched.
+- Step 10: the answer appears in steps about once a second rather than
+  word by word, on both screens; the phone still streams word by word.
+- After the upgrade from v0.13.0, existing sessions are found and the
+  history starts empty.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
