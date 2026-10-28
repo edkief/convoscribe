@@ -365,6 +365,17 @@
         <item quantity="other">Connected – %1$d models: %2$s</item>
     </plurals>
     <string name="settings_test_failed">Failed: %1$s</string>
+    <string name="enginecheck_semantic_title">Semantic search</string>
+    <string name="enginecheck_semantic_help">Times the semantic search model: loading it, indexing a passage of a conversation (done while charging) and reading a question (done each time you ask across sessions).</string>
+    <string name="enginecheck_semantic_check">Check semantic search</string>
+    <string name="enginecheck_semantic_running">Timing semantic search…</string>
+    <string name="enginecheck_semantic_load">Load the model</string>
+    <string name="enginecheck_semantic_passage">Index one passage</string>
+    <string name="enginecheck_semantic_query">Read one question</string>
+    <string name="enginecheck_semantic_memory_before">App memory before</string>
+    <string name="enginecheck_semantic_memory_peak">App memory at its peak</string>
+    <string name="enginecheck_ms">%1$d ms</string>
+    <string name="enginecheck_mb">%1$d MB</string>
     <string name="enginecheck_cleanup_title">Live noise cleanup</string>
     <string name="enginecheck_cleanup_help">Checks whether this device can clean the audio while recording. Cleaning runs alongside the speech recognizer selected in Settings, so both have to keep up with live audio.</string>
     <string name="enginecheck_cleanup_check">Check noise cleanup</string>
