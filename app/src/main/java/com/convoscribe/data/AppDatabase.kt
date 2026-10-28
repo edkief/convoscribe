@@ -12,7 +12,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
  * index over transcript lines, (v7) summary templates and (v8)
- * marks, (v12) tags and presets. The current version is 12; the generated JSON for every version is committed
+ * marks, (v12) tags and presets, (v14) the *Ask across sessions* history. The current version is 14; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -70,6 +70,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * `"Recording yyyy-MM-dd HH:mm"` as typed by the user; only default
  * titles are ever replaced by an automatic one.
  *
+ * The 13 → 14 migration (issue #49) is automatic: the
+ * `global_chat_messages` table only, so *Ask across sessions* starts
+ * with no history.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -85,9 +89,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         MarkEntity::class,
         TagEntity::class,
         SessionTagEntity::class,
-        PresetEntity::class
+        PresetEntity::class,
+        GlobalChatMessageEntity::class
     ],
-    version = 13,
+    version = 14,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -101,7 +106,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AutoMigration(from = 9, to = 10),
         AutoMigration(from = 10, to = 11),
         AutoMigration(from = 11, to = 12, spec = Migration11To12::class),
-        AutoMigration(from = 12, to = 13)
+        AutoMigration(from = 12, to = 13),
+        AutoMigration(from = 13, to = 14)
     ]
 )
 @TypeConverters(Converters::class)
@@ -116,6 +122,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun markDao(): MarkDao
     abstract fun tagDao(): TagDao
     abstract fun presetDao(): PresetDao
+    abstract fun globalChatMessageDao(): GlobalChatMessageDao
 
     companion object {
         const val NAME: String = "convoscribe.db"

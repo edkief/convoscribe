@@ -348,4 +348,28 @@ class MigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate13To14_globalHistoryStartsEmptyAndOutlivesSessions() = runTest {
+        helper.createDatabase(DB_NAME, 13).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Standup', 1000, 60000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 14, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.globalChatMessageDao()
+            assertEquals(emptyList<GlobalChatMessageEntity>(), dao.observe().first())
+            dao.insert(GlobalChatMessageEntity(role = MessageRole.ASSISTANT, content = "From Standup", createdAt = 2L))
+            db.sessionDao().delete(1)
+            assertEquals(listOf("From Standup"), dao.observe().first().map { it.content })
+        } finally {
+            db.close()
+        }
+    }
 }

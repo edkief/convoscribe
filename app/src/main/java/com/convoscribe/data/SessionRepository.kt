@@ -2,6 +2,7 @@ package com.convoscribe.data
 
 import androidx.room.withTransaction
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.llm.Citation
 import com.convoscribe.recording.RecordingStore
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -34,6 +35,7 @@ class SessionRepository(
     private val chatMessageDao: ChatMessageDao = db.chatMessageDao()
     private val markDao: MarkDao = db.markDao()
     private val tagDao: TagDao = db.tagDao()
+    private val globalChatDao: GlobalChatMessageDao = db.globalChatMessageDao()
 
     /**
      * Create a new session row with [status] = RECORDING and
@@ -329,6 +331,32 @@ class SessionRepository(
     suspend fun clearMessages(sessionId: Long, kind: MessageKind) {
         chatMessageDao.deleteKind(sessionId, kind)
     }
+
+    /** The *Ask across sessions* history (issue #49), oldest first. */
+    fun observeGlobalMessages(): Flow<List<GlobalChatMessageEntity>> = globalChatDao.observe()
+
+    /** Append to the *Ask across sessions* history, stamping `createdAt` as [addMessage] does. */
+    suspend fun addGlobalMessage(
+        role: MessageRole,
+        content: String,
+        filters: SearchFilters? = null,
+        citations: List<Citation> = emptyList(),
+        excerptCount: Int? = null,
+        sessionCount: Int? = null
+    ): Long = globalChatDao.insert(
+        GlobalChatMessageEntity(
+            role = role,
+            content = content,
+            createdAt = System.currentTimeMillis(),
+            filters = filters?.let { GlobalChatCodec.encodeFilters(it) },
+            citations = GlobalChatCodec.encodeCitations(citations),
+            excerptCount = excerptCount,
+            sessionCount = sessionCount
+        )
+    )
+
+    /** Clear the *Ask across sessions* history. */
+    suspend fun clearGlobalMessages() = globalChatDao.deleteAll()
 
     suspend fun setSegmentSpeaker(segmentId: Long, speakerIndex: Int?) = segmentDao.setSpeaker(segmentId, speakerIndex)
 
