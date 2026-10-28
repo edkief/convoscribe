@@ -1,6 +1,8 @@
 package com.convoscribe.llm
 
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.llm.embedding.SemanticMatches
+import com.convoscribe.llm.embedding.SemanticRanking
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -47,6 +49,12 @@ data class CrossExcerpts(val sessions: List<SessionExcerpts>) {
  * chunk, and [ChunkRetriever] ranks them all together with BM25, so a
  * word rare across sessions (a name, a project) counts for more. No
  * session gets more than [SESSION_SHARE] of the budget.
+ *
+ * With [SemanticMatches] (issue #61) a chunk is also ranked by how
+ * close its passages are to the question in meaning, and the two
+ * rankings are fused ([SemanticRanking.fusedScores]), so a chunk that
+ * says the same thing in other words, or in the other language, is
+ * picked too. Sessions not indexed yet still take part through BM25.
  */
 object CrossSessionRetriever {
 
@@ -72,7 +80,8 @@ object CrossSessionRetriever {
      * The excerpts of [sources] for [question] within [maxChars], or
      * for [question] and [previous] (the question before it, for
      * follow-ups). With [speaker] (the person filter), lines naming
-     * that speaker rank higher.
+     * that speaker rank higher. With [semantic], meaning counts as well
+     * as words; without it the ranking is BM25 alone.
      */
     fun select(
         sources: List<SessionSource>,
@@ -80,12 +89,23 @@ object CrossSessionRetriever {
         maxChars: Int,
         previous: String? = null,
         speaker: String? = null,
-        zone: ZoneId = ZoneId.systemDefault()
+        zone: ZoneId = ZoneId.systemDefault(),
+        semantic: SemanticMatches? = null
     ): CrossExcerpts {
         val chunkChars = maxOf(1, maxChars / CHUNKS_PER_BUDGET)
         val chunks = sources.flatMap { source -> chunks(source, chunkChars) }
         val query = listOfNotNull(question, previous, speaker).joinToString(" ")
-        val picked = ChunkRetriever.select(chunks, query, maxChars, (maxChars * SESSION_SHARE).toInt())
+        val rankScores = semantic?.let { matches ->
+            val cosines =
+                Array(chunks.size) { i -> chunks[i].let { matches.score(it.sessionId, it.firstLine, it.lastLine) } }
+            // When nothing is close in meaning, words alone rank exactly as without the model.
+            if (cosines.none { (it ?: 0.0) >= SemanticRanking.MIN_COSINE }) {
+                null
+            } else {
+                SemanticRanking.fusedScores(ChunkRetriever.scores(chunks, query), cosines)
+            }
+        }
+        val picked = ChunkRetriever.select(chunks, query, maxChars, (maxChars * SESSION_SHARE).toInt(), rankScores)
             .chunks.groupBy { it.sessionId }
         return CrossExcerpts(
             sources.mapNotNull { source ->

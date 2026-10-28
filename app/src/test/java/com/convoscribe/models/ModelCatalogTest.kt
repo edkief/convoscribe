@@ -156,7 +156,8 @@ class ModelCatalogTest {
                 ModelKind.ASR,
                 ModelKind.SEGMENTATION,
                 ModelKind.EMBEDDING,
-                ModelKind.ENHANCEMENT
+                ModelKind.ENHANCEMENT,
+                ModelKind.TEXT_EMBEDDING
             ),
             kinds
         )
@@ -173,6 +174,7 @@ class ModelCatalogTest {
         for (language in listOf("en", "fr")) {
             for (engine in listOf("cpu", "npu")) {
                 assertTrue(ModelCatalog.CLEANUP !in ModelCatalog.requiredFor(language, engine))
+                assertTrue(ModelCatalog.TEXT_EMBEDDING_GEMMA !in ModelCatalog.requiredFor(language, engine))
             }
         }
         assertEquals(ModelKind.ENHANCEMENT, ModelCatalog.CLEANUP.kind)

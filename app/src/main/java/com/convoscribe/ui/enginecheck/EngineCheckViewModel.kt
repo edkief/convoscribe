@@ -10,6 +10,7 @@ import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.EngineCheckRunner
 import com.convoscribe.enginecheck.LiveCleanupStore
 import com.convoscribe.enginecheck.LiveCleanupVerdict
+import com.convoscribe.enginecheck.SemanticCheckResult
 import com.convoscribe.enginecheck.formatReport
 import com.convoscribe.enginecheck.storageWarning
 import com.convoscribe.models.ModelBundle
@@ -53,6 +54,10 @@ import kotlinx.coroutines.withContext
  *   was combined with (the one Settings select).
  * @property liveVerdict whether live cleaning is recommended with
  *   [cleanupEngine], from the combined real-time factor.
+ * @property semanticAvailable the semantic search model is installed,
+ *   so its speed and memory can be checked (issue #61).
+ * @property semanticRunning that check is in flight.
+ * @property semantic the last semantic search timing.
  */
 data class EngineCheckUiState(
     val deviceInfo: DeviceInfo? = null,
@@ -65,7 +70,10 @@ data class EngineCheckUiState(
     val cleanupRunning: Boolean = false,
     val cleanup: CleanupCheckResult? = null,
     val cleanupEngine: String? = null,
-    val liveVerdict: LiveCleanupVerdict? = null
+    val liveVerdict: LiveCleanupVerdict? = null,
+    val semanticAvailable: Boolean = false,
+    val semanticRunning: Boolean = false,
+    val semantic: SemanticCheckResult? = null
 ) {
     /** Recognizer plus cleaner, for [cleanupEngine]; `null` until both ran cleanly. */
     val combinedRtf: Double?
@@ -109,6 +117,16 @@ interface CleanupProbe {
 }
 
 /**
+ * Times the semantic search model (issue #61), or says it is not
+ * installed. Production wraps [measureSemantic] around the
+ * container's embedder factory.
+ */
+interface SemanticProbe {
+    fun isAvailable(): Boolean
+    fun run(): SemanticCheckResult
+}
+
+/**
  * ViewModel for the engine-check screen. Owns one
  * [EngineCheckUiState] `StateFlow` that the screen collects.
  *
@@ -125,10 +143,16 @@ class EngineCheckViewModel(
     private val npuProbe: NpuProbe,
     private val cleanupProbe: CleanupProbe? = null,
     private val liveCleanup: LiveCleanupStore? = null,
-    private val currentEngine: () -> String = { "cpu" }
+    private val currentEngine: () -> String = { "cpu" },
+    private val semanticProbe: SemanticProbe? = null
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(EngineCheckUiState(cleanupAvailable = cleanupProbe?.isAvailable() == true))
+    private val _state = MutableStateFlow(
+        EngineCheckUiState(
+            cleanupAvailable = cleanupProbe?.isAvailable() == true,
+            semanticAvailable = semanticProbe?.isAvailable() == true
+        )
+    )
     val state: StateFlow<EngineCheckUiState> = _state.asStateFlow()
 
     /**
@@ -283,6 +307,25 @@ class EngineCheckViewModel(
     }
 
     /**
+     * Time the semantic search model (issue #61): load it, embed eight
+     * passages and one question. Not while recording, which needs the
+     * CPU, nor while another check runs.
+     */
+    fun runSemanticCheck() {
+        val probe = semanticProbe ?: return
+        ensureDeviceInfo()
+        if (recordingController.state.value.phase != RecordingPhase.IDLE) {
+            _state.value = _state.value.copy(recordingBlocked = true)
+            return
+        }
+        _state.value = _state.value.copy(semanticRunning = true, recordingBlocked = false)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.Default) { probe.run() }
+            _state.value = _state.value.copy(semantic = result, semanticRunning = false)
+        }
+    }
+
+    /**
      * Build the plain-text report the user copies / shares.
      * Returns an empty string when no check has run yet so the
      * screen can disable the buttons.
@@ -291,7 +334,7 @@ class EngineCheckViewModel(
         val info = _state.value.deviceInfo ?: return ""
         val list = listOf("npu", "cpu")
             .mapNotNull { _state.value.results[it] }
-        val report = formatReport(info, list)
+        val report = formatReport(info, list) + semanticReport()
         val cleanup = _state.value.cleanup ?: return report
         return buildString {
             append(report)
@@ -306,6 +349,25 @@ class EngineCheckViewModel(
                 append("With ").append(_state.value.cleanupEngine.orEmpty().uppercase()).append(": ")
                 append("%.2f".format(combined)).append(" (").append(LiveCleanupVerdict.of(combined).name).append(")\n")
             }
+        }
+    }
+
+    /** The semantic search section of the report, empty until it was checked. */
+    private fun semanticReport(): String {
+        val semantic = _state.value.semantic ?: return ""
+        return buildString {
+            append("\n--- Semantic search ---\n")
+            if (semantic.error != null) {
+                append("Error: ").append(semantic.error).append('\n')
+            } else {
+                append("Load: ").append(semantic.loadMs).append(" ms\n")
+                append(
+                    "Per passage: "
+                ).append(semantic.passageMs).append(" ms (").append(semantic.passages).append(" passages)\n")
+                append("Question: ").append(semantic.queryMs).append(" ms\n")
+            }
+            semantic.memoryBeforeMb?.let { append("Memory before: ").append(it).append(" MB\n") }
+            semantic.peakMemoryMb?.let { append("Peak memory: ").append(it).append(" MB\n") }
         }
     }
 

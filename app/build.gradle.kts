@@ -15,6 +15,13 @@ check(sherpaJar.exists() && sherpaJni.exists()) {
     "Missing sherpa-onnx native build - run bash scripts/build-sherpa-onnx.sh"
 }
 
+// onnxruntime's JNI library rebuilt against sherpa-onnx's runtime (issue
+// #61); `scripts/build-onnxruntime-jni.sh` writes it, also .gitignore'd.
+val onnxruntimeJni = file("src/main/jniLibs/arm64-v8a/libonnxruntime4j_jni.so")
+check(onnxruntimeJni.exists()) {
+    "Missing onnxruntime JNI build - run bash scripts/build-onnxruntime-jni.sh"
+}
+
 android {
     namespace = "com.convoscribe"
     compileSdk = 35
@@ -125,6 +132,12 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            // The onnxruntime AAR brings its own runtime and JNI library;
+            // the app's copies from src/main/jniLibs are merged first and
+            // are the ones kept, so sherpa-onnx's 1.28.2 runtime serves
+            // both sherpa-onnx and the text embedder (issue #61).
+            pickFirsts += "lib/arm64-v8a/libonnxruntime.so"
+            pickFirsts += "lib/arm64-v8a/libonnxruntime4j_jni.so"
         }
     }
 }
@@ -158,8 +171,11 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.security.crypto)
     implementation(libs.commons.compress)
+    implementation(libs.onnxruntime.android)
 
     testImplementation(libs.junit)
+    // Host runtime for the opt-in real-model embedding test (issue #61).
+    testImplementation(libs.onnxruntime.desktop)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
     testImplementation(libs.kotlinx.coroutines.test)

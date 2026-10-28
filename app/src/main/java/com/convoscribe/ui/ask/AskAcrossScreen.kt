@@ -39,9 +39,11 @@ import com.convoscribe.R
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.llm.Citation
+import com.convoscribe.llm.embedding.SemanticSearch
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
+import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.search.DateRange
 import com.convoscribe.ui.search.FilterRow
 import com.convoscribe.ui.session.AskConversation
@@ -70,6 +72,7 @@ fun AskAcrossScreen(navController: NavHostController) {
                     search = container.sessionSearch,
                     chatClient = container.chatClient,
                     settings = container.settingsRepository,
+                    semantic = SemanticSearch(container.database.semanticIndexDao(), container.textEmbedderFactory),
                     streamIntervalMs = streamIntervalMs
                 )
             }
@@ -100,7 +103,9 @@ fun AskAcrossScreen(navController: NavHostController) {
  * Render-only body of [AskAcrossScreen], so screenshot tests can draw
  * it with a fake [state]: the filter chips, then the chat. Each answer
  * notes how many excerpts from how many sessions it was based on and
- * lists its citations; *Clear history* is in the overflow menu.
+ * lists its citations; *Clear history* is in the overflow menu. While
+ * some sessions within the filters are not indexed for semantic search
+ * yet (issue #61), a line under the filters says so.
  */
 @Composable
 internal fun AskAcrossBody(
@@ -168,6 +173,14 @@ internal fun AskAcrossBody(
                     onTag = onTag
                 )
             }
+            if (state.unindexed > 0) {
+                SupportingText(
+                    text = pluralStringResource(R.plurals.ask_across_unindexed, state.unindexed, state.unindexed),
+                    modifier = Modifier
+                        .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                        .padding(horizontal = spacing.screen)
+                )
+            }
             AskConversation(
                 messageCount = state.messages.size,
                 streaming = state.streaming,
@@ -224,14 +237,19 @@ internal fun AskAcrossBody(
     }
 }
 
-/** *Based on N excerpts from M sessions*, or `null` for an answer that saw none. */
+/**
+ * *Based on N excerpts from M sessions*, with *matched by meaning* when
+ * semantic search helped pick them (issue #61), or `null` for an answer
+ * that saw none.
+ */
 @Composable
 private fun basedOn(message: AskAcrossMessage): String? {
     val excerpts = message.excerptCount ?: return null
     val sessions = message.sessionCount ?: return null
     if (excerpts == 0) return stringResource(R.string.ask_across_based_on_nothing)
     val from = pluralStringResource(R.plurals.ask_across_sessions, sessions, sessions)
-    return pluralStringResource(R.plurals.ask_across_based_on, excerpts, excerpts, from)
+    val based = pluralStringResource(R.plurals.ask_across_based_on, excerpts, excerpts, from)
+    return if (message.semantic) stringResource(R.string.ask_across_matched_by_meaning, based) else based
 }
 
 /**

@@ -352,6 +352,7 @@ publish() {
     "$SHERPA_JNI_DIR/libsherpa-onnx-jni.so"
     "$SHERPA_JNI_DIR/libonnxruntime.so"
     "$SHERPA_JNI_DIR/libQnnHtp.so"
+    "$SHERPA_JNI_DIR/libonnxruntime4j_jni.so"
   )
 
   sherpa_ok() {

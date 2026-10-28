@@ -15,6 +15,9 @@ import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.Citation
 import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
+import com.convoscribe.llm.embedding.FakeTextEmbedderFactory
+import com.convoscribe.llm.embedding.SemanticIndexRunner
+import com.convoscribe.llm.embedding.SemanticSearch
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
@@ -90,11 +93,12 @@ class AskAcrossViewModelTest {
         return id
     }
 
-    private fun vm(client: ChatClient) = AskAcrossViewModel(
+    private fun vm(client: ChatClient, semantic: SemanticSearch? = null) = AskAcrossViewModel(
         repository = repo,
         search = SessionSearch(db.searchDao()),
         chatClient = client,
         settings = settings,
+        semantic = semantic,
         clock = { NOW },
         zone = ZoneOffset.UTC
     )
@@ -203,6 +207,67 @@ class AskAcrossViewModelTest {
         val state = vm.state.value
         assertFalse(id in state.sessionIds!!)
         assertEquals(id, state.messages.last().citations.single().sessionId)
+    }
+
+    /** Six newer sessions about nothing, then "Planning" with the budget only in other words than the question's. */
+    private suspend fun paraphraseSessions(): Long {
+        val filler = List(8) { "we talked about the weather and the traffic again" }
+        repeat(6) { session("Chat $it", NOW - (it + 1) * DAY, filler) }
+        return session("Planning", JAN_1, filler.take(5) + "the budget is capped at ten thousand euros" + filler)
+    }
+
+    private suspend fun index(factory: FakeTextEmbedderFactory) =
+        SemanticIndexRunner(db.searchDao(), db.semanticIndexDao(), repo::getSegments, factory).run()
+
+    @Test
+    fun aParaphrasedFactInAnOlderSessionIsFoundByMeaningAndCited() = runTest(dispatcher) {
+        val older = paraphraseSessions()
+        val factory = FakeTextEmbedderFactory()
+        index(factory)
+        val client = FakeChatClient(listOf("Ten thousand euros ", "(Planning, 2026-01-01, 00:50)."))
+        val vm = vm(client, SemanticSearch(db.semanticIndexDao(), factory, dispatcher))
+
+        // No word in common with the transcript: "money", "afford" and "holiday" are only close in meaning.
+        vm.ask("How much money can we afford for the holiday?")
+        advanceUntilIdle()
+
+        val system = client.lastMessages!!.first().content
+        assertTrue(system.contains("## Planning — 2026-01-01 (en)"))
+        assertTrue(system.contains("capped at ten thousand euros"))
+        val answer = vm.state.first { it.messages.size == 2 && !it.running }.messages.last()
+        assertTrue(answer.semantic)
+        val segment = repo.getSegments(older)[5]
+        assertEquals(listOf(Citation(older, "Planning", "2026-01-01", segment.id, 50_000L)), answer.citations)
+        assertEquals(0, vm.state.value.unindexed)
+    }
+
+    @Test
+    fun withoutMeaningTheSameQuestionMissesTheOlderSession() = runTest(dispatcher) {
+        paraphraseSessions()
+        val client = FakeChatClient(listOf("I don't know."))
+        val vm = vm(client)
+
+        vm.ask("How much money can we afford for the holiday?")
+        advanceUntilIdle()
+
+        assertFalse(client.lastMessages!!.first().content.contains("## Planning"))
+        assertFalse(vm.state.value.messages.last().semantic)
+    }
+
+    @Test
+    fun aFailingModelFallsBackToWords_andUnindexedSessionsAreCounted() = runTest(dispatcher) {
+        session("Budget", NOW - DAY, listOf("the budget review"))
+        val factory = FakeTextEmbedderFactory().apply { embedder.failQueries = true }
+        val client = FakeChatClient(listOf("ok"))
+        val vm = vm(client, SemanticSearch(db.semanticIndexDao(), factory, dispatcher))
+        advanceUntilIdle()
+        assertEquals(1, vm.state.value.unindexed)
+
+        vm.ask("budget")
+        advanceUntilIdle()
+
+        assertTrue(client.lastMessages!!.first().content.contains("## Budget"))
+        assertFalse(vm.state.value.messages.last().semantic)
     }
 
     private class FakeChatClient(private val tokens: List<String>, var error: Throwable? = null) : ChatClient {

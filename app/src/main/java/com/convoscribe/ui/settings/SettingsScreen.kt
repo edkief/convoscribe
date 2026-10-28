@@ -64,6 +64,7 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.embedding.IndexProgress
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelDownloadState
 import com.convoscribe.overlay.OverlayPermission
@@ -148,7 +149,9 @@ fun SettingsScreen(navController: NavHostController) {
                     chatClient = container.chatClient,
                     modelStore = container.modelStore,
                     templates = container.summaryTemplates,
-                    listServerModels = container.serverTranscriber::listModels
+                    listServerModels = container.serverTranscriber::listModels,
+                    semanticIndex = container.semanticIndexRunner,
+                    onSemanticModelChanged = container.semanticIndexScheduler::sync
                 )
             }
         }
@@ -207,6 +210,13 @@ fun SettingsScreen(navController: NavHostController) {
     val downloadState by container.modelDownloadManager.state.collectAsStateWithLifecycle()
     val cleanupDownloading = (downloadState as? ModelDownloadState.Running)
         ?.bundleIds?.contains(ModelCatalog.CLEANUP.id) == true
+    val semanticDownloading = (downloadState as? ModelDownloadState.Running)
+        ?.bundleIds?.contains(ModelCatalog.TEXT_EMBEDDING_GEMMA.id) == true
+    // Sessions get indexed by the charging job meanwhile; re-count on return.
+    LifecycleResumeEffect(Unit) {
+        vm.refreshSemanticProgress()
+        onPauseOrDispose {}
+    }
     val voiceModel = ModelCatalog.embeddingFor(state.diarizationEmbedding)
     val voiceModelDownloading = (downloadState as? ModelDownloadState.Running)
         ?.bundleIds?.contains(voiceModel.id) == true
@@ -227,6 +237,7 @@ fun SettingsScreen(navController: NavHostController) {
     SettingsBody(
         state = state,
         cleanupDownloading = cleanupDownloading,
+        semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
         liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
@@ -270,6 +281,13 @@ fun SettingsScreen(navController: NavHostController) {
                 )
             },
             onDeleteCleanup = vm::deleteCleanupModel,
+            onDownloadSemantic = {
+                ContextCompat.startForegroundService(
+                    context,
+                    ModelDownloadService.startIntent(context, listOf(ModelCatalog.TEXT_EMBEDDING_GEMMA))
+                )
+            },
+            onDeleteSemantic = vm::deleteSemanticModel,
             onDiarizationEmbeddingChange = vm::setDiarizationEmbedding,
             onDownloadVoiceModel = {
                 ContextCompat.startForegroundService(
@@ -311,6 +329,8 @@ internal class SettingsActions(
     val onOpenPresets: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
+    val onDownloadSemantic: () -> Unit = {},
+    val onDeleteSemantic: () -> Unit = {},
     val onDiarizationEmbeddingChange: (String) -> Unit = {},
     val onDownloadVoiceModel: () -> Unit = {},
     val onDiarizationStepChange: (Float) -> Unit = {},
@@ -325,7 +345,8 @@ internal class SettingsActions(
  * Render-only body of [SettingsScreen] for previews and screenshot tests.
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
- * [cleanupDownloading] while the noise cleanup model downloads (issue #37);
+ * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
+ * [semanticDownloading] while the semantic search model does (issue #61);
  * [liveCleanupVerdict] is the engine check's verdict on cleaning live
  * with the selected engine, `null` when it was not checked.
  */
@@ -335,6 +356,7 @@ internal fun SettingsBody(
     state: SettingsUiState,
     actions: SettingsActions,
     cleanupDownloading: Boolean = false,
+    semanticDownloading: Boolean = false,
     voiceModelDownloading: Boolean = false,
     liveCleanupVerdict: LiveCleanupVerdict? = null,
     overlayGranted: Boolean = true,
@@ -397,6 +419,13 @@ internal fun SettingsBody(
                 onAutoMarkNotesChange = actions.onAutoMarkNotesChange,
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
+            )
+            SemanticSearchSection(
+                installed = state.semanticInstalled,
+                downloading = semanticDownloading,
+                progress = state.semanticProgress,
+                onDownload = actions.onDownloadSemantic,
+                onDelete = actions.onDeleteSemantic
             )
             OrganiseSection(onOpenTags = actions.onOpenTags, onOpenPresets = actions.onOpenPresets)
             TranscriptionSection(
@@ -1050,6 +1079,49 @@ private fun TranscriptionSection(
             text = threads.toString(),
             style = MaterialTheme.typography.bodySmall
         )
+    }
+}
+
+/**
+ * "Semantic search" section (issue #61): the optional EmbeddingGemma
+ * model for *Ask across sessions*, downloaded or removed here, and how
+ * many sessions the charging job has indexed so far.
+ */
+@Composable
+internal fun SemanticSearchSection(
+    installed: Boolean,
+    downloading: Boolean,
+    progress: IndexProgress,
+    onDownload: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val megabytes = ModelCatalog.TEXT_EMBEDDING_GEMMA.totalBytes.toFloat() / 1_000_000f
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_semantic)
+    ) {
+        SupportingText(text = stringResource(R.string.settings_semantic_help, megabytes))
+        when {
+            downloading -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+            ) {
+                InlineProgress()
+                NoticeText(text = stringResource(R.string.settings_semantic_downloading))
+            }
+            installed -> {
+                SupportingText(
+                    text = stringResource(R.string.settings_semantic_status, progress.indexed, progress.total)
+                )
+                TextButton(onClick = onDelete) {
+                    Text(text = stringResource(R.string.settings_semantic_delete))
+                }
+            }
+            else -> OutlinedButton(onClick = onDownload) {
+                Text(text = stringResource(R.string.settings_semantic_download, megabytes))
+            }
+        }
+        SupportingText(text = stringResource(R.string.settings_semantic_licence))
     }
 }
 

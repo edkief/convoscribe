@@ -42,6 +42,7 @@ import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.NpuProbeClient
 import com.convoscribe.enginecheck.measureCleanup
+import com.convoscribe.enginecheck.measureSemantic
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InfoRow
 import com.convoscribe.ui.components.NoticeText
@@ -106,7 +107,14 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                         }
                     },
                     liveCleanup = container.liveCleanup,
-                    currentEngine = { container.settingsRepository.settings.value.asrEngine }
+                    currentEngine = { container.settingsRepository.settings.value.asrEngine },
+                    semanticProbe = object : SemanticProbe {
+                        override fun isAvailable() = container.textEmbedderFactory.isAvailable()
+                        override fun run() = measureSemantic(
+                            create = container.textEmbedderFactory::create,
+                            clock = { System.nanoTime() / 1_000_000L }
+                        )
+                    }
                 )
             }
         }
@@ -123,6 +131,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
         onBack = { navController.popBackStack() },
         onRunCheck = vm::runCheck,
         onRunCleanupCheck = vm::runCleanupCheck,
+        onRunSemanticCheck = vm::runSemanticCheck,
         onOpenSetup = { engine -> navController.navigate("setup?engine=$engine") },
         onCopyReport = { copyToClipboard(context, vm.buildReport()) },
         onShareReport = { shareText(context, vm.buildReport()) }
@@ -139,7 +148,8 @@ internal fun EngineCheckBody(
     onOpenSetup: (String) -> Unit,
     onCopyReport: () -> Unit,
     onShareReport: () -> Unit,
-    onRunCleanupCheck: () -> Unit = {}
+    onRunCleanupCheck: () -> Unit = {},
+    onRunSemanticCheck: () -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
     ScreenScaffold(title = stringResource(R.string.enginecheck_title), onBack = onBack) { innerPadding: PaddingValues ->
@@ -191,6 +201,9 @@ internal fun EngineCheckBody(
             state.results["cpu"]?.let { ResultCard(it, modifier = width) }
             if (state.cleanupAvailable) {
                 CleanupCard(state = state, onRun = onRunCleanupCheck, modifier = width)
+            }
+            if (state.semanticAvailable) {
+                SemanticCard(state = state, onRun = onRunSemanticCheck, modifier = width)
             }
             ActionRow(
                 enabled = state.results.isNotEmpty(),
@@ -327,6 +340,58 @@ private fun CleanupCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: 
             onClick = onRun
         ) {
             Text(text = stringResource(R.string.enginecheck_cleanup_check))
+        }
+    }
+}
+
+/**
+ * Semantic search (issue #61): how long the model takes to load, per
+ * passage when indexing, and per question, and how much memory the app
+ * uses with it loaded, to judge it on a CPU-only device.
+ */
+@Composable
+private fun SemanticCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: Modifier = Modifier) {
+    SectionCard(modifier = modifier, title = stringResource(R.string.enginecheck_semantic_title)) {
+        SupportingText(text = stringResource(R.string.enginecheck_semantic_help))
+        val semantic = state.semantic
+        if (state.semanticRunning) {
+            ProgressBlock(message = stringResource(R.string.enginecheck_semantic_running))
+        } else if (semantic != null) {
+            if (semantic.error != null) {
+                ErrorBanner(message = stringResource(R.string.enginecheck_result_error, semantic.error))
+            } else {
+                InfoRow(
+                    stringResource(R.string.enginecheck_semantic_load),
+                    stringResource(R.string.enginecheck_ms, semantic.loadMs)
+                )
+                InfoRow(
+                    stringResource(R.string.enginecheck_semantic_passage),
+                    stringResource(R.string.enginecheck_ms, semantic.passageMs)
+                )
+                InfoRow(
+                    stringResource(R.string.enginecheck_semantic_query),
+                    stringResource(R.string.enginecheck_ms, semantic.queryMs)
+                )
+            }
+            semantic.memoryBeforeMb?.let {
+                InfoRow(
+                    stringResource(R.string.enginecheck_semantic_memory_before),
+                    stringResource(R.string.enginecheck_mb, it)
+                )
+            }
+            semantic.peakMemoryMb?.let {
+                InfoRow(
+                    stringResource(R.string.enginecheck_semantic_memory_peak),
+                    stringResource(R.string.enginecheck_mb, it)
+                )
+            }
+        }
+        Button(
+            modifier = Modifier.fillMaxWidth(),
+            enabled = state.runningEngine == null && !state.cleanupRunning && !state.semanticRunning,
+            onClick = onRun
+        ) {
+            Text(text = stringResource(R.string.enginecheck_semantic_check))
         }
     }
 }

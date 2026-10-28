@@ -9,6 +9,8 @@ import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.llm.embedding.IndexProgress
+import com.convoscribe.llm.embedding.SemanticIndexRunner
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
@@ -21,6 +23,7 @@ import com.convoscribe.settings.SpeakerIdMode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
@@ -162,6 +165,10 @@ data class SettingsUiState(
     val summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     /** The noise cleanup model is downloaded (issue #37). */
     val cleanupInstalled: Boolean = false,
+    /** The semantic search model is downloaded (issue #61). */
+    val semanticInstalled: Boolean = false,
+    /** Sessions indexed for semantic search, and all sessions (issue #61). */
+    val semanticProgress: IndexProgress = IndexProgress(0, 0),
     /** New conversations clean their audio live (issue #37); written immediately. */
     val cleanAudioDefault: Boolean = false,
     /** Notes of marks are written once speakers are identified (issue #48); written immediately. */
@@ -224,7 +231,9 @@ class SettingsViewModel(
     private val chatClient: ChatClient,
     private val modelStore: ModelStore,
     templates: SummaryTemplateStore,
-    private val listServerModels: suspend () -> List<String> = { emptyList() }
+    private val listServerModels: suspend () -> List<String> = { emptyList() },
+    private val semanticIndex: SemanticIndexRunner? = null,
+    private val onSemanticModelChanged: () -> Unit = {}
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SettingsUiState>
@@ -465,7 +474,28 @@ class SettingsViewModel(
      * outside this screen's writes (the cleanup model, issue #37).
      */
     fun refreshModels() {
+        val before = _state.value.semanticInstalled
         _state.value = computeModelState(repo.settings.value, _state.value)
+        if (_state.value.semanticInstalled != before) onSemanticModelChanged()
+        refreshSemanticProgress()
+    }
+
+    /** Re-count the sessions indexed for semantic search (issue #61). */
+    fun refreshSemanticProgress() {
+        val index = semanticIndex ?: return
+        viewModelScope.launch {
+            val progress = index.progress()
+            _state.update { it.copy(semanticProgress = progress) }
+        }
+    }
+
+    /** Remove the semantic search model and its index (issue #61); Ask across sessions then matches words only. */
+    fun deleteSemanticModel() {
+        viewModelScope.launch {
+            modelStore.delete(ModelCatalog.TEXT_EMBEDDING_GEMMA)
+            semanticIndex?.clear()
+            refreshModels()
+        }
     }
 
     /** Remove the noise cleanup model (issue #37); cleaned sessions keep their cleaned audio. */
@@ -608,6 +638,7 @@ class SettingsViewModel(
             defaultSummaryTemplate = current.defaultSummaryTemplate,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
+            semanticInstalled = modelStore.isInstalled(ModelCatalog.TEXT_EMBEDDING_GEMMA),
             cleanAudioDefault = current.cleanAudioDefault,
             autoMarkNotes = current.autoMarkNotes,
             autoTitle = current.autoTitle,

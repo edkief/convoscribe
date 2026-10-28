@@ -19,6 +19,7 @@ import com.convoscribe.llm.CrossSessionRetriever
 import com.convoscribe.llm.LlmMessage
 import com.convoscribe.llm.PromptBuilder
 import com.convoscribe.llm.SessionSource
+import com.convoscribe.llm.embedding.SemanticSearch
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.ui.search.DateRange
@@ -32,14 +33,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
  * A question or answer in *Ask across sessions*, as the screen shows
- * it: an answer's [citations], and how many excerpts from how many
- * sessions it was based on.
+ * it: an answer's [citations], how many excerpts from how many
+ * sessions it was based on, and whether they were matched by meaning
+ * as well as by words ([semantic], issue #61).
  */
 data class AskAcrossMessage(
     val id: Long,
@@ -47,7 +51,8 @@ data class AskAcrossMessage(
     val content: String,
     val citations: List<Citation> = emptyList(),
     val excerptCount: Int? = null,
-    val sessionCount: Int? = null
+    val sessionCount: Int? = null,
+    val semantic: Boolean = false
 )
 
 /**
@@ -55,7 +60,9 @@ data class AskAcrossMessage(
  * [com.convoscribe.ui.session.AskUiState], plus the filter chips'
  * [filters] and [options], and the ids of the sessions that still
  * exist ([sessionIds], `null` until known), so a citation of a deleted
- * session shows as such.
+ * session shows as such. [unindexed] is how many sessions within the
+ * filters semantic search has not indexed yet (issue #61); 0 without
+ * the model.
  */
 data class AskAcrossUiState(
     val messages: List<AskAcrossMessage> = emptyList(),
@@ -65,7 +72,8 @@ data class AskAcrossUiState(
     val configured: Boolean = true,
     val filters: FilterState = FilterState(),
     val options: SearchOptions = SearchOptions(),
-    val sessionIds: Set<Long>? = null
+    val sessionIds: Set<Long>? = null,
+    val unindexed: Int = 0
 )
 
 /**
@@ -76,7 +84,9 @@ data class AskAcrossUiState(
  * [CrossSessionRetriever] (the excerpts of those that fit the budget)
  * and [PromptBuilder.questionAcrossSessions]; the answer's citations are
  * matched against the excerpts sent with [CitationParser] and saved
- * with it.
+ * with it. With the semantic search model ([semantic], issue #61) the
+ * question is also embedded, candidates and excerpts are ranked by
+ * meaning as well, and words alone are the fallback whenever that fails.
  *
  * The rest follows [com.convoscribe.ui.session.AskViewModel]: the
  * question is saved first (with the filters it was asked with), a
@@ -89,6 +99,7 @@ class AskAcrossViewModel(
     private val search: SessionSearch,
     private val chatClient: ChatClient,
     private val settings: SettingsRepository,
+    private val semantic: SemanticSearch? = null,
     private val streamIntervalMs: Long = 0L,
     private val clock: () -> Long = System::currentTimeMillis,
     private val zone: ZoneId = ZoneId.systemDefault()
@@ -121,6 +132,17 @@ class AskAcrossViewModel(
             val options = search.options()
             _state.update { it.copy(options = options) }
         }
+        viewModelScope.launch {
+            // Re-counted when the filters or the sessions change.
+            _state.map { it.filters to it.sessionIds }.distinctUntilChanged().collect { (filters, _) ->
+                val count = semantic?.unindexed(search.sessionIds(filters.toSearchFilters())) ?: 0
+                _state.update { it.copy(unindexed = count) }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        semantic?.close()
     }
 
     private fun configured(): Boolean {
@@ -189,7 +211,8 @@ class AskAcrossViewModel(
         try {
             val previous = history.lastOrNull { it.role == LlmMessage.ROLE_USER && it.content != question }?.content
             val lookup = listOfNotNull(question, previous).joinToString(" ")
-            val sources = search.candidates(lookup, filters).map { candidate ->
+            val matches = semantic?.match(lookup)
+            val sources = search.candidates(lookup, filters, semantic = matches?.sessions.orEmpty()).map { candidate ->
                 val session = candidate.session
                 SessionSource(
                     id = session.id,
@@ -206,7 +229,8 @@ class AskAcrossViewModel(
                 maxChars = settings.settings.value.maxTranscriptChars,
                 previous = previous,
                 speaker = filters.speaker,
-                zone = zone
+                zone = zone,
+                semantic = matches
             )
             var failed = false
             chatClient.stream(PromptBuilder.questionAcrossSessions(excerpts, history, question))
@@ -231,7 +255,8 @@ class AskAcrossViewModel(
                     content = full,
                     citations = CitationParser.parse(full, excerpts),
                     excerptCount = excerpts.excerptCount,
-                    sessionCount = excerpts.sessionCount
+                    sessionCount = excerpts.sessionCount,
+                    semantic = matches != null
                 )
             }
             _state.update { it.copy(running = false, streaming = "") }
@@ -253,6 +278,7 @@ class AskAcrossViewModel(
         content = content,
         citations = GlobalChatCodec.decodeCitations(citations),
         excerptCount = excerptCount,
-        sessionCount = sessionCount
+        sessionCount = sessionCount,
+        semantic = this.semantic == true
     )
 }

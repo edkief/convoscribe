@@ -342,7 +342,8 @@ class SessionRepository(
         filters: SearchFilters? = null,
         citations: List<Citation> = emptyList(),
         excerptCount: Int? = null,
-        sessionCount: Int? = null
+        sessionCount: Int? = null,
+        semantic: Boolean? = null
     ): Long = globalChatDao.insert(
         GlobalChatMessageEntity(
             role = role,
@@ -351,7 +352,8 @@ class SessionRepository(
             filters = filters?.let { GlobalChatCodec.encodeFilters(it) },
             citations = GlobalChatCodec.encodeCitations(citations),
             excerptCount = excerptCount,
-            sessionCount = sessionCount
+            sessionCount = sessionCount,
+            semantic = semantic
         )
     )
 

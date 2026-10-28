@@ -1410,6 +1410,59 @@ session with a saved summary. To check the upgrade, install this build
 - After the upgrade from v0.13.0, existing sessions are found and the
   history starts empty.
 
+## 38. Semantic search (issue #61)
+
+Run this on the **Boox** (CPU only) and on a phone, with a language
+model endpoint set up and the sessions from test 37. One **older**
+session should say a fact in words a question would not use (e.g. *the
+budget is capped at ten thousand euros*), and a French session should
+hold a fact you will ask about in English. Install this build over the
+previous one without clearing data.
+
+**Steps**
+
+1. Open Ask across sessions and ask *How much money can we spend?*
+   Note the answer.
+2. Settings → Semantic search: download the model. Watch the section
+   while it downloads, and after.
+3. Engine check → *Check semantic search*. Note the numbers.
+4. Unplug, then plug in the charger with the screen off for ten
+   minutes. Open Settings → Semantic search.
+5. Open Ask across sessions and ask the question from step 1 again.
+   Then ask in English about the fact said in French.
+6. Edit a line of an indexed session (Transcript tab) so it states a
+   new fact in other words. Charge again for a few minutes and ask
+   about it.
+7. Record a short new session and open Ask across sessions before
+   charging.
+8. Settings → Semantic search → *Delete the semantic search model*,
+   then ask the question from step 1 again.
+
+**Expected**
+
+- Step 1: without the model, the older session is missed, or found
+  only if a word matches; the answer has no *matched by meaning*.
+- Step 2: a progress row, then *0 of N sessions indexed. Indexing runs
+  while the device is charging.* and a delete button. The help text
+  names the model's size and the Gemma licence line shows.
+- Step 3: *Load the model*, *Index one passage*, *Read one question*,
+  *App memory before* and *App memory at its peak* show; no error. On
+  the Boox, note the numbers in the issue: one question should take
+  well under a second, and the peak memory should not make the app
+  close.
+- Step 4: the count goes up (all sessions after enough charging). The
+  phone stays responsive, and nothing runs while recording.
+- Step 5: the older session's fact is cited, and the answer reads
+  *Based on N excerpts from M sessions · matched by meaning*. The
+  English question cites the French session.
+- Step 6: after charging, the new wording is found.
+- Step 7: a line under the filters says *1 session is not indexed for
+  semantic search yet…*; questions still work, by words for that
+  session.
+- Step 8: the section offers the download again, the count disappears,
+  and the answer is word-based as in step 1, without *matched by
+  meaning*.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

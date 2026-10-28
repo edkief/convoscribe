@@ -199,7 +199,25 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   sessions*). The history is kept until *Clear history*; deleting a
   session keeps the answers that cite it, marked *Session deleted*.
   Matching is by words (ignoring case and accents), so a question
-  worded differently from what was said may miss it.
+  worded differently from what was said may miss it, unless semantic
+  search is installed.
+- **Semantic search** — an optional on-device model (Google's
+  EmbeddingGemma, about 202 MB, Gemma Terms of Use), downloaded from
+  Settings → Semantic search, lets *Ask across sessions* also find what
+  was said in other words or in the other language (*how much can we
+  spend* finds *the budget is capped at 10k*, and English questions
+  find French sessions). Each session is cut into passages of about
+  1,200 characters, and the passages are turned into vectors while the
+  device is charging, like *Identify speakers*. A session whose
+  transcript, speakers or summary change is indexed again. A question
+  then picks sessions and excerpts by meaning as well as by words, and
+  the answer says *matched by meaning*. Sessions not indexed yet still
+  count by their words, and the screen says how many there are. Without
+  the model, or if it fails, Ask across sessions matches words only, as
+  before. Settings shows how many sessions are indexed, and deleting the
+  model drops the index. Engine check → *Semantic search* times the
+  model and shows the app's memory use, to judge it on a CPU-only
+  device.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -387,11 +405,12 @@ them from the sherpa image with podman or docker. Two images
 (Containerfiles in `docker/`, build context the repo root) make this
 work in CI:
 
-- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>` is a
-  `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so` and
-  `/sherpa/libs/*.jar`. Its tag comes from the pins in
-  `scripts/build-sherpa-onnx.sh`, so you rebuild it only when a pin
-  changes.
+- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>-jni<tag>` is a
+  `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so`
+  (sherpa-onnx's libraries and the onnxruntime JNI library rebuilt
+  against them) and `/sherpa/libs/*.jar`. Its tag comes from the pins in
+  `scripts/build-sherpa-onnx.sh` and `scripts/build-onnxruntime-jni.sh`,
+  so you rebuild it only when a pin changes.
 - `convoscribe-android-builder:<sherpa tag>-tc<hash>` has JDK 17, the
   SDK (no NDK) and `gh`, with the sherpa outputs at `/opt/sherpa`.
   Tekton runs `scripts/release.sh publish` in this image. The exact tag
@@ -702,6 +721,25 @@ The build takes **10-30 minutes** on a fresh checkout. Re-runs are
 idempotent: a second `bash scripts/build-sherpa-onnx.sh` prints
 `sherpa-onnx native libs OK` and exits 0. Pass `--force` to wipe
 `$WORK` and rebuild from scratch.
+
+### onnxruntime JNI library
+
+Semantic search runs its text model through onnxruntime's Java API
+(the `onnxruntime-android` AAR). That AAR's JNI library binds to its own
+runtime's symbol version (`VERS_1.28.0`), and Android refuses to load it
+against the 1.28.2 runtime sherpa-onnx ships. That runtime has to stay
+because it carries the QNN provider. `scripts/build-onnxruntime-jni.sh`
+(also run by `scripts/setup-toolchain.sh`) does three things:
+
+1. Sparse-clones onnxruntime `v1.28.0` (the AAR's version) into
+   `~/.local/share/convoscribe-toolchain/onnxruntime-jni-build/`.
+2. Generates the JNI headers with `javac -h`.
+3. Compiles the JNI sources with the NDK, without training, CUDA or
+   TensorRT. It links them against `app/src/main/jniLibs/arm64-v8a/libonnxruntime.so`
+   and writes `libonnxruntime4j_jni.so` next to it.
+
+The packaging rules in `app/build.gradle.kts` keep these two libraries
+over the AAR's. Run it again after rebuilding sherpa-onnx.
 
 ## Test
 

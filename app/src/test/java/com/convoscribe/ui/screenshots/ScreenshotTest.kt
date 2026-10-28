@@ -44,10 +44,12 @@ import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.LiveCleanupVerdict
+import com.convoscribe.enginecheck.SemanticCheckResult
 import com.convoscribe.llm.Citation
 import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.llm.embedding.IndexProgress
 import com.convoscribe.overlay.FloatingControlContent
 import com.convoscribe.overlay.FloatingControlUi
 import com.convoscribe.recording.ConversationOptions
@@ -83,6 +85,7 @@ import com.convoscribe.ui.session.PlaybackActions
 import com.convoscribe.ui.session.SessionBody
 import com.convoscribe.ui.session.SummaryUiState
 import com.convoscribe.ui.session.TagsUi
+import com.convoscribe.ui.settings.SemanticSearchSection
 import com.convoscribe.ui.settings.SettingsActions
 import com.convoscribe.ui.settings.SettingsBody
 import com.convoscribe.ui.settings.SettingsForm
@@ -455,6 +458,86 @@ class ScreenshotTest(private val variant: Variant) {
             onOpenCitation = {},
             onOpenSettings = {},
             onBack = {}
+        )
+    }
+
+    /** Semantic search (issue #61): an answer matched by meaning, and sessions still waiting to be indexed. */
+    @Test
+    fun askAcrossSemantic() = capture("ask_across_semantic") {
+        AskAcrossBody(
+            state = AskAcrossUiState(
+                messages = ASK_ACROSS_CHAT.map {
+                    if (it.role == MessageRole.ASSISTANT) {
+                        it.copy(
+                            semantic = true
+                        )
+                    } else {
+                        it
+                    }
+                },
+                options = SearchOptions(languages = listOf("en", "fr"), speakers = listOf("Alice", "Élodie")),
+                sessionIds = setOf(1L, 2L, 3L),
+                unindexed = 3
+            ),
+            onAsk = {},
+            onRetry = {},
+            onCancel = {},
+            onClearHistory = {},
+            onLanguage = {},
+            onDateRange = {},
+            onSpeaker = {},
+            onTag = {},
+            onOpenCitation = {},
+            onOpenSettings = {},
+            onBack = {}
+        )
+    }
+
+    /** The Settings section for the semantic search model (issue #61): not installed, then installed. */
+    @Test
+    fun settingsSemantic() = capture("settings_semantic") {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            SemanticSearchSection(installed = false, downloading = false, progress = IndexProgress(0, 0), onDownload = {
+            }, onDelete = {})
+            SemanticSearchSection(
+                installed = true,
+                downloading = false,
+                progress = IndexProgress(
+                    12,
+                    40
+                ),
+                onDownload = {
+                },
+                onDelete = {}
+            )
+        }
+    }
+
+    /** Engine check's semantic search card after a check (issue #61). */
+    @Test
+    fun engineCheckSemantic() = capture("engine_check_semantic") {
+        EngineCheckBody(
+            state = EngineCheckUiState(
+                deviceInfo = DEVICE,
+                semanticAvailable = true,
+                semantic = SemanticCheckResult(
+                    loadMs = 2_140L,
+                    passageMs = 310L,
+                    queryMs = 95L,
+                    passages = 8,
+                    memoryBeforeMb = 180L,
+                    peakMemoryMb = 412L
+                )
+            ),
+            storageLow = false,
+            onBack = {},
+            onRunCheck = {},
+            onOpenSetup = {},
+            onCopyReport = {},
+            onShareReport = {}
         )
     }
 

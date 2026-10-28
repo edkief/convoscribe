@@ -372,4 +372,31 @@ class MigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate14To15_sessionsStartUnindexedAndPassagesGoWithTheirSession() = runTest {
+        helper.createDatabase(DB_NAME, 14).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status) " +
+                    "VALUES (1, 'Standup', 1000, 60000, 'en', '/r/1.wav', 'DIARIZED')"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 15, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val dao = db.semanticIndexDao()
+            assertEquals(emptyList<SessionIndexStateEntity>(), dao.states())
+            val vector = PassageVectorEntity(1, 0, 0, 3, "m/2", floatArrayOf(0.6f, 0.8f).toBytes())
+            dao.replace(1, listOf(vector), SessionIndexStateEntity(1, "m/2", "h"))
+            assertEquals(listOf(vector), dao.vectors("m/2"))
+            db.sessionDao().delete(1)
+            assertEquals(0, dao.vectorCount("m/2"))
+            assertEquals(emptyList<SessionIndexStateEntity>(), dao.states())
+        } finally {
+            db.close()
+        }
+    }
 }

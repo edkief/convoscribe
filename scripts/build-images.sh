@@ -2,14 +2,17 @@
 # Build (and optionally push) the release container images:
 #
 #   sherpa   docker/sherpa-onnx.Containerfile: files-only image with the
-#            sherpa-onnx native libs + Kotlin jar. Slow (10-30 min); only
-#            rebuild when the pins in scripts/build-sherpa-onnx.sh change.
+#            sherpa-onnx native libs + Kotlin jar, and onnxruntime's JNI
+#            library rebuilt against them. Slow (10-30 min); only rebuild
+#            when the pins in scripts/build-sherpa-onnx.sh or
+#            scripts/build-onnxruntime-jni.sh change.
 #   builder  docker/android-builder.Containerfile: JDK + SDK + gh with the
 #            sherpa outputs at /opt/sherpa; what Tekton runs release.sh in.
 #
 # Tags are derived from the pinned versions, so an unchanged pin means an
 # unchanged tag and there is nothing to rebuild:
-#   sherpa : <sherpa>-qnn<qnn>-ort<onnxruntime>, e.g. 1.13.8-qnn2.40.0.251030-ort1.28.2
+#   sherpa : <sherpa>-qnn<qnn>-ort<onnxruntime>-jni<onnxruntime JNI tag>,
+#            e.g. 1.13.8-qnn2.40.0.251030-ort1.28.2-jniv1.28.0
 #   builder: <sherpa tag>-tc<hash of setup-toolchain.sh + env.sh>
 #
 # Usage: bash scripts/build-images.sh [options] [sherpa|builder|all]
@@ -72,18 +75,19 @@ while [[ $# -gt 0 ]]; do
 done
 registry="${registry%/}"
 
-# pin <NAME>: the value of NAME=... in build-sherpa-onnx.sh.
+# pin <NAME> [script]: the value of NAME=... in [script] (default build-sherpa-onnx.sh).
 pin() {
-  local value
-  value=$(sed -n "s/^$1=\\([^[:space:]]*\\).*/\\1/p" scripts/build-sherpa-onnx.sh | head -n 1)
+  local value script="${2:-scripts/build-sherpa-onnx.sh}"
+  value=$(sed -n "s/^$1=\\([^[:space:]]*\\).*/\\1/p" "$script" | head -n 1)
   if [[ -z "$value" ]]; then
-    echo "build-images: could not read $1 from scripts/build-sherpa-onnx.sh" >&2
+    echo "build-images: could not read $1 from $script" >&2
     exit 1
   fi
   printf '%s' "$value"
 }
 
 sherpa_tag="$(pin VERSION)-qnn$(pin QNN_VERSION)-ort$(pin ONNXRUNTIME_VERSION)"
+sherpa_tag+="-jni$(pin ORT_TAG scripts/build-onnxruntime-jni.sh)"
 toolchain_hash=$(cat scripts/setup-toolchain.sh scripts/env.sh | sha256sum | cut -c1-10)
 sherpa_image="$registry/convoscribe-sherpa:$sherpa_tag"
 builder_image="$registry/convoscribe-android-builder:$sherpa_tag-tc$toolchain_hash"

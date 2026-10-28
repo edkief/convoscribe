@@ -1,6 +1,8 @@
-# sherpa-onnx native libraries (arm64-v8a, QNN + speaker diarization) and
-# the Kotlin API jar, built once by scripts/build-sherpa-onnx.sh and
-# shipped as a files-only image so releases never rebuild them.
+# sherpa-onnx native libraries (arm64-v8a, QNN + speaker diarization), the
+# Kotlin API jar, and onnxruntime's JNI library linked against sherpa's
+# runtime (issue #61), built once by scripts/build-sherpa-onnx.sh and
+# scripts/build-onnxruntime-jni.sh and shipped as a files-only image so
+# releases never rebuild them.
 #
 # Build and push with scripts/build-images.sh (it derives the tag from the
 # versions pinned in scripts/build-sherpa-onnx.sh). Build context: repo root.
@@ -19,8 +21,8 @@ RUN apt-get update \
 ENV CONVOSCRIBE_TOOLCHAIN=/opt/toolchain
 WORKDIR /src
 COPY scripts/ scripts/
-# Installs JDK, SDK, NDK and CMake, then runs build-sherpa-onnx.sh, which
-# writes into /src/app/.
+# Installs JDK, SDK, NDK and CMake, then runs build-sherpa-onnx.sh and
+# build-onnxruntime-jni.sh, which write into /src/app/.
 RUN bash scripts/setup-toolchain.sh
 
 FROM scratch
