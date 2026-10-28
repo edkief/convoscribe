@@ -44,6 +44,7 @@ import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.LiveCleanupVerdict
+import com.convoscribe.llm.Citation
 import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
@@ -54,6 +55,9 @@ import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.settings.FloatingShape
+import com.convoscribe.ui.ask.AskAcrossBody
+import com.convoscribe.ui.ask.AskAcrossMessage
+import com.convoscribe.ui.ask.AskAcrossUiState
 import com.convoscribe.ui.components.MarkNoteDialog
 import com.convoscribe.ui.components.TagPickerDialog
 import com.convoscribe.ui.enginecheck.EngineCheckBody
@@ -427,6 +431,48 @@ class ScreenshotTest(private val variant: Variant) {
             onOpen = { _, _, _ -> },
             onBack = {},
             autoFocus = false
+        )
+    }
+
+    @Test
+    fun askAcross() = capture("ask_across") {
+        AskAcrossBody(
+            state = AskAcrossUiState(
+                messages = ASK_ACROSS_CHAT,
+                filters = FilterState(speaker = "Élodie"),
+                options = SearchOptions(languages = listOf("en", "fr"), speakers = listOf("Alice", "Élodie")),
+                // Session 3 has been deleted since it was cited.
+                sessionIds = setOf(1L, 2L)
+            ),
+            onAsk = {},
+            onRetry = {},
+            onCancel = {},
+            onClearHistory = {},
+            onLanguage = {},
+            onDateRange = {},
+            onSpeaker = {},
+            onTag = {},
+            onOpenCitation = {},
+            onOpenSettings = {},
+            onBack = {}
+        )
+    }
+
+    @Test
+    fun askAcrossEmpty() = capture("ask_across_empty") {
+        AskAcrossBody(
+            state = AskAcrossUiState(options = SearchOptions(languages = listOf("en", "fr")), sessionIds = emptySet()),
+            onAsk = {},
+            onRetry = {},
+            onCancel = {},
+            onClearHistory = {},
+            onLanguage = {},
+            onDateRange = {},
+            onSpeaker = {},
+            onTag = {},
+            onOpenCitation = {},
+            onOpenSettings = {},
+            onBack = {}
         )
     }
 
@@ -1162,6 +1208,22 @@ class ScreenshotTest(private val variant: Variant) {
             "## Action items\n\n" +
             "1. Bob — ship the e-ink build.\n" +
             "2. Alice — check the store listing by Friday."
+
+        private val ASK_ACROSS_CHAT = listOf(
+            AskAcrossMessage(1L, MessageRole.USER, "What did Élodie say about the budget?"),
+            AskAcrossMessage(
+                id = 2L,
+                role = MessageRole.ASSISTANT,
+                content = "Élodie said the Q2 budget is capped at **40k** (Réunion budget Q2, 2025-03-15, 04:12), " +
+                    "and later that marketing could take a quarter of it (Weekly sync, 2025-03-07, 12:40).",
+                citations = listOf(
+                    Citation(1L, "Réunion budget Q2", "2025-03-15", segmentId = 11L, atMs = 252_000L),
+                    Citation(3L, "Weekly sync", "2025-03-07", segmentId = 31L, atMs = 760_000L)
+                ),
+                excerptCount = 7,
+                sessionCount = 4
+            )
+        )
 
         private val CHAT = listOf(
             ChatMessageEntity(
