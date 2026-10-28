@@ -65,6 +65,9 @@ object SemanticPassages {
     }
 }
 
+/** [indexed] of [total] sessions have vectors from the installed model (issue #61). */
+data class IndexProgress(val indexed: Int, val total: Int)
+
 /**
  * The charging job's work for semantic search (issue #61): embed the
  * passages of every session whose index is missing or out of date,
@@ -146,6 +149,17 @@ class SemanticIndexRunner(
             embedder?.close()
         }
     }
+
+    /** How many sessions have vectors from the installed model, of how many there are. */
+    suspend fun progress(): IndexProgress {
+        val sessions = search.sessions().mapTo(HashSet()) { it.id }
+        val modelId = embedders.modelId()
+        val indexed = index.states().count { it.modelId == modelId && it.sessionId in sessions }
+        return IndexProgress(indexed, sessions.size)
+    }
+
+    /** Forget every vector, as when the model is removed. */
+    suspend fun clear() = index.clear()
 
     /** Whether any session waits to be indexed by the installed model. */
     suspend fun hasPending(): Boolean = embedders.isAvailable() && pending(embedders.modelId()).isNotEmpty()

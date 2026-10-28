@@ -430,6 +430,37 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun semanticModel_showsAsInstalled_tellsTheIndexJob_andCanBeDeleted() = runTest(dispatcher) {
+        var changes = 0
+        val vm = SettingsViewModel(
+            newRepo(),
+            FakeChatClient(models = emptyList()),
+            modelStore,
+            FakeSummaryTemplateStore(),
+            onSemanticModelChanged = { changes++ }
+        )
+        assertFalse(vm.state.value.semanticInstalled)
+        val bundle = com.convoscribe.models.ModelCatalog.TEXT_EMBEDDING_GEMMA
+        for (file in bundle.files) {
+            val onDisk = modelStore.fileFor(bundle, file.fileName)
+            onDisk.parentFile?.mkdirs()
+            java.io.RandomAccessFile(onDisk, "rw").use { it.setLength(file.sizeBytes) }
+        }
+
+        vm.refreshModels()
+        assertTrue(vm.state.value.semanticInstalled)
+        assertEquals(1, changes)
+        vm.refreshModels()
+        assertEquals("no change, no sync", 1, changes)
+
+        vm.deleteSemanticModel()
+        advanceUntilIdle()
+        assertFalse(modelStore.isInstalled(bundle))
+        assertFalse(vm.state.value.semanticInstalled)
+        assertEquals(2, changes)
+    }
+
+    @Test
     fun deletingFrenchModel_whileEnglishIsActive_keepsEnglishInstalled() = runTest(dispatcher) {
         // Pre-install both English and French so the French
         // bundle is removable without affecting the user's

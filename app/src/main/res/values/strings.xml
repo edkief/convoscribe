@@ -580,6 +580,11 @@
         <item quantity="other">%1$d sessions</item>
     </plurals>
     <string name="ask_across_based_on_nothing">No session matched the question and filters</string>
+    <string name="ask_across_matched_by_meaning">%1$s · matched by meaning</string>
+    <plurals name="ask_across_unindexed">
+        <item quantity="one">%1$d session is not indexed for semantic search yet, so it is matched by words only. Indexing runs while the device is charging.</item>
+        <item quantity="other">%1$d sessions are not indexed for semantic search yet, so they are matched by words only. Indexing runs while the device is charging.</item>
+    </plurals>
     <string name="ask_across_session_deleted">Session deleted · %1$s</string>
     <string name="ask_across_clear">Clear history</string>
     <string name="ask_across_clear_title">Clear the history?</string>
@@ -592,6 +597,13 @@
     <string name="settings_section_appearance">Appearance</string>
     <string name="settings_section_recording">Recording</string>
     <string name="settings_section_cleanup">Noise cleanup</string>
+    <string name="settings_section_semantic">Semantic search</string>
+    <string name="settings_semantic_help">Lets Ask across sessions find what was said in other words or in the other language, such as “budget” for “how much can we spend”. Runs on this device; the model is about %1$.0f MB.</string>
+    <string name="settings_semantic_download">Download the semantic search model (%1$.0f MB)</string>
+    <string name="settings_semantic_downloading">Downloading the semantic search model…</string>
+    <string name="settings_semantic_status">%1$d of %2$d sessions indexed. Indexing runs while the device is charging.</string>
+    <string name="settings_semantic_delete">Delete the semantic search model</string>
+    <string name="settings_semantic_licence">Uses Google’s EmbeddingGemma, under the Gemma Terms of Use (ai.google.dev/gemma/terms).</string>
     <string name="settings_cleanup_help">Reduces background noise before transcription, for recordings made in noisy places. The original recording is always kept.</string>
     <string name="settings_cleanup_download">Download the cleanup model (%1$.1f MB)</string>
     <string name="settings_cleanup_downloading">Downloading the cleanup model…</string>
