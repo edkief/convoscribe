@@ -4,8 +4,10 @@ package com.convoscribe.models
  * What kind of model a bundle represents. Used by the engines and the
  * downloader to pick the right on-disk paths and engine code.
  * [ENHANCEMENT] is the optional noise cleanup model (issue #37).
+ * [EMBEDDING] is a speaker (voice) embedding model; [TEXT_EMBEDDING]
+ * is the optional semantic search model (issue #61).
  */
-enum class ModelKind { ASR, SEGMENTATION, EMBEDDING, ENHANCEMENT }
+enum class ModelKind { ASR, SEGMENTATION, EMBEDDING, ENHANCEMENT, TEXT_EMBEDDING }
 
 /**
  * One file that belongs to a [ModelBundle]: its on-disk name (which may
@@ -82,7 +84,7 @@ data class ModelBundle(
  * new language means adding one more ASR bundle and extending
  * [asrFor]; adding a new model kind means adding a constant and
  * listing it in [requiredFor] for any language that needs it. An
- * optional model ([CLEANUP]) is in [all] but never in [requiredFor].
+ * optional model ([CLEANUP], [TEXT_EMBEDDING_GEMMA]) is in [all] but never in [requiredFor].
  */
 object ModelCatalog {
 
@@ -244,8 +246,32 @@ object ModelCatalog {
         )
     )
 
+    // Pinned to a revision: the downloader checks each file's exact size.
+    private const val TEXT_EMBEDDING_GEMMA_BASE =
+        "https://huggingface.co/onnx-community/embeddinggemma-300m-ONNX/resolve/" +
+            "5090578d9565bb06545b4552f76e6bc2c93e4a66/"
+
+    /**
+     * Optional semantic search for Ask across sessions (issue #61):
+     * EmbeddingGemma 300m, 4-bit ONNX export, about 197 MB, run on the
+     * CPU through onnxruntime. `model_q4.onnx` names its weights file
+     * `model_q4.onnx_data`, so both sit side by side. Gemma licence;
+     * downloaded from Settings, never required.
+     */
+    val TEXT_EMBEDDING_GEMMA: ModelBundle = ModelBundle(
+        id = "text-embeddinggemma-300m-q4",
+        displayName = "Semantic search",
+        kind = ModelKind.TEXT_EMBEDDING,
+        language = null,
+        files = listOf(
+            ModelFile("model_q4.onnx", TEXT_EMBEDDING_GEMMA_BASE + "onnx/model_q4.onnx", 519_322),
+            ModelFile("model_q4.onnx_data", TEXT_EMBEDDING_GEMMA_BASE + "onnx/model_q4.onnx_data", 196_725_760),
+            ModelFile("tokenizer.model", TEXT_EMBEDDING_GEMMA_BASE + "tokenizer.model", 4_689_074)
+        )
+    )
+
     val all: List<ModelBundle> =
-        listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, EMBEDDING_CAMPPLUS, CLEANUP)
+        listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, EMBEDDING_CAMPPLUS, CLEANUP, TEXT_EMBEDDING_GEMMA)
 
     /**
      * Voice models speaker identification can cluster with, by their
