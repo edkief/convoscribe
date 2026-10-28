@@ -74,6 +74,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * `global_chat_messages` table only, so *Ask across sessions* starts
  * with no history.
  *
+ * The 14 → 15 migration (issue #61) is automatic: the `passage_vectors`
+ * and `session_index_state` tables only, so every session starts
+ * unindexed and is indexed once the semantic search model is installed.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -90,9 +94,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TagEntity::class,
         SessionTagEntity::class,
         PresetEntity::class,
-        GlobalChatMessageEntity::class
+        GlobalChatMessageEntity::class,
+        PassageVectorEntity::class,
+        SessionIndexStateEntity::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -107,7 +113,8 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         AutoMigration(from = 10, to = 11),
         AutoMigration(from = 11, to = 12, spec = Migration11To12::class),
         AutoMigration(from = 12, to = 13),
-        AutoMigration(from = 13, to = 14)
+        AutoMigration(from = 13, to = 14),
+        AutoMigration(from = 14, to = 15)
     ]
 )
 @TypeConverters(Converters::class)
@@ -123,6 +130,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun tagDao(): TagDao
     abstract fun presetDao(): PresetDao
     abstract fun globalChatMessageDao(): GlobalChatMessageDao
+    abstract fun semanticIndexDao(): SemanticIndexDao
 
     companion object {
         const val NAME: String = "convoscribe.db"
