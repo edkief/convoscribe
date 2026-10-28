@@ -39,6 +39,7 @@ import com.convoscribe.R
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.llm.Citation
+import com.convoscribe.llm.embedding.SemanticSearch
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
@@ -70,6 +71,7 @@ fun AskAcrossScreen(navController: NavHostController) {
                     search = container.sessionSearch,
                     chatClient = container.chatClient,
                     settings = container.settingsRepository,
+                    semantic = SemanticSearch(container.database.semanticIndexDao(), container.textEmbedderFactory),
                     streamIntervalMs = streamIntervalMs
                 )
             }

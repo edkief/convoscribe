@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import com.convoscribe.llm.embedding.SemanticRanking
 import kotlinx.serialization.Serializable
 
 /**
@@ -148,11 +149,17 @@ class SessionSearch(private val dao: SearchDao) {
      * question shares no word with any transcript) the newest
      * [FALLBACK_SESSIONS] sessions passing the filters are used, so
      * the answer can still look at something.
+     *
+     * [semantic] (issue #61) are sessions close to the question in
+     * meaning, closest first. They are fused with the word matches by
+     * reciprocal-rank fusion, so a session that only paraphrases the
+     * question can be chosen; the filters apply to them as well.
      */
     suspend fun candidates(
         question: String,
         filters: SearchFilters = SearchFilters(),
-        limit: Int = MAX_CANDIDATES
+        limit: Int = MAX_CANDIDATES,
+        semantic: List<Long> = emptyList()
     ): List<Candidate> {
         val speakers = dao.speakers().groupBy { it.sessionId }
         val sessions = filtered(filters, speakers).associateBy { it.id }
@@ -165,7 +172,17 @@ class SessionSearch(private val dao: SearchDao) {
                 .filter { it.sessionId in sessions }
                 .take(limit)
         }
-        val chosen = hits.ifEmpty { sessions.keys.take(FALLBACK_SESSIONS).map { SessionHits(it, 0) } }
+        val close = semantic.filter { it in sessions }
+        val chosen = when {
+            close.isNotEmpty() -> {
+                val counts = hits.associate { it.sessionId to it.hits }
+                SemanticRanking.fuse(
+                    hits.map { it.sessionId },
+                    close
+                ).take(limit).map { SessionHits(it, counts[it] ?: 0) }
+            }
+            else -> hits.ifEmpty { sessions.keys.take(FALLBACK_SESSIONS).map { SessionHits(it, 0) } }
+        }
         val summaries = dao.summaries().associate { it.sessionId to it.content }
         return chosen.map { hit ->
             Candidate(
@@ -176,6 +193,10 @@ class SessionSearch(private val dao: SearchDao) {
             )
         }
     }
+
+    /** The ids of every session passing [filters], newest first. */
+    suspend fun sessionIds(filters: SearchFilters = SearchFilters()): List<Long> =
+        filtered(filters, dao.speakers().groupBy { it.sessionId }).map { it.id }
 
     /** Every session passing [filters], newest first; [speakers] is every session's speakers. */
     private suspend fun filtered(

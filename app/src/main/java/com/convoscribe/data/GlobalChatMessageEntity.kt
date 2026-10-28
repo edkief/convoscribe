@@ -12,7 +12,8 @@ import androidx.room.PrimaryKey
  * [filters] is the [SearchFilters] a USER question was asked with and
  * [citations] the places an ASSISTANT answer cites, both as JSON
  * ([GlobalChatCodec]); [excerptCount] and [sessionCount] say what an
- * answer was based on. All `null` where they do not apply.
+ * answer was based on, and [semantic] whether meaning counted as well
+ * as words (issue #61). All `null` where they do not apply.
  */
 @Entity(tableName = "global_chat_messages")
 data class GlobalChatMessageEntity(
@@ -23,5 +24,6 @@ data class GlobalChatMessageEntity(
     val filters: String? = null,
     val citations: String? = null,
     val excerptCount: Int? = null,
-    val sessionCount: Int? = null
+    val sessionCount: Int? = null,
+    val semantic: Boolean? = null
 )

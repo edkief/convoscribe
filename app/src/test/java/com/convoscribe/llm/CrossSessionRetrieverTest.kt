@@ -1,8 +1,11 @@
 package com.convoscribe.llm
 
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.llm.embedding.ScoredPassage
+import com.convoscribe.llm.embedding.SemanticMatches
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -32,6 +35,39 @@ class CrossSessionRetrieverTest {
         val session = result.sessions.first { it.sessionId == 2L }
         assertTrue(session.chunks.any { "Kowalski" in it.text })
         assertTrue(session.chunks.all { it.sessionId == 2L })
+    }
+
+    @Test
+    fun withMeaningAParaphraseIsPickedAndTheCapStillHolds() {
+        val recent = source(1L, lines(40))
+        val older = source(2L, lines(40, mapOf(17 to "the spending limit is ten thousand euros")))
+        // Line 17 of session 2 is close in meaning; every other line of either session is not.
+        val matches = SemanticMatches(
+            mapOf(
+                1L to listOf(ScoredPassage(0, 39, 0.1)),
+                2L to listOf(ScoredPassage(0, 16, 0.1), ScoredPassage(17, 17, 0.8), ScoredPassage(18, 39, 0.1))
+            )
+        )
+        val question = "How much can we afford?"
+
+        val words = CrossSessionRetriever.select(listOf(recent, older), question, maxChars = 1_200)
+        assertFalse(words.sessions.flatMap { it.chunks }.any { "spending limit" in it.text })
+
+        val both = CrossSessionRetriever.select(listOf(recent, older), question, maxChars = 1_200, semantic = matches)
+        val picked = both.sessions.first { it.sessionId == 2L }.chunks
+        assertTrue(picked.any { "spending limit" in it.text })
+        val perSession = both.sessions.map { s -> s.chunks.sumOf { it.text.length + 5 } }
+        assertTrue(perSession.all { it <= 1_200 * CrossSessionRetriever.SESSION_SHARE })
+    }
+
+    @Test
+    fun withoutSemanticMatchesTheResultIsUnchanged() {
+        val sources = listOf(source(1L, lines(40, mapOf(3 to "Kowalski"))), source(2L, lines(40, mapOf(9 to "budget"))))
+        val unindexed = SemanticMatches(emptyMap())
+        assertEquals(
+            CrossSessionRetriever.select(sources, "Kowalski budget", maxChars = 1_200),
+            CrossSessionRetriever.select(sources, "Kowalski budget", maxChars = 1_200, semantic = unindexed)
+        )
     }
 
     @Test

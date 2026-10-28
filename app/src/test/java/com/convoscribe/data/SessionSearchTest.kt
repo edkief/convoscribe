@@ -259,4 +259,31 @@ class SessionSearchTest {
         assertEquals(ids.reversed().take(SessionSearch.FALLBACK_SESSIONS), result.map { it.session.id })
         assertTrue(result.all { it.hits == 0 })
     }
+
+    @Test
+    fun semanticCandidatesJoinTheWordMatches_withinTheFilters() = runTest {
+        val words = session("Words", createdAt = 3_000)
+        repo.addSegment(words, startMs = 0, endMs = 1_000, text = "the budget review")
+        val meaning = session("Meaning", createdAt = 1_000)
+        repo.addSegment(meaning, startMs = 0, endMs = 1_000, text = "how much we can spend")
+        val french = session("Sens", language = "fr", createdAt = 2_000)
+        repo.addSegment(french, startMs = 0, endMs = 1_000, text = "combien on peut dépenser")
+
+        assertEquals(listOf(words), search.candidates("budget").map { it.session.id })
+        val both = search.candidates("budget", semantic = listOf(meaning, french)).map { it.session.id }
+        assertEquals(setOf(words, meaning, french), both.toSet())
+        assertEquals(
+            listOf(
+                meaning
+            ),
+            search.candidates("budget", SearchFilters(language = "en"), semantic = listOf(french, meaning)).map {
+                it.session.id
+            }.minus(words)
+        )
+        assertEquals(
+            0,
+            search.candidates("budget", semantic = listOf(meaning)).single { it.session.id == meaning }.hits
+        )
+        assertEquals(listOf(words, french, meaning), search.sessionIds())
+    }
 }

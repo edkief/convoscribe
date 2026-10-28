@@ -91,15 +91,20 @@ object ChunkRetriever {
      * within a session, and no session gets more than
      * [perSessionMaxChars] of the budget, so one long meeting cannot
      * crowd out the rest.
+     *
+     * [rankScores], one per chunk, replace the BM25 scores when given,
+     * as when word and meaning rankings are fused (issue #61); a chunk
+     * scoring 0 then counts as not matching.
      */
     fun select(
         chunks: List<TranscriptChunk>,
         query: String,
         maxChars: Int,
-        perSessionMaxChars: Int = maxChars
+        perSessionMaxChars: Int = maxChars,
+        rankScores: DoubleArray? = null
     ): Excerpts {
         if (chunks.isEmpty()) return Excerpts(emptyList(), 0L, 0L)
-        val scores = scores(chunks, query)
+        val scores = rankScores ?: scores(chunks, query)
         val ranked = chunks.indices.filter { scores[it] > 0.0 }.sortedByDescending { scores[it] }
         val order = if (ranked.isEmpty()) {
             spread(chunks, maxChars)

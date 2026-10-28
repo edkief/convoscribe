@@ -75,8 +75,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * with no history.
  *
  * The 14 → 15 migration (issue #61) is automatic: the `passage_vectors`
- * and `session_index_state` tables only, so every session starts
- * unindexed and is indexed once the semantic search model is installed.
+ * and `session_index_state` tables, so every session starts unindexed
+ * and is indexed once the semantic search model is installed, and a
+ * nullable `global_chat_messages.semantic`, so earlier answers read as
+ * found by words alone.
  *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
