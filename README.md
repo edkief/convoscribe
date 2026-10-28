@@ -703,6 +703,25 @@ idempotent: a second `bash scripts/build-sherpa-onnx.sh` prints
 `sherpa-onnx native libs OK` and exits 0. Pass `--force` to wipe
 `$WORK` and rebuild from scratch.
 
+### onnxruntime JNI library
+
+Semantic search runs its text model through onnxruntime's Java API
+(the `onnxruntime-android` AAR). That AAR's JNI library binds to its own
+runtime's symbol version (`VERS_1.28.0`), and Android refuses to load it
+against the 1.28.2 runtime sherpa-onnx ships. That runtime has to stay
+because it carries the QNN provider. `scripts/build-onnxruntime-jni.sh`
+(also run by `scripts/setup-toolchain.sh`) does three things:
+
+1. Sparse-clones onnxruntime `v1.28.0` (the AAR's version) into
+   `~/.local/share/convoscribe-toolchain/onnxruntime-jni-build/`.
+2. Generates the JNI headers with `javac -h`.
+3. Compiles the JNI sources with the NDK, without training, CUDA or
+   TensorRT. It links them against `app/src/main/jniLibs/arm64-v8a/libonnxruntime.so`
+   and writes `libonnxruntime4j_jni.so` next to it.
+
+The packaging rules in `app/build.gradle.kts` keep these two libraries
+over the AAR's. Run it again after rebuilding sherpa-onnx.
+
 ## Test
 
 ```bash

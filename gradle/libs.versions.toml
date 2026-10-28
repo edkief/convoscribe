@@ -21,6 +21,8 @@ commonsCompress = "1.27.1"
 roborazzi = "1.40.1"
 # 0.28.0 is the last release built on Kotlin 2.0 / Compose 1.7; newer ones need Kotlin 2.1+.
 markdownRenderer = "0.28.0"
+# Java API only: the native runtime is sherpa-onnx's libonnxruntime.so (1.28.2), see app/build.gradle.kts.
+onnxruntime = "1.28.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
@@ -52,6 +54,8 @@ robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectr
 androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
 turbine = { module = "app.cash.turbine:turbine", version.ref = "turbine" }
 markdown-renderer-m3 = { module = "com.mikepenz:multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
+onnxruntime-android = { module = "com.microsoft.onnxruntime:onnxruntime-android", version.ref = "onnxruntime" }
+onnxruntime-desktop = { module = "com.microsoft.onnxruntime:onnxruntime", version.ref = "onnxruntime" }
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }

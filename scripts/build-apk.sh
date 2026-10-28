@@ -73,6 +73,10 @@ if [[ ${#missing[@]} -gt 0 ]]; then
   echo "Run: bash scripts/build-sherpa-onnx.sh" >&2
   exit 1
 fi
+if [[ ! -s app/src/main/jniLibs/arm64-v8a/libonnxruntime4j_jni.so ]]; then
+  echo "build-apk: onnxruntime JNI library is missing. Run: bash scripts/build-onnxruntime-jni.sh" >&2
+  exit 1
+fi
 
 if [[ "$install" == true ]] && ! command -v adb >/dev/null 2>&1; then
   echo "build-apk: --install needs adb, which is not on PATH (expected in \$ANDROID_HOME/platform-tools)." >&2
