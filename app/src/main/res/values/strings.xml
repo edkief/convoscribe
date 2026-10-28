@@ -445,7 +445,7 @@
     <string name="session_auto_titled">Renamed to “%1$s”</string>
     <string name="session_overflow_reidentify">Re-identify speakers…</string>
     <string name="session_overflow_participants">Participants…</string>
-    <string name="session_overflow_retranscribe">Re-transcribe in another language…</string>
+    <string name="session_overflow_retranscribe">Re-transcribe…</string>
     <string name="session_retranscribe_title">Re-transcribe</string>
     <string name="session_retranscribe_where">Transcribe:</string>
     <string name="session_retranscribe_device">On this device</string>
