@@ -188,6 +188,14 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <!--
+            The semantic search charging job (issue #61), started by
+            JobScheduler while a session waits to be indexed.
+        -->
+        <service
+            android:name=".service.SemanticIndexJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!--
             The periodic update check (issue #41), started by JobScheduler
             even when the app is not running. Only the system may bind it.
         -->

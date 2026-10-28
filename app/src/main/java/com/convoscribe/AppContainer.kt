@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
+import androidx.room.InvalidationTracker
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.server.ServerAsrConfig
@@ -36,6 +37,9 @@ import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
+import com.convoscribe.llm.embedding.EmbeddingGemmaFactory
+import com.convoscribe.llm.embedding.SemanticIndexRunner
+import com.convoscribe.llm.embedding.TextEmbedderFactory
 import com.convoscribe.models.ModelDownloadManager
 import com.convoscribe.models.ModelDownloader
 import com.convoscribe.models.ModelStore
@@ -47,6 +51,7 @@ import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.service.PendingDiarizationScheduler
+import com.convoscribe.service.SemanticIndexScheduler
 import com.convoscribe.service.UpdateCheckScheduler
 import com.convoscribe.service.UpdateDownloadService
 import com.convoscribe.settings.EncryptedSecretStore
@@ -63,8 +68,12 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.launchIn
@@ -409,7 +418,8 @@ class AppContainer(val context: Context) {
         busy = {
             recordingController.state.value.phase != RecordingPhase.IDLE ||
                 retranscribeUseCase.isRunning ||
-                importAudioUseCase.isRunning
+                importAudioUseCase.isRunning ||
+                semanticIndexScheduler.jobRunning
         }
     )
 
@@ -430,6 +440,53 @@ class AppContainer(val context: Context) {
             .drop(1)
             .onEach { scheduler.sync() }
             .launchIn(applicationScope)
+    }
+
+    /** The optional semantic search model (issue #61). */
+    val textEmbedderFactory: TextEmbedderFactory = EmbeddingGemmaFactory(modelStore)
+
+    /**
+     * The semantic search job's work (issue #61): sessions whose index
+     * is missing or out of date, newest first. Gives way to a recording,
+     * import, re-transcription or the speaker job, so the two models
+     * are never loaded at once.
+     */
+    val semanticIndexRunner: SemanticIndexRunner = SemanticIndexRunner(
+        search = database.searchDao(),
+        index = database.semanticIndexDao(),
+        segments = sessionRepository::getSegments,
+        embedders = textEmbedderFactory,
+        awaitRecovery = { recoveryDone.await() },
+        busy = {
+            recordingController.state.value.phase != RecordingPhase.IDLE ||
+                retranscribeUseCase.isRunning ||
+                importAudioUseCase.isRunning ||
+                pendingDiarizationScheduler.jobRunning
+        }
+    )
+
+    /**
+     * Keeps the semantic search job scheduled while a session waits to
+     * be indexed (issue #61). Any change to a transcript, its speakers,
+     * its summary or the list of sessions re-syncs it, a few seconds
+     * after the last change, so every way a transcript changes is
+     * covered without hooking each one.
+     */
+    @OptIn(FlowPreview::class)
+    val semanticIndexScheduler: SemanticIndexScheduler = SemanticIndexScheduler(
+        context = context,
+        runner = { semanticIndexRunner },
+        scope = applicationScope
+    ).also { scheduler ->
+        val changed = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        database.invalidationTracker.addObserver(
+            object : InvalidationTracker.Observer(arrayOf("sessions", "segments", "speakers", "chat_messages")) {
+                override fun onInvalidated(tables: Set<String>) {
+                    changed.tryEmit(Unit)
+                }
+            }
+        )
+        changed.debounce(INDEX_SYNC_DEBOUNCE_MS).onEach { scheduler.sync() }.launchIn(applicationScope)
     }
 
     /**
@@ -608,5 +665,10 @@ class AppContainer(val context: Context) {
     private fun isPluggedIn(): Boolean {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED)) ?: return false
         return battery.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0
+    }
+
+    private companion object {
+        /** Wait this long after the last transcript change before checking the semantic index. */
+        const val INDEX_SYNC_DEBOUNCE_MS = 5_000L
     }
 }

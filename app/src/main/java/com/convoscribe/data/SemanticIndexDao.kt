@@ -39,6 +39,19 @@ interface SemanticIndexDao {
         upsertState(state)
     }
 
+    /** Drop what other models made: their vectors cannot be compared with [modelId]'s. */
+    @Transaction
+    suspend fun deleteOtherModels(modelId: String) {
+        deleteVectorsNotOf(modelId)
+        deleteStatesNotOf(modelId)
+    }
+
+    @Query("DELETE FROM passage_vectors WHERE modelId != :modelId")
+    suspend fun deleteVectorsNotOf(modelId: String)
+
+    @Query("DELETE FROM session_index_state WHERE modelId != :modelId")
+    suspend fun deleteStatesNotOf(modelId: String)
+
     /** Forget the whole index, as when the model is removed. */
     @Transaction
     suspend fun clear() {
