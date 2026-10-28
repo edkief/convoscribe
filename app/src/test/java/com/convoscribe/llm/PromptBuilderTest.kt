@@ -379,6 +379,43 @@ class PromptBuilderTest {
     }
 
     @Test
+    fun questionAcrossSessions_groupsBySessionUnderHeadings() {
+        fun chunk(session: Long, line: Int) =
+            TranscriptChunk("line $line", line * 1_000L, (line + 1) * 1_000L, line, line, session)
+        val summary = TranscriptChunk(
+            "Summary: budget agreed",
+            0L,
+            0L,
+            CrossSessionRetriever.SUMMARY_LINE,
+            CrossSessionRetriever.SUMMARY_LINE,
+            2L
+        )
+        val excerpts = CrossExcerpts(
+            listOf(
+                SessionExcerpts(
+                    1L,
+                    "Weekly",
+                    "2026-10-01",
+                    "en",
+                    listOf(chunk(1, 1), chunk(1, 2), chunk(1, 7)),
+                    emptyList()
+                ),
+                SessionExcerpts(2L, "Réunion", "2026-09-12", "fr", listOf(summary, chunk(2, 4)), emptyList())
+            )
+        )
+        val messages = PromptBuilder.questionAcrossSessions(excerpts, emptyList(), " who? ")
+
+        assertEquals(
+            PromptBuilder.QA_ACROSS_PREFIX +
+                "## Weekly — 2026-10-01 (en)\nline 1\nline 2" + PromptBuilder.EXCERPT_GAP + "line 7\n\n" +
+                "## Réunion — 2026-09-12 (fr)\nSummary: budget agreed\nline 4",
+            messages[0].content
+        )
+        assertEquals("who?", messages.last().content)
+        assertEquals(2, messages.size)
+    }
+
+    @Test
     fun markNote_sendsTheNoteThenTheTranscriptAroundIt() {
         val window = listOf(
             TranscriptLine(startMs = 60_000L, speaker = "Dana", text = "Twelve euros a seat."),
