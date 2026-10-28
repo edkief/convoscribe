@@ -199,7 +199,25 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   sessions*). The history is kept until *Clear history*; deleting a
   session keeps the answers that cite it, marked *Session deleted*.
   Matching is by words (ignoring case and accents), so a question
-  worded differently from what was said may miss it.
+  worded differently from what was said may miss it, unless semantic
+  search is installed.
+- **Semantic search** — an optional on-device model (Google's
+  EmbeddingGemma, about 202 MB, Gemma Terms of Use), downloaded from
+  Settings → Semantic search, lets *Ask across sessions* also find what
+  was said in other words or in the other language (*how much can we
+  spend* finds *the budget is capped at 10k*, and English questions
+  find French sessions). Each session is cut into passages of about
+  1,200 characters, and the passages are turned into vectors while the
+  device is charging, like *Identify speakers*. A session whose
+  transcript, speakers or summary change is indexed again. A question
+  then picks sessions and excerpts by meaning as well as by words, and
+  the answer says *matched by meaning*. Sessions not indexed yet still
+  count by their words, and the screen says how many there are. Without
+  the model, or if it fails, Ask across sessions matches words only, as
+  before. Settings shows how many sessions are indexed, and deleting the
+  model drops the index. Engine check → *Semantic search* times the
+  model and shows the app's memory use, to judge it on a CPU-only
+  device.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
