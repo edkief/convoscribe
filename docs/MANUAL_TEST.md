@@ -401,8 +401,8 @@ model show "unknown". New sessions show e.g. `cpu` /
 
 **Steps**
 
-1. Open an English session with a summary, overflow → **Re-transcribe
-   in another language…**, pick Français (download it first if asked),
+1. Open an English session with a summary, overflow →
+   **Re-transcribe…**, pick Français (download it first if asked),
    confirm.
 2. Watch the banner and notification progress; leave the app.
 3. Repeat on another session and tap **Cancel** halfway (banner or
@@ -1298,6 +1298,63 @@ with two or more people.
 - Step 8: the next identification is the same as in step 3.
 - Step 9: the choices are outlined, black on white.
 
+## 36. Transcription server (issue #58)
+
+Needs a reachable OpenAI-compatible transcription server, e.g. the
+Parakeet server at `http://parakeet-asr.asr:8000/v1` from a device on
+the cluster network (or an `https://` ingress in front of it), and a
+recorded English conversation of a few minutes with two people.
+
+**Steps**
+
+1. Settings → *Transcription server*. Leave the address blank: the
+   *Improve recordings on the server* switch is greyed out.
+2. Enter `http://parakeet-asr.asr:8000/v1`, leave model blank, tap
+   *Test connection*.
+3. Enter an address that does not answer (e.g.
+   `https://192.0.2.1/v1`), tap *Test connection*, then put the working
+   one back.
+4. Open the recorded conversation → menu → *Re-transcribe…*. Choose
+   *On the transcription server* and confirm.
+5. Repeat step 4 and tap *Cancel* on the progress banner while it runs.
+6. *Session info* after step 4.
+7. Turn on *Improve recordings on the server*. Record a short
+   conversation and stop.
+8. Edit a line of that conversation, tap *Continue recording*, say a
+   few words and stop.
+9. Turn on aeroplane mode (or stop the server), record a few seconds
+   and stop.
+10. With the server reachable again, *Import audio…* a voice note.
+11. Turn *Improve recordings on the server* off, record and stop.
+
+**Expected**
+
+- Step 2: a warning under the address says recordings are sent
+  unencrypted; the test reports `Connected – 1 model:
+  parakeet-tdt-0.6b-v3`. Tapping the chip fills the model.
+- Step 3: *Failed: Network error calling …*. Nothing else changes.
+- Step 4: the dialog shows *Transcribe: On this device / On the
+  transcription server* above the languages; picking the server
+  selects English. The banner and notification (*Transcribing on the
+  server*) show progress, which stops at 90 % while the server works.
+  The transcript is replaced with punctuated, capitalised lines, and
+  speakers are identified again, with the names kept. Playback still
+  highlights words.
+- Step 5: the previous transcript stays; no error.
+- Step 6: the engine reads `server`, the model `parakeet-tdt-0.6b-v3`.
+- Step 7: after Stop the notification says *Transcribing on the
+  server*, then *Identifying speakers*; the transcript ends up
+  punctuated and the engine is `server`. Cancel on the banner keeps
+  the live transcript and speakers are still identified.
+- Step 8: no server pass after Stop (the transcript was edited); the
+  edit is kept.
+- Step 9: after a short wait the live transcript is kept without an
+  error, and speakers are identified. `adb logcat -s ConvoScribe` shows
+  `re-transcription failed … (server=true)`.
+- Step 10: the import is transcribed on the server (Session info:
+  `server`). Stopping the server first falls back to the device engine.
+- Step 11: no server pass; the engine is `cpu` or `npu`.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
@@ -1353,7 +1410,8 @@ to the shared libraries — wiping those forces a re-prepare.
 
 ### 3. Cleartext traffic denied
 
-Some local LLM servers (Ollama out of the box) answer on plain HTTP.
+Some local LLM servers (Ollama out of the box) and transcription
+servers answer on plain HTTP.
 `usesCleartextTraffic="true"` is already set on the `<application>`
 in the manifest, so `http://<host>:11434/v1` is allowed. If you
 have placed a stricter `networkSecurityConfig` XML on the app, add

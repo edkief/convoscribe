@@ -73,6 +73,14 @@ import com.convoscribe.llm.SummaryTemplates
  * looks at each moment ten times, a longer step fewer times and is
  * faster. Both are there to compare speed and accuracy.
  *
+ * [asrServerUrl] is the OpenAI-style base URL of a self-hosted
+ * transcription server (issue #58), typically ending in `/v1`; blank
+ * means none. Plain `http://` is allowed, as for the LLM endpoint,
+ * and Settings warns about it. [asrServerModel] is the model asked
+ * for (blank: the server's first one); its API key lives in
+ * [SecretStore]. [asrServerAuto] sends each stopped recording and each
+ * import to the server, keeping the device transcript if that fails.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -85,6 +93,9 @@ data class AppSettings(
     val asrEngine: String = "cpu",
     val asrEngineChosen: Boolean = false,
     val numThreads: Int = 4,
+    val asrServerUrl: String = "",
+    val asrServerModel: String = "",
+    val asrServerAuto: Boolean = false,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
@@ -103,7 +114,19 @@ data class AppSettings(
     val overlayPromptShown: Boolean = false,
     val updateCheckAuto: Boolean = true,
     val updateIncludePrereleases: Boolean = false
-)
+) {
+    /** A transcription server is set up (issue #58). */
+    val asrServerConfigured: Boolean get() = asrServerUrl.isNotBlank()
+
+    /** Stopped recordings and imports go to the server. */
+    val asrServerAutoActive: Boolean get() = asrServerAuto && asrServerConfigured
+}
+
+/**
+ * Whether [url] sends what it is given unencrypted (`http://`), for the
+ * warning under the transcription server address (issue #58).
+ */
+fun isUnencryptedUrl(url: String): Boolean = url.trim().startsWith("http://", ignoreCase = true)
 
 /** [AppSettings.diarizationEmbedding] of a fresh install: WeSpeaker ResNet34. */
 const val DEFAULT_DIARIZATION_EMBEDDING = "resnet34"

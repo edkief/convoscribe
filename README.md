@@ -70,12 +70,24 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   stored audio is transcribed again in the background, with progress
   and Cancel, and speakers are re-identified. Cancelling or a failure
   keeps the previous transcript.
+- **Transcribe on your own server (optional).** Point Settings →
+  *Transcription server* at a self-hosted, OpenAI-compatible
+  transcription server, such as NVIDIA Parakeet TDT 0.6B v3 on a GPU
+  (see [Transcription server](#transcription-server)). *Re-transcribe*
+  then offers *On the transcription server*, and with *Improve
+  recordings on the server* on, every stopped recording and every
+  import is transcribed there before speakers are identified. Live
+  transcription while recording always stays on the device; if the
+  server cannot be reached, the device transcript is kept. A transcript
+  you edited by hand is never replaced automatically. Session info shows
+  `server` and the server's model.
 - **Import an audio file** as a session: *Import audio…* on Home, or
   share a voice note to ConvoScribe / *Open with* it from a file
   manager. Any format Android can decode (MP3, M4A/AAC, OGG/Opus,
   FLAC, AMR, WAV…) is converted to 16 kHz mono, stored as the
-  session's recording and transcribed in the Settings language, then
-  speakers are identified. It runs in the background with progress and
+  session's recording and transcribed in the Settings language (on the
+  transcription server when *Improve recordings on the server* is on),
+  then speakers are identified. It runs in the background with progress and
   Cancel; a cancelled or unreadable import leaves nothing behind.
 - **Search across sessions** from Home (the search icon, or the
   search field on wide screens). Words are matched in session titles,
@@ -567,6 +579,46 @@ The endpoint is contacted only by `llm/ChatClient.kt`. The
 streaming path uses server-sent events (`data: {…}\n\n` chunks)
 and surfaces partial tokens to the UI as soon as the SSE parser
 sees the `delta.content` field.
+
+## Transcription server
+
+Settings → **Transcription server** (issue #58) sends stored
+recordings to a self-hosted server for a more accurate transcript than
+the efficiency-focused on-device models:
+
+- **Base URL** — the OpenAI-compatible base URL, ending in `/v1`, e.g.
+  `https://asr.example.com/v1` or, inside a trusted network,
+  `http://parakeet-asr.asr:8000/v1`. A plain `http://` address works
+  but sends recordings unencrypted; Settings warns about it.
+- **API key** — optional, sent as `Authorization: Bearer …`, stored
+  encrypted apart from the LLM key.
+- **Model name** — optional; blank uses the first model the server
+  lists. *Test connection* lists them.
+- **Improve recordings on the server** — after Stop, and for imports.
+
+The app calls `POST {base}/audio/transcriptions` with the session's
+16 kHz mono WAV (`file`), `response_format=verbose_json`,
+`timestamp_granularities[]=word` and `=segment`, `language` and
+`model`. It reads `segments[{start,end,text}]` as transcript lines and
+`words[{word,start}]` as word timings. The word timings let speaker
+identification split a line at a speaker change and playback highlight
+the word being said, so use a server that returns them. A server that
+only returns `text` still works, as one line. The whole recording is
+uploaded in one request (about 115 MB per hour of audio), so allow
+large request bodies on any proxy in front of it.
+
+Tested with NVIDIA Parakeet TDT 0.6B v3 (25 European languages,
+including English and French) behind such an endpoint on an RTX 2080 Ti:
+30 minutes of audio in about 50 s, upload included. Any server with the
+same API, such as speaches (faster-whisper), works too.
+
+`ServerTranscriberLiveTest` checks a real server from the JVM:
+
+```bash
+CONVOSCRIBE_ASR_SERVER=http://parakeet-asr.asr:8000/v1 \
+CONVOSCRIBE_ASR_SAMPLE_WAV=/path/to/16k-speech.wav \
+./gradlew :app:testDebugUnitTest --tests '*ServerTranscriberLiveTest'
+```
 
 ## Model licences
 

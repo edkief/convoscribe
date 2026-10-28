@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.asr.EngineInfo
+import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.StreamingTranscriber
+import com.convoscribe.asr.TimedToken
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.asr.server.ServerAsrException
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.StreamingCleaner
 import com.convoscribe.audio.WavReader
@@ -26,6 +29,7 @@ import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import org.junit.After
@@ -108,13 +112,44 @@ class RetranscribeUseCaseTest {
         override fun describe(language: String) = EngineInfo("cpu", "asr-$language")
     }
 
-    private fun useCase(factory: TranscriberFactory, cleaners: AudioCleanerFactory? = null) = RetranscribeUseCase(
+    private fun useCase(
+        factory: TranscriberFactory,
+        cleaners: AudioCleanerFactory? = null,
+        server: FileRecognizer? = null,
+        serverAuto: Boolean = false
+    ) = RetranscribeUseCase(
         repository = repo,
         transcriberFactory = factory,
         diarize = diarizer(),
         asrDispatcher = Dispatchers.Unconfined,
-        cleanerFactory = cleaners
+        cleanerFactory = cleaners,
+        server = server,
+        serverAuto = { serverAuto }
     )
+
+    /** The transcription server (issue #58): two timed lines, or [failure]. */
+    private class FakeServer(private val failure: Throwable? = null) : FileRecognizer {
+        val calls = mutableListOf<Pair<File, String>>()
+        override suspend fun transcribe(
+            file: File,
+            language: String,
+            onProgress: (Float) -> Unit
+        ): List<TranscriptEvent.Final> {
+            calls += file to language
+            onProgress(0.5f)
+            failure?.let { throw it }
+            return listOf(
+                TranscriptEvent.Final(
+                    "Hello there.",
+                    100,
+                    900,
+                    listOf(TimedToken(" Hello", 100), TimedToken(" there.", 500))
+                ),
+                TranscriptEvent.Final("General Kenobi.", 1_000, 1_900, listOf(TimedToken(" General", 1_000)))
+            )
+        }
+        override fun describe() = EngineInfo("server", "parakeet-tdt-0.6b-v3")
+    }
 
     /** A cleaner that halves every sample (issue #37). */
     private class Halving(private val available: Boolean = true) : AudioCleanerFactory {
@@ -242,6 +277,138 @@ class RetranscribeUseCaseTest {
         }
 
         assertEquals("en", repo.getSession(id)!!.language)
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun onServer_replacesTheTranscriptWithTheServersLinesAndEngine() = runTest {
+        val id = englishSession()
+        val factory = factory { FrenchTranscriber() }
+        val server = FakeServer()
+        val uc = useCase(factory, server = server)
+
+        assertTrue(uc.run(id, "en", onServer = true))
+
+        assertTrue(factory.languages.isEmpty())
+        assertEquals(listOf(File(repo.getSession(id)!!.audioPath) to "en"), server.calls)
+        val session = repo.getSession(id)!!
+        assertEquals("en", session.language)
+        assertEquals("server", session.asrEngine)
+        assertEquals("parakeet-tdt-0.6b-v3", session.asrModel)
+        assertEquals(SessionStatus.DIARIZED, session.status)
+        val segments = repo.getSegments(id)
+        assertEquals(listOf("Hello there.", "General Kenobi."), segments.map { it.text })
+        assertEquals(listOf(100L, 1_000L), segments.map { it.startMs })
+        assertEquals(listOf("Alice"), repo.getSpeakers(id).map { it.label })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun onServer_failureKeepsThePreviousTranscriptAndShowsTheError() = runTest {
+        val id = englishSession()
+        val uc =
+            useCase(factory { FrenchTranscriber() }, server = FakeServer(ServerAsrException("HTTP 502 from x: down")))
+
+        assertFalse(uc.run(id, "en", onServer = true))
+
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        val state = uc.state.value
+        assertTrue(state is RetranscribeState.Failed && state.message == "HTTP 502 from x: down")
+    }
+
+    @Test
+    fun onServer_withoutAServerFails() = runTest {
+        val id = englishSession()
+        val uc = useCase(factory { FrenchTranscriber() })
+
+        assertFalse(uc.run(id, "en", onServer = true))
+
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        assertTrue(uc.state.value is RetranscribeState.Failed)
+    }
+
+    @Test
+    fun improveOnServer_replacesTheTranscriptInTheSessionsLanguageWithoutIdentifyingSpeakers() = runTest {
+        val id = englishSession()
+        val server = FakeServer()
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
+
+        assertTrue(uc.wantsServer(id))
+        assertTrue(uc.improveOnServer(id))
+
+        assertEquals("en", server.calls.single().second)
+        assertEquals(listOf("Hello there.", "General Kenobi."), repo.getSegments(id).map { it.text })
+        assertEquals("server", repo.getSession(id)!!.asrEngine)
+        // Speakers are the caller's job; the old speaker carries over meanwhile.
+        assertEquals(listOf(0, 0), repo.getSegments(id).map { it.speakerIndex })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun improveOnServer_doesNothingWhenOff() = runTest {
+        val id = englishSession()
+        val server = FakeServer()
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = false)
+
+        assertFalse(uc.wantsServer(id))
+        assertFalse(uc.improveOnServer(id))
+
+        assertTrue(server.calls.isEmpty())
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun improveOnServer_neverReplacesAnEditedTranscript() = runTest {
+        val id = englishSession()
+        repo.editLineText(repo.getSegments(id).single().id, "hello there, corrected")
+        val server = FakeServer()
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
+
+        assertFalse(uc.wantsServer(id))
+        assertFalse(uc.improveOnServer(id))
+
+        assertTrue(server.calls.isEmpty())
+        assertEquals(listOf("hello there, corrected"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun improveOnServer_failureKeepsTheDeviceTranscriptWithoutAnError() = runTest {
+        val id = englishSession()
+        val uc = useCase(
+            factory { FrenchTranscriber() },
+            server = FakeServer(ServerAsrException("Network error calling x: timeout")),
+            serverAuto = true
+        )
+
+        assertFalse(uc.improveOnServer(id))
+
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun improveOnServer_cancelKeepsTheDeviceTranscript() = runTest {
+        val id = englishSession()
+        val job = Job()
+        val server = object : FileRecognizer {
+            override suspend fun transcribe(
+                file: File,
+                language: String,
+                onProgress: (Float) -> Unit
+            ): List<TranscriptEvent.Final> {
+                job.cancel()
+                awaitCancellation()
+            }
+            override fun describe() = EngineInfo("server", "m")
+        }
+        val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
+        try {
+            withContext(job) { uc.improveOnServer(id) }
+            fail("expected cancellation")
+        } catch (_: CancellationException) {
+        }
+
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
         assertEquals(RetranscribeState.Idle, uc.state.value)
     }

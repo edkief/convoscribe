@@ -165,7 +165,9 @@ data class RetranscribeUi(
     /** The running pass is cleaning the audio first (issue #37). */
     val cleaning: Boolean = false,
     val enabled: Boolean = false,
-    val onStart: (language: String) -> Unit = {},
+    /** A transcription server is set up, so the dialog offers it (issue #58). */
+    val serverAvailable: Boolean = false,
+    val onStart: (language: String, onServer: Boolean) -> Unit = { _, _ -> },
     val onCancel: () -> Unit = {}
 )
 
@@ -223,25 +225,47 @@ internal fun RetranscribeBanner(progress: Float, onCancel: () -> Unit, cleaning:
  * the transcript is replaced and that an existing summary and Q&A
  * were based on the old one.
  */
+/**
+ * Re-transcribe in a language (issue #6), on the device or, when
+ * [serverAvailable], on the transcription server (issue #58). The
+ * device defaults to the other language, as before; picking the
+ * server switches to the session's own language, since it is mostly
+ * used for a more accurate transcript.
+ */
 @Composable
-internal fun RetranscribeDialog(currentLanguage: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
-    var selected by remember { mutableStateOf(if (currentLanguage == "fr") "en" else "fr") }
+internal fun RetranscribeDialog(
+    currentLanguage: String,
+    onConfirm: (language: String, onServer: Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    serverAvailable: Boolean = false
+) {
+    val otherLanguage = if (currentLanguage == "fr") "en" else "fr"
+    var selected by remember { mutableStateOf(otherLanguage) }
+    var onServer by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.session_retranscribe_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
+                if (serverAvailable) {
+                    Text(text = stringResource(R.string.session_retranscribe_where))
+                    listOf(
+                        false to R.string.session_retranscribe_device,
+                        true to R.string.session_retranscribe_server
+                    ).forEach { (server, label) ->
+                        RadioRow(
+                            label = stringResource(label),
+                            selected = server == onServer,
+                            onSelect = {
+                                if (server != onServer) selected = if (server) currentLanguage else otherLanguage
+                                onServer = server
+                            }
+                        )
+                    }
+                }
                 Text(text = stringResource(R.string.session_retranscribe_message))
                 listOf("en", "fr").forEach { code ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .selectable(selected = code == selected, role = Role.RadioButton) { selected = code },
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(selected = code == selected, onClick = null)
-                        Text(text = languageName(code), modifier = Modifier.padding(start = AppTheme.spacing.s))
-                    }
+                    RadioRow(label = languageName(code), selected = code == selected, onSelect = { selected = code })
                 }
                 Text(
                     text = stringResource(R.string.session_retranscribe_warning),
@@ -251,7 +275,7 @@ internal fun RetranscribeDialog(currentLanguage: String, onConfirm: (String) -> 
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(selected) }) {
+            TextButton(onClick = { onConfirm(selected, onServer) }) {
                 Text(text = stringResource(R.string.session_retranscribe_confirm))
             }
         },
@@ -261,4 +285,17 @@ internal fun RetranscribeDialog(currentLanguage: String, onConfirm: (String) -> 
             }
         }
     )
+}
+
+@Composable
+private fun RadioRow(label: String, selected: Boolean, onSelect: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onSelect),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Text(text = label, modifier = Modifier.padding(start = AppTheme.spacing.s))
+    }
 }

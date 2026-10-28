@@ -6,6 +6,8 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.asr.server.ServerAsrConfig
+import com.convoscribe.asr.server.ServerTranscriber
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.MediaCodecAudioDecoder
@@ -342,6 +344,26 @@ class AppContainer(val context: Context) {
     val recoveryDone = CompletableDeferred<Unit>()
 
     /**
+     * Uploads to the transcription server (issue #58): whole recordings,
+     * so the read and write timeouts allow a long upload and a long
+     * wait while the server transcribes.
+     */
+    val asrServerHttpClient: OkHttpClient = httpClient.newBuilder()
+        .readTimeout(15, TimeUnit.MINUTES)
+        .writeTimeout(15, TimeUnit.MINUTES)
+        .build()
+
+    /**
+     * Transcribes stored recordings on the user's self-hosted server
+     * (issue #58), configured in Settings → Transcription server and
+     * read on every call.
+     */
+    val serverTranscriber: ServerTranscriber = ServerTranscriber(asrServerHttpClient) {
+        val s = settingsRepository.settings.value
+        ServerAsrConfig(baseUrl = s.asrServerUrl, apiKey = settingsRepository.asrServerKey(), model = s.asrServerModel)
+    }
+
+    /**
      * Re-transcribes a session's stored audio in another language and
      * re-identifies its speakers (issue #6). Run by the foreground
      * service; its [RetranscribeUseCase.state] drives the session
@@ -351,13 +373,16 @@ class AppContainer(val context: Context) {
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
         diarize = diarizeSessionUseCase,
-        cleanerFactory = audioCleanerFactory
+        cleanerFactory = audioCleanerFactory,
+        server = serverTranscriber,
+        serverAuto = { settingsRepository.settings.value.asrServerAutoActive }
     )
 
     /**
      * Imports an audio file as a new session (issue #3): decodes it
      * with the platform codecs, transcribes it in the Settings
-     * language and identifies speakers. Run by the foreground
+     * language (on the transcription server when *Improve recordings on
+     * the server* is on, issue #58) and identifies speakers. Run by the foreground
      * service; its [ImportAudioUseCase.state] drives the home screen's
      * progress banner. Work files live in `cacheDir/imports/`.
      */
@@ -367,7 +392,9 @@ class AppContainer(val context: Context) {
         diarize = diarizeSessionUseCase,
         decoder = MediaCodecAudioDecoder(),
         workDir = File(context.cacheDir, "imports"),
-        defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) }
+        defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) },
+        server = serverTranscriber,
+        useServer = { settingsRepository.settings.value.asrServerAutoActive }
     )
 
     /**

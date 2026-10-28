@@ -362,9 +362,15 @@ fun SessionScreen(
                 !retranscribing &&
                 !importing &&
                 state.status in CONTINUABLE_STATUSES,
-            onStart = { language ->
+            serverAvailable = appSettings.asrServerConfigured,
+            onStart = { language, onServer ->
                 val engine = appSettings.asrEngine
-                val missing = container.modelStore.missing(ModelCatalog.requiredFor(language, engine))
+                // The server needs no model on the device.
+                val missing = if (onServer) {
+                    emptyList()
+                } else {
+                    container.modelStore.missing(ModelCatalog.requiredFor(language, engine))
+                }
                 if (missing.isNotEmpty()) {
                     // Download first; setup pops back here and the user starts again.
                     navController.navigate("setup?engine=$engine&language=$language&back=true")
@@ -372,7 +378,7 @@ fun SessionScreen(
                     vm.stopPlayback()
                     ContextCompat.startForegroundService(
                         context,
-                        RecordingService.retranscribeIntent(context, sessionId, language)
+                        RecordingService.retranscribeIntent(context, sessionId, language, onServer = onServer)
                     )
                 }
             },
@@ -513,7 +519,7 @@ internal fun SessionBody(
     var infoOpen by remember { mutableStateOf(false) }
     var retranscribeOpen by remember { mutableStateOf(false) }
     // Language chosen for a re-transcription that waits for "discard your edits?".
-    var retranscribeOverEdits by remember { mutableStateOf<String?>(null) }
+    var retranscribeOverEdits by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
     var marksOpen by remember { mutableStateOf(initialMarksOpen) }
     var cleanupOpen by remember { mutableStateOf(false) }
     var removeCleaningOpen by remember { mutableStateOf(false) }
@@ -870,14 +876,15 @@ internal fun SessionBody(
     if (retranscribeOpen) {
         RetranscribeDialog(
             currentLanguage = details.language,
-            onConfirm = { language ->
+            serverAvailable = retranscribe.serverAvailable,
+            onConfirm = { language, onServer ->
                 retranscribeOpen = false
-                if (hasEdits) retranscribeOverEdits = language else retranscribe.onStart(language)
+                if (hasEdits) retranscribeOverEdits = language to onServer else retranscribe.onStart(language, onServer)
             },
             onDismiss = { retranscribeOpen = false }
         )
     }
-    retranscribeOverEdits?.let { language ->
+    retranscribeOverEdits?.let { (language, onServer) ->
         ConfirmDialog(
             title = stringResource(R.string.session_retranscribe_edits_title),
             message = stringResource(R.string.session_retranscribe_edits_message),
@@ -886,7 +893,7 @@ internal fun SessionBody(
             destructive = true,
             onConfirm = {
                 retranscribeOverEdits = null
-                retranscribe.onStart(language)
+                retranscribe.onStart(language, onServer)
             },
             onDismiss = { retranscribeOverEdits = null }
         )

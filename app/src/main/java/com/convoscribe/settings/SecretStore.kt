@@ -7,7 +7,8 @@ import androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionSc
 import androidx.security.crypto.MasterKey
 
 /**
- * Pluggable backing store for the LLM API key. The production
+ * Pluggable backing store for the LLM API key and the transcription
+ * server's (issue #58). The production
  * implementation encrypts the value at rest; the in-memory variant
  * exists for tests and Compose previews so we never construct the
  * Android Keystore on the JVM.
@@ -16,6 +17,10 @@ interface SecretStore {
     fun getApiKey(): String
 
     fun setApiKey(value: String)
+
+    fun getAsrServerKey(): String
+
+    fun setAsrServerKey(value: String)
 }
 
 /**
@@ -46,9 +51,16 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         prefs.edit().putString(KEY_API_KEY, value).apply()
     }
 
+    override fun getAsrServerKey(): String = prefs.getString(KEY_ASR_SERVER_KEY, "") ?: ""
+
+    override fun setAsrServerKey(value: String) {
+        prefs.edit().putString(KEY_ASR_SERVER_KEY, value).apply()
+    }
+
     private companion object {
         const val FILE_NAME = "secrets"
         const val KEY_API_KEY = "api_key"
+        const val KEY_ASR_SERVER_KEY = "asr_server_key"
     }
 }
 
@@ -60,10 +72,17 @@ class EncryptedSecretStore(context: Context) : SecretStore {
  */
 class InMemorySecretStore : SecretStore {
     private var value: String = ""
+    private var asrServerKey: String = ""
 
     override fun getApiKey(): String = value
 
     override fun setApiKey(value: String) {
         this.value = value
+    }
+
+    override fun getAsrServerKey(): String = asrServerKey
+
+    override fun setAsrServerKey(value: String) {
+        asrServerKey = value
     }
 }

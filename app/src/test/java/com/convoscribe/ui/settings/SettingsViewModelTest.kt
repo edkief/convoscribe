@@ -2,6 +2,7 @@ package com.convoscribe.ui.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.asr.server.ServerAsrException
 import com.convoscribe.data.FakeSummaryTemplateStore
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LlmException
@@ -78,8 +79,9 @@ class SettingsViewModelTest {
     private fun newVm(
         repo: SettingsRepository = newRepo(),
         chatClient: ChatClient = FakeChatClient(models = emptyList()),
-        templates: FakeSummaryTemplateStore = FakeSummaryTemplateStore()
-    ): SettingsViewModel = SettingsViewModel(repo, chatClient, modelStore, templates)
+        templates: FakeSummaryTemplateStore = FakeSummaryTemplateStore(),
+        listServerModels: suspend () -> List<String> = { emptyList() }
+    ): SettingsViewModel = SettingsViewModel(repo, chatClient, modelStore, templates, listServerModels)
 
     @Test
     fun save_persistsFormAndApiKeyAndReloadReadsThemBack() {
@@ -175,6 +177,70 @@ class SettingsViewModelTest {
         assertFalse(s.testing)
         assertEquals(ConnectionTestResult.Connected(count = 2, models = listOf("m1", "m2")), s.testResult)
         assertEquals(listOf("m1", "m2"), s.availableModels)
+    }
+
+    @Test
+    fun save_persistsServerFieldsAndKey() {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        vm.update(SettingsForm(serverUrl = "https://asr.example.com/v1/", serverKey = "sk-asr", serverModel = "p"))
+
+        vm.save()
+
+        assertEquals("https://asr.example.com/v1", repo.settings.value.asrServerUrl)
+        assertEquals("p", repo.settings.value.asrServerModel)
+        assertEquals("sk-asr", repo.asrServerKey())
+        assertTrue(vm.state.value.serverConfigured)
+    }
+
+    @Test
+    fun testServer_listsModels() = runTest(dispatcher) {
+        val vm = newVm(listServerModels = { listOf("parakeet-tdt-0.6b-v3") })
+        vm.update(SettingsForm(serverUrl = "https://asr.example.com/v1"))
+
+        vm.testServer()
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.serverTesting)
+        assertEquals(
+            ConnectionTestResult.Connected(count = 1, models = listOf("parakeet-tdt-0.6b-v3")),
+            vm.state.value.serverTestResult
+        )
+        assertEquals(listOf("parakeet-tdt-0.6b-v3"), vm.state.value.serverModels)
+    }
+
+    @Test
+    fun testServer_failureShowsTheServerMessage() = runTest(dispatcher) {
+        val vm = newVm(listServerModels = { throw ServerAsrException("HTTP 401 from x: no") })
+        vm.update(SettingsForm(serverUrl = "https://asr.example.com/v1"))
+
+        vm.testServer()
+        advanceUntilIdle()
+
+        assertEquals(ConnectionTestResult.Failed("HTTP 401 from x: no"), vm.state.value.serverTestResult)
+    }
+
+    @Test
+    fun testServer_savesAndTestsAPlainHttpUrl() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo, listServerModels = { listOf("m") })
+        vm.update(SettingsForm(serverUrl = "http://parakeet-asr.asr:8000/v1"))
+
+        vm.testServer()
+        advanceUntilIdle()
+
+        assertEquals("http://parakeet-asr.asr:8000/v1", repo.settings.value.asrServerUrl)
+        assertEquals(ConnectionTestResult.Connected(count = 1, models = listOf("m")), vm.state.value.serverTestResult)
+    }
+
+    @Test
+    fun setServerAuto_writesImmediately() {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+
+        vm.setServerAuto(true)
+
+        assertTrue(repo.settings.value.asrServerAuto)
     }
 
     @Test

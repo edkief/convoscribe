@@ -4,9 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.asr.EngineInfo
+import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.StreamingTranscriber
+import com.convoscribe.asr.TimedToken
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.asr.server.ServerAsrException
 import com.convoscribe.audio.AudioDecoder
 import com.convoscribe.audio.AudioImportException
 import com.convoscribe.audio.PcmBlock
@@ -136,32 +139,53 @@ class ImportAudioUseCaseTest {
         override fun describe(language: String) = EngineInfo("cpu", "asr-$language")
     }
 
-    private fun useCase(decoder: AudioDecoder, factory: TranscriberFactory, language: String = "fr") =
-        ImportAudioUseCase(
+    private fun useCase(
+        decoder: AudioDecoder,
+        factory: TranscriberFactory,
+        language: String = "fr",
+        server: FileRecognizer? = null
+    ) = ImportAudioUseCase(
+        repository = repo,
+        transcriberFactory = factory,
+        diarize = DiarizeSessionUseCase(
             repository = repo,
-            transcriberFactory = factory,
-            diarize = DiarizeSessionUseCase(
-                repository = repo,
-                diarizerFactory = DiarizerFactory {
-                    object : Diarizer {
-                        override fun diarize(
-                            samples: FloatArray,
-                            numSpeakers: Int,
-                            threshold: Float,
-                            onProgress: (Float) -> Unit,
-                            isCancelled: () -> Boolean
-                        ) = listOf(SpeakerTurn(startMs = 0, endMs = 3_000, speaker = 0))
-                        override fun close() = Unit
-                    }
-                },
-                settings = settings
-            ),
-            decoder = decoder,
-            workDir = work,
-            defaultOptions = { ConversationOptions(language = language, numSpeakers = 2) },
-            asrDispatcher = Dispatchers.Unconfined,
-            ioDispatcher = Dispatchers.Unconfined
-        )
+            diarizerFactory = DiarizerFactory {
+                object : Diarizer {
+                    override fun diarize(
+                        samples: FloatArray,
+                        numSpeakers: Int,
+                        threshold: Float,
+                        onProgress: (Float) -> Unit,
+                        isCancelled: () -> Boolean
+                    ) = listOf(SpeakerTurn(startMs = 0, endMs = 3_000, speaker = 0))
+                    override fun close() = Unit
+                }
+            },
+            settings = settings
+        ),
+        decoder = decoder,
+        workDir = work,
+        defaultOptions = { ConversationOptions(language = language, numSpeakers = 2) },
+        asrDispatcher = Dispatchers.Unconfined,
+        ioDispatcher = Dispatchers.Unconfined,
+        server = server,
+        useServer = { server != null }
+    )
+
+    /** The transcription server (issue #58): one line, or [failure]. */
+    private class FakeServer(private val failure: Throwable? = null) : FileRecognizer {
+        var calls = 0
+        override suspend fun transcribe(
+            file: File,
+            language: String,
+            onProgress: (Float) -> Unit
+        ): List<TranscriptEvent.Final> {
+            calls++
+            failure?.let { throw it }
+            return listOf(TranscriptEvent.Final("A tone.", 1_000, 2_000, listOf(TimedToken(" A", 1_000))))
+        }
+        override fun describe() = EngineInfo("server", "parakeet")
+    }
 
     private fun source(name: String? = "voice-note.ogg", bytes: ByteArray = ByteArray(1_000) { it.toByte() }) =
         ImportSource(name, bytes.size.toLong()) { ByteArrayInputStream(bytes) }
@@ -206,6 +230,37 @@ class ImportAudioUseCaseTest {
         assertEquals(ImportState.Idle, uc.state.value)
         uc.consumeCreated()
         assertNull(uc.createdSessionId.value)
+    }
+
+    @Test
+    fun import_withTheServerOn_usesTheServer() = runTest {
+        val factory = factory { SoundTranscriber() }
+        val server = FakeServer()
+
+        val id = useCase(ToneDecoder(), factory, server = server).run(source())!!
+
+        assertEquals(1, server.calls)
+        assertTrue(factory.languages.isEmpty())
+        val session = repo.getSession(id)!!
+        assertEquals("server", session.asrEngine)
+        assertEquals("parakeet", session.asrModel)
+        assertEquals(listOf("A tone."), repo.getSegments(id).map { it.text })
+        assertEquals(SessionStatus.DIARIZED, session.status)
+    }
+
+    @Test
+    fun import_whenTheServerFails_transcribesOnTheDevice() = runTest {
+        val factory = factory { SoundTranscriber() }
+        val server = FakeServer(ServerAsrException("HTTP 503 from x: busy"))
+        val uc = useCase(ToneDecoder(), factory, server = server)
+
+        val id = uc.run(source())!!
+
+        assertEquals(1, server.calls)
+        assertEquals(listOf("fr"), factory.languages)
+        assertEquals("cpu", repo.getSession(id)!!.asrEngine)
+        assertEquals(listOf("tone"), repo.getSegments(id).map { it.text })
+        assertEquals(ImportState.Idle, uc.state.value)
     }
 
     @Test
