@@ -2,8 +2,10 @@ package com.convoscribe.recording
 
 import android.util.Log
 import com.convoscribe.TAG
+import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.FileTranscriber
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.asr.TranscriptEvent
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioCleaning
 import com.convoscribe.data.CleanedAudio
@@ -29,9 +31,15 @@ sealed interface RetranscribeState {
     /**
      * [sessionId]'s audio is being transcribed again; [progress] is
      * `0f..1f` over the whole run. [cleaning] is `true` while its
-     * audio is being cleaned first (issue #37).
+     * audio is being cleaned first (issue #37). [onServer] is `true`
+     * when the transcription server does the work (issue #58).
      */
-    data class Running(val sessionId: Long, val progress: Float, val cleaning: Boolean = false) : RetranscribeState
+    data class Running(
+        val sessionId: Long,
+        val progress: Float,
+        val cleaning: Boolean = false,
+        val onServer: Boolean = false
+    ) : RetranscribeState
 
     /** The last run for [sessionId] failed; the previous transcript was kept. */
     data class Failed(val sessionId: Long, val message: String) : RetranscribeState
@@ -61,13 +69,18 @@ sealed interface RetranscribeState {
  * A session already cleaned is transcribed from its cleaned
  * recording. Speakers are still identified from the original audio,
  * which enrolled voices were recorded like.
+ *
+ * With `onServer` (issue #58) the same audio goes to the transcription
+ * server ([server]) instead of [transcriberFactory], and the session
+ * records the server's engine and model.
  */
 class RetranscribeUseCase(
     private val repository: SessionRepository,
     private val transcriberFactory: TranscriberFactory,
     private val diarize: DiarizeSessionUseCase,
     private val asrDispatcher: CoroutineDispatcher = Dispatchers.Default,
-    private val cleanerFactory: AudioCleanerFactory? = null
+    private val cleanerFactory: AudioCleanerFactory? = null,
+    private val server: FileRecognizer? = null
 ) {
     private val _state = MutableStateFlow<RetranscribeState>(RetranscribeState.Idle)
     val state: StateFlow<RetranscribeState> = _state.asStateFlow()
@@ -76,15 +89,17 @@ class RetranscribeUseCase(
 
     /**
      * Re-transcribe [sessionId] in [language], cleaning its audio
-     * first when [clean] is set. Returns `true` when the
+     * first when [clean] is set, on the transcription server when
+     * [onServer] is set. Returns `true` when the
      * transcript was replaced (diarization then runs, or is left
      * pending, and reports through the session status as usual). Rethrows cancellation
      * after resetting [state].
      */
-    suspend fun run(sessionId: Long, language: String, clean: Boolean = false): Boolean {
-        _state.value = RetranscribeState.Running(sessionId, 0f, cleaning = clean)
+    suspend fun run(sessionId: Long, language: String, clean: Boolean = false, onServer: Boolean = false): Boolean {
+        _state.value = RetranscribeState.Running(sessionId, 0f, cleaning = clean, onServer = onServer)
         var work: File? = null
         try {
+            check(!onServer || server != null) { "The transcription server is not set up" }
             val session = repository.getSession(sessionId) ?: error("Session not found")
             check(session.status != SessionStatus.RECORDING && session.status != SessionStatus.DIARIZING) {
                 "The session is busy"
@@ -123,7 +138,7 @@ class RetranscribeUseCase(
                 if (source != null && mix != null) {
                     withContext(asrDispatcher) { AudioCleaning.writeRecognizerMix(original, source, mix) }
                 }
-                transcribe(language, mix ?: original, sessionId, transcribeFrom)
+                transcribe(language, mix ?: original, sessionId, transcribeFrom, onServer)
             } finally {
                 mix?.delete()
             }
@@ -136,10 +151,14 @@ class RetranscribeUseCase(
                     speakerIndex = dominantSpeaker(oldSegments, final.startMs, final.endMs)
                 )
             }
-            val engine = transcriberFactory.describe(language)
+            val engine = if (onServer) server!!.describe() else transcriberFactory.describe(language)
             repository.replaceTranscript(sessionId, language, pieces, engine.engine, engine.model, cleaned)
             work = null
-            Log.i(TAG, "re-transcribed session=$sessionId lang=$language lines=${pieces.size} cleaned=$clean")
+            Log.i(
+                TAG,
+                "re-transcribed session=$sessionId lang=$language lines=${pieces.size} cleaned=$clean " +
+                    "engine=${engine.engine}"
+            )
             _state.value = RetranscribeState.Idle
         } catch (ce: CancellationException) {
             work?.delete()
@@ -155,15 +174,27 @@ class RetranscribeUseCase(
         return true
     }
 
-    /** Transcribe [file], reporting progress from [from] to 1 of the whole run. */
-    private suspend fun transcribe(language: String, file: File, sessionId: Long, from: Float) =
-        withContext(asrDispatcher) {
+    /**
+     * Transcribe [file] on the device, or on the server when [onServer]
+     * is set, reporting progress from [from] to 1 of the whole run.
+     */
+    private suspend fun transcribe(
+        language: String,
+        file: File,
+        sessionId: Long,
+        from: Float,
+        onServer: Boolean
+    ): List<TranscriptEvent.Final> {
+        val report = { progress: Float ->
+            _state.value = RetranscribeState.Running(sessionId, from + progress * (1f - from), onServer = onServer)
+        }
+        if (onServer) return server!!.transcribe(file, language, report)
+        return withContext(asrDispatcher) {
             transcriberFactory.create(language).use { transcriber ->
-                FileTranscriber.transcribe(file, transcriber) { progress ->
-                    _state.value = RetranscribeState.Running(sessionId, from + progress * (1f - from))
-                }
+                FileTranscriber.transcribe(file, transcriber, onProgress = report)
             }
         }
+    }
 
     /** Clear a [RetranscribeState.Failed] once the screen has shown it. */
     fun acknowledgeFailure() {

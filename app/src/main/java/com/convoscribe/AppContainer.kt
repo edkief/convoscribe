@@ -373,7 +373,8 @@ class AppContainer(val context: Context) {
         repository = sessionRepository,
         transcriberFactory = transcriberFactory,
         diarize = diarizeSessionUseCase,
-        cleanerFactory = audioCleanerFactory
+        cleanerFactory = audioCleanerFactory,
+        server = serverTranscriber
     )
 
     /**

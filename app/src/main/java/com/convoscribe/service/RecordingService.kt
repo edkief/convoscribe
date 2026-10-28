@@ -150,7 +150,12 @@ class RecordingService : Service() {
                 val id = intent.getLongExtra(EXTRA_SESSION_ID, -1L)
                 val language = intent.getStringExtra(EXTRA_LANGUAGE)
                 if (id > 0L && language != null) {
-                    handleRetranscribe(id, language, intent.getBooleanExtra(EXTRA_CLEAN, false))
+                    handleRetranscribe(
+                        id,
+                        language,
+                        intent.getBooleanExtra(EXTRA_CLEAN, false),
+                        intent.getBooleanExtra(EXTRA_SERVER, false)
+                    )
                 } else if (idle()) {
                     stopSelf()
                 }
@@ -394,14 +399,14 @@ class RecordingService : Service() {
      * transcript is swapped in, the notification turns into the
      * "Identifying speakers…" one while speakers are identified.
      */
-    private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean) {
+    private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean, onServer: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
         if (!idle() || useCase.isRunning) return
         ensureNotificationChannel()
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildRetranscribeNotification(0f, cleaning = clean),
+            buildRetranscribeNotification(0f, cleaning = clean, onServer = onServer),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
         acquireWakeLock()
@@ -416,6 +421,7 @@ class RecordingService : Service() {
                         maybeRefreshRetranscribeNotification(
                             state.progress,
                             state.cleaning,
+                            onServer = state.onServer,
                             force = state.cleaning != lastCleaning
                         )
                         lastCleaning = state.cleaning
@@ -435,7 +441,7 @@ class RecordingService : Service() {
                 }
                 .launchIn(this)
             try {
-                useCase.run(sessionId, language, clean)
+                useCase.run(sessionId, language, clean, onServer)
             } finally {
                 progress.cancel()
                 retranscribeJob = null
@@ -575,19 +581,28 @@ class RecordingService : Service() {
         return builder.build()
     }
 
-    private fun maybeRefreshRetranscribeNotification(progress: Float, cleaning: Boolean, force: Boolean = false) {
+    private fun maybeRefreshRetranscribeNotification(
+        progress: Float,
+        cleaning: Boolean,
+        onServer: Boolean = false,
+        force: Boolean = false
+    ) {
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildRetranscribeNotification(progress, cleaning),
+            buildRetranscribeNotification(progress, cleaning, onServer),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
     }
 
-    private fun buildRetranscribeNotification(progress: Float, cleaning: Boolean = false): android.app.Notification {
+    private fun buildRetranscribeNotification(
+        progress: Float,
+        cleaning: Boolean = false,
+        onServer: Boolean = false
+    ): android.app.Notification {
         val contentIntent = PendingIntent.getActivity(
             this,
             REQUEST_OPEN,
@@ -605,7 +620,11 @@ class RecordingService : Service() {
         val percent = (progress * 100).toInt().coerceIn(0, 100)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(getString(R.string.notification_retranscribe_title))
+            .setContentTitle(
+                getString(
+                    if (onServer) R.string.notification_server_title else R.string.notification_retranscribe_title
+                )
+            )
             .setContentText(
                 getString(
                     if (cleaning) R.string.notification_cleanup_text else R.string.notification_retranscribe_text,
@@ -964,6 +983,9 @@ class RecordingService : Service() {
          */
         private const val EXTRA_LANGUAGE = "com.convoscribe.EXTRA_LANGUAGE"
         private const val EXTRA_CLEAN = "com.convoscribe.EXTRA_CLEAN"
+
+        /** Optional on [ACTION_RETRANSCRIBE]: transcribe on the transcription server (issue #58). */
+        private const val EXTRA_SERVER = "com.convoscribe.EXTRA_SERVER"
         private const val EXTRA_PARTICIPANTS = "com.convoscribe.EXTRA_PARTICIPANTS"
         private const val EXTRA_TITLE = "com.convoscribe.EXTRA_TITLE"
         private const val EXTRA_TAGS = "com.convoscribe.EXTRA_TAGS"
@@ -1015,12 +1037,18 @@ class RecordingService : Service() {
          * (*Clean up audio*, issue #37). Send it with
          * `startForegroundService`.
          */
-        fun retranscribeIntent(context: Context, sessionId: Long, language: String, clean: Boolean = false): Intent =
-            Intent(context, RecordingService::class.java)
-                .setAction(ACTION_RETRANSCRIBE)
-                .putExtra(EXTRA_SESSION_ID, sessionId)
-                .putExtra(EXTRA_LANGUAGE, language)
-                .putExtra(EXTRA_CLEAN, clean)
+        fun retranscribeIntent(
+            context: Context,
+            sessionId: Long,
+            language: String,
+            clean: Boolean = false,
+            onServer: Boolean = false
+        ): Intent = Intent(context, RecordingService::class.java)
+            .setAction(ACTION_RETRANSCRIBE)
+            .putExtra(EXTRA_SESSION_ID, sessionId)
+            .putExtra(EXTRA_LANGUAGE, language)
+            .putExtra(EXTRA_CLEAN, clean)
+            .putExtra(EXTRA_SERVER, onServer)
 
         /**
          * Build an [Intent] that imports [uri] as a new session, passing

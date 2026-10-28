@@ -48,6 +48,7 @@
     <string name="notification_recording_action_resume">Resume</string>
     <string name="notification_paused_title">Paused</string>
     <string name="notification_retranscribe_title">Re-transcribing</string>
+    <string name="notification_server_title">Transcribing on the server</string>
     <string name="notification_retranscribe_text">%1$d%% of the recording</string>
     <string name="notification_cleanup_text">Cleaning up audio, %1$d%%</string>
     <string name="notification_retranscribe_cancel">Cancel</string>
@@ -446,6 +447,9 @@
     <string name="session_overflow_participants">Participants…</string>
     <string name="session_overflow_retranscribe">Re-transcribe in another language…</string>
     <string name="session_retranscribe_title">Re-transcribe</string>
+    <string name="session_retranscribe_where">Transcribe:</string>
+    <string name="session_retranscribe_device">On this device</string>
+    <string name="session_retranscribe_server">On the transcription server</string>
     <string name="session_retranscribe_message">Transcribe the recording again in:</string>
     <string name="session_retranscribe_warning">The transcript is replaced and speakers are identified again; names you gave are kept where they match. An existing summary and questions were based on the old transcript; regenerate them afterwards.</string>
     <string name="session_retranscribe_confirm">Re-transcribe</string>
