@@ -56,7 +56,7 @@ class ConvoApp : Application() {
         // status and `recover()` would step on it.
         // Then the charging jobs are scheduled if a session waits for its
         // speakers (issue #11) or to be indexed for semantic search
-        // (issue #61); they also wait for recovery to finish.
+        // (issue #61); they also wait for recovery to finish, as does sync (issue #68).
         if (container.recordingController.state.value.phase == RecordingPhase.IDLE) {
             val recovery = SessionRecovery(container.sessionRepository)
             container.applicationScope.launch {
@@ -71,6 +71,8 @@ class ConvoApp : Application() {
                 container.pendingDiarizationScheduler.releaseIfUnplugged()
                 container.pendingDiarizationScheduler.sync()
                 container.semanticIndexScheduler.sync()
+                // Sessions changed while the process was not running (issue #68).
+                container.syncScheduler.sync()
             }
         } else {
             container.recoveryDone.complete(Unit)
