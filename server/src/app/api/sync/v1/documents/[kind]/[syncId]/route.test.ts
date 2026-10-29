@@ -47,7 +47,7 @@ const remove = (baseRevision: number, deletedDurationMs?: number) =>
 
 const feed = async (since = 0, limit = 100) =>
   (await changes(request(`/changes?since=${since}&limit=${limit}`))).json() as Promise<{
-    changes: { syncId: string; revision: number; seq: number; deleted: boolean }[];
+    changes: { kind: string; syncId: string; revision: number; seq: number; deleted: boolean }[];
     next: number;
     more: boolean;
   }>;
@@ -172,6 +172,32 @@ describe('documents', () => {
   it('answers 404 for an unknown document or kind', async () => {
     expect((await get()).status).toBe(404);
     expect((await GET(request(`/documents/nope/${ID}`), ctx({ kind: 'nope', syncId: ID }))).status).toBe(404);
+  });
+
+  it('keeps a library item apart from a session with the same id, most recent edit winning', async () => {
+    await push(manifest('Session'), 0);
+    const template = (name: string, changedAt: number, baseRevision: number) => {
+      const body = JSON.stringify({ schema: 1, syncId: ID, name, body: 'Bullets' });
+      const headers = {
+        'sync-base-revision': String(baseRevision),
+        'sync-manifest-hash': sha256(body),
+        'sync-duration-ms': '0',
+        'sync-changed-at': String(changedAt),
+      };
+      return PUT(request(`/documents/template/${ID}`, { method: 'PUT', body, headers }), ctx({ kind: 'template', syncId: ID }));
+    };
+    expect((await template('Weekly', 1, 0)).status).toBe(200);
+    expect((await template('Weekly (phone)', 3, 1)).status).toBe(200);
+    // From the same stale base, an older edit loses and a newer one wins.
+    expect((await template('Weekly (old)', 2, 1)).status).toBe(409);
+    expect((await template('Weekly (Boox)', 4, 1)).status).toBe(200);
+    const got = await GET(request(`/documents/template/${ID}`), ctx({ kind: 'template', syncId: ID }));
+    expect((await got.json()).name).toBe('Weekly (Boox)');
+    expect((await (await get()).json()).title).toBe('Session');
+    expect((await feed()).changes.map((c) => [c.kind, c.revision])).toEqual([
+      ['session', 1],
+      ['template', 3],
+    ]);
   });
 });
 
