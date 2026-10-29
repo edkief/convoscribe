@@ -183,7 +183,7 @@ class DiarizeSessionUseCase(
      */
     suspend fun runIfPending(sessionId: Long, onProgress: (Float) -> Unit = {}): Boolean = guarded(sessionId) {
         val session = repository.getSession(sessionId)
-        if (session?.status != SessionStatus.DIARIZATION_PENDING || !File(session.audioPath).isFile) {
+        if (session?.status != SessionStatus.DIARIZATION_PENDING || repository.audioDownloading(session.syncId)) {
             false
         } else {
             diarize(sessionId, onProgress, numSpeakers = null)

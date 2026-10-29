@@ -557,6 +557,10 @@ class SessionRepository(
 
     fun observeSession(id: Long): Flow<SessionEntity?> = sessionDao.observe(id)
 
+    /** Whether session [syncId]'s recording is still downloading from the sync server (issue #69). */
+    suspend fun audioDownloading(syncId: String): Boolean =
+        db.syncDao().state(SyncKinds.SESSION, syncId)?.audioSha != null
+
     /** Sync ids of sessions whose recording is still downloading from the sync server (issue #69). */
     fun observeAudioDownloading(): Flow<Set<String>> = db.syncDao().observeAudioPending().map { it.toSet() }
 
@@ -869,7 +873,8 @@ class SessionRepository(
     }
 
     /** Delete tag [tagId]; it disappears from its sessions (presets skip it too). */
-    suspend fun deleteTag(tagId: Long) = db.withTransaction {
+    suspend fun deleteTag(tagId: Long) {
+        // Manifests carry tag names, so every session with this tag changes.
         sessionDao.touchForTag(tagId, clock())
         tagDao.delete(tagId)
     }
