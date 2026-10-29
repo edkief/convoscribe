@@ -93,3 +93,11 @@ export async function authed(req: Request, handler: (owner: string) => Promise<R
   if (!owner) return unauthorized();
   return handle(() => handler(owner));
 }
+
+/** A required non-negative integer header, or a 400 naming it. */
+export function intHeader(req: Request, name: string): number {
+  const raw = req.headers.get(name);
+  const value = raw === null || raw.trim() === '' ? NaN : Number(raw);
+  if (!Number.isSafeInteger(value) || value < 0) throw new HttpError(400, 'invalid_header', { header: name });
+  return value;
+}

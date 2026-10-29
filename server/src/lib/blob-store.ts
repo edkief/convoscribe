@@ -50,8 +50,8 @@ export const blobKeys = {
   blob: (owner: string, sha256: string) => `users/${encodeURIComponent(owner)}/blobs/${sha256}`,
   /** Where an upload is assembled until its hash is checked. */
   staging: (owner: string, uploadId: string) => `users/${encodeURIComponent(owner)}/uploads/${uploadId}`,
-  manifest: (owner: string, kind: string, syncId: string, revision: number) =>
-    `users/${encodeURIComponent(owner)}/docs/${kind}/${syncId}/${revision}.json.gz`,
+  manifest: (owner: string, kind: string, syncId: string, manifestHash: string) =>
+    `users/${encodeURIComponent(owner)}/docs/${kind}/${syncId}/${manifestHash}.json.gz`,
 };
 
 const rangeHeader = (range?: ByteRange) => (range ? `bytes=${range.start}-${range.end}` : undefined);
