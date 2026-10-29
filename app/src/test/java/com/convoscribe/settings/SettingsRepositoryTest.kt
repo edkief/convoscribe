@@ -460,6 +460,25 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun semanticIndexMode_defaultsToChargingAndPersists() {
+        val repo = newRepository()
+        assertEquals("charging", repo.settings.value.semanticIndexMode)
+        repo.update { it.copy(semanticIndexMode = "anytime") }
+        assertEquals("anytime", newRepository().settings.value.semanticIndexMode)
+    }
+
+    @Test
+    fun semanticIndexMode_unknownValueKeepsPrevious_andUnknownStoredLoadsAsCharging() {
+        val repo = newRepository()
+        repo.update { it.copy(semanticIndexMode = "anytime") }
+        repo.update { it.copy(semanticIndexMode = "sometimes") }
+        assertEquals("anytime", repo.settings.value.semanticIndexMode)
+
+        prefs.edit().putString(SettingsRepository.KEY_SEMANTIC_INDEX_MODE, "sometimes").apply()
+        assertEquals("charging", newRepository().settings.value.semanticIndexMode)
+    }
+
+    @Test
     fun floatingShape_isUnsetUntilChosenThenPersists() {
         val repo = newRepository()
         assertNull(repo.settings.value.floatingShape)

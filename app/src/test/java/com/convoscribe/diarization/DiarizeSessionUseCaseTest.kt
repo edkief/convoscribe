@@ -18,6 +18,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
@@ -827,14 +828,16 @@ class DiarizeSessionUseCaseTest {
             ScriptedDiarizer(listOf(SpeakerTurn(0L, 1000L, 0), SpeakerTurn(1000L, 2000L, 1)))
         ),
         charging: Boolean = false,
-        pendingCalls: AtomicInteger = AtomicInteger()
+        pendingCalls: AtomicInteger = AtomicInteger(),
+        cancelledCalls: AtomicInteger = AtomicInteger()
     ) = DiarizeSessionUseCase(
         repository = repo,
         diarizerFactory = factory,
         settings = settings,
         readSamples = { FloatArray(16_000) },
         isCharging = { charging },
-        onPending = { pendingCalls.incrementAndGet() }
+        onPending = { pendingCalls.incrementAndGet() },
+        onCancelled = { cancelledCalls.incrementAndGet() }
     )
 
     /** Automatically (the default) diarizes at once, charging or not (issue #11). */
@@ -883,6 +886,81 @@ class DiarizeSessionUseCaseTest {
         assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
     }
 
+    /** A diarizer that waits until it is cancelled, saying when it started. */
+    private class BlockingDiarizer : Diarizer {
+        val started = CompletableDeferred<Unit>()
+        val sawCancel = AtomicBoolean(false)
+
+        override fun diarize(
+            samples: FloatArray,
+            numSpeakers: Int,
+            threshold: Float,
+            onProgress: (Float) -> Unit,
+            isCancelled: () -> Boolean
+        ): List<SpeakerTurn> {
+            started.complete(Unit)
+            while (!isCancelled()) Thread.sleep(5)
+            sawCancel.set(true)
+            return emptyList()
+        }
+
+        override fun close() = Unit
+    }
+
+    /**
+     * Cancel (issue #64) stops the engine, leaves the session pending
+     * with its transcript, tells [DiarizeSessionUseCase] callers through
+     * onCancelled, and returns instead of throwing so the caller's
+     * clean-up still runs.
+     */
+    @Test
+    fun cancel_stopsTheRun_leavesItPending_andReturns() = runBlocking {
+        val id = twoLineSession()
+        val diarizer = BlockingDiarizer()
+        val pending = AtomicInteger()
+        val cancelled = AtomicInteger()
+        val useCase = twoSpeakerUseCase(
+            ScriptedDiarizerFactory(diarizer),
+            pendingCalls = pending,
+            cancelledCalls = cancelled
+        )
+        assertFalse(useCase.cancel())
+
+        var returned = false
+        val job = launch(Dispatchers.Default) {
+            useCase.run(id)
+            returned = true
+        }
+        diarizer.started.await()
+        assertTrue(useCase.cancel())
+        job.join()
+
+        assertTrue(returned)
+        assertFalse(job.isCancelled)
+        assertTrue(diarizer.sawCancel.get())
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        assertEquals(listOf("first", "second"), repo.getSegments(id).map { it.text })
+        assertEquals(1, pending.get())
+        assertEquals(1, cancelled.get())
+        assertFalse(useCase.cancel())
+    }
+
+    /** The charging job's run, cancelled by the user, reports it did not identify the speakers. */
+    @Test
+    fun cancel_duringRunIfPending_returnsFalse() = runBlocking {
+        val id = twoLineSession()
+        val diarizer = BlockingDiarizer()
+        val useCase = twoSpeakerUseCase(ScriptedDiarizerFactory(diarizer))
+        useCase.defer(id)
+
+        val result = async(Dispatchers.Default) { useCase.runIfPending(id) }
+        diarizer.started.await()
+        useCase.cancel()
+
+        assertFalse(result.await())
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+    }
+
     /**
      * Cancelling a run (the charger unplugged) stops the engine at its
      * next progress step and leaves the session pending, not failed or
@@ -910,7 +988,12 @@ class DiarizeSessionUseCaseTest {
             override fun close() = Unit
         }
         val pending = AtomicInteger()
-        val useCase = twoSpeakerUseCase(ScriptedDiarizerFactory(blocking), pendingCalls = pending)
+        val cancelled = AtomicInteger()
+        val useCase = twoSpeakerUseCase(
+            ScriptedDiarizerFactory(blocking),
+            pendingCalls = pending,
+            cancelledCalls = cancelled
+        )
 
         val job = launch(Dispatchers.Default) { useCase.run(id) }
         started.await()
@@ -920,6 +1003,8 @@ class DiarizeSessionUseCaseTest {
         assertTrue(sawCancel.get())
         assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
         assertEquals(1, pending.get())
+        // Not the user's cancel: the charging job is not held.
+        assertEquals(0, cancelled.get())
     }
 
     /** The charging job's entry point leaves alone a session that is no longer pending. */

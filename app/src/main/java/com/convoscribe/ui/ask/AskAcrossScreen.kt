@@ -40,6 +40,7 @@ import com.convoscribe.data.MessageRole
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.llm.Citation
 import com.convoscribe.llm.embedding.SemanticSearch
+import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
@@ -51,6 +52,7 @@ import com.convoscribe.ui.session.AskNotConfigured
 import com.convoscribe.ui.session.ChatBubble
 import com.convoscribe.ui.session.StreamPacer
 import com.convoscribe.ui.sessionRoute
+import com.convoscribe.ui.settings.semanticIndexWhen
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -79,8 +81,10 @@ fun AskAcrossScreen(navController: NavHostController) {
         }
     )
     val state by vm.state.collectAsStateWithLifecycle()
+    val settings by container.settingsRepository.settings.collectAsStateWithLifecycle()
     AskAcrossBody(
         state = state,
+        indexMode = settings.semanticIndexMode,
         onAsk = vm::ask,
         onRetry = vm::retryLast,
         onCancel = vm::cancel,
@@ -105,11 +109,13 @@ fun AskAcrossScreen(navController: NavHostController) {
  * notes how many excerpts from how many sessions it was based on and
  * lists its citations; *Clear history* is in the overflow menu. While
  * some sessions within the filters are not indexed for semantic search
- * yet (issue #61), a line under the filters says so.
+ * yet (issue #61), a line under the filters says so, and when they get
+ * indexed under [indexMode] (issue #65).
  */
 @Composable
 internal fun AskAcrossBody(
     state: AskAcrossUiState,
+    indexMode: String = SemanticIndexMode.CHARGING.key,
     onAsk: (String) -> Unit,
     onRetry: () -> Unit,
     onCancel: () -> Unit,
@@ -175,7 +181,8 @@ internal fun AskAcrossBody(
             }
             if (state.unindexed > 0) {
                 SupportingText(
-                    text = pluralStringResource(R.plurals.ask_across_unindexed, state.unindexed, state.unindexed),
+                    text = pluralStringResource(R.plurals.ask_across_unindexed, state.unindexed, state.unindexed) +
+                        " " + stringResource(semanticIndexWhen(indexMode)),
                     modifier = Modifier
                         .widthIn(max = AppTheme.sizes.contentMaxWidth)
                         .padding(horizontal = spacing.screen)

@@ -87,8 +87,11 @@ class PendingDiarizationRunnerTest {
         return id
     }
 
-    private fun runner(awaitRecovery: suspend () -> Unit = {}, busy: () -> Boolean = { false }) =
-        PendingDiarizationRunner(repo, useCase, settings, awaitRecovery, busy)
+    private fun runner(
+        awaitRecovery: suspend () -> Unit = {},
+        busy: () -> Boolean = { false },
+        held: () -> Boolean = { false }
+    ) = PendingDiarizationRunner(repo, useCase, settings, awaitRecovery, busy, held)
 
     @Test
     fun run_identifiesEveryPendingSessionOldestFirst() = runTest {
@@ -124,6 +127,16 @@ class PendingDiarizationRunnerTest {
 
         assertEquals(PendingDiarizationRunner.Outcome.BUSY, runner(busy = { true }).run())
 
+        assertTrue(diarized.isEmpty())
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+    }
+
+    /** After the user cancelled a run on this charge (issue #64), nothing runs until the next one. */
+    @Test
+    fun run_heldUntilTheNextCharge_identifiesNothing() = runTest {
+        val id = pendingSession(tag = 2)
+
+        assertEquals(PendingDiarizationRunner.Outcome.HELD, runner(held = { true }).run())
         assertTrue(diarized.isEmpty())
         assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
     }

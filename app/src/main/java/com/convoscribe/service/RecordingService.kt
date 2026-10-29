@@ -168,6 +168,11 @@ class RecordingService : Service() {
                     stopSelf()
                 }
             }
+            ACTION_CANCEL_DIARIZE -> {
+                // The run returns once stopped; its own clean-up leaves
+                // the foreground (issue #64).
+                if (!diarizerUseCase().cancel() && idle()) stopSelf()
+            }
             ACTION_IMPORT -> {
                 val uri = intent.data
                 if (uri != null) {
@@ -619,6 +624,9 @@ class RecordingService : Service() {
                     cancelIntent
                 ).build()
             )
+        } else {
+            // The session exists: only its speaker identification can stop.
+            builder.addAction(cancelDiarizeAction())
         }
         return builder.build()
     }
@@ -894,8 +902,21 @@ class RecordingService : Service() {
             .setOnlyAlertOnce(true)
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .addAction(cancelDiarizeAction())
             .build()
     }
+
+    /** *Cancel* for a speaker identification in progress (issue #64); the session goes back to pending. */
+    private fun cancelDiarizeAction(): NotificationCompat.Action = NotificationCompat.Action.Builder(
+        R.drawable.ic_launcher_foreground,
+        getString(R.string.notification_diarizing_cancel),
+        PendingIntent.getService(
+            this,
+            REQUEST_CANCEL_DIARIZE,
+            cancelDiarizeIntent(this),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+    ).build()
 
     companion object {
         /** Create the `Recording` notification channel if it does not exist yet. */
@@ -950,6 +971,9 @@ class RecordingService : Service() {
         /** `requestCode` for the mark pending intent. */
         private const val REQUEST_MARK = 1007
 
+        /** `requestCode` for the cancel-speaker-identification pending intent. */
+        private const val REQUEST_CANCEL_DIARIZE = 1008
+
         /** Upper bound on the wake-lock acquired for one session. */
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
@@ -1001,6 +1025,9 @@ class RecordingService : Service() {
 
         /** Action to cancel a running [ACTION_RETRANSCRIBE]; the old transcript is kept. */
         const val ACTION_CANCEL_RETRANSCRIBE = "com.convoscribe.CANCEL_RETRANSCRIBE"
+
+        /** Action to cancel the speaker identification in progress; the session goes back to pending (issue #64). */
+        const val ACTION_CANCEL_DIARIZE = "com.convoscribe.CANCEL_DIARIZE"
 
         /**
          * Long extra key for the session id: required by
@@ -1109,6 +1136,10 @@ class RecordingService : Service() {
         /** Build an [Intent] that cancels a running re-transcription; plain `startService`. */
         fun cancelRetranscribeIntent(context: Context): Intent =
             Intent(context, RecordingService::class.java).setAction(ACTION_CANCEL_RETRANSCRIBE)
+
+        /** Build an [Intent] that cancels the speaker identification in progress; plain `startService`. */
+        fun cancelDiarizeIntent(context: Context): Intent =
+            Intent(context, RecordingService::class.java).setAction(ACTION_CANCEL_DIARIZE)
 
         /**
          * Build an [Intent] that, when sent to [RecordingService],

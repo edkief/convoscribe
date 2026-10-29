@@ -60,6 +60,7 @@
     <string name="import_step_identifying">Identifying speakers… %1$d%%</string>
     <string name="notification_diarizing_title">Identifying speakers</string>
     <string name="notification_diarizing_text">Identifying speakers…</string>
+    <string name="notification_diarizing_cancel">Cancel</string>
     <string name="notification_speakers_pending_title">Speakers not identified yet</string>
     <string name="notification_speakers_pending_text">This session is too long to identify speakers in the background. Open ConvoScribe and tap Identify speakers now.</string>
     <string name="notification_channel_downloads">Downloads</string>
@@ -443,6 +444,7 @@
     <string name="session_tab_summary">Summary</string>
     <string name="session_tab_ask">Ask</string>
     <string name="session_status_diarizing">Identifying speakers…</string>
+    <string name="session_cancel_identify">Cancel</string>
     <string name="session_status_diarization_failed">Speaker detection failed</string>
     <string name="session_status_pending">Speakers not identified yet</string>
     <string name="session_status_pending_charger">Waiting for the charger</string>
@@ -484,6 +486,9 @@
     <string name="session_info_speaker_id_value">%1$s, %2$s s step, took %3$s</string>
     <string name="session_info_speaker_id_value_rtf">%1$s, %2$s s step, took %3$s (%4$.3f × real time)</string>
     <string name="session_overflow_cleanup">Clean up audio</string>
+    <string name="session_overflow_semantic_index">Index for semantic search</string>
+    <string name="session_overflow_semantic_indexing">Indexing for semantic search…</string>
+    <string name="session_semantic_index_busy">Busy with another task. Try indexing again once it is done.</string>
     <string name="session_overflow_remove_cleanup">Remove cleaning</string>
     <string name="session_cleanup_title">Clean up audio</string>
     <string name="session_cleanup_message">Reduce background noise in this recording, then transcribe it again from the cleaned audio. The original recording is kept, and you can switch between them in the player. Speakers are identified again; names you gave are kept where they match.</string>
@@ -593,8 +598,8 @@
     <string name="ask_across_based_on_nothing">No session matched the question and filters</string>
     <string name="ask_across_matched_by_meaning">%1$s · matched by meaning</string>
     <plurals name="ask_across_unindexed">
-        <item quantity="one">%1$d session is not indexed for semantic search yet, so it is matched by words only. Indexing runs while the device is charging.</item>
-        <item quantity="other">%1$d sessions are not indexed for semantic search yet, so they are matched by words only. Indexing runs while the device is charging.</item>
+        <item quantity="one">%1$d session is not indexed for semantic search yet, so it is matched by words only.</item>
+        <item quantity="other">%1$d sessions are not indexed for semantic search yet, so they are matched by words only.</item>
     </plurals>
     <string name="ask_across_session_deleted">Session deleted · %1$s</string>
     <string name="ask_across_clear">Clear history</string>
@@ -612,7 +617,13 @@
     <string name="settings_semantic_help">Lets Ask across sessions find what was said in other words or in the other language, such as “budget” for “how much can we spend”. Runs on this device; the model is about %1$.0f MB.</string>
     <string name="settings_semantic_download">Download the semantic search model (%1$.0f MB)</string>
     <string name="settings_semantic_downloading">Downloading the semantic search model…</string>
-    <string name="settings_semantic_status">%1$d of %2$d sessions indexed. Indexing runs while the device is charging.</string>
+    <string name="settings_semantic_status">%1$d of %2$d sessions indexed.</string>
+    <string name="semantic_index_when_charging">Indexing runs while the device is charging.</string>
+    <string name="semantic_index_when_any_time">Indexing runs in the background whenever the battery is not low.</string>
+    <string name="settings_semantic_index_mode_label">Index sessions</string>
+    <string name="settings_semantic_index_mode_charging">While charging</string>
+    <string name="settings_semantic_index_mode_any_time">Any time</string>
+    <string name="settings_semantic_index_now">Index now</string>
     <string name="settings_semantic_delete">Delete the semantic search model</string>
     <string name="settings_semantic_licence">Uses Google’s EmbeddingGemma, under the Gemma Terms of Use (ai.google.dev/gemma/terms).</string>
     <string name="settings_cleanup_help">Reduces background noise before transcription, for recordings made in noisy places. The original recording is always kept.</string>

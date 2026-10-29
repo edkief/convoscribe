@@ -45,6 +45,9 @@ import com.convoscribe.llm.SummaryTemplates
  * `"manual"`): when speakers are identified after a transcript is done
  * (issue #11).
  *
+ * [semanticIndexMode] is a [SemanticIndexMode.key] (`"charging"` or
+ * `"anytime"`): when sessions are indexed for semantic search (issue #65).
+ *
  * [defaultSummaryTemplate] is the summary template key a new
  * conversation starts with (issue #27, see
  * [com.convoscribe.llm.SummaryTemplates]); a key whose user template
@@ -100,6 +103,7 @@ data class AppSettings(
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    val semanticIndexMode: String = SemanticIndexMode.CHARGING.key,
     val diarizationEmbedding: String = DEFAULT_DIARIZATION_EMBEDDING,
     val diarizationStepSeconds: Float = DEFAULT_DIARIZATION_STEP_SECONDS,
     val defaultParticipants: List<String>? = null,

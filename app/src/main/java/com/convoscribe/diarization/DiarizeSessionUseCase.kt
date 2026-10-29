@@ -21,6 +21,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
@@ -68,6 +70,10 @@ import kotlinx.coroutines.withContext
  * [SessionStatus.DIARIZATION_PENDING], unless it already had a result,
  * and rethrows. The engine is asked to stop at its next progress step.
  *
+ * [cancel] stops the run in progress for the user (issue #64): the
+ * session is left pending the same way, [onCancelled] is called, and
+ * the run returns instead of throwing so its caller finishes cleanly.
+ *
  * Any other throwable is swallowed: the
  * session status is moved to [SessionStatus.DIARIZATION_FAILED]
  * and the exception is logged with `Log.w` so the recording
@@ -106,6 +112,9 @@ import kotlinx.coroutines.withContext
  *   were identified, so the notes of its marks can be written with
  *   their names (issue #48). It must only start that work, not wait
  *   for it.
+ * @property onCancelled called when the user cancelled a run
+ *   ([cancel]), before the session is pending again, so the charging
+ *   job is held until the next charge.
  */
 class DiarizeSessionUseCase(
     private val repository: SessionRepository,
@@ -118,9 +127,24 @@ class DiarizeSessionUseCase(
     private val readSamples: (File) -> FloatArray = WavReader::readMono16k,
     private val isCharging: () -> Boolean = { true },
     private val onPending: () -> Unit = {},
-    private val onDiarized: (Long) -> Unit = {}
+    private val onDiarized: (Long) -> Unit = {},
+    private val onCancelled: () -> Unit = {}
 ) {
     private val lock = Mutex()
+
+    /** The run holding the engine, so [cancel] can stop it. */
+    @Volatile
+    private var current: Job? = null
+
+    /**
+     * Stop the run in progress, if any (issue #64); `false` when none
+     * runs. Its session goes back to pending and the run returns.
+     */
+    fun cancel(): Boolean {
+        val run = current ?: return false
+        run.cancel()
+        return true
+    }
 
     /**
      * Whether a transcript finished now should be diarized straight
@@ -163,7 +187,7 @@ class DiarizeSessionUseCase(
             diarize(sessionId, onProgress, numSpeakers = null)
             true
         }
-    }
+    } ?: false
 
     /**
      * Diarize the session identified by [sessionId]. [onProgress] is
@@ -207,22 +231,37 @@ class DiarizeSessionUseCase(
     }
 
     /**
-     * Run [block] holding the engine [lock]. On cancellation, while
-     * waiting or running, the session goes back to pending unless it
-     * already has a result, and [onPending] is called.
+     * Run [block] holding the engine [lock], as the [current] run. On
+     * cancellation, while waiting or running, the session goes back to
+     * pending unless it already has a result, and [onPending] is
+     * called. A [cancel] by the user returns `null`; a cancelled
+     * caller still gets the exception.
      */
-    private suspend fun <T> guarded(sessionId: Long, block: suspend () -> T): T = try {
-        lock.withLock { block() }
+    private suspend fun <T> guarded(sessionId: Long, block: suspend () -> T): T? = try {
+        lock.withLock {
+            coroutineScope {
+                val run = async { block() }
+                current = run
+                try {
+                    run.await()
+                } finally {
+                    current = null
+                }
+            }
+        }
     } catch (ce: CancellationException) {
+        val byUser = currentCoroutineContext().isActive
         withContext(NonCancellable) {
+            if (byUser) onCancelled()
             val status = repository.getSession(sessionId)?.status
             if (status in INTERRUPTIBLE) {
                 repository.setStatus(sessionId, SessionStatus.DIARIZATION_PENDING)
-                Log.i(TAG, "diarization interrupted session=$sessionId; pending again")
+                Log.i(TAG, "diarization interrupted session=$sessionId byUser=$byUser; pending again")
                 onPending()
             }
         }
-        throw ce
+        if (!byUser) throw ce
+        null
     }
 
     private suspend fun diarize(sessionId: Long, onProgress: (Float) -> Unit, numSpeakers: Int?) {

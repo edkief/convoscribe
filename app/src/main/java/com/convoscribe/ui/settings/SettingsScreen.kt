@@ -3,6 +3,7 @@ package com.convoscribe.ui.settings
 import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -75,6 +76,7 @@ import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DIARIZATION_STEPS_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.FloatingShape
+import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.settings.isUnencryptedUrl
 import com.convoscribe.ui.components.ChoiceGroup
@@ -288,6 +290,8 @@ fun SettingsScreen(navController: NavHostController) {
                 )
             },
             onDeleteSemantic = vm::deleteSemanticModel,
+            onSemanticIndexModeChange = vm::setSemanticIndexMode,
+            onIndexSemanticNow = container.semanticIndexScheduler::indexNow,
             onDiarizationEmbeddingChange = vm::setDiarizationEmbedding,
             onDownloadVoiceModel = {
                 ContextCompat.startForegroundService(
@@ -331,6 +335,8 @@ internal class SettingsActions(
     val onDeleteCleanup: () -> Unit = {},
     val onDownloadSemantic: () -> Unit = {},
     val onDeleteSemantic: () -> Unit = {},
+    val onSemanticIndexModeChange: (String) -> Unit = {},
+    val onIndexSemanticNow: () -> Unit = {},
     val onDiarizationEmbeddingChange: (String) -> Unit = {},
     val onDownloadVoiceModel: () -> Unit = {},
     val onDiarizationStepChange: (Float) -> Unit = {},
@@ -425,7 +431,10 @@ internal fun SettingsBody(
                 downloading = semanticDownloading,
                 progress = state.semanticProgress,
                 onDownload = actions.onDownloadSemantic,
-                onDelete = actions.onDeleteSemantic
+                onDelete = actions.onDeleteSemantic,
+                indexMode = state.semanticIndexMode,
+                onIndexModeChange = actions.onSemanticIndexModeChange,
+                onIndexNow = actions.onIndexSemanticNow
             )
             OrganiseSection(onOpenTags = actions.onOpenTags, onOpenPresets = actions.onOpenPresets)
             TranscriptionSection(
@@ -604,6 +613,18 @@ private val SPEAKER_ID_MODES = listOf(
     SpeakerIdMode.AUTO to R.string.settings_speakers_id_mode_auto,
     SpeakerIdMode.CHARGING to R.string.settings_speakers_id_mode_charging,
     SpeakerIdMode.MANUAL to R.string.settings_speakers_id_mode_manual
+)
+
+/** The sentence saying when sessions get indexed for semantic search under [mode] (issue #65). */
+@StringRes
+internal fun semanticIndexWhen(mode: String): Int = when (SemanticIndexMode.of(mode)) {
+    SemanticIndexMode.CHARGING -> R.string.semantic_index_when_charging
+    SemanticIndexMode.ANY_TIME -> R.string.semantic_index_when_any_time
+}
+
+private val SEMANTIC_INDEX_MODES = listOf(
+    SemanticIndexMode.CHARGING to R.string.settings_semantic_index_mode_charging,
+    SemanticIndexMode.ANY_TIME to R.string.settings_semantic_index_mode_any_time
 )
 
 private val DISPLAY_MODES = listOf(
@@ -1093,7 +1114,10 @@ internal fun SemanticSearchSection(
     downloading: Boolean,
     progress: IndexProgress,
     onDownload: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    indexMode: String = SemanticIndexMode.CHARGING.key,
+    onIndexModeChange: (String) -> Unit = {},
+    onIndexNow: () -> Unit = {}
 ) {
     val megabytes = ModelCatalog.TEXT_EMBEDDING_GEMMA.totalBytes.toFloat() / 1_000_000f
     SectionCard(
@@ -1110,9 +1134,22 @@ internal fun SemanticSearchSection(
                 NoticeText(text = stringResource(R.string.settings_semantic_downloading))
             }
             installed -> {
-                SupportingText(
-                    text = stringResource(R.string.settings_semantic_status, progress.indexed, progress.total)
+                FieldLabel(text = stringResource(R.string.settings_semantic_index_mode_label))
+                ChoiceGroup(
+                    options = SEMANTIC_INDEX_MODES.map { (mode, label) -> mode.key to stringResource(label) },
+                    selected = SemanticIndexMode.of(indexMode).key,
+                    onSelect = onIndexModeChange
                 )
+                SupportingText(
+                    text = stringResource(R.string.settings_semantic_status, progress.indexed, progress.total) +
+                        " " + stringResource(semanticIndexWhen(indexMode))
+                )
+                // Index the waiting sessions without the charger (issue #65).
+                if (progress.indexed < progress.total) {
+                    OutlinedButton(onClick = onIndexNow) {
+                        Text(text = stringResource(R.string.settings_semantic_index_now))
+                    }
+                }
                 TextButton(onClick = onDelete) {
                     Text(text = stringResource(R.string.settings_semantic_delete))
                 }
