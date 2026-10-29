@@ -1,0 +1,41 @@
+# Local development: Postgres and MinIO (S3-compatible) on their usual ports.
+# `docker compose up -d`, then `pnpm dev` with .env.example copied to .env.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: convoscribe
+      POSTGRES_PASSWORD: convoscribe
+      POSTGRES_DB: convoscribe
+    ports: ['5432:5432']
+    volumes: [postgres:/var/lib/postgresql/data]
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U convoscribe']
+      interval: 2s
+      retries: 30
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: convoscribe
+      MINIO_ROOT_PASSWORD: convoscribe-secret
+    ports: ['9000:9000', '9001:9001']
+    volumes: [minio:/data]
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 2s
+      retries: 30
+
+  # Creates the bucket once MinIO is up, then exits.
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio: { condition: service_healthy }
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 convoscribe convoscribe-secret
+      && mc mb --ignore-existing local/convoscribe"
+
+volumes:
+  postgres:
+  minio:

@@ -1,7 +1,15 @@
 # Tekton build config (k8s-home: tekton/pipelines/README.md). This repo
-# builds no images on push; a vX.Y.Z tag (pushed by `release.sh prepare`)
-# runs `release.sh publish` in the Android builder image.
+# builds no images on branch pushes. Two release tracks, each on its own tags:
+# - vX.Y.Z (pushed by `release.sh prepare`) runs `release.sh publish` in the
+#   Android builder image.
+# - server-vX.Y.Z builds the sync server image from server/. Tekton tags it
+#   git-<sha> and latest, not X.Y.Z.
 version: 1
+builds:
+  - name: server
+    context: server
+    dockerfile: server/Dockerfile
+    git_tags: ['^server-v[0-9]+\.[0-9]+\.[0-9]+$']
 scripts:
   - name: release
     # After a toolchain or sherpa pin change, rebuild with

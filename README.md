@@ -343,7 +343,7 @@ OpenAI-compatible endpoint for summaries and questions about the session.
 ## Build
 
 ```bash
-bash scripts/setup-toolchain.sh   # one-time, installs JDK, SDK, NDK and builds the sherpa-onnx native libs
+bash scripts/setup-toolchain.sh   # one-time, installs JDK, SDK, NDK, Node.js and builds the sherpa-onnx native libs
 source scripts/env.sh
 ./gradlew ktlintCheck testDebugUnitTest lintDebug assembleDebug
 ```
@@ -402,6 +402,10 @@ first; pushing the tag makes Tekton run the second.
    `assembleRelease`, and runs `gh release create` with
    `convoscribe-X.Y.Z.apk` and its `.sha256`. It does nothing if the
    release already exists, so re-running the pipeline is safe.
+
+The release notes leave out commits that only touch `server/`. The sync
+server releases on its own `server-vX.Y.Z` tags; see
+[`server/README.md`](server/README.md#release).
 
 Release builds are signed with the shared `app/debug.keystore` for now,
 so they upgrade in place over debug installs (a dedicated release key is
@@ -701,6 +705,15 @@ CONVOSCRIBE_ASR_SAMPLE_WAV=/path/to/16k-speech.wav \
 ./gradlew :app:testDebugUnitTest --tests '*ServerTranscriberLiveTest'
 ```
 
+## Sync server
+
+[`server/`](server/README.md) holds the self-hosted sync server (#67), a
+Next.js app with Postgres and S3-compatible storage. It sits beside the
+Android project with its own gate (`bash scripts/server-gate.sh`), container
+image and `server-vX.Y.Z` releases. Its README covers development,
+configuration and deployment. The app doesn't sync yet; for now the server
+only answers `GET /api/sync/v1/whoami` for a device's key (#71).
+
 ## Model licences
 
 Every model bundled by the on-device ASR / diarization pipeline
@@ -794,6 +807,7 @@ over the AAR's. Run it again after rebuilding sherpa-onnx.
 ```bash
 source scripts/env.sh
 ./gradlew ktlintCheck testDebugUnitTest lintDebug assembleDebug
+bash scripts/server-gate.sh   # the sync server in server/: lint, typecheck, vitest
 ```
 
 To measure speaker attribution on real recordings, and to tune the
