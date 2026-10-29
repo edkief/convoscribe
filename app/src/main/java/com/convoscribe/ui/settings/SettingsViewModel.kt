@@ -21,6 +21,7 @@ import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
+import com.convoscribe.sync.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -55,7 +56,10 @@ data class SettingsForm(
     /** Transcription server (issue #58): base URL, API key and model, saved by Save like the LLM's. */
     val serverUrl: String = "",
     val serverKey: String = "",
-    val serverModel: String = ""
+    val serverModel: String = "",
+    /** Sync server (issue #68): address and API key, saved by Save. */
+    val syncUrl: String = "",
+    val syncKey: String = ""
 ) {
     /**
      * Build a [SettingsForm] from a persisted [AppSettings]. The
@@ -64,19 +68,22 @@ data class SettingsForm(
      * pre-filled here for editing.
      */
     companion object {
-        fun from(settings: AppSettings, apiKey: String, serverKey: String = ""): SettingsForm = SettingsForm(
-            baseUrl = settings.llmBaseUrl,
-            apiKey = apiKey,
-            serverUrl = settings.asrServerUrl,
-            serverKey = serverKey,
-            serverModel = settings.asrServerModel,
-            model = settings.llmModel,
-            maxChars = settings.maxTranscriptChars.toString(),
-            numThreads = settings.numThreads,
-            numSpeakers = settings.numSpeakers,
-            clusterThreshold = settings.clusterThreshold,
-            speakerMatchThreshold = settings.speakerMatchThreshold
-        )
+        fun from(settings: AppSettings, apiKey: String, serverKey: String = "", syncKey: String = ""): SettingsForm =
+            SettingsForm(
+                baseUrl = settings.llmBaseUrl,
+                apiKey = apiKey,
+                serverUrl = settings.asrServerUrl,
+                serverKey = serverKey,
+                serverModel = settings.asrServerModel,
+                syncUrl = settings.syncServerUrl,
+                syncKey = syncKey,
+                model = settings.llmModel,
+                maxChars = settings.maxTranscriptChars.toString(),
+                numThreads = settings.numThreads,
+                numSpeakers = settings.numSpeakers,
+                clusterThreshold = settings.clusterThreshold,
+                speakerMatchThreshold = settings.speakerMatchThreshold
+            )
     }
 }
 
@@ -187,7 +194,11 @@ data class SettingsUiState(
     /** Last server test outcome; `null` before the first. */
     val serverTestResult: ConnectionTestResult? = null,
     /** Model ids the server listed in the last successful test. */
-    val serverModels: List<String> = emptyList()
+    val serverModels: List<String> = emptyList(),
+    /** *Sync sessions* is on (issue #68); written immediately. */
+    val syncEnabled: Boolean = false,
+    /** Last synced, sessions waiting and the last error (issue #68). */
+    val syncStatus: SyncStatus = SyncStatus()
 )
 
 /**
@@ -236,7 +247,8 @@ class SettingsViewModel(
     templates: SummaryTemplateStore,
     private val listServerModels: suspend () -> List<String> = { emptyList() },
     private val semanticIndex: SemanticIndexRunner? = null,
-    private val onSemanticModelChanged: () -> Unit = {}
+    private val onSemanticModelChanged: () -> Unit = {},
+    syncStatus: StateFlow<SyncStatus>? = null
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SettingsUiState>
@@ -244,7 +256,7 @@ class SettingsViewModel(
 
     init {
         val current = repo.settings.value
-        val form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey())
+        val form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey(), repo.syncKey())
         val initial = computeModelState(
             current = current,
             base = SettingsUiState(
@@ -266,6 +278,11 @@ class SettingsViewModel(
         viewModelScope.launch {
             repo.settings.collect { settings ->
                 _state.value = computeModelState(settings, _state.value)
+            }
+        }
+        if (syncStatus != null) {
+            viewModelScope.launch {
+                syncStatus.collect { status -> _state.update { it.copy(syncStatus = status) } }
             }
         }
         viewModelScope.launch {
@@ -298,6 +315,8 @@ class SettingsViewModel(
         val current = repo.settings.value
         val parsedChars = form.maxChars.toIntOrNull() ?: current.maxTranscriptChars
 
+        // Before the address, whose change schedules a sync run that reads the key.
+        repo.setSyncKey(form.syncKey)
         repo.update { previous ->
             previous.copy(
                 llmBaseUrl = form.baseUrl,
@@ -309,7 +328,8 @@ class SettingsViewModel(
                 speakerMatchThreshold = form.speakerMatchThreshold,
                 asrLanguage = _state.value.asrLanguage,
                 asrServerUrl = form.serverUrl,
-                asrServerModel = form.serverModel
+                asrServerModel = form.serverModel,
+                syncServerUrl = form.syncUrl
             )
         }
         if (_state.value.asrEngine != current.asrEngine) {
@@ -329,7 +349,7 @@ class SettingsViewModel(
         _state.value = computeModelState(
             current = refreshed,
             base = _state.value.copy(
-                form = SettingsForm.from(refreshed, repo.apiKey(), repo.asrServerKey()),
+                form = SettingsForm.from(refreshed, repo.apiKey(), repo.asrServerKey(), repo.syncKey()),
                 saved = true
             )
         )
@@ -345,7 +365,7 @@ class SettingsViewModel(
         _state.value = computeModelState(
             current = current,
             base = _state.value.copy(
-                form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey()),
+                form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey(), repo.syncKey()),
                 asrEngine = current.asrEngine,
                 asrLanguage = current.asrLanguage
             )
@@ -546,6 +566,23 @@ class SettingsViewModel(
         repo.update { it.copy(asrServerAuto = enabled) }
     }
 
+    /**
+     * Switch *Sync sessions* (issue #68), written immediately. Turning it
+     * on saves the address and key typed so far first, so it starts with
+     * what the user sees.
+     */
+    fun setSyncEnabled(enabled: Boolean) {
+        if (enabled) {
+            val form = _state.value.form
+            repo.setSyncKey(form.syncKey)
+            repo.update { it.copy(syncServerUrl = form.syncUrl, syncEnabled = true) }
+        } else {
+            repo.update { it.copy(syncEnabled = false) }
+        }
+        // Now, not when the settings collector next runs, so the switch follows the tap.
+        _state.update { it.copy(syncEnabled = enabled) }
+    }
+
     /** Persist the default summary template immediately (issue #27). */
     fun setDefaultSummaryTemplate(key: String) {
         repo.update { it.copy(defaultSummaryTemplate = key) }
@@ -670,6 +707,7 @@ class SettingsViewModel(
             autoTitle = current.autoTitle,
             serverConfigured = current.asrServerConfigured,
             serverAuto = current.asrServerAuto,
+            syncEnabled = current.syncEnabled,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )

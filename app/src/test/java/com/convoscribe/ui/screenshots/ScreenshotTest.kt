@@ -60,6 +60,7 @@ import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.settings.FloatingShape
+import com.convoscribe.sync.SyncStatus
 import com.convoscribe.ui.ask.AskAcrossBody
 import com.convoscribe.ui.ask.AskAcrossMessage
 import com.convoscribe.ui.ask.AskAcrossUiState
@@ -95,6 +96,7 @@ import com.convoscribe.ui.settings.SettingsActions
 import com.convoscribe.ui.settings.SettingsBody
 import com.convoscribe.ui.settings.SettingsForm
 import com.convoscribe.ui.settings.SettingsUiState
+import com.convoscribe.ui.settings.SyncSection
 import com.convoscribe.ui.setup.SetupBody
 import com.convoscribe.ui.setup.SetupUiState
 import com.convoscribe.ui.speakers.EnrollmentPhase
@@ -531,6 +533,58 @@ class ScreenshotTest(private val variant: Variant) {
             onDownload = {},
             onDelete = {},
             indexMode = "anytime"
+        )
+    }
+
+    /** Settings → Sync (issue #68): off, with no server yet. */
+    @Test
+    fun settingsSyncOff() = capture("settings_sync_off") {
+        SyncSection(
+            url = "",
+            key = "",
+            onUrlChange = {},
+            onKeyChange = {},
+            configured = false,
+            enabled = false,
+            status = SyncStatus(),
+            onEnabledChange = {},
+            onSyncNow = {}
+        )
+    }
+
+    /** Sync on, with sessions waiting after a failed run (issue #68). */
+    @Test
+    fun settingsSync() = capture("settings_sync") {
+        SyncSection(
+            url = "https://sync.example.com",
+            key = "secret",
+            onUrlChange = {},
+            onKeyChange = {},
+            configured = true,
+            enabled = true,
+            status = SyncStatus(
+                lastSyncedAt = 1_761_700_000_000L,
+                waiting = 3,
+                lastError = "Network error calling https://sync.example.com/api/sync/v1/blobs: timeout"
+            ),
+            onEnabledChange = {},
+            onSyncNow = {}
+        )
+    }
+
+    /** Sync running after *Sync now*, served over plain http:// (issue #68). */
+    @Test
+    fun settingsSyncRunning() = capture("settings_sync_running") {
+        SyncSection(
+            url = "http://sync.home.lan:3000",
+            key = "secret",
+            onUrlChange = {},
+            onKeyChange = {},
+            configured = true,
+            enabled = true,
+            status = SyncStatus(running = true),
+            onEnabledChange = {},
+            onSyncNow = {}
         )
     }
 

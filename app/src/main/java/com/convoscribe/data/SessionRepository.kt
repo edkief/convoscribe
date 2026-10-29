@@ -236,6 +236,9 @@ class SessionRepository(
      * and (via `ON DELETE CASCADE`) the segments, speakers, chat
      * messages and marks. Idempotent: deleting an unknown id is a
      * no-op and silently returns.
+     *
+     * A session the sync server already has leaves a
+     * [SyncTombstoneEntity], so sync deletes it there too (issue #68).
      */
     suspend fun deleteSession(id: Long) {
         val row = sessionDao.get(id)
@@ -243,7 +246,24 @@ class SessionRepository(
             File(row.audioPath).delete()
             row.cleanAudioFile().delete()
         }
+        // Not one transaction: sessions watched through a Flow must see the
+        // delete. The tombstone goes first; if the process dies before the
+        // session row does, sync drops a tombstone whose session still exists.
+        val sync = db.syncDao()
+        val state = row?.let { sync.state(SyncKinds.SESSION, it.syncId) }
+        if (row != null && state != null && state.baseRevision > 0) {
+            sync.upsertTombstone(
+                SyncTombstoneEntity(SyncKinds.SESSION, row.syncId, state.baseRevision, System.currentTimeMillis())
+            )
+        }
         sessionDao.delete(id)
+        if (row != null) {
+            sync.deleteState(SyncKinds.SESSION, row.syncId)
+            if (row.audioPath.isNotBlank()) {
+                sync.deleteFileHash(row.audioPath)
+                sync.deleteFileHash(row.cleanAudioFile().path)
+            }
+        }
     }
 
     /**

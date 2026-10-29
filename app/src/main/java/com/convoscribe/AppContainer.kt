@@ -54,10 +54,13 @@ import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeUseCase
 import com.convoscribe.service.PendingDiarizationScheduler
 import com.convoscribe.service.SemanticIndexScheduler
+import com.convoscribe.service.SyncScheduler
 import com.convoscribe.service.UpdateCheckScheduler
 import com.convoscribe.service.UpdateDownloadService
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.sync.SyncEngine
+import com.convoscribe.sync.SyncStatusStore
 import com.convoscribe.update.GitHubReleases
 import com.convoscribe.update.InstalledApp
 import com.convoscribe.update.PackageApkInspector
@@ -522,6 +525,54 @@ class AppContainer(val context: Context) {
             .launchIn(applicationScope)
     }
 
+    /** What Settings → Sync shows: last synced, sessions waiting, last error (issue #68). */
+    val syncStatusStore: SyncStatusStore = SyncStatusStore(
+        context.getSharedPreferences(SyncStatusStore.FILE_NAME, Context.MODE_PRIVATE)
+    )
+
+    /** Recording parts of about 8 MB go up in one request each, on slow networks too. */
+    val syncHttpClient: OkHttpClient = httpClient.newBuilder()
+        .readTimeout(5, TimeUnit.MINUTES)
+        .writeTimeout(5, TimeUnit.MINUTES)
+        .build()
+
+    /** Uploads sessions to the self-hosted sync server (issue #68). */
+    val syncEngine: SyncEngine = SyncEngine(
+        db = database,
+        repository = sessionRepository,
+        settings = settingsRepository,
+        http = syncHttpClient,
+        status = syncStatusStore,
+        isRecording = { recordingController.state.value.phase != RecordingPhase.IDLE }
+    )
+
+    /**
+     * Keeps the sync job scheduled (issue #68). Like
+     * [semanticIndexScheduler], any change to a session or its rows
+     * re-syncs it a few seconds after the last one, so no write path
+     * is missed; so does turning sync on or changing its server.
+     */
+    @OptIn(FlowPreview::class)
+    val syncScheduler: SyncScheduler = SyncScheduler(context, settingsRepository).also { scheduler ->
+        val changed = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
+        database.invalidationTracker.addObserver(
+            object : InvalidationTracker.Observer(
+                arrayOf("sessions", "segments", "speakers", "chat_messages", "marks", "session_tags", "tags")
+            ) {
+                override fun onInvalidated(tables: Set<String>) {
+                    changed.tryEmit(Unit)
+                }
+            }
+        )
+        changed.debounce(SYNC_DEBOUNCE_MS).onEach { scheduler.sync() }.launchIn(applicationScope)
+        settingsRepository.settings
+            .map { it.syncActive to it.syncServerUrl }
+            .distinctUntilChanged()
+            .drop(1)
+            .onEach { scheduler.sync() }
+            .launchIn(applicationScope)
+    }
+
     /**
      * Audio file handed to the app (share sheet, Open with, the home
      * screen's picker) and not yet started; the home screen consumes it.
@@ -703,5 +754,8 @@ class AppContainer(val context: Context) {
     private companion object {
         /** Wait this long after the last transcript change before checking the semantic index. */
         const val INDEX_SYNC_DEBOUNCE_MS = 5_000L
+
+        /** Wait this long after the last session change before syncing it. */
+        const val SYNC_DEBOUNCE_MS = 10_000L
     }
 }

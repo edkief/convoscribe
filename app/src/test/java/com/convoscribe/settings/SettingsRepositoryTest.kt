@@ -234,6 +234,23 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun sync_defaultsOffNeedsAUrlAndKeepsItsKeySecret() {
+        val repo = newRepository()
+        assertFalse(repo.settings.value.syncActive)
+
+        repo.update { it.copy(syncEnabled = true) }
+        assertFalse(repo.settings.value.syncActive)
+        repo.update { it.copy(syncServerUrl = " https://sync.example.com/ ") }
+        repo.setSyncKey("sync-secret")
+
+        val reloaded = newRepository()
+        assertEquals("https://sync.example.com", reloaded.settings.value.syncServerUrl)
+        assertTrue(reloaded.settings.value.syncActive)
+        assertEquals("sync-secret", reloaded.syncKey())
+        assertFalse(prefs.all.values.any { it == "sync-secret" })
+    }
+
+    @Test
     fun asrServer_acceptsPlainHttpLikeTheLlmEndpoint() {
         val repo = newRepository()
 

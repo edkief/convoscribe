@@ -90,6 +90,10 @@ import java.util.UUID
  * which an automatic migration cannot do; `updatedAt` starts at
  * `createdAt`.
  *
+ * The 16 → 17 migration (issue #68) is automatic: the `sync_state`,
+ * `sync_tombstones` and `file_hashes` tables, all empty, so every
+ * session starts out waiting to be uploaded.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -108,9 +112,12 @@ import java.util.UUID
         PresetEntity::class,
         GlobalChatMessageEntity::class,
         PassageVectorEntity::class,
-        SessionIndexStateEntity::class
+        SessionIndexStateEntity::class,
+        SyncStateEntity::class,
+        SyncTombstoneEntity::class,
+        FileHashEntity::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -126,7 +133,8 @@ import java.util.UUID
         AutoMigration(from = 11, to = 12, spec = Migration11To12::class),
         AutoMigration(from = 12, to = 13),
         AutoMigration(from = 13, to = 14),
-        AutoMigration(from = 14, to = 15)
+        AutoMigration(from = 14, to = 15),
+        AutoMigration(from = 16, to = 17)
     ]
 )
 @TypeConverters(Converters::class)
@@ -143,6 +151,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun presetDao(): PresetDao
     abstract fun globalChatMessageDao(): GlobalChatMessageDao
     abstract fun semanticIndexDao(): SemanticIndexDao
+    abstract fun syncDao(): SyncDao
 
     companion object {
         const val NAME: String = "convoscribe.db"

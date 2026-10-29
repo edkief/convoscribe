@@ -703,9 +703,31 @@
     <string name="speakers_delete_confirm">Remove</string>
     <string name="speakers_delete_cancel">Cancel</string>
     <string name="speakers_delete_cd">Remove %1$s</string>
+    <!-- Sync server (issue #68) -->
+    <string name="sync_section">Sync</string>
+    <string name="sync_help">Optional. Uploads every finished session, with its recording, transcript, speakers, summaries, questions, marks and tags, to your own ConvoScribe sync server, in the background. Recording and everything else keep working on this device without it. API keys are never uploaded.</string>
+    <string name="sync_url_label">Server address</string>
+    <string name="sync_url_placeholder">https://sync.example.com</string>
+    <string name="sync_url_cleartext">Sessions are sent to an http:// address unencrypted. Use https:// unless the server is on a network you trust.</string>
+    <string name="sync_key_label">API key</string>
+    <string name="sync_enabled_label">Sync sessions</string>
+    <string name="sync_enabled_help">Uploads when a network is available, never while recording. Deleting a session here deletes it on the server too.</string>
+    <string name="sync_now">Sync now</string>
+    <string name="sync_running">Syncing…</string>
+    <string name="sync_never">Not synced yet</string>
+    <string name="sync_last">Last synced %1$s</string>
+    <plurals name="sync_waiting">
+        <item quantity="one">%1$d session waiting to upload</item>
+        <item quantity="other">%1$d sessions waiting to upload</item>
+    </plurals>
+    <string name="sync_error">Last sync failed: %1$s</string>
+    <string name="sync_confirm_title">Upload your sessions?</string>
+    <string name="sync_confirm_text">Recordings and transcripts of every session, and those you make from now on, are uploaded to %1$s. Anyone who controls that server can read them.</string>
+    <string name="sync_confirm_action">Upload</string>
+    <string name="sync_confirm_cancel">Cancel</string>
     <!-- Back up and restore (issue #25) -->
     <string name="backup_section">Data</string>
-    <string name="backup_section_summary">Sessions live only on this device. A backup holds every session with its recording, transcript, speakers, summaries, questions and marks, plus known voices, templates, presets and settings. API keys are never included.</string>
+    <string name="backup_section_summary">Unless sync is on, sessions live only on this device. A backup holds every session with its recording, transcript, speakers, summaries, questions and marks, plus known voices, templates, presets and settings. API keys are never included.</string>
     <string name="backup_action">Back up sessions…</string>
     <string name="restore_action">Restore from backup…</string>
     <string name="backup_busy">Wait for the recording, import or re-transcription to finish.</string>

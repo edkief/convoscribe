@@ -4,7 +4,8 @@ ConvoScribe is an Android app for the Qualcomm Dragonwing Q-6690 that records co
 transcribes them on-device with sherpa-onnx (the NPU path uses the Nemotron Speech Streaming EN
 0.6B model and the Hexagon NPU via QNN; the CPU path uses the Kroko streaming zipformer), labels
 speakers with on-device diarization, and forwards the transcript to a user-configured
-OpenAI-compatible endpoint for summaries and questions about the session.
+OpenAI-compatible endpoint for summaries and questions about the session. Sessions stay on the
+device unless you turn on sync, which uploads them to your own self-hosted sync server.
 
 ## Features
 
@@ -228,6 +229,21 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   model drops the index. Engine check → *Semantic search* times the
   model and shows the app's memory use, to judge it on a CPU-only
   device.
+- **Sync to your own server** (optional, off by default) — Settings →
+  *Sync* uploads every finished session (recording, cleaned recording,
+  transcript with word timings, speakers, summaries and questions,
+  marks and tags) to the self-hosted [sync server](#sync-server), in
+  the background whenever a network is available and never while
+  recording. A session that changes is uploaded again; deleting a
+  session deletes it on the server too. Recordings go up in parts of
+  about 8 MB, so an interrupted upload resumes where it stopped, and a
+  recording the server already has is never sent twice. Turning sync
+  on asks first, since recordings and transcripts leave the device;
+  API keys are never uploaded. Settings shows when it last synced, how
+  many sessions are waiting and the last error, with **Sync now**.
+  With sync off, no server or no network, everything else works as
+  before. This is upload only for now: sessions from other devices and
+  two-way edits come with #69.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -404,8 +420,10 @@ first; pushing the tag makes Tekton run the second.
    release already exists, so re-running the pipeline is safe.
 
 The release notes leave out commits that only touch `server/`. The sync
-server releases on its own `server-vX.Y.Z` tags; see
-[`server/README.md`](server/README.md#release).
+server releases on its own `server-vX.Y.Z` tags with
+**`prepare-server`**, which works like `prepare` on the `version` in
+`server/package.json`. Pushing the tag makes Tekton build the server
+image; see [`server/README.md`](server/README.md#release).
 
 Release builds are signed with the shared `app/debug.keystore` for now,
 so they upgrade in place over debug installs (a dedicated release key is
@@ -414,6 +432,7 @@ so they upgrade in place over debug installs (a dedicated release key is
 ```bash
 bash scripts/release.sh prepare                    # 0.1.0 -> 0.2.0, push v0.2.0
 bash scripts/release.sh prepare --patch --dry-run  # print the next version only
+bash scripts/release.sh prepare-server             # server 0.1.0 -> 0.2.0, push server-v0.2.0
 # publish runs in CI; locally, on a checkout of the tag:
 LLM_API_KEY=... bash scripts/release.sh publish
 LLM_API_KEY=... bash scripts/release.sh publish --dry-run   # notes and APK into dist/, any HEAD
@@ -597,6 +616,19 @@ one package per concern:
   session does; `SessionRepository.snapshot` builds one and
   `applyManifest` creates or replaces a session from one in a single
   transaction, moving its recordings in last. Sync (#67) reuses both.
+  Schema v17 (issue #68) adds sync's own bookkeeping, keyed by
+  `syncId`: `sync_state` (the revision and manifest hash the server
+  last accepted), `sync_tombstones` (sessions deleted after the server
+  had them) and `file_hashes` (recording hashes by size and mtime, and
+  an upload in progress).
+- `sync/` — upload to the sync server (issue #68): `SyncClient` (the
+  `/api/sync/v1` routes, Bearer key), `BlobUploader` (resumable 8 MB
+  parts), `FileHashCache`, and `SyncEngine`, which pushes tombstones,
+  then every session whose manifest hash differs from `sync_state`,
+  recordings before the manifest. It is run by `service/SyncJobService`
+  (job 1104, any network), scheduled by `service/SyncScheduler` on a
+  debounced Room invalidation of the session tables, so no write path
+  is missed. `SyncStatusStore` keeps what Settings shows.
 - `backup/` — back up and restore (issue #25): `BackupFormat` (the zip
   layout: `backup.json` first, then each `sessions/<syncId>.json`
   followed by its `recordings/<sha256>.wav`, read in one pass),
@@ -710,9 +742,15 @@ CONVOSCRIBE_ASR_SAMPLE_WAV=/path/to/16k-speech.wav \
 [`server/`](server/README.md) holds the self-hosted sync server (#67), a
 Next.js app with Postgres and S3-compatible storage. It sits beside the
 Android project with its own gate (`bash scripts/server-gate.sh`), container
-image and `server-vX.Y.Z` releases. Its README covers development,
-configuration and deployment. The app doesn't sync yet; for now the server
-only answers `GET /api/sync/v1/whoami` for a device's key (#71).
+image and `server-vX.Y.Z` releases. Its README covers the API,
+development, configuration and deployment.
+
+To sync a phone (#68): deploy the server, then in Settings → *Sync* enter
+its address (`https://sync.example.com`, without `/api/…`) and the API key
+(`SYNC_API_KEY`, or your `sk_authz_…` key behind authz-proxy), and turn on
+*Sync sessions*. The phone uploads every finished session and keeps it up
+to date; downloading sessions to other devices comes with #69. The
+reverse proxy must accept request bodies of at least 8 MB.
 
 ## Model licences
 

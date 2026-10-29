@@ -244,6 +244,26 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun setSyncEnabled_savesTheTypedServerFirstAndSaveKeepsTheKeySecret() {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        vm.update(vm.state.value.form.copy(syncUrl = "https://sync.example.com/", syncKey = "sync-key"))
+
+        vm.setSyncEnabled(true)
+
+        assertTrue(repo.settings.value.syncActive)
+        assertEquals("https://sync.example.com", repo.settings.value.syncServerUrl)
+        assertEquals("sync-key", repo.syncKey())
+        assertTrue(vm.state.value.syncEnabled)
+
+        vm.setSyncEnabled(false)
+        assertFalse(repo.settings.value.syncEnabled)
+        vm.update(vm.state.value.form.copy(syncKey = "rotated"))
+        vm.save()
+        assertEquals("rotated", newVm(repo = newRepo()).state.value.form.syncKey)
+    }
+
+    @Test
     fun testConnection_withThrowingFakeSetsFailureMessage() = runTest(dispatcher) {
         val fake = FakeChatClient(error = LlmException("HTTP 401: x", httpCode = 401))
         val vm = newVm(repo = newRepo(), chatClient = fake)

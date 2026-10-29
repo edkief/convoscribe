@@ -206,6 +206,14 @@
             android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
         <!--
+            The sync job (issue #68): uploads changed sessions to the
+            self-hosted sync server once a network is available.
+        -->
+        <service
+            android:name=".service.SyncJobService"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!--
             The periodic update check (issue #41), started by JobScheduler
             even when the app is not running. Only the system may bind it.
         -->
