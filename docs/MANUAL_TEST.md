@@ -1561,6 +1561,56 @@ sessions must still be there (database v16).
 - Step 9: a message asks to wait for the recording to finish; no file
   picker opens.
 
+## 40. Sync: upload to the sync server (issue #68)
+
+Run the server from `server/` (`docker compose up -d`, `pnpm dev`, see
+`server/README.md`) or use a deployed one. Use a phone with at least
+three sessions, one of them cleaned, and an LLM API key set. Install this
+build over the previous one without clearing data (database v17).
+
+**Steps**
+
+1. Settings → *Sync*: enter the server address and API key, then turn
+   on **Sync sessions**. Read the dialog, tap **Upload**.
+2. Wait, or tap **Sync now**. On the server:
+   `curl -H "Authorization: Bearer $KEY" $URL/api/sync/v1/changes`.
+3. Rename a session and add a mark. Wait about a minute, or **Sync now**,
+   then list the changes again.
+4. Start a recording. Tap **Sync now** in Settings while it runs, then
+   stop it after a minute.
+5. Turn on airplane mode, rename a session and tap **Sync now**. Turn
+   airplane mode off.
+6. Record a session of about 10 minutes. While its recording uploads
+   (watch the server log for `PUT …/parts/`), turn on airplane mode for
+   a few seconds, then off.
+7. Delete a synced session.
+8. Change the API key to a wrong one and tap **Sync now**; put the right
+   one back.
+9. Turn **Sync sessions** off.
+10. On the server, search the stored manifests for your LLM API key
+    (`mc cat` / `aws s3 cp` each `docs/…json.gz` through `gunzip`).
+
+**Expected**
+
+- Step 1: the dialog names the server and says recordings and transcripts
+  are uploaded. Nothing is uploaded if you cancel.
+- Step 2: one change per session, `revision` 1; Settings shows *Last
+  synced …* and no sessions waiting.
+- Step 3: that session appears again with `revision` 2; the recording is
+  not uploaded again (no `parts` requests in the server log).
+- Step 4: nothing is uploaded while recording, and the recording is not
+  disturbed. Shortly after Stop, the new session is uploaded (once its
+  speakers are identified, if that runs straight away).
+- Step 5: *Last sync failed: Network error …*; the rename stays on the
+  phone. Once online, the next run uploads it and the error goes.
+- Step 6: the upload carries on from the part it reached; the server
+  never logs `400 hash_mismatch`, and the session's change shows up.
+- Step 7: the change feed lists it with `deleted: true`.
+- Step 8: *Last sync failed: HTTP 401 … (check the sync API key)*; local
+  sessions are untouched.
+- Step 9: Sync now and the status disappear; nothing more is uploaded.
+- Step 10: no API key is found.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

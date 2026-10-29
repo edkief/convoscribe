@@ -5,8 +5,8 @@ app (Node, TypeScript) with Postgres for the index and S3-compatible storage
 for recordings and transcripts. It lives beside the Android project and has
 its own gate, image and release; nothing in Gradle sees it.
 
-This is the scaffold (#71). The sync endpoints, tables and blob storage come
-with #68.
+Devices upload sessions to it (#68). Downloading them to other devices and
+the conflict rule come with #69.
 
 ## API
 
@@ -14,6 +14,57 @@ with #68.
 |---|---|---|
 | `GET /api/health` | none | `200 {"status":"ok"}` |
 | `GET /api/sync/v1/whoami` | `Authorization: Bearer <key>` | `200 {"owner":"…"}`, or `401` with `WWW-Authenticate: Bearer` |
+
+Every route below needs the same `Authorization: Bearer <key>` and answers
+`401` without it. Each acts for the key's owner only. Errors are JSON
+`{"error": "<code>", …}`.
+
+**Blobs** are recordings, named by the lower-case hex SHA-256 of their bytes.
+
+| Endpoint | Response |
+|---|---|
+| `HEAD /api/sync/v1/blobs/<sha>` | `200` with `Content-Length` if stored, `404` if not |
+| `GET /api/sync/v1/blobs/<sha>` | The bytes; `Range: bytes=a-b` gives `206` |
+| `POST /api/sync/v1/blobs/<sha>/uploads` | `201 {"id"}` to start an upload, or `200 {"exists":true}` |
+| `GET /api/sync/v1/blobs/<sha>/uploads/<id>` | `{"parts":[{"n","size"}]}` received so far, for resuming; `404` if unknown |
+| `PUT /api/sync/v1/blobs/<sha>/uploads/<id>/parts/<n>` | `204`. Parts are numbered from 1, at most 16 MB each (devices send 8 MB); sending a part again replaces it |
+| `POST /api/sync/v1/blobs/<sha>/uploads/<id>/complete` | `200 {"size"}` once the assembled bytes hash to `<sha>`; `400 hash_mismatch` discards them; `409 parts_missing` if a part number is skipped |
+
+**Documents** are synced items; the only `kind` so far is `session`. The
+body of a document is the app's manifest (JSON). The server reads only the
+recordings it refers to (objects with a `sha256` and a `size`), which must
+all be stored first.
+
+| Endpoint | Request | Response |
+|---|---|---|
+| `PUT /api/sync/v1/documents/<kind>/<syncId>` | Manifest body, optionally `Content-Encoding: gzip`. Headers `Sync-Base-Revision` (0 for new), `Sync-Manifest-Hash` (SHA-256 of the uncompressed body), `Sync-Duration-Ms`, `Sync-Changed-At` (ms since epoch) | `200` with the new index entry. `409 conflict` with `current` if the base revision is not the current one (compare-and-swap); repeating the current manifest is `200` with no new revision. `422 missing_blobs` with `missing`, `400 hash_mismatch` |
+| `GET /api/sync/v1/documents/<kind>/<syncId>` | | The manifest, with `Sync-Revision`, `Sync-Seq`, `Sync-Duration-Ms`, `Sync-Changed-At` and `Sync-Manifest-Hash` headers. `410` with `current` if deleted, `404` if unknown |
+| `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision` | `200`, leaving a tombstone (`deleted: true`, a new revision); deleting again is `200`; `409` as for `PUT`; `404` if unknown |
+| `GET /api/sync/v1/changes?since=<seq>&limit=<n>` | `limit` 1 to 500, default 100 | `{"changes":[…], "next", "more"}`: index entries written after `since`, oldest first. Pass `next` as `since` while `more` is true |
+
+An index entry is `{kind, syncId, revision, seq, durationMs, changedAt,
+manifestHash, deleted}`. `seq` orders every write of an owner, and writes of
+one owner are serialised, so a device that saved `next` never misses one.
+
+### Storage
+
+Postgres holds the index (`documents`, plus `document_blobs`, `blobs`,
+`uploads` and `upload_parts`). S3 holds every byte, under one prefix per
+owner:
+
+- `users/<owner>/blobs/<sha256>`: a verified recording.
+- `users/<owner>/docs/<kind>/<syncId>/<manifestHash>.json.gz`: a manifest.
+  It is named by its hash, so two devices pushing at once never overwrite
+  each other's bytes.
+- `users/<owner>/uploads/<id>`: an upload being assembled, until its hash
+  is checked.
+
+Old manifests and recordings no longer referenced are kept for now; a
+clean-up job comes later. Parts of an upload a device abandoned stay in
+S3 as an incomplete multipart upload, so give the bucket a lifecycle rule
+that aborts incomplete multipart uploads after a few days (on AWS, an
+`AbortIncompleteMultipartUpload` rule; most S3-compatible stores have an
+equivalent).
 
 ## Development
 
@@ -36,7 +87,9 @@ bash scripts/server-gate.sh   # from the repo root: install, then lint, typechec
 pnpm check                    # the same, inside server/
 ```
 
-The tests need neither Postgres nor S3. The `authz-proxy` tests run the
+The tests need neither Postgres nor S3: they run on PGlite (Postgres in
+WebAssembly) with every migration applied, and a filesystem blob store. The
+`authz-proxy` tests run the
 SDK's dev proxy in-process.
 
 ### Database
