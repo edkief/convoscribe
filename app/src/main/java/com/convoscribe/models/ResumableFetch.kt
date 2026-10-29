@@ -35,12 +35,21 @@ class ResumableFetch(private val client: OkHttpClient) {
      * - [onBytes] gets the bytes on disk in [part] (not an increment)
      *   every [TICK_BYTES] and once at the end.
      *
+     * [headers] go with the request (the sync server's key, #69).
+     *
      * Throws [ModelDownloadException] naming [label]. Network errors,
      * HTTP 5xx, 408 and 429 are [ModelDownloadException.transient];
      * other HTTP errors are not. The caller checks the final size.
      */
     @OptIn(InternalCoroutinesApi::class)
-    suspend fun fetch(url: String, part: File, expectedSize: Long?, label: String, onBytes: suspend (Long) -> Unit) {
+    suspend fun fetch(
+        url: String,
+        part: File,
+        expectedSize: Long?,
+        label: String,
+        headers: Map<String, String> = emptyMap(),
+        onBytes: suspend (Long) -> Unit
+    ) {
         part.parentFile?.mkdirs()
         if (expectedSize != null && part.length() > expectedSize) part.delete()
         val offset = part.length()
@@ -49,6 +58,7 @@ class ResumableFetch(private val client: OkHttpClient) {
             return
         }
         val request = Request.Builder().url(url).apply {
+            headers.forEach { (name, value) -> header(name, value) }
             if (offset > 0) {
                 Log.i(TAG, "resuming $label from byte $offset")
                 header("Range", "bytes=$offset-")

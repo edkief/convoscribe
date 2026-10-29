@@ -87,6 +87,7 @@ class SettingsRepository(
             putBoolean(KEY_ASR_SERVER_AUTO, next.asrServerAuto)
             putString(KEY_SYNC_SERVER_URL, next.syncServerUrl)
             putBoolean(KEY_SYNC_ENABLED, next.syncEnabled)
+            putBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, next.syncAudioOnMobileData)
             putInt(KEY_NUM_SPEAKERS, next.numSpeakers)
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
@@ -170,6 +171,7 @@ class SettingsRepository(
             asrServerAuto = prefs.getBoolean(KEY_ASR_SERVER_AUTO, false),
             syncServerUrl = (prefs.getString(KEY_SYNC_SERVER_URL, "") ?: "").trim().trimEnd('/'),
             syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
+            syncAudioOnMobileData = prefs.getBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, false),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
@@ -251,6 +253,7 @@ class SettingsRepository(
         const val KEY_ASR_SERVER_AUTO = "asrServerAuto"
         const val KEY_SYNC_SERVER_URL = "syncServerUrl"
         const val KEY_SYNC_ENABLED = "syncEnabled"
+        const val KEY_SYNC_AUDIO_ON_MOBILE_DATA = "syncAudioOnMobileData"
         const val KEY_NUM_SPEAKERS = "numSpeakers"
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"

@@ -78,4 +78,15 @@ class SyncSchedulerTest {
         scheduler.jobRunning = true
         assertFalse(scheduler.changedWhileRunning)
     }
+
+    @Test
+    fun recordingsWaitForWiFiUntilASessionChanges() {
+        settings.update { it.copy(syncEnabled = true, syncServerUrl = "https://sync.example.com") }
+
+        scheduler.syncWhenUnmetered()
+        assertEquals(JobInfo.NETWORK_TYPE_UNMETERED, pending()!!.networkType)
+
+        scheduler.sync()
+        assertEquals(JobInfo.NETWORK_TYPE_ANY, pending()!!.networkType)
+    }
 }

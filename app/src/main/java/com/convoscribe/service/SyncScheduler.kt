@@ -4,6 +4,7 @@ import android.app.job.JobInfo
 import android.app.job.JobScheduler
 import android.content.ComponentName
 import android.content.Context
+import android.os.PersistableBundle
 import android.util.Log
 import androidx.core.content.getSystemService
 import com.convoscribe.TAG
@@ -18,6 +19,11 @@ import com.convoscribe.settings.SettingsRepository
  * debounced, whenever a session changes. While the job runs it only
  * notes the change, since scheduling the same job id would stop it;
  * the job asks for another run when it finishes.
+ *
+ * When only recordings are left to download and the network is
+ * metered (issue #69), [syncWhenUnmetered] schedules the next run for
+ * Wi-Fi; a session changing meanwhile replaces it with a run on any
+ * network, which schedules the Wi-Fi one again if still needed.
  */
 class SyncScheduler(
     private val context: Context,
@@ -42,7 +48,10 @@ class SyncScheduler(
     /** Run straight away, replacing a run waiting for its turn. */
     fun syncNow() = schedule(now = true)
 
-    private fun schedule(now: Boolean) {
+    /** Run once an unmetered network is available, for recordings to download (#69). */
+    fun syncWhenUnmetered() = schedule(now = true, unmetered = true)
+
+    private fun schedule(now: Boolean, unmetered: Boolean = false) {
         val jobs = context.getSystemService<JobScheduler>() ?: return
         if (!settings.settings.value.syncActive) {
             jobs.cancel(JOB_ID)
@@ -52,9 +61,11 @@ class SyncScheduler(
             changedWhileRunning = true
             return
         }
-        if (!now && jobs.getPendingJob(JOB_ID) != null) return
+        val pending = jobs.getPendingJob(JOB_ID)
+        if (!now && pending != null && !pending.extras.getBoolean(EXTRA_UNMETERED)) return
         val job = JobInfo.Builder(JOB_ID, ComponentName(context, SyncJobService::class.java))
-            .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
+            .setRequiredNetworkType(if (unmetered) JobInfo.NETWORK_TYPE_UNMETERED else JobInfo.NETWORK_TYPE_ANY)
+            .setExtras(PersistableBundle().apply { putBoolean(EXTRA_UNMETERED, unmetered) })
             .setBackoffCriteria(BACKOFF_MS, JobInfo.BACKOFF_POLICY_EXPONENTIAL)
             .setPersisted(true)
             .build()
@@ -67,5 +78,7 @@ class SyncScheduler(
 
         /** First retry after a failed run; JobScheduler doubles it each time. */
         const val BACKOFF_MS = 60_000L
+
+        private const val EXTRA_UNMETERED = "unmetered"
     }
 }
