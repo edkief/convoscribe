@@ -172,6 +172,19 @@ data class RetranscribeUi(
 )
 
 /**
+ * *Index for semantic search* in the session menu (issue #65).
+ *
+ * @property available the model is installed and this session is not
+ *   indexed yet (or is being indexed); the entry is shown only then.
+ * @property running the session is being indexed now.
+ */
+data class SemanticIndexUi(
+    val available: Boolean = false,
+    val running: Boolean = false,
+    val onIndex: () -> Unit = {}
+)
+
+/**
  * Noise cleanup controls for the session screen (issue #37).
  *
  * @property cleaned the session has a cleaned recording.

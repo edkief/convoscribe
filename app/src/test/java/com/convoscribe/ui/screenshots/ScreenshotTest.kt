@@ -516,6 +516,19 @@ class ScreenshotTest(private val variant: Variant) {
         }
     }
 
+    /** Indexing any time (issue #65), with *Index now* while sessions wait. */
+    @Test
+    fun settingsSemanticAnyTime() = capture("settings_semantic_any_time") {
+        SemanticSearchSection(
+            installed = true,
+            downloading = false,
+            progress = IndexProgress(38, 40),
+            onDownload = {},
+            onDelete = {},
+            indexMode = "anytime"
+        )
+    }
+
     /** Engine check's semantic search card after a check (issue #61). */
     @Test
     fun engineCheckSemantic() = capture("engine_check_semantic") {

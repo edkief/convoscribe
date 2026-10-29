@@ -18,6 +18,7 @@ import com.convoscribe.settings.AppSettings
 import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
 import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DisplayMode
+import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -153,6 +154,8 @@ data class SettingsUiState(
     val updateIncludePrereleases: Boolean = false,
     /** [com.convoscribe.settings.SpeakerIdMode.key] (issue #11); written immediately. */
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    /** [com.convoscribe.settings.SemanticIndexMode.key] (issue #65); written immediately. */
+    val semanticIndexMode: String = SemanticIndexMode.CHARGING.key,
     /** Voice model key ([ModelCatalog.diarizationEmbeddings]); written immediately. */
     val diarizationEmbedding: String = DEFAULT_DIARIZATION_EMBEDDING,
     /** Whether [diarizationEmbedding]'s model is downloaded. */
@@ -450,6 +453,11 @@ class SettingsViewModel(
         repo.update { it.copy(speakerIdMode = mode) }
     }
 
+    /** Persist when sessions are indexed for semantic search (issue #65); the job is rescheduled to match. */
+    fun setSemanticIndexMode(mode: String) {
+        repo.update { it.copy(semanticIndexMode = mode) }
+    }
+
     /**
      * Persist the speaker identification voice model immediately; it
      * applies from the next identification. A model not downloaded yet
@@ -630,6 +638,7 @@ class SettingsViewModel(
             updateCheckAuto = current.updateCheckAuto,
             updateIncludePrereleases = current.updateIncludePrereleases,
             speakerIdMode = current.speakerIdMode,
+            semanticIndexMode = current.semanticIndexMode,
             diarizationEmbedding = current.diarizationEmbedding,
             diarizationEmbeddingInstalled = modelStore.isInstalled(
                 ModelCatalog.embeddingFor(current.diarizationEmbedding)

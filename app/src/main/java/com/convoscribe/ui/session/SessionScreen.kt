@@ -40,6 +40,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -66,6 +67,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import com.convoscribe.llm.embedding.SemanticIndexRunner
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
@@ -84,9 +86,11 @@ import com.convoscribe.ui.home.formatSessionDate
 import com.convoscribe.ui.home.languageTag
 import com.convoscribe.ui.record.ParticipantsDialog
 import com.convoscribe.ui.theme.AppTheme
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 /**
  * Statuses a session can be continued from: finished recording,
@@ -203,6 +207,7 @@ fun SessionScreen(
     DisposableEffect(vm) { onDispose { vm.stopPlayback() } }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.stopPlayback() }
     val snackbarHostState = remember { SnackbarHostState() }
+    val screenScope = rememberCoroutineScope()
     LaunchedEffect(vm) {
         // Surface one-shot messages from the ViewModel: a
         // successful "remember this voice" enrollment emits a
@@ -245,6 +250,13 @@ fun SessionScreen(
     // time, whichever session it belongs to.
     val recorderState by container.recordingController.state.collectAsStateWithLifecycle()
     val appSettings by container.settingsRepository.settings.collectAsStateWithLifecycle()
+    // Semantic search for this session alone, straight away (issue #65).
+    val semanticRunner = container.semanticIndexRunner
+    val semanticIndexing by semanticRunner.indexing.collectAsStateWithLifecycle()
+    var semanticPending by remember { mutableStateOf(false) }
+    LaunchedEffect(state.status, state.lines, semanticIndexing) {
+        semanticPending = semanticRunner.isPending(sessionId)
+    }
     val enrolledNames by remember(container) {
         container.enrolledSpeakers.observeAll().map { rows -> rows.map { it.name }.distinct() }
     }.collectAsStateWithLifecycle(initialValue = emptyList())
@@ -389,6 +401,23 @@ fun SessionScreen(
             },
             onCancel = { context.startService(RecordingService.cancelRetranscribeIntent(context)) }
         ),
+        semanticIndex = SemanticIndexUi(
+            available = semanticPending || sessionId in semanticIndexing,
+            running = sessionId in semanticIndexing,
+            onIndex = {
+                // On the app scope, so leaving the screen does not stop it.
+                val run = container.applicationScope.async { semanticRunner.index(sessionId) }
+                screenScope.launch {
+                    if (run.await() == SemanticIndexRunner.Outcome.BUSY) {
+                        snackbarHostState.showSnackbar(
+                            message = context.getString(R.string.session_semantic_index_busy),
+                            duration = SnackbarDuration.Short
+                        )
+                    }
+                    semanticPending = semanticRunner.isPending(sessionId)
+                }
+            }
+        ),
         cleanup = CleanupUi(
             cleaned = state.cleanedWith != null,
             available = remember(state.cleanedWith, retranscribing) { container.audioCleanerFactory.isAvailable() },
@@ -493,6 +522,7 @@ internal fun SessionBody(
     onSetParticipants: (List<String>?) -> Unit = {},
     retranscribe: RetranscribeUi = RetranscribeUi(),
     cleanup: CleanupUi = CleanupUi(),
+    semanticIndex: SemanticIndexUi = SemanticIndexUi(),
     waitingForCharger: Boolean = false,
     onCancelIdentify: (() -> Unit)? = null,
     createdAt: Long = 0L,
@@ -637,6 +667,26 @@ internal fun SessionBody(
                         onClick = {
                             overflowExpanded = false
                             cleanupOpen = true
+                        }
+                    )
+                }
+                if (semanticIndex.available) {
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = stringResource(
+                                    if (semanticIndex.running) {
+                                        R.string.session_overflow_semantic_indexing
+                                    } else {
+                                        R.string.session_overflow_semantic_index
+                                    }
+                                )
+                            )
+                        },
+                        enabled = !semanticIndex.running,
+                        onClick = {
+                            overflowExpanded = false
+                            semanticIndex.onIndex()
                         }
                     )
                 }
