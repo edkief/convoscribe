@@ -161,7 +161,8 @@ fun SettingsScreen(navController: NavHostController) {
                     templates = container.summaryTemplates,
                     listServerModels = container.serverTranscriber::listModels,
                     semanticIndex = container.semanticIndexRunner,
-                    onSemanticModelChanged = container.semanticIndexScheduler::sync
+                    onSemanticModelChanged = container.semanticIndexScheduler::sync,
+                    syncStatus = container.syncStatusStore.status
                 )
             }
         }
@@ -342,6 +343,8 @@ fun SettingsScreen(navController: NavHostController) {
             onDeleteSemantic = vm::deleteSemanticModel,
             onSemanticIndexModeChange = vm::setSemanticIndexMode,
             onIndexSemanticNow = container.semanticIndexScheduler::indexNow,
+            onSyncEnabledChange = vm::setSyncEnabled,
+            onSyncNow = container.syncScheduler::syncNow,
             onDiarizationEmbeddingChange = vm::setDiarizationEmbedding,
             onDownloadVoiceModel = {
                 ContextCompat.startForegroundService(
@@ -402,6 +405,8 @@ internal class SettingsActions(
     val onAutoTitleChange: (Boolean) -> Unit = {},
     val onTestServer: () -> Unit = {},
     val onServerAutoChange: (Boolean) -> Unit = {},
+    val onSyncEnabledChange: (Boolean) -> Unit = {},
+    val onSyncNow: () -> Unit = {},
     val onBackup: () -> Unit = {},
     val onRestore: () -> Unit = {},
     val onCancelBackup: () -> Unit = {},
@@ -516,6 +521,17 @@ internal fun SettingsBody(
                 onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
             TranscriptionServerSection(state = state, actions = actions)
+            SyncSection(
+                url = state.form.syncUrl,
+                key = state.form.syncKey,
+                onUrlChange = { actions.onFormChange(state.form.copy(syncUrl = it)) },
+                onKeyChange = { actions.onFormChange(state.form.copy(syncKey = it)) },
+                configured = state.form.syncUrl.isNotBlank(),
+                enabled = state.syncEnabled,
+                status = state.syncStatus,
+                onEnabledChange = actions.onSyncEnabledChange,
+                onSyncNow = actions.onSyncNow
+            )
             NoiseCleanupSection(
                 installed = state.cleanupInstalled,
                 downloading = cleanupDownloading,
