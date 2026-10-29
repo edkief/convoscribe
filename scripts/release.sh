@@ -148,6 +148,9 @@ cd "$REPO_ROOT"
 
 GRADLE_FILE=app/build.gradle.kts
 TAG_GLOB='v[0-9]*.[0-9]*.[0-9]*'
+# What an app release covers: everything except the sync server, which
+# releases on its own server-v* tags (see .k8s-build.yaml).
+APP_PATHS=(-- . ':(exclude)server')
 
 # Version strings as read from the Gradle file.
 read_versions() {
@@ -233,7 +236,7 @@ prepare() {
     || git ls-remote --exit-code --tags origin "refs/tags/$new_tag" >/dev/null 2>&1; then
     die "tag $new_tag already exists."
   fi
-  if [[ -z "$(git log --no-merges --format=%h "${prev_tag:+$prev_tag..}HEAD")" ]]; then
+  if [[ -z "$(git log --no-merges --format=%h "${prev_tag:+$prev_tag..}HEAD" "${APP_PATHS[@]}")" ]]; then
     die "no commits since $prev_tag; nothing to release."
   fi
 
@@ -415,17 +418,18 @@ publish() {
   fi
   # Subjects and bodies, oldest first, each commit starting with a \x1e
   # record separator, without the release commits (prepare makes one per
-  # tag) or Co-Authored-By/Signed-off-by trailers (noise for the model).
+  # tag), server-only commits, or Co-Authored-By/Signed-off-by trailers
+  # (noise for the model).
   local log_filter=(--no-merges --invert-grep --grep='^chore(release): ')
   local commit_log commit_count prior_issues=""
-  commit_log=$(git log "${log_filter[@]}" --reverse --format='%x1e%s%n%b' "$range" \
+  commit_log=$(git log "${log_filter[@]}" --reverse --format='%x1e%s%n%b' "$range" "${APP_PATHS[@]}" \
     | grep -v -E '^(Co-Authored-By|Signed-off-by):' || true)
   [[ -n "$commit_log" ]] || die "no commits since $prev_tag besides the release commit; nothing to release."
-  commit_count=$(git rev-list "${log_filter[@]}" --count "$range")
+  commit_count=$(git rev-list "${log_filter[@]}" --count "$range" "${APP_PATHS[@]}")
   # Issues users already have something of: any "(#N)" in a commit subject
   # up to the previous release. The other issues in the log are new features.
   if [[ -n "$prev_tag" ]]; then
-    prior_issues=$(git log --no-merges --format=%s "$prev_tag" | grep -oE '\(#[0-9]+\)' | tr -d '()#' | sort -un | tr '\n' ' ' || true)
+    prior_issues=$(git log --no-merges --format=%s "$prev_tag" "${APP_PATHS[@]}" | grep -oE '\(#[0-9]+\)' | tr -d '()#' | sort -un | tr '\n' ' ' || true)
   fi
 
   if [[ -n "$notes_file" ]]; then
@@ -742,7 +746,7 @@ PY
     echo
     echo "<details><summary>${commit_count} commit(s) ${prev_tag:+since $prev_tag}</summary>"
     echo
-    git log "${log_filter[@]}" --reverse --format='- %s (%h)' "$range"
+    git log "${log_filter[@]}" --reverse --format='- %s (%h)' "$range" "${APP_PATHS[@]}"
     echo
     echo "</details>"
   } >"$NOTES"
