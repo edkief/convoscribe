@@ -258,6 +258,171 @@ class SessionRepository(
         if (row.audioPath.isNotBlank()) row.cleanAudioFile().delete()
     }
 
+    /**
+     * [sessionId] ready to leave the device (issue #25), or `null` when
+     * it does not exist. The rows are read in one transaction so the
+     * manifest is consistent; the recordings are hashed with [fileRef]
+     * afterwards, outside it, since that takes a while.
+     */
+    suspend fun snapshot(
+        sessionId: Long,
+        fileRef: (File) -> SessionManifest.FileRef? = SessionManifests::fileRef
+    ): SessionSnapshot? {
+        val rows = db.withTransaction {
+            val session = sessionDao.get(sessionId) ?: return@withTransaction null
+            SnapshotRows(
+                session = session,
+                lines = segmentDao.getForSession(sessionId),
+                speakers = speakerDao.getForSession(sessionId),
+                messages = chatMessageDao.getForSession(sessionId),
+                marks = markDao.getForSession(sessionId),
+                tags = tagDao.namesFor(sessionId),
+                templates = db.summaryTemplateDao().getAll().associate { it.id to it.name }
+            )
+        } ?: return null
+        val session = rows.session
+        val audioFile = session.audioPath.takeIf { it.isNotBlank() }?.let(::File)
+        val cleanFile = audioFile?.let { session.cleanAudioFile() }?.takeIf { session.cleanedWith != null }
+        val audio = audioFile?.let(fileRef)
+        val clean = cleanFile?.let(fileRef)
+        val manifest = SessionManifests.build(
+            session = session,
+            lines = rows.lines,
+            speakers = rows.speakers,
+            messages = rows.messages,
+            marks = rows.marks,
+            tags = rows.tags,
+            userTemplateNames = rows.templates,
+            audio = audio,
+            cleanAudio = clean
+        )
+        val files = buildMap {
+            if (audio != null && audioFile != null) put(audio.sha256, audioFile)
+            if (clean != null && cleanFile != null) put(clean.sha256, cleanFile)
+        }
+        return SessionSnapshot(manifest, session.updatedAt, files)
+    }
+
+    /**
+     * Create the session [manifest] describes, or replace the one with
+     * its [SessionManifest.syncId], in one transaction (issue #25): the
+     * row (stamped [updatedAt]), its lines, speakers, messages, marks
+     * and tags, then the recordings moved into place last, as in
+     * [createImportedSession]. [files] maps each recording's SHA-256 to
+     * a staged copy; [templateKey] turns a template reference into a
+     * key of this install, `null` for the default. If anything fails,
+     * nothing changes in the database. Returns the session's id.
+     *
+     * Refuses a missing recording, and a session that is recording
+     * here, before writing anything.
+     */
+    suspend fun applyManifest(
+        manifest: SessionManifest,
+        updatedAt: Long,
+        files: Map<String, File>,
+        templateKey: (SessionManifest.TemplateRef) -> String? = { it.key }
+    ): Long = db.withTransaction {
+        val audio = manifest.audio?.let { stagedFile(files, it) }
+        val clean = manifest.cleanAudio?.let { stagedFile(files, it) }
+        val existing = sessionDao.getBySyncId(manifest.syncId)
+        check(existing?.status != SessionStatus.RECORDING) { "Session ${manifest.syncId} is recording" }
+        val row = SessionEntity(
+            id = existing?.id ?: 0,
+            title = manifest.title,
+            createdAt = manifest.createdAt,
+            durationMs = manifest.durationMs,
+            language = manifest.language,
+            audioPath = existing?.audioPath.orEmpty(),
+            status = SessionManifests.status(manifest.status),
+            numSpeakers = manifest.numSpeakers,
+            participants = ParticipantsCodec.encode(manifest.participants),
+            asrEngine = manifest.asrEngine,
+            asrModel = manifest.asrModel,
+            transcriptEdited = manifest.transcriptEdited,
+            summaryTemplate = manifest.summaryTemplate?.let(templateKey),
+            cleanedWith = manifest.cleanedWith,
+            titleSource = manifest.titleSource,
+            previousTitle = manifest.previousTitle,
+            diarizedWith = manifest.diarizedWith,
+            diarizationStepMs = manifest.diarizationStepMs,
+            diarizationMs = manifest.diarizationMs,
+            syncId = manifest.syncId,
+            updatedAt = updatedAt
+        )
+        val id = if (existing == null) {
+            sessionDao.insert(row)
+        } else {
+            sessionDao.deleteSegments(existing.id)
+            speakerDao.deleteForSession(existing.id)
+            chatMessageDao.deleteForSession(existing.id)
+            markDao.deleteForSession(existing.id)
+            tagDao.unlinkAll(existing.id)
+            existing.id
+        }
+        val target = File(recordingsDir, "$id.wav")
+        sessionDao.update(row.copy(id = id, audioPath = target.absolutePath))
+        for (line in manifest.lines) {
+            segmentDao.insert(
+                SegmentEntity(
+                    sessionId = id,
+                    startMs = line.startMs,
+                    endMs = line.endMs,
+                    text = line.text,
+                    speakerIndex = line.speakerIndex,
+                    tokens = TokenTimingCodec.encode(SessionManifests.tokens(line)),
+                    textEdited = line.textEdited,
+                    speakerEdited = line.speakerEdited
+                )
+            )
+        }
+        speakerDao.upsert(manifest.speakers.map { SpeakerEntity(id, it.index, it.label) })
+        for (message in manifest.messages) {
+            chatMessageDao.insert(
+                ChatMessageEntity(
+                    sessionId = id,
+                    kind = MessageKind.valueOf(message.kind),
+                    role = MessageRole.valueOf(message.role),
+                    content = message.content,
+                    createdAt = message.createdAt,
+                    templateName = message.templateName,
+                    coveredMs = message.coveredMs,
+                    totalMs = message.totalMs
+                )
+            )
+        }
+        for (mark in manifest.marks) {
+            markDao.insert(
+                MarkEntity(
+                    sessionId = id,
+                    atMs = mark.atMs,
+                    note = mark.note,
+                    createdAt = mark.createdAt,
+                    expandedNote = mark.expandedNote,
+                    expandedAt = mark.expandedAt,
+                    expandedStale = mark.expandedStale
+                )
+            )
+        }
+        linkTags(id, manifest.tags)
+        if (audio != null) moveFile(audio, target)
+        val cleanTarget = File(cleanAudioPathFor(target.absolutePath))
+        if (clean != null) moveFile(clean, cleanTarget) else cleanTarget.delete()
+        id
+    }
+
+    private fun stagedFile(files: Map<String, File>, ref: SessionManifest.FileRef): File =
+        files[ref.sha256]?.takeIf { it.isFile } ?: throw IllegalArgumentException("Missing recording ${ref.sha256}")
+
+    private class SnapshotRows(
+        val session: SessionEntity,
+        val lines: List<SegmentEntity>,
+        val speakers: List<SpeakerEntity>,
+        val messages: List<ChatMessageEntity>,
+        val marks: List<MarkEntity>,
+        val tags: List<String>,
+        val templates: Map<Long, String>
+    )
+
     // --- Pass-throughs for observe/get ---
 
     fun observeAllSessions(): Flow<List<SessionEntity>> = sessionDao.observeAll()

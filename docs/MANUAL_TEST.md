@@ -1504,6 +1504,63 @@ previous one without clearing data.
   and the answer is word-based as in step 1, without *matched by
   meaning*.
 
+## 39. Back up and restore (issue #25)
+
+Run this on a phone with at least three sessions: one diarized with a
+renamed speaker, a summary, a question, a mark with a note and a tag;
+one cleaned (noise cleanup); one imported. Have a known voice, a user
+summary template (set as the default) and a preset. Set an LLM API key.
+Install this build over the previous one without clearing data: the
+sessions must still be there (database v16).
+
+**Steps**
+
+1. Settings → Data → **Back up sessions…**, save to Downloads. Leave
+   the app while it runs (pull down the notification).
+2. Copy the file to a computer: `adb pull /sdcard/Download/convoscribe-backup-*.zip`.
+   `unzip -l` it, and `unzip -p … backup.json | grep -i sk-` (use part
+   of your API key).
+3. Start a backup again and tap **Cancel** in the notification.
+4. Uninstall the app, reinstall this build and go through setup.
+   Settings → Data → **Restore from backup…**, pick the file, leave
+   *Also restore settings* ticked, **Restore**.
+5. Open each restored session: play it, read the transcript and its
+   speakers, the Summary and Ask tabs, the marks, the tags. Check
+   Settings (LLM URL and model, default template), Settings → Speakers
+   → known voices, and Presets.
+6. Restore the same file again.
+7. Start a restore and **Cancel** it halfway (on a backup with several
+   long sessions). Then restore again.
+8. Try to restore a file that is not a backup (any other zip or a
+   photo).
+9. Start a recording, then open Settings → Data → **Back up sessions…**.
+
+**Expected**
+
+- Step 1: a notification *Backing up sessions* with a percentage and
+  Cancel, then *Backup saved — N sessions saved.*; Settings shows the
+  same. A session still recording is not counted.
+- Step 2: `backup.json` first, then `sessions/<uuid>.json` each
+  followed by its `recordings/<sha256>.wav` (two for the cleaned
+  session). No API key appears anywhere.
+- Step 3: the notification goes away with no result, and no partial
+  file is left in Downloads.
+- Step 4: *Restoring sessions* with progress, then *Restore complete —
+  N sessions restored.*
+- Step 5: every session is as it was, including word-level highlight
+  during playback, speaker names and colours, the cleaned recording, and
+  the session's template. Settings, known voices, template and preset
+  are back; the API key is empty and must be typed again. Sessions
+  waiting for speakers get them from the charging job.
+- Step 6: *0 sessions restored. N were already on this device.*;
+  nothing is duplicated.
+- Step 7: the cancelled restore leaves only complete sessions (each
+  plays and has its transcript); restoring again adds the rest.
+- Step 8: *Restore failed — This file is not a ConvoScribe backup.*;
+  nothing changes.
+- Step 9: a message asks to wait for the recording to finish; no file
+  picker opens.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

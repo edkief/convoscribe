@@ -319,6 +319,26 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   installer, which you confirm. Settings → About shows the version,
   *Check for updates*, and switches for the automatic check (on) and
   for pre-releases (off).
+- **Back up and restore** (issue #25). Settings → Data → *Back up
+  sessions…* saves one file, `convoscribe-backup-YYYYMMDD.zip`, wherever
+  the system file picker allows (Downloads, a USB stick, a cloud
+  drive). It holds every session (recording and cleaned copy,
+  transcript with word timings, speakers and their names, summaries,
+  questions and answers, marks and their notes, tags) plus known voices,
+  summary templates, presets and settings. API keys are never written,
+  nor device-specific settings (ASR engine, threads); a session still
+  recording is left out. *Restore from backup…* adds the backup's
+  sessions to this device; a session already here (matched by its
+  stable id) is kept as it is, so restoring the same file twice changes
+  nothing. *Also restore settings* (ticked) applies the backed-up
+  settings once the restore finishes. Both run in the background with
+  a progress notification and Cancel. Each session is restored whole
+  or not at all: a cancelled or failed restore keeps the sessions it
+  finished, and restoring again adds the rest. A backup from a newer
+  version of the app, or a file that is not a backup, is refused
+  before anything changes. Speakers are identified and sessions indexed
+  for semantic search again by the usual jobs where needed. A backup is
+  not encrypted: keep it somewhere private.
 
 ## Build
 
@@ -353,8 +373,12 @@ ConvoScribe, then every update shows the system prompt. Releases are
 signed with the shared `app/debug.keystore` for now, so they install
 over a debug build. Once releases get their own key (#16), a copy
 signed with the old key cannot update in place: the app says so and
-links to the release page, and you uninstall and reinstall once
-(which deletes the sessions).
+links to the release page, and you uninstall and reinstall once.
+Uninstalling deletes the sessions, so first use Settings → Data →
+*Back up sessions…* and save the file outside the app (e.g.
+Downloads), then uninstall, install the new build and use *Restore
+from backup…* (Features → *Back up and restore*). The same steps move
+your sessions to a new device.
 
 `usesCleartextTraffic="true"` is already enabled on `<application>`
 so plain-HTTP local endpoints (e.g. `http://192.168.1.10:8000/v1`,
@@ -562,6 +586,18 @@ one package per concern:
   case-folded name) linked to sessions by `SessionTagEntity`; presets
   are `PresetEntity` rows behind `PresetStore`; `sessions.titleSource`
   says whether a title is the date default, typed, or automatic.
+  Since schema v16 (issue #25) every session has a `syncId` (UUID) and
+  an `updatedAt`. `SessionManifest` is a session in portable form (no
+  local ids or paths, recordings referenced by SHA-256, child rows in a
+  fixed order), so `SessionManifests.hash` changes only when the
+  session does; `SessionRepository.snapshot` builds one and
+  `applyManifest` creates or replaces a session from one in a single
+  transaction, moving its recordings in last. Sync (#67) reuses both.
+- `backup/` — back up and restore (issue #25): `BackupFormat` (the zip
+  layout: `backup.json` first, then each `sessions/<syncId>.json`
+  followed by its `recordings/<sha256>.wav`, read in one pass),
+  `PortableSettings`, and `BackupUseCase`, run by
+  `service/BackupService` (`dataSync`, progress and Cancel).
 - `settings/` — `SettingsRepository` (SharedPreferences),
   `AppSettings`, `SecretStore` (EncryptedSharedPreferences) for
   the LLM API key.

@@ -35,4 +35,7 @@ interface MarkDao {
 
     @Query("DELETE FROM marks WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("DELETE FROM marks WHERE sessionId = :sessionId")
+    suspend fun deleteForSession(sessionId: Long)
 }

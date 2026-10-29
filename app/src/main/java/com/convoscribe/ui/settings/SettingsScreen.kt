@@ -1,8 +1,11 @@
 package com.convoscribe.ui.settings
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -63,6 +66,8 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
+import com.convoscribe.backup.BackupKind
+import com.convoscribe.backup.BackupState
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.embedding.IndexProgress
@@ -70,6 +75,7 @@ import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelDownloadState
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
+import com.convoscribe.service.BackupService
 import com.convoscribe.service.ModelDownloadService
 import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
 import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
@@ -96,6 +102,8 @@ import com.convoscribe.ui.update.UpdateBanner
 import com.convoscribe.ui.update.hasBanner
 import com.convoscribe.ui.update.rememberUpdateActions
 import com.convoscribe.update.UpdateState
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
@@ -236,6 +244,47 @@ fun SettingsScreen(navController: NavHostController) {
         liveCleanupVerdict = container.liveCleanup.verdict(engine)
         onPauseOrDispose {}
     }
+    // Back up and restore (issue #25): the file is picked here, the
+    // work runs in BackupService.
+    val backupState by container.backupUseCase.state.collectAsStateWithLifecycle()
+    val busyMessage = stringResource(R.string.backup_busy)
+    val whenFree: (() -> Unit) -> Unit = { action ->
+        if (container.busyForBackup()) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(busyMessage) }
+        } else {
+            action()
+        }
+    }
+    val createBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(BACKUP_MIME)) { uri ->
+        if (uri != null) ContextCompat.startForegroundService(context, BackupService.backupIntent(context, uri))
+    }
+    var restoreUri by rememberSaveable { mutableStateOf<Uri?>(null) }
+    val pickBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        restoreUri = uri
+    }
+    restoreUri?.let { uri ->
+        RestoreConfirmDialog(
+            onConfirm = { restoreSettings ->
+                restoreUri = null
+                whenFree {
+                    ContextCompat.startForegroundService(
+                        context,
+                        BackupService.restoreIntent(context, uri, restoreSettings)
+                    )
+                }
+            },
+            onDismiss = { restoreUri = null }
+        )
+    }
+    // A restore may have replaced the settings this form was loaded
+    // from; reload it so leaving the screen does not write them back.
+    LaunchedEffect(backupState) {
+        if ((backupState as? BackupState.Done)?.kind == BackupKind.RESTORE) vm.reloadForm()
+    }
+    val backupFileName = stringResource(
+        R.string.backup_file_name,
+        SimpleDateFormat("yyyyMMdd", Locale.ROOT).format(Date())
+    )
     SettingsBody(
         state = state,
         cleanupDownloading = cleanupDownloading,
@@ -247,6 +296,7 @@ fun SettingsScreen(navController: NavHostController) {
         installedVersion = container.installedApp.versionName,
         installedVersionCode = container.installedApp.versionCode,
         updateActions = updateActions,
+        backup = backupState,
         snackbarHostState = snackbarHostState,
         actions = SettingsActions(
             onBack = leave,
@@ -302,10 +352,17 @@ fun SettingsScreen(navController: NavHostController) {
             onDiarizationStepChange = vm::setDiarizationStep,
             onCleanAudioDefaultChange = vm::setCleanAudioDefault,
             onAutoMarkNotesChange = vm::setAutoMarkNotes,
-            onAutoTitleChange = vm::setAutoTitle
+            onAutoTitleChange = vm::setAutoTitle,
+            onBackup = { whenFree { createBackup.launch(backupFileName) } },
+            onRestore = { whenFree { pickBackup.launch(arrayOf(BACKUP_MIME, "application/octet-stream")) } },
+            onCancelBackup = { context.startService(BackupService.cancelIntent(context)) },
+            onDismissBackup = container.backupUseCase::dismiss
         )
     )
 }
+
+/** Type of a backup file in the system file picker. */
+private const val BACKUP_MIME = "application/zip"
 
 /** What the Settings screen can do; filled from [SettingsViewModel] and the nav controller. */
 internal class SettingsActions(
@@ -344,7 +401,11 @@ internal class SettingsActions(
     val onAutoMarkNotesChange: (Boolean) -> Unit = {},
     val onAutoTitleChange: (Boolean) -> Unit = {},
     val onTestServer: () -> Unit = {},
-    val onServerAutoChange: (Boolean) -> Unit = {}
+    val onServerAutoChange: (Boolean) -> Unit = {},
+    val onBackup: () -> Unit = {},
+    val onRestore: () -> Unit = {},
+    val onCancelBackup: () -> Unit = {},
+    val onDismissBackup: () -> Unit = {}
 )
 
 /**
@@ -354,7 +415,8 @@ internal class SettingsActions(
  * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
  * [semanticDownloading] while the semantic search model does (issue #61);
  * [liveCleanupVerdict] is the engine check's verdict on cleaning live
- * with the selected engine, `null` when it was not checked.
+ * with the selected engine, `null` when it was not checked. [backup] is
+ * the running or last backup or restore (issue #25).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -370,6 +432,7 @@ internal fun SettingsBody(
     installedVersion: String = "",
     installedVersionCode: Long = 0L,
     updateActions: UpdateActions = UpdateActions(),
+    backup: BackupState = BackupState.Idle,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
 ) {
     ScreenScaffold(
@@ -489,6 +552,13 @@ internal fun SettingsBody(
                     onDownload = actions.onDownloadVoiceModel,
                     onStepChange = actions.onDiarizationStepChange
                 )
+            )
+            DataSection(
+                state = backup,
+                onBackup = actions.onBackup,
+                onRestore = actions.onRestore,
+                onCancel = actions.onCancelBackup,
+                onDismiss = actions.onDismissBackup
             )
             AboutSection(
                 installedVersion = installedVersion,

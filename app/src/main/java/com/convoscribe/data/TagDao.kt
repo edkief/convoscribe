@@ -50,6 +50,13 @@ interface TagDao {
     )
     fun observeForSession(sessionId: Long): Flow<List<TagEntity>>
 
+    /** Names of [sessionId]'s tags, alphabetically (issue #25). */
+    @Query(
+        "SELECT t.name FROM tags t JOIN session_tags st ON st.tagId = t.id " +
+            "WHERE st.sessionId = :sessionId ORDER BY t.nameKey ASC"
+    )
+    suspend fun namesFor(sessionId: Long): List<String>
+
     @Query("SELECT tagId FROM session_tags WHERE sessionId = :sessionId")
     suspend fun tagIdsFor(sessionId: Long): List<Long>
 

@@ -2,7 +2,9 @@ package com.convoscribe.data
 
 import androidx.room.ColumnInfo
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.util.UUID
 
 /**
  * One recorded conversation. [audioPath] points at
@@ -13,8 +15,14 @@ import androidx.room.PrimaryKey
  * uses it to decide whether to show "Diarizing…" or a final speaker
  * list. [durationMs] is filled in when the recording stops; until
  * then it stays at 0.
+ *
+ * [syncId] names the session on every device and in every backup
+ * (issue #25); [id] and [audioPath] are local to this database.
  */
-@Entity(tableName = "sessions")
+@Entity(
+    tableName = "sessions",
+    indices = [Index(value = ["syncId"], unique = true)]
+)
 data class SessionEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
@@ -88,7 +96,21 @@ data class SessionEntity(
      */
     val diarizedWith: String? = null,
     val diarizationStepMs: Int? = null,
-    val diarizationMs: Long? = null
+    val diarizationMs: Long? = null,
+    /**
+     * Globally unique id (a UUID) of this conversation (issue #25): a
+     * backup restores a session at most once by it, and sync (#67)
+     * matches devices' copies by it. Sessions from before v16 got a
+     * random one on upgrade ([MIGRATION_15_16]).
+     */
+    @ColumnInfo(defaultValue = "")
+    val syncId: String = UUID.randomUUID().toString(),
+    /**
+     * When this session last changed (issue #25); [createdAt] for a
+     * new session and on upgrade.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val updatedAt: Long = createdAt
 )
 
 /** The last speaker identification run, or `null` when it was not kept. */

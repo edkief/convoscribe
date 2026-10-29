@@ -65,6 +65,8 @@ class ConvoApp : Application() {
                 // Files of an import the previous process died in; no
                 // session was created for it.
                 runCatching { container.importAudioUseCase.cleanUp() }
+                // Recordings a restore had staged when the process died.
+                runCatching { container.backupUseCase.cleanUp() }
                 // Unplugged while the process was not running.
                 container.pendingDiarizationScheduler.releaseIfUnplugged()
                 container.pendingDiarizationScheduler.sync()

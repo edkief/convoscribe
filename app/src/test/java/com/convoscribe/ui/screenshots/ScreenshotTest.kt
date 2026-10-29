@@ -23,6 +23,9 @@ import androidx.compose.ui.unit.dp
 import com.convoscribe.PresetPickerDialog
 import com.convoscribe.R
 import com.convoscribe.audio.PlayerState
+import com.convoscribe.backup.BackupFailure
+import com.convoscribe.backup.BackupKind
+import com.convoscribe.backup.BackupState
 import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.Highlighted
@@ -85,6 +88,8 @@ import com.convoscribe.ui.session.PlaybackActions
 import com.convoscribe.ui.session.SessionBody
 import com.convoscribe.ui.session.SummaryUiState
 import com.convoscribe.ui.session.TagsUi
+import com.convoscribe.ui.settings.DataSection
+import com.convoscribe.ui.settings.RestoreConfirmDialog
 import com.convoscribe.ui.settings.SemanticSearchSection
 import com.convoscribe.ui.settings.SettingsActions
 import com.convoscribe.ui.settings.SettingsBody
@@ -527,6 +532,54 @@ class ScreenshotTest(private val variant: Variant) {
             onDelete = {},
             indexMode = "anytime"
         )
+    }
+
+    /** Settings → Data (issue #25): nothing running, then a backup halfway. */
+    @Test
+    fun settingsData() = capture("settings_data") {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            DataSection(state = BackupState.Idle, onBackup = {}, onRestore = {}, onCancel = {}, onDismiss = {})
+            DataSection(
+                state = BackupState.Running(BackupKind.BACKUP, 0.42f),
+                onBackup = {},
+                onRestore = {},
+                onCancel = {},
+                onDismiss = {}
+            )
+        }
+    }
+
+    /** A restore that finished, and one refused as made by a newer version (issue #25). */
+    @Test
+    fun settingsDataResults() = capture("settings_data_results") {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            DataSection(
+                state = BackupState.Done(BackupKind.RESTORE, sessions = 12, skipped = 3),
+                onBackup = {},
+                onRestore = {},
+                onCancel = {},
+                onDismiss = {}
+            )
+            DataSection(
+                state = BackupState.Failed(BackupKind.RESTORE, BackupFailure.TOO_NEW),
+                onBackup = {},
+                onRestore = {},
+                onCancel = {},
+                onDismiss = {}
+            )
+        }
+    }
+
+    /** Asking before a restore, with *Also restore settings* ticked (issue #25). */
+    @Test
+    fun restoreConfirm() = captureScreen("restore_confirm") {
+        RestoreConfirmDialog(onConfirm = {}, onDismiss = {})
     }
 
     /** Engine check's semantic search card after a check (issue #61). */

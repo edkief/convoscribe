@@ -336,6 +336,23 @@ class SettingsViewModel(
     }
 
     /**
+     * Re-read the form from the saved settings, dropping unsaved edits:
+     * a restore (issue #25) replaced them, and [save] would otherwise
+     * write the old values back.
+     */
+    fun reloadForm() {
+        val current = repo.settings.value
+        _state.value = computeModelState(
+            current = current,
+            base = _state.value.copy(
+                form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey()),
+                asrEngine = current.asrEngine,
+                asrLanguage = current.asrLanguage
+            )
+        )
+    }
+
+    /**
      * Mark the engine as `"npu"` or `"cpu"` and persist it
      * immediately so the user can hit Engine check without
      * touching Save. The update is delegated to
