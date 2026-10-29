@@ -56,4 +56,8 @@ interface EnrolledSpeakerDao {
 
     @Query("SELECT * FROM enrolled_speakers WHERE syncId = :syncId")
     suspend fun getBySyncId(syncId: String): EnrolledSpeakerEntity?
+
+    /** Give the item [from] the sync id [to] (issue #70). */
+    @Query("UPDATE enrolled_speakers SET syncId = :to WHERE syncId = :from")
+    suspend fun rekey(from: String, to: String)
 }

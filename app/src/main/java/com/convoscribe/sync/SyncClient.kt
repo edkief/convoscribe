@@ -69,7 +69,10 @@ sealed interface PushResult {
     /** The manifest names recordings the server does not have yet. */
     data class MissingBlobs(val missing: List<String>) : PushResult
 
-    /** Deleting a document the server never had, or no longer has. */
+    /**
+     * Deleting a document the server never had, or no longer has; for a
+     * push, a kind the server does not know (one older than #70).
+     */
     data object NotFound : PushResult
 }
 
@@ -149,6 +152,7 @@ class SyncClient(
         )
         return when (response.code) {
             200 -> PushResult.Accepted(json.decodeFromString(DocumentMeta.serializer(), response.text))
+            404 -> PushResult.NotFound
             409 -> PushResult.Conflict(json.decodeFromString(ErrorBody.serializer(), response.text).current)
             422 -> PushResult.MissingBlobs(json.decodeFromString(ErrorBody.serializer(), response.text).missing)
             else -> throw unexpected(response)

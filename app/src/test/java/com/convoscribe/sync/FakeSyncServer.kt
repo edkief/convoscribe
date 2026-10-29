@@ -16,6 +16,9 @@ import okio.Buffer
  * documents with compare-and-swap and the conflict rule
  * (`server/src/lib/documents.ts`), tombstones and the change feed.
  * [intercept] answers a request instead, to stage failures.
+ *
+ * Sessions are in [documents]; other kinds (#70) in [library], by
+ * kind. A kind not in [kinds] is refused as an older server would.
  */
 class FakeSyncServer(val apiKey: String = "test-key") {
     class Document(
@@ -31,6 +34,8 @@ class FakeSyncServer(val apiKey: String = "test-key") {
 
     val blobs = mutableMapOf<String, ByteArray>()
     val documents = mutableMapOf<String, Document>()
+    val library = mutableMapOf<String, MutableMap<String, Document>>()
+    var kinds = setOf("session", "voice", "preset", "template", "vectors")
     val uploads = mutableMapOf<String, MutableMap<Int, ByteArray>>()
     val requests = mutableListOf<String>()
     var intercept: (RecordedRequest) -> MockResponse? = { null }
@@ -57,8 +62,9 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         return when {
             path[0] == "blobs" -> blob(request, path)
             path[0].startsWith("changes") -> changes(request)
-            path[0] == "documents" && request.method == "GET" -> getDocument(path[2])
-            path[0] == "documents" -> document(request, path[2])
+            path[0] == "documents" && path[1] !in kinds -> json(404, """{"error":"unknown_kind"}""")
+            path[0] == "documents" && request.method == "GET" -> getDocument(path[1], path[2])
+            path[0] == "documents" -> document(request, path[1], path[2])
             else -> MockResponse().setResponseCode(404)
         }
     }
@@ -111,20 +117,26 @@ class FakeSyncServer(val apiKey: String = "test-key") {
     private fun changes(request: RecordedRequest): MockResponse {
         val since = request.requestUrl!!.queryParameter("since")!!.toLong()
         val limit = request.requestUrl!!.queryParameter("limit")!!.toInt()
-        val after = documents.entries.filter { it.value.seq > since }.sortedBy { it.value.seq }
+        val all = documents.map { Triple("session", it.key, it.value) } +
+            library.flatMap { (kind, docs) -> docs.map { Triple(kind, it.key, it.value) } }
+        val after = all.filter { it.third.seq > since }.sortedBy { it.third.seq }
         val page = after.take(limit)
-        val next = page.lastOrNull()?.value?.seq ?: since
+        val next = page.lastOrNull()?.third?.seq ?: since
         return json(
             200,
             """{"changes":[${page.joinToString(
                 ","
-            ) { meta(it.key, it.value) }}],"next":$next,"more":${after.size > limit}}"""
+            ) { meta(it.second, it.third, it.first) }}],"next":$next,"more":${after.size > limit}}"""
         )
     }
 
-    private fun getDocument(syncId: String): MockResponse {
-        val doc = documents[syncId] ?: return json(404, """{"error":"not_found"}""")
-        if (doc.manifest == null) return json(410, """{"error":"deleted","current":${meta(syncId, doc)}}""")
+    /** The documents of [kind]. */
+    fun docs(kind: String): MutableMap<String, Document> =
+        if (kind == "session") documents else library.getOrPut(kind) { mutableMapOf() }
+
+    private fun getDocument(kind: String, syncId: String): MockResponse {
+        val doc = docs(kind)[syncId] ?: return json(404, """{"error":"not_found"}""")
+        if (doc.manifest == null) return json(410, """{"error":"deleted","current":${meta(syncId, doc, kind)}}""")
         return MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json")
             .setHeader("Sync-Revision", doc.revision).setHeader("Sync-Changed-At", doc.changedAt)
             .setBody(Buffer().writeUtf8(doc.manifest!!))
@@ -138,7 +150,8 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         else -> hash > (current.hash ?: "")
     }
 
-    private fun document(request: RecordedRequest, syncId: String): MockResponse {
+    private fun document(request: RecordedRequest, kind: String, syncId: String): MockResponse {
+        val documents = docs(kind)
         val base = request.getHeader("Sync-Base-Revision")!!.toLong()
         val current = documents[syncId]
         if (request.method == "DELETE") {
@@ -147,7 +160,7 @@ class FakeSyncServer(val apiKey: String = "test-key") {
             if (current.manifest != null && current.revision != base &&
                 (deleted == null || current.durationMs > deleted)
             ) {
-                return conflict(syncId, current)
+                return conflict(syncId, current, kind)
             }
             if (current.manifest != null) {
                 current.revision++
@@ -155,7 +168,7 @@ class FakeSyncServer(val apiKey: String = "test-key") {
                 current.hash = null
                 current.seq = ++seq
             }
-            return json(200, meta(syncId, current))
+            return json(200, meta(syncId, current, kind))
         }
         var body = request.body.readByteArray()
         if (request.getHeader("Content-Encoding") == "gzip") body = GZIPInputStream(body.inputStream()).readBytes()
@@ -184,21 +197,21 @@ class FakeSyncServer(val apiKey: String = "test-key") {
                 this.durationMs = durationMs
                 this.seq = ++this@FakeSyncServer.seq
             }
-            else -> return conflict(syncId, current)
+            else -> return conflict(syncId, current, kind)
         }
-        return json(200, meta(syncId, doc))
+        return json(200, meta(syncId, doc, kind))
     }
 
-    private fun meta(syncId: String, doc: Document): String {
+    private fun meta(syncId: String, doc: Document, kind: String = "session"): String {
         val hash = doc.hash?.let { "\"$it\"" }
-        return """{"kind":"session","syncId":"$syncId","revision":${doc.revision},"seq":${doc.seq},""" +
+        return """{"kind":"$kind","syncId":"$syncId","revision":${doc.revision},"seq":${doc.seq},""" +
             """"durationMs":${doc.durationMs},"changedAt":${doc.changedAt},""" +
             """"manifestHash":$hash,"deleted":${doc.manifest == null}}"""
     }
 
-    private fun conflict(syncId: String, doc: Document) = json(
+    private fun conflict(syncId: String, doc: Document, kind: String = "session") = json(
         409,
-        """{"error":"conflict","current":${meta(syncId, doc)}}"""
+        """{"error":"conflict","current":${meta(syncId, doc, kind)}}"""
     )
 
     private fun json(code: Int, body: String) = MockResponse().setResponseCode(

@@ -25,4 +25,8 @@ interface SummaryTemplateDao {
 
     @Query("SELECT * FROM summary_templates WHERE syncId = :syncId")
     suspend fun getBySyncId(syncId: String): SummaryTemplateEntity?
+
+    /** Give the item [from] the sync id [to] (issue #70). */
+    @Query("UPDATE summary_templates SET syncId = :to WHERE syncId = :from")
+    suspend fun rekey(from: String, to: String)
 }

@@ -29,4 +29,8 @@ interface PresetDao {
 
     @Query("SELECT * FROM presets WHERE syncId = :syncId")
     suspend fun getBySyncId(syncId: String): PresetEntity?
+
+    /** Give the item [from] the sync id [to] (issue #70). */
+    @Query("UPDATE presets SET syncId = :to WHERE syncId = :from")
+    suspend fun rekey(from: String, to: String)
 }
