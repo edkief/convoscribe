@@ -16,6 +16,7 @@ import com.convoscribe.audio.MicAudioSource
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
+import com.convoscribe.data.MIGRATION_15_16
 import com.convoscribe.data.PresetRepository
 import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SessionRepository
@@ -170,7 +171,7 @@ class AppContainer(val context: Context) {
         context,
         AppDatabase::class.java,
         AppDatabase.NAME
-    ).build()
+    ).addMigrations(MIGRATION_15_16).build()
 
     /**
      * High-level session/store façade over [database]. Recordings

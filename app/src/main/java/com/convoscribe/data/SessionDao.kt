@@ -32,6 +32,14 @@ interface SessionDao {
     @Query("SELECT * FROM sessions WHERE id = :id")
     suspend fun get(id: Long): SessionEntity?
 
+    /** The session with this [SessionEntity.syncId] (issue #25), or `null`. */
+    @Query("SELECT * FROM sessions WHERE syncId = :syncId")
+    suspend fun getBySyncId(syncId: String): SessionEntity?
+
+    /** Every session's id, oldest first; a backup walks them one at a time (issue #25). */
+    @Query("SELECT id FROM sessions ORDER BY createdAt, id")
+    suspend fun allIds(): List<Long>
+
     @Query("DELETE FROM sessions WHERE id = :id")
     suspend fun delete(id: Long)
 

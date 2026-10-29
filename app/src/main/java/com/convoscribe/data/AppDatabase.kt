@@ -5,14 +5,18 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import androidx.room.migration.AutoMigrationSpec
+import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import java.util.UUID
 
 /**
  * Room database holding the entity families that survive an
  * app restart: sessions, transcript segments, speaker labels,
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
  * index over transcript lines, (v7) summary templates and (v8)
- * marks, (v12) tags and presets, (v14) the *Ask across sessions* history. The current version is 14; the generated JSON for every version is committed
+ * marks, (v12) tags and presets, (v14) the *Ask across sessions* history,
+ * (v15) semantic search and (v16) stable session ids. The current version
+ * is 16; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -80,6 +84,12 @@ import androidx.sqlite.db.SupportSQLiteDatabase
  * nullable `global_chat_messages.semantic`, so earlier answers read as
  * found by words alone.
  *
+ * The 15 → 16 migration (issue #25) is hand-written ([MIGRATION_15_16]):
+ * `sessions.syncId`, unique, and `sessions.updatedAt`. Every existing
+ * session needs its own random id before the unique index can exist,
+ * which an automatic migration cannot do; `updatedAt` starts at
+ * `createdAt`.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -100,7 +110,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PassageVectorEntity::class,
         SessionIndexStateEntity::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -161,5 +171,27 @@ class Migration11To12 : AutoMigrationSpec {
             "UPDATE sessions SET titleSource = '${TitleSource.USER}' WHERE title NOT GLOB " +
                 "'Recording [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]'"
         )
+    }
+}
+
+/**
+ * Give every existing session a random [SessionEntity.syncId] and an
+ * [SessionEntity.updatedAt] of its `createdAt`, then make `syncId`
+ * unique (issue #25). Registered on the database builder.
+ */
+val MIGRATION_15_16: Migration = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE sessions ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+        db.execSQL("ALTER TABLE sessions ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE sessions SET updatedAt = createdAt")
+        val ids = buildList {
+            db.query("SELECT id FROM sessions").use { cursor ->
+                while (cursor.moveToNext()) add(cursor.getLong(0))
+            }
+        }
+        for (id in ids) {
+            db.execSQL("UPDATE sessions SET syncId = ? WHERE id = ?", arrayOf<Any>(UUID.randomUUID().toString(), id))
+        }
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_syncId ON sessions (syncId)")
     }
 }
