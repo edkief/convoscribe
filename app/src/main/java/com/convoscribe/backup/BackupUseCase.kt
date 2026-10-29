@@ -332,7 +332,7 @@ class BackupUseCase(
                         session.entry.manifest,
                         session.entry.updatedAt,
                         session.staged,
-                        templateKey
+                        templateKey = templateKey
                     )
                     session.staged.values.forEach { it.delete() }
                     restored++

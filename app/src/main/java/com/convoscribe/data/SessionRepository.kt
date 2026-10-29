@@ -20,6 +20,11 @@ import kotlinx.coroutines.flow.map
  * `<recordingsDir>/<id>.wav` and that file is owned by this class
  * for the lifetime of the session.
  *
+ * Every write that changes what a session's manifest holds stamps
+ * [SessionEntity.updatedAt] through [touch] (issue #69), which sync's
+ * "most recently changed wins" reads. Status flips alone do not, since
+ * they are not part of the manifest.
+ *
  * Also implements [RecordingStore] so the recording controller can
  * drive a session without taking a hard dependency on Room: the
  * controller talks to the interface and the production wiring
@@ -27,7 +32,8 @@ import kotlinx.coroutines.flow.map
  */
 class SessionRepository(
     private val db: AppDatabase,
-    private val recordingsDir: File
+    private val recordingsDir: File,
+    private val clock: () -> Long = System::currentTimeMillis
 ) : RecordingStore {
     private val sessionDao: SessionDao = db.sessionDao()
     private val segmentDao: SegmentDao = db.segmentDao()
@@ -138,7 +144,11 @@ class SessionRepository(
             mergeEngineValue(row.asrEngine, engine, continued),
             mergeEngineValue(row.asrModel, model, continued)
         )
+        touch(sessionId)
     }
+
+    /** [sessionId] changed now (issue #69). */
+    private suspend fun touch(sessionId: Long) = sessionDao.touch(sessionId, clock())
 
     override suspend fun cleanedWith(sessionId: Long): String? = sessionDao.get(sessionId)?.cleanedWith
 
@@ -178,7 +188,7 @@ class SessionRepository(
             note = normaliseNote(note),
             createdAt = System.currentTimeMillis()
         )
-    )
+    ).also { touch(sessionId) }
 
     override suspend fun countMarks(sessionId: Long): Int = markDao.count(sessionId)
 
@@ -192,13 +202,21 @@ class SessionRepository(
      * [MARK_NOTE_MAX_LEN]; a blank note removes it. The full note
      * written from the old one is removed too (issue #48).
      */
-    suspend fun setMarkNote(markId: Long, note: String?) = markDao.setNote(markId, normaliseNote(note))
+    suspend fun setMarkNote(markId: Long, note: String?) {
+        markDao.setNote(markId, normaliseNote(note))
+        sessionDao.touchForMark(markId, clock())
+    }
 
-    suspend fun deleteMark(markId: Long) = markDao.delete(markId)
+    suspend fun deleteMark(markId: Long) {
+        sessionDao.touchForMark(markId, clock())
+        markDao.delete(markId)
+    }
 
     /** Save the full note the LLM wrote for mark [markId] (issue #48); it is current again. */
-    suspend fun setMarkExpansion(markId: Long, text: String) =
+    suspend fun setMarkExpansion(markId: Long, text: String) {
         markDao.setExpanded(markId, text, System.currentTimeMillis())
+        sessionDao.touchForMark(markId, clock())
+    }
 
     /**
      * Recording finished. Stamp the duration and move the session
@@ -210,7 +228,8 @@ class SessionRepository(
             sessionDao.update(
                 row.copy(
                     durationMs = durationMs,
-                    status = SessionStatus.TRANSCRIBED
+                    status = SessionStatus.TRANSCRIBED,
+                    updatedAt = clock()
                 )
             )
         }
@@ -238,9 +257,16 @@ class SessionRepository(
      * no-op and silently returns.
      *
      * A session the sync server already has leaves a
-     * [SyncTombstoneEntity], so sync deletes it there too (issue #68).
+     * [SyncTombstoneEntity], so sync deletes it there too (issue #68),
+     * with its length for the conflict rule (#69).
+     *
+     * With [everywhere] `false` this is *Remove from this device*
+     * (issue #69): the session stays on the server, its sync state is
+     * kept as [SyncStateEntity.excluded] with what the home list shows
+     * of it, and it is not downloaded again until [downloadAgain]. A
+     * session the server does not have yet is simply deleted.
      */
-    suspend fun deleteSession(id: Long) {
+    suspend fun deleteSession(id: Long, everywhere: Boolean = true) {
         val row = sessionDao.get(id)
         if (row != null && row.audioPath.isNotBlank()) {
             File(row.audioPath).delete()
@@ -251,20 +277,83 @@ class SessionRepository(
         // session row does, sync drops a tombstone whose session still exists.
         val sync = db.syncDao()
         val state = row?.let { sync.state(SyncKinds.SESSION, it.syncId) }
-        if (row != null && state != null && state.baseRevision > 0) {
+        val synced = row != null && state != null && state.baseRevision > 0
+        if (synced && !everywhere) {
+            sync.upsertState(
+                state!!.copy(
+                    excluded = true,
+                    title = row!!.title,
+                    createdAt = row.createdAt,
+                    durationMs = row.durationMs,
+                    audioSha = null,
+                    audioSize = null,
+                    cleanSha = null,
+                    cleanSize = null
+                )
+            )
+        } else if (synced) {
             sync.upsertTombstone(
-                SyncTombstoneEntity(SyncKinds.SESSION, row.syncId, state.baseRevision, System.currentTimeMillis())
+                SyncTombstoneEntity(SyncKinds.SESSION, row!!.syncId, state!!.baseRevision, clock(), row.durationMs)
             )
         }
         sessionDao.delete(id)
         if (row != null) {
-            sync.deleteState(SyncKinds.SESSION, row.syncId)
+            if (!(synced && !everywhere)) sync.deleteState(SyncKinds.SESSION, row.syncId)
             if (row.audioPath.isNotBlank()) {
                 sync.deleteFileHash(row.audioPath)
                 sync.deleteFileHash(row.cleanAudioFile().path)
             }
         }
     }
+
+    /**
+     * Download a session removed from this device again (issue #69):
+     * it is no longer excluded, and sync fetches it as a session it
+     * has never seen.
+     */
+    suspend fun downloadAgain(syncId: String) {
+        val sync = db.syncDao()
+        val state = sync.state(SyncKinds.SESSION, syncId)?.takeIf { it.excluded } ?: return
+        sync.upsertState(
+            state.copy(
+                excluded = false,
+                remoteRevision = maxOf(state.remoteRevision, state.baseRevision, 1),
+                baseRevision = 0,
+                baseHash = null,
+                pendingHash = null,
+                pendingSince = null,
+                conflict = false,
+                lastError = null
+            )
+        )
+    }
+
+    /**
+     * Put a downloaded recording of session [syncId] in place (issue
+     * #69): [staged], whose bytes are [ref], becomes its recording, or
+     * its cleaned copy, if the session still waits for exactly that
+     * file. Returns whether it did; otherwise [staged] is left for the
+     * caller to delete. The session row itself does not change.
+     */
+    suspend fun attachRecording(syncId: String, ref: SessionManifest.FileRef, staged: File): Boolean =
+        db.withTransaction {
+            val sync = db.syncDao()
+            val row = sessionDao.getBySyncId(syncId) ?: return@withTransaction false
+            val state = sync.state(SyncKinds.SESSION, syncId) ?: return@withTransaction false
+            val target = File(row.audioPath.ifBlank { File(recordingsDir, "${row.id}.wav").absolutePath })
+            when (ref) {
+                state.pendingAudio -> {
+                    moveFile(staged, target)
+                    sync.upsertState(state.copy(audioSha = null, audioSize = null))
+                }
+                state.pendingClean -> {
+                    moveFile(staged, File(cleanAudioPathFor(target.absolutePath)))
+                    sync.upsertState(state.copy(cleanSha = null, cleanSize = null))
+                }
+                else -> return@withTransaction false
+            }
+            true
+        }
 
     /**
      * Stop treating [sessionId] as cleaned (issue #37): forget the
@@ -275,6 +364,7 @@ class SessionRepository(
     suspend fun removeCleaning(sessionId: Long) {
         val row = sessionDao.get(sessionId) ?: return
         sessionDao.setCleanedWith(sessionId, null)
+        touch(sessionId)
         if (row.audioPath.isNotBlank()) row.cleanAudioFile().delete()
     }
 
@@ -335,15 +425,30 @@ class SessionRepository(
      *
      * Refuses a missing recording, and a session that is recording
      * here, before writing anything.
+     *
+     * Sync (issue #69) applies the transcript before the recordings
+     * arrive: a recording whose hash is in [inPlace] is already the
+     * session's file and is left alone, and with [allowMissing] a
+     * recording neither staged nor in place is not refused; the old
+     * file, which no longer matches, is deleted, and the caller
+     * downloads the new one later ([attachRecording]).
      */
     suspend fun applyManifest(
         manifest: SessionManifest,
         updatedAt: Long,
         files: Map<String, File>,
+        inPlace: Set<String> = emptySet(),
+        allowMissing: Boolean = false,
         templateKey: (SessionManifest.TemplateRef) -> String? = { it.key }
     ): Long = db.withTransaction {
-        val audio = manifest.audio?.let { stagedFile(files, it) }
-        val clean = manifest.cleanAudio?.let { stagedFile(files, it) }
+        fun staged(ref: SessionManifest.FileRef): File? = when {
+            ref.sha256 in inPlace -> null
+            allowMissing && files[ref.sha256]?.isFile != true -> null
+            else -> stagedFile(files, ref)
+        }
+        val audio = manifest.audio?.let(::staged)
+        val clean = manifest.cleanAudio?.let(::staged)
+        fun keep(ref: SessionManifest.FileRef?) = ref != null && ref.sha256 in inPlace
         val existing = sessionDao.getBySyncId(manifest.syncId)
         check(existing?.status != SessionStatus.RECORDING) { "Session ${manifest.syncId} is recording" }
         val row = SessionEntity(
@@ -424,9 +529,12 @@ class SessionRepository(
             )
         }
         linkTags(id, manifest.tags)
-        if (audio != null) moveFile(audio, target)
+        when {
+            audio != null -> moveFile(audio, target)
+            !keep(manifest.audio) && allowMissing -> target.delete()
+        }
         val cleanTarget = File(cleanAudioPathFor(target.absolutePath))
-        if (clean != null) moveFile(clean, cleanTarget) else cleanTarget.delete()
+        if (clean != null) moveFile(clean, cleanTarget) else if (!keep(manifest.cleanAudio)) cleanTarget.delete()
         id
     }
 
@@ -448,6 +556,15 @@ class SessionRepository(
     fun observeAllSessions(): Flow<List<SessionEntity>> = sessionDao.observeAll()
 
     fun observeSession(id: Long): Flow<SessionEntity?> = sessionDao.observe(id)
+
+    /** Sync ids of sessions whose recording is still downloading from the sync server (issue #69). */
+    fun observeAudioDownloading(): Flow<Set<String>> = db.syncDao().observeAudioPending().map { it.toSet() }
+
+    /** Sync ids of sessions the sync server has (issue #69). */
+    fun observeSynced(): Flow<Set<String>> = db.syncDao().observeSynced().map { it.toSet() }
+
+    /** Sessions removed from this device and kept on the sync server, newest first (issue #69). */
+    fun observeRemoved(): Flow<List<SyncStateEntity>> = db.syncDao().observeExcluded()
 
     suspend fun getSession(id: Long): SessionEntity? = sessionDao.get(id)
 
@@ -475,9 +592,13 @@ class SessionRepository(
     fun observeMessages(sessionId: Long, kind: MessageKind): Flow<List<ChatMessageEntity>> =
         chatMessageDao.observe(sessionId, kind)
 
-    suspend fun deleteChatKind(sessionId: Long, kind: MessageKind) = chatMessageDao.deleteKind(sessionId, kind)
+    suspend fun deleteChatKind(sessionId: Long, kind: MessageKind) {
+        chatMessageDao.deleteKind(sessionId, kind)
+        touch(sessionId)
+    }
 
-    suspend fun addChatMessage(entity: ChatMessageEntity): Long = chatMessageDao.insert(entity)
+    suspend fun addChatMessage(entity: ChatMessageEntity): Long =
+        chatMessageDao.insert(entity).also { touch(entity.sessionId) }
 
     /**
      * Insert a chat message and return its autogenerated id. The
@@ -505,7 +626,7 @@ class SessionRepository(
             coveredMs = coveredMs,
             totalMs = totalMs
         )
-    )
+    ).also { touch(sessionId) }
 
     /**
      * Remove every chat message of [kind] for [sessionId].
@@ -515,6 +636,7 @@ class SessionRepository(
      */
     suspend fun clearMessages(sessionId: Long, kind: MessageKind) {
         chatMessageDao.deleteKind(sessionId, kind)
+        touch(sessionId)
     }
 
     /** The *Ask across sessions* history (issue #49), oldest first. */
@@ -545,7 +667,10 @@ class SessionRepository(
     /** Clear the *Ask across sessions* history. */
     suspend fun clearGlobalMessages() = globalChatDao.deleteAll()
 
-    suspend fun setSegmentSpeaker(segmentId: Long, speakerIndex: Int?) = segmentDao.setSpeaker(segmentId, speakerIndex)
+    suspend fun setSegmentSpeaker(segmentId: Long, speakerIndex: Int?) {
+        segmentDao.setSpeaker(segmentId, speakerIndex)
+        sessionDao.touchForSegment(segmentId, clock())
+    }
 
     /**
      * Replace line [lineId]'s text with [text], keeping the timings of
@@ -615,6 +740,7 @@ class SessionRepository(
             }
             undo.addedSpeaker?.let { speakerDao.delete(undo.sessionId, it) }
             sessionDao.setTranscriptEdited(undo.sessionId, undo.wasEdited)
+            touch(undo.sessionId)
         }
     }
 
@@ -629,7 +755,10 @@ class SessionRepository(
             val line = segmentDao.get(lineId) ?: return@withTransaction null
             val wasEdited = sessionDao.get(line.sessionId)?.transcriptEdited ?: false
             val undo = block(line, EditUndo(sessionId = line.sessionId, before = listOf(line), wasEdited = wasEdited))
-            if (undo != null) sessionDao.setTranscriptEdited(line.sessionId, true)
+            if (undo != null) {
+                sessionDao.setTranscriptEdited(line.sessionId, true)
+                touch(line.sessionId)
+            }
             undo
         }
 
@@ -649,6 +778,7 @@ class SessionRepository(
             speakerDao.rename(sessionId, speakerIndex, trimmed)
             // Full notes name the speakers (issue #48).
             markDao.markExpansionsStale(sessionId)
+            touch(sessionId)
         }
     }
 
@@ -664,6 +794,7 @@ class SessionRepository(
     suspend fun renameSession(sessionId: Long, title: String) {
         val capped = capTitle(title) ?: return
         sessionDao.rename(sessionId, capped, TitleSource.USER, previous = null)
+        touch(sessionId)
     }
 
     /**
@@ -675,7 +806,7 @@ class SessionRepository(
      */
     suspend fun applyAutoTitle(sessionId: Long, title: String): Boolean {
         val capped = capTitle(title) ?: return false
-        return sessionDao.applyAutoTitle(sessionId, capped) > 0
+        return (sessionDao.applyAutoTitle(sessionId, capped) > 0).also { if (it) touch(sessionId) }
     }
 
     /**
@@ -687,6 +818,7 @@ class SessionRepository(
         val previous = row.previousTitle
         if (row.titleSource != TitleSource.AUTO || previous == null) return
         sessionDao.rename(sessionId, previous, TitleSource.USER, previous = null)
+        touch(sessionId)
     }
 
     // --- Tags (issue #32) ---
@@ -714,6 +846,7 @@ class SessionRepository(
     suspend fun setSessionTags(sessionId: Long, names: List<String>) = db.withTransaction {
         tagDao.unlinkAll(sessionId)
         linkTags(sessionId, names)
+        touch(sessionId)
     }
 
     /**
@@ -725,6 +858,8 @@ class SessionRepository(
         val clean = TagNames.normalise(name) ?: return@withTransaction
         val key = TagNames.key(clean)
         val other = tagDao.findByKey(key)
+        // Manifests carry tag names, so every session with this tag changes.
+        sessionDao.touchForTag(tagId, clock())
         if (other != null && other.id != tagId) {
             tagDao.link(tagDao.sessionIdsFor(tagId).map { SessionTagEntity(it, other.id) })
             tagDao.delete(tagId)
@@ -734,7 +869,10 @@ class SessionRepository(
     }
 
     /** Delete tag [tagId]; it disappears from its sessions (presets skip it too). */
-    suspend fun deleteTag(tagId: Long) = tagDao.delete(tagId)
+    suspend fun deleteTag(tagId: Long) = db.withTransaction {
+        sessionDao.touchForTag(tagId, clock())
+        tagDao.delete(tagId)
+    }
 
     private suspend fun linkTags(sessionId: Long, names: List<String>) {
         val ids = tagDao.ensure(names, System.currentTimeMillis())
@@ -764,6 +902,7 @@ class SessionRepository(
      */
     suspend fun setSessionSpeakerCount(id: Long, numSpeakers: Int?) {
         sessionDao.setNumSpeakers(id, normaliseSpeakerCount(numSpeakers))
+        touch(id)
     }
 
     /**
@@ -773,6 +912,7 @@ class SessionRepository(
      */
     suspend fun setParticipants(id: Long, participants: List<String>?) {
         sessionDao.setParticipants(id, ParticipantsCodec.encode(participants))
+        touch(id)
     }
 
     /**
@@ -781,6 +921,7 @@ class SessionRepository(
      */
     suspend fun setSummaryTemplate(id: Long, key: String) {
         sessionDao.setSummaryTemplate(id, key)
+        touch(id)
     }
 
     /**
@@ -826,6 +967,7 @@ class SessionRepository(
             sessionDao.setTranscriptEdited(sessionId, false)
             sessionDao.setStatus(sessionId, SessionStatus.TRANSCRIBED)
             markDao.markExpansionsStale(sessionId)
+            touch(sessionId)
             if (cleaned != null) {
                 val row = sessionDao.get(sessionId) ?: error("No session row for id $sessionId")
                 sessionDao.setCleanedWith(sessionId, cleaned.model)
@@ -843,6 +985,7 @@ class SessionRepository(
      */
     suspend fun setDuration(id: Long, durationMs: Long) {
         sessionDao.updateDuration(id, durationMs)
+        touch(id)
     }
 
     /**
@@ -924,6 +1067,7 @@ class SessionRepository(
             }
             markDao.markExpansionsStale(sessionId)
             sessionDao.setStatus(sessionId, SessionStatus.DIARIZED)
+            touch(sessionId)
         }
     }
 
