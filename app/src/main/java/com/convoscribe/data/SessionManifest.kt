@@ -238,7 +238,8 @@ object SessionManifests {
     /** The tokens of [line] as the app keeps them. */
     fun tokens(line: SessionManifest.Line): List<TimedToken> = line.tokens.map { TimedToken(it.text, it.ms) }
 
-    private fun templateRef(key: String, userTemplateNames: Map<Long, String>): SessionManifest.TemplateRef? {
+    /** [key] as a portable reference: a user template by its name, `null` when it no longer exists. */
+    fun templateRef(key: String, userTemplateNames: Map<Long, String>): SessionManifest.TemplateRef? {
         val userId = SummaryTemplates.userId(key) ?: return SessionManifest.TemplateRef(key = key)
         // A deleted user template already resolves to the default.
         return userTemplateNames[userId]?.let { SessionManifest.TemplateRef(user = it) }
