@@ -10,6 +10,7 @@ import com.convoscribe.data.MessageRole
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SyncKinds
+import com.convoscribe.data.SyncTombstoneEntity
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
@@ -310,6 +311,33 @@ class SyncEngineTest {
         engine.run()
 
         assertNull(fake.documents.getValue(syncId).manifest)
+    }
+
+    @Test
+    fun aTombstoneWhoseSessionStillExistsIsDropped() = runTest {
+        val id = finishedSession()
+        engine.run()
+        val syncId = syncId(id)
+        db.syncDao().upsertTombstone(SyncTombstoneEntity(SyncKinds.SESSION, syncId, 1, now))
+
+        engine.run()
+
+        assertEquals(1L, fake.documents.getValue(syncId).revision)
+        assertNotNull(fake.documents.getValue(syncId).manifest)
+        assertEquals(emptyList<Any>(), db.syncDao().tombstones())
+    }
+
+    @Test
+    fun aSyncedSessionGoneWithoutATombstoneIsDeletedOnTheServer() = runTest {
+        val id = finishedSession()
+        engine.run()
+        val syncId = syncId(id)
+        db.sessionDao().delete(id)
+
+        engine.run()
+
+        assertNull(fake.documents.getValue(syncId).manifest)
+        assertNull(db.syncDao().state(SyncKinds.SESSION, syncId))
     }
 
     @Test

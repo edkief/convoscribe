@@ -99,7 +99,13 @@ class SyncEngine(
         }
 
         private suspend fun pushTombstones() {
+            orphansToTombstones()
             for (tombstone in dao.tombstones()) {
+                // Left by a delete the process died in before the session went.
+                if (db.sessionDao().getBySyncId(tombstone.syncId) != null) {
+                    dao.deleteTombstone(tombstone.kind, tombstone.syncId)
+                    continue
+                }
                 try {
                     when (client.deleteDocument(tombstone.kind, tombstone.syncId, tombstone.baseRevision)) {
                         is PushResult.Accepted, PushResult.NotFound -> dao.deleteTombstone(
@@ -112,6 +118,19 @@ class SyncEngine(
                 } catch (e: SyncException) {
                     if (fail(e)) return
                 }
+            }
+        }
+
+        /**
+         * A session the server has that is gone here without a tombstone
+         * (deleted while its upload was finishing, or the process died
+         * mid-delete) is deleted on the server too.
+         */
+        private suspend fun orphansToTombstones() {
+            for (state in dao.states(SyncKinds.SESSION)) {
+                if (state.baseRevision == 0L || db.sessionDao().getBySyncId(state.syncId) != null) continue
+                dao.upsertTombstone(SyncTombstoneEntity(state.kind, state.syncId, state.baseRevision, clock()))
+                dao.deleteState(state.kind, state.syncId)
             }
         }
 
