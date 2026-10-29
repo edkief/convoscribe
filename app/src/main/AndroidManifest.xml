@@ -179,6 +179,16 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
         <!--
+            Back up and restore sessions (issue #25): the same `dataSync`
+            foreground service pattern, with its own notification. Not
+            exported: started from Settings and the notification's Cancel
+            action only.
+        -->
+        <service
+            android:name=".service.BackupService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <!--
             Identifies the speakers of pending sessions while the device
             is charging (issue #11), started by JobScheduler even when the
             app is not running. Only the system may bind it.

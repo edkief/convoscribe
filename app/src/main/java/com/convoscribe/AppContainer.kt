@@ -13,6 +13,7 @@ import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioExporter
 import com.convoscribe.audio.MediaCodecAudioDecoder
 import com.convoscribe.audio.MicAudioSource
+import com.convoscribe.backup.BackupUseCase
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
@@ -407,6 +408,27 @@ class AppContainer(val context: Context) {
         server = serverTranscriber,
         useServer = { settingsRepository.settings.value.asrServerAutoActive }
     )
+
+    /**
+     * Back up every session to one archive and restore one (issue #25),
+     * run by [com.convoscribe.service.BackupService]. Recordings being
+     * restored are staged in `cacheDir/backup/`. Restored sessions
+     * waiting for their speakers are picked up by the charging job.
+     */
+    val backupUseCase: BackupUseCase = BackupUseCase(
+        repository = sessionRepository,
+        db = database,
+        presets = presets,
+        settings = settingsRepository,
+        stagingDir = File(context.cacheDir, "backup"),
+        appVersion = { installedApp.versionName },
+        onRestored = { pendingDiarizationScheduler.sync() }
+    )
+
+    /** A recording, import or re-transcription runs; a backup or restore waits for it to end. */
+    fun busyForBackup(): Boolean = recordingController.state.value.phase != RecordingPhase.IDLE ||
+        importAudioUseCase.isRunning ||
+        retranscribeUseCase.isRunning
 
     /**
      * The charging job's work (issue #11): pending sessions, oldest

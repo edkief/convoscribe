@@ -703,4 +703,48 @@
     <string name="speakers_delete_confirm">Remove</string>
     <string name="speakers_delete_cancel">Cancel</string>
     <string name="speakers_delete_cd">Remove %1$s</string>
+    <!-- Back up and restore (issue #25) -->
+    <string name="backup_section">Data</string>
+    <string name="backup_section_summary">Sessions live only on this device. A backup holds every session with its recording, transcript, speakers, summaries, questions and marks, plus known voices, templates, presets and settings. API keys are never included.</string>
+    <string name="backup_action">Back up sessions…</string>
+    <string name="restore_action">Restore from backup…</string>
+    <string name="backup_busy">Wait for the recording, import or re-transcription to finish.</string>
+    <string name="backup_running">Backing up… %1$d%%</string>
+    <string name="restore_running">Restoring… %1$d%%</string>
+    <string name="restore_running_unknown">Restoring…</string>
+    <string name="backup_cancel">Cancel</string>
+    <string name="backup_dismiss">OK</string>
+    <string name="backup_file_name">convoscribe-backup-%1$s.zip</string>
+    <string name="restore_confirm_title">Restore from this backup?</string>
+    <string name="restore_confirm_text">Sessions in the backup are added to this device. Sessions already here are kept as they are, so restoring the same backup again changes nothing.</string>
+    <string name="restore_confirm_settings">Also restore settings</string>
+    <string name="restore_confirm_action">Restore</string>
+    <string name="restore_confirm_cancel">Cancel</string>
+    <string name="notification_backup_title">Backing up sessions</string>
+    <string name="notification_restore_title">Restoring sessions</string>
+    <string name="notification_backup_progress">%1$d%%</string>
+    <string name="backup_done_title">Backup saved</string>
+    <string name="restore_done_title">Restore complete</string>
+    <string name="backup_failed_title">Backup failed</string>
+    <string name="restore_failed_title">Restore failed</string>
+    <plurals name="backup_done_sessions">
+        <item quantity="one">%d session saved.</item>
+        <item quantity="other">%d sessions saved.</item>
+    </plurals>
+    <plurals name="restore_done_sessions">
+        <item quantity="one">%d session restored.</item>
+        <item quantity="other">%d sessions restored.</item>
+    </plurals>
+    <plurals name="restore_skipped_sessions">
+        <item quantity="one">%d was already on this device.</item>
+        <item quantity="other">%d were already on this device.</item>
+    </plurals>
+    <plurals name="restore_partial_sessions">
+        <item quantity="one">%d session was restored before it stopped; restoring again adds the rest.</item>
+        <item quantity="other">%d sessions were restored before it stopped; restoring again adds the rest.</item>
+    </plurals>
+    <string name="backup_failure_not_a_backup">This file is not a ConvoScribe backup.</string>
+    <string name="backup_failure_too_new">This backup was made by a newer version of ConvoScribe. Update the app, then restore it.</string>
+    <string name="backup_failure_damaged">The backup is damaged and could not be read completely.</string>
+    <string name="backup_failure_io">The file could not be read or written: %1$s</string>
 </resources>
