@@ -166,6 +166,9 @@ importers:
 
   .:
     dependencies:
+      '@authz-proxy/sdk':
+        specifier: ^0.7.0
+        version: 0.7.0(next@16.4.3(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       '@aws-sdk/client-s3':
         specifier: ^3.1158.0
         version: 3.1158.0
@@ -217,6 +220,27 @@ importers:
         version: 5.0.5(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(tsx@4.23.15))
 
 packages:
+
+  '@authz-proxy/sdk@0.7.0':
+    resolution: {integrity: sha512-eYPPUtcAuhGu+x2ihrUZZWcf5x4KtrDOnpYWK2G0VU+D7EfQSF2NaBBGecpiLrJXlUSLawukCAeeTVKYz3ylfQ==}
+    hasBin: true
+    peerDependencies:
+      next: '>=14'
+      next-auth: ^4
+      react: '>=18'
+      react-dom: '>=18'
+      yaml: ^2
+    peerDependenciesMeta:
+      next:
+        optional: true
+      next-auth:
+        optional: true
+      react:
+        optional: true
+      react-dom:
+        optional: true
+      yaml:
+        optional: true
 
   '@aws-sdk/checksums@3.1001.6':
     resolution: {integrity: sha512-DSo+EqLq2PkS8gjit311LliRrYzydneP6vRhxMzDh9c8P3wWGzHf4fjmQN3d8sl4qh+aMqzn9+o+gZZo4+uqIQ==}
@@ -2297,6 +2321,9 @@ packages:
     resolution: {integrity: sha512-H0dkQoCa3b2VEeKQBOxFph+JAbcrQdE7KC0UkqwpLmv2EC4P41QXP+rqo9wYodACiG5/WM5s9oDApTU8utwj9g==}
     engines: {node: '>= 0.4'}
 
+  jose@6.2.13:
+    resolution: {integrity: sha512-7TIg10ZE1x82YediN+lcrPNvGMKge9yFHQD+Qho/b8y2adfugU3AsvvHfxV0fzyFllT6l9xCjf4RWY9g/Z9PJQ==}
+
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -3066,6 +3093,14 @@ packages:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
+
+  '@authz-proxy/sdk@0.7.0(next@16.4.3(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+    dependencies:
+      jose: 6.2.13
+    optionalDependencies:
+      next: 16.4.3(@babel/core@7.29.7(supports-color@7.2.0))(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      react: 19.3.1
+      react-dom: 19.3.1(react@19.3.1)
 
   '@aws-sdk/checksums@3.1001.6':
     dependencies:
@@ -5083,6 +5118,8 @@ snapshots:
       get-proto: 1.0.1
       has-symbols: 1.1.0
       set-function-name: 2.0.2
+
+  jose@6.2.13: {}
 
   js-tokens@4.0.0: {}
 
