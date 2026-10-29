@@ -41,7 +41,12 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   and the session waits for the next charge. A session interrupted by
   a crash also waits. Android 14+ gives a background job about 10
   minutes, so a very long session may not finish in the background; a
-  notification then asks you to start it from the app.
+  notification then asks you to start it from the app. **Cancel** on
+  the *Identifying speakers* notification or on the session screen
+  stops a run in progress, whoever started it: the session goes back
+  to *Speakers pending* with its transcript intact. Cancelled while
+  charging, nothing is identified automatically until the charger is
+  unplugged and plugged in again; *Identify speakers now* still works.
 - **Speed up speaker identification** (to compare, issue #56).
   Settings → Speakers → *Voice model*: **ResNet34** (default) or
   **CAM++**, a lighter model (29 MB download, offered there). Known
@@ -207,8 +212,13 @@ OpenAI-compatible endpoint for summaries and questions about the session.
   was said in other words or in the other language (*how much can we
   spend* finds *the budget is capped at 10k*, and English questions
   find French sessions). Each session is cut into passages of about
-  1,200 characters, and the passages are turned into vectors while the
-  device is charging, like *Identify speakers*. A session whose
+  1,200 characters, and the passages are turned into vectors in the
+  background, even with the app closed: by default while the device is
+  charging, like *Identify speakers*, or, with Settings → Semantic
+  search → *Index sessions* → **Any time**, whenever the battery is not
+  low. **Index now** in that section indexes every waiting session
+  straight away, and *Index for semantic search* in a session's menu
+  indexes just that one. A session whose
   transcript, speakers or summary change is indexed again. A question
   then picks sessions and excerpts by meaning as well as by words, and
   the answer says *matched by meaning*. Sessions not indexed yet still
@@ -528,8 +538,10 @@ one package per concern:
   `DiarizeSessionUseCase` (single rule: `runOrDefer` after Stop,
   import and re-transcription follows the *Identify speakers* setting
   and may leave the session `DIARIZATION_PENDING`; a cancelled run goes
-  back to pending), `PendingDiarizationRunner` (the charging job's
-  loop, oldest first), `Diarizer`, `SpeakerTurn`, `SpeakerAssigner`.
+  back to pending, and `cancel()` stops the run in progress for the
+  user), `PendingDiarizationRunner` (the charging job's loop, oldest
+  first; held by `PendingDiarizationScheduler` after a user cancel until
+  the charger is unplugged), `Diarizer`, `SpeakerTurn`, `SpeakerAssigner`.
 - `engine/sherpa/` — the only package that ever imports
   `com.k2fsa.sherpa.onnx`: `SherpaRecognizerBackend`,
   `SherpaTranscriberFactory`, `SherpaDiarizer`,

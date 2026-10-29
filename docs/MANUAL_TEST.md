@@ -751,6 +751,17 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
    Plug in.
 9. Android 14+: a session of an hour or more in **Charging**,
    unplugged, then plug in and leave it.
+10. Cancel (issue #64). Record ~5 minutes in **Auto** and stop. While
+    *Identifying speakers…* shows, tap **Cancel** on the notification.
+    Then tap *Identify speakers now* and, on the session screen, tap
+    **Cancel** under *Identifying speakers…*.
+11. With two sessions pending in **Charging**, plug in, wait for
+    `charging job: identifying speakers`, open the session being
+    identified and tap **Cancel**. Stay plugged in for a few minutes;
+    then force-stop and reopen the app, still plugged in.
+12. Unplug (`dumpsys battery unplug`), then plug in again.
+13. Import a file (§22); while the notification says it is identifying
+    speakers, tap **Cancel** on it.
 
 **Expected**
 
@@ -779,6 +790,17 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
   *Speakers not identified yet* appears; tapping it opens the app,
   where **Identify speakers now** finishes it. **Write down whether it
   happened and how long the session was.**
+- Step 10: within a few seconds the CPU drops, the notification goes
+  away and the session shows *Speakers not identified yet* with its
+  transcript. Logcat shows `diarization interrupted ... byUser=true`.
+  **Write down how long the stop took.**
+- Step 11: the run stops, logcat shows `speaker job held until the
+  next charge`, and nothing starts again while plugged in, also after
+  the restart. *Identify speakers now* still works.
+- Step 12: `speaker job hold lifted` on unplugging; both sessions are
+  identified once plugged in.
+- Step 13: the imported session is kept with its transcript and shows
+  *Speakers not identified yet*.
 
 ## 26. Floating control shapes (issue #21)
 
@@ -1435,15 +1457,24 @@ previous one without clearing data.
    about it.
 7. Record a short new session and open Ask across sessions before
    charging.
-8. Settings → Semantic search → *Delete the semantic search model*,
-   then ask the question from step 1 again.
+8. On battery, open that session's menu → *Index for semantic search*.
+   Open the menu again while it runs, and once it is done.
+9. Record two more short sessions. Settings → Semantic search → **Index
+   now**, on battery. Leave Settings and come back after a minute.
+10. *Index sessions* → **Any time**. Record a short session, close the
+    app and wait a few minutes on battery
+    (`adb shell dumpsys jobscheduler | grep -A5 com.convoscribe` shows
+    the job's constraints). Switch back to **While charging**.
+11. Settings → Semantic search → *Delete the semantic search model*,
+    then ask the question from step 1 again.
 
 **Expected**
 
 - Step 1: without the model, the older session is missed, or found
   only if a word matches; the answer has no *matched by meaning*.
-- Step 2: a progress row, then *0 of N sessions indexed. Indexing runs
-  while the device is charging.* and a delete button. The help text
+- Step 2: a progress row, then *Index sessions* (**While charging**
+  selected), *0 of N sessions indexed. Indexing runs while the device
+  is charging.*, **Index now** and a delete button. The help text
   names the model's size and the Gemma licence line shows.
 - Step 3: *Load the model*, *Index one passage*, *Read one question*,
   *App memory before* and *App memory at its peak* show; no error. On
@@ -1459,7 +1490,17 @@ previous one without clearing data.
 - Step 7: a line under the filters says *1 session is not indexed for
   semantic search yet…*; questions still work, by words for that
   session.
-- Step 8: the section offers the download again, the count disappears,
+- Step 8: the entry reads *Indexing for semantic search…* (disabled)
+  while it runs, then disappears; Ask across sessions no longer counts
+  the session as not indexed. During a recording or speaker
+  identification, a message says the app is busy instead.
+- Step 9: the count reaches the total without charging; **Index now**
+  then disappears.
+- Step 10: the job waits for *battery not low* rather than charging, and
+  the session is indexed on battery. The Settings and Ask across texts
+  say indexing runs whenever the battery is not low; switching back
+  restores the charging wording and constraint.
+- Step 11: the section offers the download again, the count disappears,
   and the answer is word-based as in step 1, without *matched by
   meaning*.
 
