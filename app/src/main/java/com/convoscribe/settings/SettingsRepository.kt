@@ -57,6 +57,8 @@ class SettingsRepository(
      *    keeps the previous value
      *  - `speakerIdMode` must be a [SpeakerIdMode.key]; anything else
      *    keeps the previous value
+     *  - `semanticIndexMode` must be a [SemanticIndexMode.key]; anything
+     *    else keeps the previous value
      *  - `diarizationEmbedding` must be a key of
      *    [ModelCatalog.diarizationEmbeddings]; anything else keeps the
      *    previous value
@@ -87,6 +89,7 @@ class SettingsRepository(
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
             putString(KEY_SPEAKER_ID_MODE, next.speakerIdMode)
+            putString(KEY_SEMANTIC_INDEX_MODE, next.semanticIndexMode)
             putString(KEY_DIARIZATION_EMBEDDING, next.diarizationEmbedding)
             putFloat(KEY_DIARIZATION_STEP_SECONDS, next.diarizationStepSeconds)
             putString(KEY_DISPLAY_MODE, next.displayMode)
@@ -159,6 +162,7 @@ class SettingsRepository(
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
             speakerIdMode = prefs.getString(KEY_SPEAKER_ID_MODE, null) ?: SpeakerIdMode.AUTO.key,
+            semanticIndexMode = SemanticIndexMode.of(prefs.getString(KEY_SEMANTIC_INDEX_MODE, null) ?: "").key,
             diarizationEmbedding = prefs.getString(KEY_DIARIZATION_EMBEDDING, null)
                 ?.takeIf { it in ModelCatalog.diarizationEmbeddings }
                 ?: DEFAULT_DIARIZATION_EMBEDDING,
@@ -238,6 +242,7 @@ class SettingsRepository(
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
         const val KEY_SPEAKER_MATCH_THRESHOLD = "speakerMatchThreshold"
         const val KEY_SPEAKER_ID_MODE = "speakerIdMode"
+        const val KEY_SEMANTIC_INDEX_MODE = "semanticIndexMode"
         const val KEY_DIARIZATION_EMBEDDING = "diarizationEmbedding"
         const val KEY_DIARIZATION_STEP_SECONDS = "diarizationStepSeconds"
         const val KEY_DEFAULT_PARTICIPANTS = "defaultParticipants"
@@ -271,6 +276,11 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val engine = if (asrEngine == "npu" || asrEngine == "cpu") asrEngine else previous.asrEngine
     val mode = if (DisplayMode.fromKey(displayMode) != null) displayMode else previous.displayMode
     val idMode = if (SpeakerIdMode.fromKey(speakerIdMode) != null) speakerIdMode else previous.speakerIdMode
+    val indexMode = if (SemanticIndexMode.fromKey(semanticIndexMode) != null) {
+        semanticIndexMode
+    } else {
+        previous.semanticIndexMode
+    }
     val embedding = diarizationEmbedding.takeIf { it in ModelCatalog.diarizationEmbeddings }
         ?: previous.diarizationEmbedding
     val shapeValid = floatingShape == null || FloatingShape.fromKey(floatingShape) != null
@@ -280,6 +290,7 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
         asrServerModel = asrServerModel.trim(),
         displayMode = mode,
         speakerIdMode = idMode,
+        semanticIndexMode = indexMode,
         diarizationEmbedding = embedding,
         floatingShape = shape,
         defaultSummaryTemplate = summaryTemplateKey(defaultSummaryTemplate),

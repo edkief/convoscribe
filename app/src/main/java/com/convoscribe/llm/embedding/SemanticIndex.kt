@@ -13,6 +13,12 @@ import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.toBytes
 import com.convoscribe.llm.TranscriptChunker
 import java.security.MessageDigest
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * A passage of a session to embed (issue #61): lines [firstLine] to
@@ -84,6 +90,9 @@ data class IndexProgress(val indexed: Int, val total: Int)
  * it when the device is unplugged, which leaves the current session
  * for the next run.
  *
+ * [index] does the same for one session, straight away, from its menu
+ * (issue #65). One run at a time, so only one model is ever loaded.
+ *
  * @property segments a session's transcript segments, in time order.
  * @property busy whether a recording, import, re-transcription or the
  *   speaker job holds the device; the run then gives way.
@@ -111,14 +120,46 @@ class SemanticIndexRunner(
     /** A session to index: its passages and their hash. */
     private class Work(val sessionId: Long, val passages: List<SemanticPassage>, val hash: String)
 
-    suspend fun run(): Outcome {
+    private val lock = Mutex()
+
+    private val _indexing = MutableStateFlow<Set<Long>>(emptySet())
+
+    /** The sessions [index] was asked for and has not finished yet. */
+    val indexing: StateFlow<Set<Long>> = _indexing.asStateFlow()
+
+    suspend fun run(): Outcome = lock.withLock {
         awaitRecovery()
-        if (!embedders.isAvailable()) return Outcome.DISABLED
+        if (!embedders.isAvailable()) return@withLock Outcome.DISABLED
         val modelId = embedders.modelId()
         index.deleteOtherModels(modelId)
+        embedEach(modelId, pending(modelId))
+    }
+
+    /**
+     * Index [sessionId] now if it is not indexed yet (issue #65),
+     * waiting for a run in progress. [Outcome.DONE] also when there was
+     * nothing to do.
+     */
+    suspend fun index(sessionId: Long): Outcome {
+        _indexing.update { it + sessionId }
+        try {
+            return lock.withLock {
+                awaitRecovery()
+                if (!embedders.isAvailable()) return@withLock Outcome.DISABLED
+                val modelId = embedders.modelId()
+                index.deleteOtherModels(modelId)
+                embedEach(modelId, pending(modelId, only = sessionId))
+            }
+        } finally {
+            _indexing.update { it - sessionId }
+        }
+    }
+
+    /** Embed and save each of [works] in turn; the model is loaded for the first one. */
+    private suspend fun embedEach(modelId: String, works: List<Work>): Outcome {
         var embedder: TextEmbedder? = null
         try {
-            for (work in pending(modelId)) {
+            for (work in works) {
                 if (busy()) return Outcome.BUSY
                 val model = embedder ?: embedders.create().also { embedder = it }
                 Log.i(TAG, "semantic index: session=${work.sessionId} passages=${work.passages.size}")
@@ -164,12 +205,20 @@ class SemanticIndexRunner(
     /** Whether any session waits to be indexed by the installed model. */
     suspend fun hasPending(): Boolean = embedders.isAvailable() && pending(embedders.modelId()).isNotEmpty()
 
-    /** The sessions whose index is missing or out of date for [modelId], newest first. */
-    private suspend fun pending(modelId: String): List<Work> {
+    /** Whether [sessionId] waits to be indexed by the installed model, for its menu. */
+    suspend fun isPending(sessionId: Long): Boolean =
+        embedders.isAvailable() && pending(embedders.modelId(), only = sessionId).isNotEmpty()
+
+    /**
+     * The sessions whose index is missing or out of date for [modelId],
+     * newest first; only [only] when given.
+     */
+    private suspend fun pending(modelId: String, only: Long? = null): List<Work> {
         val states = index.states().associateBy { it.sessionId }
         val speakers = search.speakers().groupBy { it.sessionId }
         val summaries = search.summaries().associate { it.sessionId to it.content }
         return search.sessions()
+            .filter { only == null || it.id == only }
             .filter { it.status != SessionStatus.RECORDING && it.status != SessionStatus.DIARIZING }
             .mapNotNull { session ->
                 val lines = TranscriptFormatter.lines(segments(session.id), speakers[session.id].orEmpty())

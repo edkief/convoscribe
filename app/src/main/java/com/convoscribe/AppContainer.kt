@@ -478,6 +478,7 @@ class AppContainer(val context: Context) {
     @OptIn(FlowPreview::class)
     val semanticIndexScheduler: SemanticIndexScheduler = SemanticIndexScheduler(
         context = context,
+        settings = settingsRepository,
         runner = { semanticIndexRunner },
         scope = applicationScope
     ).also { scheduler ->
@@ -490,6 +491,12 @@ class AppContainer(val context: Context) {
             }
         )
         changed.debounce(INDEX_SYNC_DEBOUNCE_MS).onEach { scheduler.sync() }.launchIn(applicationScope)
+        settingsRepository.settings
+            .map { it.semanticIndexMode }
+            .distinctUntilChanged()
+            .drop(1)
+            .onEach { scheduler.sync() }
+            .launchIn(applicationScope)
     }
 
     /**

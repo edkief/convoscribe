@@ -119,6 +119,32 @@ class SemanticIndexRunnerTest {
         assertEquals(listOf(done), db.semanticIndexDao().states().map { it.sessionId })
     }
 
+    /** *Index for semantic search* (issue #65) indexes that session only, and gives way like a run. */
+    @Test
+    fun indexIndexesOnlyThatSession() = runTest {
+        val first = session("First", 1_000)
+        repo.addSegment(first, startMs = 0, endMs = 1_000, text = "Hello")
+        val second = session("Second", 2_000)
+        repo.addSegment(second, startMs = 0, endMs = 1_000, text = "Goodbye")
+        assertTrue(runner.isPending(second))
+
+        busy = true
+        assertEquals(SemanticIndexRunner.Outcome.BUSY, runner.index(second))
+        assertTrue(runner.isPending(second))
+
+        busy = false
+        assertEquals(SemanticIndexRunner.Outcome.DONE, runner.index(second))
+        assertEquals(listOf(second), db.semanticIndexDao().states().map { it.sessionId })
+        assertFalse(runner.isPending(second))
+        assertTrue(runner.isPending(first))
+        assertTrue(runner.indexing.value.isEmpty())
+
+        // Already indexed: nothing to embed.
+        val created = factory.created
+        assertEquals(SemanticIndexRunner.Outcome.DONE, runner.index(second))
+        assertEquals(created, factory.created)
+    }
+
     @Test
     fun withoutTheModelNothingRuns() = runTest {
         session("Done", 2_000)
