@@ -252,7 +252,12 @@ class SessionRepository(
                 val state = sync.state(SyncKinds.SESSION, row.syncId)
                 if (state != null && state.baseRevision > 0) {
                     sync.upsertTombstone(
-                        SyncTombstoneEntity(SyncKinds.SESSION, row.syncId, state.baseRevision, System.currentTimeMillis())
+                        SyncTombstoneEntity(
+                            SyncKinds.SESSION,
+                            row.syncId,
+                            state.baseRevision,
+                            System.currentTimeMillis()
+                        )
                     )
                 }
                 sync.deleteState(SyncKinds.SESSION, row.syncId)

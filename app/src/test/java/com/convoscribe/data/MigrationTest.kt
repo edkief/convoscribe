@@ -449,7 +449,8 @@ class MigrationTest {
     fun migrate16To17_existingSessionsWaitToBeUploaded() = runTest {
         helper.createDatabase(DB_NAME, 16).use { db ->
             db.execSQL(
-                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status, syncId, updatedAt) " +
+                "INSERT INTO sessions " +
+                    "(id, title, createdAt, durationMs, language, audioPath, status, syncId, updatedAt) " +
                     "VALUES (1, 'Standup', 1000, 60000, 'en', '/r/1.wav', 'DIARIZED', 'sync-1', 1000)"
             )
         }
