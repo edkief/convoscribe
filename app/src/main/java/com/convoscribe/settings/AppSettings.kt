@@ -84,6 +84,10 @@ import com.convoscribe.llm.SummaryTemplates
  * [SecretStore]. [asrServerAuto] sends each stopped recording and each
  * import to the server, keeping the device transcript if that fails.
  *
+ * [syncServerUrl] is the base URL of the self-hosted sync server
+ * (issue #68), without `/api/sync/v1`; its key lives in [SecretStore].
+ * [syncEnabled] uploads every finished session to it in the background.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -99,6 +103,8 @@ data class AppSettings(
     val asrServerUrl: String = "",
     val asrServerModel: String = "",
     val asrServerAuto: Boolean = false,
+    val syncServerUrl: String = "",
+    val syncEnabled: Boolean = false,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
@@ -124,6 +130,9 @@ data class AppSettings(
 
     /** Stopped recordings and imports go to the server. */
     val asrServerAutoActive: Boolean get() = asrServerAuto && asrServerConfigured
+
+    /** Sessions are uploaded to a sync server (issue #68). */
+    val syncActive: Boolean get() = syncEnabled && syncServerUrl.isNotBlank()
 }
 
 /**

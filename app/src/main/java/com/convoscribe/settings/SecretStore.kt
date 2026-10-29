@@ -21,6 +21,11 @@ interface SecretStore {
     fun getAsrServerKey(): String
 
     fun setAsrServerKey(value: String)
+
+    /** The sync server's API key (issue #68). */
+    fun getSyncKey(): String
+
+    fun setSyncKey(value: String)
 }
 
 /**
@@ -57,10 +62,17 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         prefs.edit().putString(KEY_ASR_SERVER_KEY, value).apply()
     }
 
+    override fun getSyncKey(): String = prefs.getString(KEY_SYNC_KEY, "") ?: ""
+
+    override fun setSyncKey(value: String) {
+        prefs.edit().putString(KEY_SYNC_KEY, value).apply()
+    }
+
     private companion object {
         const val FILE_NAME = "secrets"
         const val KEY_API_KEY = "api_key"
         const val KEY_ASR_SERVER_KEY = "asr_server_key"
+        const val KEY_SYNC_KEY = "sync_key"
     }
 }
 
@@ -73,6 +85,7 @@ class EncryptedSecretStore(context: Context) : SecretStore {
 class InMemorySecretStore : SecretStore {
     private var value: String = ""
     private var asrServerKey: String = ""
+    private var syncKey: String = ""
 
     override fun getApiKey(): String = value
 
@@ -84,5 +97,11 @@ class InMemorySecretStore : SecretStore {
 
     override fun setAsrServerKey(value: String) {
         asrServerKey = value
+    }
+
+    override fun getSyncKey(): String = syncKey
+
+    override fun setSyncKey(value: String) {
+        syncKey = value
     }
 }

@@ -46,6 +46,7 @@ class SettingsRepository(
      *  - `llmBaseUrl` trimmed and trailing `/` removed
      *  - `asrServerUrl` trimmed and trailing `/` removed;
      *    `asrServerModel` trimmed
+     *  - `syncServerUrl` trimmed and trailing `/` removed
      *  - `defaultParticipants` trimmed and de-duplicated; empty
      *    becomes `null` (anyone)
      *  - `asrLanguage` must be "en" or "fr"; anything else keeps
@@ -84,6 +85,8 @@ class SettingsRepository(
             putString(KEY_ASR_SERVER_URL, next.asrServerUrl)
             putString(KEY_ASR_SERVER_MODEL, next.asrServerModel)
             putBoolean(KEY_ASR_SERVER_AUTO, next.asrServerAuto)
+            putString(KEY_SYNC_SERVER_URL, next.syncServerUrl)
+            putBoolean(KEY_SYNC_ENABLED, next.syncEnabled)
             putInt(KEY_NUM_SPEAKERS, next.numSpeakers)
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
@@ -146,6 +149,13 @@ class SettingsRepository(
         secrets.setAsrServerKey(value)
     }
 
+    /** API key of the sync server (issue #68); never part of what is synced. */
+    fun syncKey(): String = secrets.getSyncKey()
+
+    fun setSyncKey(value: String) {
+        secrets.setSyncKey(value)
+    }
+
     private fun load(): AppSettings {
         val rawLang = prefs.getString(KEY_ASR_LANGUAGE, null) ?: "en"
         val raw = AppSettings(
@@ -158,6 +168,8 @@ class SettingsRepository(
             asrServerUrl = (prefs.getString(KEY_ASR_SERVER_URL, "") ?: "").trim().trimEnd('/'),
             asrServerModel = prefs.getString(KEY_ASR_SERVER_MODEL, "") ?: "",
             asrServerAuto = prefs.getBoolean(KEY_ASR_SERVER_AUTO, false),
+            syncServerUrl = (prefs.getString(KEY_SYNC_SERVER_URL, "") ?: "").trim().trimEnd('/'),
+            syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
@@ -237,6 +249,8 @@ class SettingsRepository(
         const val KEY_ASR_SERVER_URL = "asrServerUrl"
         const val KEY_ASR_SERVER_MODEL = "asrServerModel"
         const val KEY_ASR_SERVER_AUTO = "asrServerAuto"
+        const val KEY_SYNC_SERVER_URL = "syncServerUrl"
+        const val KEY_SYNC_ENABLED = "syncEnabled"
         const val KEY_NUM_SPEAKERS = "numSpeakers"
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
@@ -263,7 +277,7 @@ class SettingsRepository(
 /**
  * Validate [this] against the previous [previous] settings. Numeric
  * fields are clamped; `llmBaseUrl` is trimmed and stripped of its
- * trailing `/`, and so is `asrServerUrl`; `asrLanguage` keeps the previous value when it is
+ * trailing `/`, and so are `asrServerUrl` and `syncServerUrl`; `asrLanguage` keeps the previous value when it is
  * not "en" or "fr"; `asrEngine` keeps the previous value when it is
  * not "npu" or "cpu"; `displayMode` and `speakerIdMode` keep the
  * previous value when they are not a [DisplayMode.key] /
@@ -288,6 +302,7 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     return this.normaliseNumeric().copy(
         asrServerUrl = asrServerUrl.trim().trimEnd('/'),
         asrServerModel = asrServerModel.trim(),
+        syncServerUrl = syncServerUrl.trim().trimEnd('/'),
         displayMode = mode,
         speakerIdMode = idMode,
         semanticIndexMode = indexMode,
