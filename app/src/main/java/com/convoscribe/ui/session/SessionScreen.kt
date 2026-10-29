@@ -30,6 +30,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -49,6 +50,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -354,6 +358,7 @@ fun SessionScreen(
         onRenameSession = { title -> vm.renameSession(title) },
         effectiveSpeakerCount = effectiveSpeakerCount,
         onReidentifySpeakers = reidentify,
+        audioDownloading = state.audioDownloading,
         waitingForCharger = appSettings.speakerIdMode == SpeakerIdMode.CHARGING.key,
         // Straight to the use case: a charging-job run has no notification.
         onCancelIdentify = { container.diarizeSessionUseCase.cancel() },
@@ -378,6 +383,7 @@ fun SessionScreen(
                 recorderState.phase == RecordingPhase.IDLE &&
                 !retranscribing &&
                 !importing &&
+                !state.audioDownloading &&
                 state.status in CONTINUABLE_STATUSES,
             serverAvailable = appSettings.asrServerConfigured,
             onStart = { language, onServer ->
@@ -425,6 +431,7 @@ fun SessionScreen(
                 recorderState.phase == RecordingPhase.IDLE &&
                 !retranscribing &&
                 !importing &&
+                !state.audioDownloading &&
                 state.status in CONTINUABLE_STATUSES,
             playCleaned = playCleaned,
             onClean = {
@@ -507,6 +514,7 @@ internal fun SessionBody(
     onRenameSession: (String) -> Unit,
     effectiveSpeakerCount: Int,
     onReidentifySpeakers: (Int) -> Unit,
+    audioDownloading: Boolean = false,
     onSummarise: () -> Unit,
     onCancelSummary: () -> Unit,
     onSelectSummaryTemplate: (String) -> Unit = {},
@@ -634,7 +642,8 @@ internal fun SessionBody(
                 )
                 val canDiarize = status != SessionStatus.DIARIZING &&
                     status != SessionStatus.RECORDING &&
-                    retranscribe.progress == null
+                    retranscribe.progress == null &&
+                    !audioDownloading
                 DropdownMenuItem(
                     text = { Text(text = stringResource(R.string.session_overflow_reidentify)) },
                     enabled = canDiarize,
@@ -748,6 +757,7 @@ internal fun SessionBody(
                 )
             }
             SessionTabs(selectedTab = selectedTab, onSelect = { selectedTab = it })
+            if (audioDownloading && selectedTab == 0) AudioDownloadingBanner()
             // Finished sessions with a readable recording get the player;
             // it is not offered while the session is still being recorded.
             val canPlay = !notFound && status != SessionStatus.RECORDING && playerState.ready
@@ -779,7 +789,7 @@ internal fun SessionBody(
                     waitingForCharger = waitingForCharger,
                     // The manual trigger works whatever the setting says.
                     onIdentifySpeakersNow = { onReidentifySpeakers(effectiveSpeakerCount) }
-                        .takeIf { retranscribe.progress == null },
+                        .takeIf { retranscribe.progress == null && !audioDownloading },
                     onCancelIdentify = onCancelIdentify,
                     targetLineId = targetLineId,
                     lineEdits = lineEdits,
@@ -1090,5 +1100,28 @@ private fun SessionTabs(selectedTab: Int, onSelect: (Int) -> Unit) {
         PrimaryScrollableTabRow(selectedTabIndex = selectedTab, edgePadding = AppTheme.spacing.s, tabs = content)
     } else {
         PrimaryTabRow(selectedTabIndex = selectedTab, tabs = content)
+    }
+}
+
+/**
+ * In place of the player while the recording of a session from another
+ * device is still downloading from the sync server (issue #69).
+ */
+@Composable
+private fun AudioDownloadingBanner() {
+    val spacing = AppTheme.spacing
+    Surface(modifier = Modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Column(
+            modifier = Modifier
+                .padding(horizontal = spacing.screen, vertical = spacing.s)
+                .semantics { liveRegion = LiveRegionMode.Polite }
+        ) {
+            Text(text = stringResource(R.string.session_audio_downloading), style = MaterialTheme.typography.bodyMedium)
+            Text(
+                text = stringResource(R.string.session_audio_downloading_body),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }

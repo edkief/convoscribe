@@ -97,7 +97,13 @@ data class SessionUiState(
      * The title an automatic one replaced (issue #32), to offer
      * restoring it; `null` unless the title was written automatically.
      */
-    val replacedTitle: String? = null
+    val replacedTitle: String? = null,
+    /**
+     * The session came from another device and its recording is still
+     * downloading from the sync server (issue #69): nothing can play,
+     * re-identify speakers or re-transcribe until it arrives.
+     */
+    val audioDownloading: Boolean = false
 )
 
 /**
@@ -171,8 +177,9 @@ class SessionViewModel(
                     repository.observeSegments(sessionId),
                     repository.observeSpeakers(sessionId),
                     repository.observeMarks(sessionId),
-                    repository.observeTagsFor(sessionId)
-                ) { segments, speakers, marks, tags ->
+                    repository.observeTagsFor(sessionId),
+                    repository.observeAudioDownloading()
+                ) { segments, speakers, marks, tags, downloading ->
                     SessionUiState(
                         title = session.title,
                         status = session.status,
@@ -192,7 +199,8 @@ class SessionViewModel(
                         diarizationRun = session.diarizationRun(),
                         cleanAudioPath = if (session.cleanedWith != null) session.cleanAudioFile().absolutePath else "",
                         tags = tags.map { it.name },
-                        replacedTitle = session.previousTitle.takeIf { session.titleSource == TitleSource.AUTO }
+                        replacedTitle = session.previousTitle.takeIf { session.titleSource == TitleSource.AUTO },
+                        audioDownloading = session.syncId in downloading
                     )
                 }
             }
@@ -276,7 +284,10 @@ class SessionViewModel(
                     playedPath(
                         state,
                         cleaned
-                    ).takeIf { state.status != null && state.status != SessionStatus.RECORDING }
+                    ).takeIf {
+                        // Prepared once a downloading recording arrives (issue #69).
+                        state.status != null && state.status != SessionStatus.RECORDING && !state.audioDownloading
+                    }
                 }
                     .distinctUntilChanged()
                     .collect { path -> if (path.isNullOrBlank()) audio.stop() else audio.prepare(File(path)) }

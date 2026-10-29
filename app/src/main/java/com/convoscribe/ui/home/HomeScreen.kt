@@ -20,7 +20,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
@@ -48,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -78,6 +81,7 @@ import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.StatusBadge
+import com.convoscribe.ui.components.SyncBadge
 import com.convoscribe.ui.components.TagChipRow
 import com.convoscribe.ui.components.statusLabel
 import com.convoscribe.ui.theme.AppTheme
@@ -126,7 +130,10 @@ fun HomeScreen(navController: NavHostController) {
     val vm: HomeViewModel = viewModel(
         factory = viewModelFactory {
             initializer {
-                HomeViewModel(repository = container.sessionRepository)
+                HomeViewModel(
+                    repository = container.sessionRepository,
+                    onDownloadRequested = container.syncScheduler::syncNow
+                )
             }
         }
     )
@@ -221,6 +228,8 @@ fun HomeScreen(navController: NavHostController) {
         onNewRecording = onNewRecording,
         onOpenSession = { id -> navController.navigate("session/$id") },
         onDelete = vm::delete,
+        onRemoveFromDevice = vm::removeFromDevice,
+        onDownloadAgain = vm::downloadAgain,
         onSettings = { navController.navigate("settings") },
         onEngineCheck = { navController.navigate("engine-check") },
         onSearch = { navController.navigate("search") },
@@ -230,8 +239,9 @@ fun HomeScreen(navController: NavHostController) {
 
 /**
  * Render-only body of [HomeScreen], so previews and screenshot tests
- * can draw it with fake [sessions]. The delete confirmation dialog
- * lives here because it is pure UI state.
+ * can draw it with fake [sessions]. The delete and *Remove from this
+ * device* (issue #69) confirmations live here because they are pure UI
+ * state.
  */
 @Composable
 internal fun HomeBody(
@@ -248,13 +258,16 @@ internal fun HomeBody(
     onNewRecording: () -> Unit,
     onOpenSession: (Long) -> Unit,
     onDelete: (Long) -> Unit,
+    onRemoveFromDevice: (Long) -> Unit = {},
+    onDownloadAgain: (String) -> Unit = {},
     onSettings: () -> Unit,
     onEngineCheck: () -> Unit,
     onSearch: () -> Unit = {},
     onAskAcross: () -> Unit = {}
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
-    var pendingDeleteId by remember { mutableStateOf<Long?>(null) }
+    var pendingDelete by remember { mutableStateOf<SessionRow?>(null) }
+    var pendingRemove by remember { mutableStateOf<SessionRow?>(null) }
     // A filter that matches nothing still means there are sessions.
     val hasSessions = sessions.isNotEmpty() || tagFilter.active
     // Search is a field above the list where there is room, an icon otherwise.
@@ -345,26 +358,46 @@ internal fun HomeBody(
                 onNewRecording = onNewRecording,
                 onImport = onImport,
                 onOpenSession = onOpenSession,
-                onRequestDelete = { pendingDeleteId = it }
+                onRequestDelete = { pendingDelete = it },
+                onRequestRemove = { pendingRemove = it },
+                onDownloadAgain = onDownloadAgain
             )
         }
     }
 
-    pendingDeleteId?.let { id ->
+    pendingDelete?.let { row ->
         ConfirmDialog(
             title = stringResource(R.string.home_delete_title),
-            message = stringResource(R.string.home_delete_message),
+            message = stringResource(
+                if (row.synced) R.string.home_delete_message_synced else R.string.home_delete_message
+            ),
             confirmLabel = stringResource(R.string.home_delete_confirm),
             dismissLabel = stringResource(R.string.home_delete_cancel),
             destructive = true,
             onConfirm = {
-                onDelete(id)
-                pendingDeleteId = null
+                onDelete(row.id)
+                pendingDelete = null
             },
-            onDismiss = { pendingDeleteId = null }
+            onDismiss = { pendingDelete = null }
+        )
+    }
+    pendingRemove?.let { row ->
+        ConfirmDialog(
+            title = stringResource(R.string.home_remove_title),
+            message = stringResource(R.string.home_remove_message),
+            confirmLabel = stringResource(R.string.home_remove_confirm),
+            dismissLabel = stringResource(R.string.home_delete_cancel),
+            onConfirm = {
+                onRemoveFromDevice(row.id)
+                pendingRemove = null
+            },
+            onDismiss = { pendingRemove = null }
         )
     }
 }
+
+/** How faint a session removed from this device is in the list (issue #69). */
+private const val SERVER_ONLY_ALPHA = 0.6f
 
 /** Width from which Home shows a search field instead of a top-bar icon. */
 private const val WIDE_SCREEN_DP = 600
@@ -445,7 +478,9 @@ private fun SessionList(
     onNewRecording: () -> Unit,
     onImport: () -> Unit,
     onOpenSession: (Long) -> Unit,
-    onRequestDelete: (Long) -> Unit
+    onRequestDelete: (SessionRow) -> Unit,
+    onRequestRemove: (SessionRow) -> Unit,
+    onDownloadAgain: (String) -> Unit
 ) {
     if (sessions.isEmpty() && filtered) {
         EmptyState(
@@ -479,11 +514,13 @@ private fun SessionList(
             verticalArrangement = Arrangement.spacedBy(spacing.m),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            items(items = sessions, key = { it.id }) { row ->
+            items(items = sessions, key = { it.key }) { row ->
                 SessionCard(
                     row = row,
-                    onOpen = { onOpenSession(row.id) },
-                    onRequestDelete = { onRequestDelete(row.id) },
+                    onOpen = { if (row.onServerOnly) onDownloadAgain(row.syncId) else onOpenSession(row.id) },
+                    onRequestDelete = { onRequestDelete(row) },
+                    onRequestRemove = { onRequestRemove(row) },
+                    onDownloadAgain = { onDownloadAgain(row.syncId) },
                     modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
                 )
             }
@@ -566,6 +603,11 @@ private fun NewRecordingButton(onClick: () -> Unit) {
  * One session: title and overflow menu on the first line, then
  * `date · duration · N speakers · FR`, and a status badge while it is
  * recording, identifying speakers or failed.
+ *
+ * Sync (issue #69): a session removed from this device is greyed with
+ * *On server*, and tapping it or *Download* in its menu fetches it
+ * again; one whose recording is on its way says so. A session the
+ * server has can also be removed from this device only.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -573,6 +615,8 @@ private fun SessionCard(
     row: SessionRow,
     onOpen: () -> Unit,
     onRequestDelete: () -> Unit,
+    onRequestRemove: () -> Unit = {},
+    onDownloadAgain: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -591,7 +635,8 @@ private fun SessionCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.medium)
-            .combinedClickable(onClick = onOpen, onLongClick = onRequestDelete)
+            .combinedClickable(onClick = onOpen, onLongClick = if (row.onServerOnly) null else onRequestDelete)
+            .alpha(if (row.onServerOnly) SERVER_ONLY_ALPHA else 1f)
     ) {
         Row(
             modifier = Modifier.padding(start = spacing.l, top = spacing.xs, bottom = spacing.l),
@@ -614,7 +659,9 @@ private fun SessionCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                if (statusLabel(row.status) != null) {
+                if (row.onServerOnly || row.audioDownloading) {
+                    SyncBadge(onServerOnly = row.onServerOnly, modifier = Modifier.padding(top = spacing.xs))
+                } else if (statusLabel(row.status) != null) {
                     StatusBadge(status = row.status, modifier = Modifier.padding(top = spacing.xs))
                 }
                 TagChipRow(tags = row.tags, modifier = Modifier.padding(top = spacing.xs))
@@ -627,14 +674,42 @@ private fun SessionCard(
                     )
                 }
                 DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.home_delete_confirm)) },
-                        leadingIcon = { Icon(imageVector = Icons.Filled.Delete, contentDescription = null) },
-                        onClick = {
-                            menuOpen = false
-                            onRequestDelete()
+                    if (row.onServerOnly) {
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.home_download_again)) },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Filled.KeyboardArrowDown,
+                                    contentDescription = null
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                onDownloadAgain()
+                            }
+                        )
+                    } else {
+                        if (row.synced) {
+                            DropdownMenuItem(
+                                text = { Text(text = stringResource(R.string.home_remove_device)) },
+                                leadingIcon = {
+                                    Icon(imageVector = Icons.Filled.Clear, contentDescription = null)
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    onRequestRemove()
+                                }
+                            )
                         }
-                    )
+                        DropdownMenuItem(
+                            text = { Text(text = stringResource(R.string.home_delete_confirm)) },
+                            leadingIcon = { Icon(imageVector = Icons.Filled.Delete, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                onRequestDelete()
+                            }
+                        )
+                    }
                 }
             }
         }

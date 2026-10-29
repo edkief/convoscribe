@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.SyncStateEntity
 import com.convoscribe.data.Tag
 import java.time.Instant
 import java.time.LocalDateTime
@@ -25,6 +26,12 @@ import kotlinx.coroutines.launch
  * [durationMs] through [formatSessionDate] / [formatDuration], [status]
  * as a badge, [speakerCount] (0 until speakers are identified) and
  * [language] through [languageTag], and its [tags] (issue #32).
+ *
+ * Sync (issue #69): [synced] when the sync server has it, so it can be
+ * removed from this device only; [audioDownloading] while its
+ * recording is still on its way. A session removed from this device
+ * is [onServerOnly]: no local row ([id] is 0), shown greyed with
+ * *Download*, by its [syncId].
  */
 data class SessionRow(
     val id: Long,
@@ -34,8 +41,15 @@ data class SessionRow(
     val status: SessionStatus,
     val language: String = "en",
     val speakerCount: Int = 0,
-    val tags: List<String> = emptyList()
-)
+    val tags: List<String> = emptyList(),
+    val syncId: String = "",
+    val synced: Boolean = false,
+    val audioDownloading: Boolean = false,
+    val onServerOnly: Boolean = false
+) {
+    /** Unique across local and removed rows, for the list. */
+    val key: String get() = if (onServerOnly) "server:$syncId" else "local:$id"
+}
 
 /**
  * The tag filter above the session list (issue #32): the [tags] that
@@ -62,7 +76,8 @@ data class TagFilter(
  * other ViewModels follow.
  */
 class HomeViewModel(
-    private val repository: SessionRepository
+    private val repository: SessionRepository,
+    private val onDownloadRequested: () -> Unit = {}
 ) : ViewModel() {
 
     private val selectedTags = MutableStateFlow<Set<Long>>(emptySet())
@@ -75,7 +90,7 @@ class HomeViewModel(
         TagFilter(tags = tags, selected = selected.filterTo(HashSet()) { id -> tags.any { it.id == id } })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TagFilter())
 
-    val sessions: StateFlow<List<SessionRow>> = combine(
+    private val local = combine(
         repository.observeAllSessions(),
         repository.observeSpeakerCounts(),
         repository.observeSessionTags(),
@@ -83,6 +98,26 @@ class HomeViewModel(
     ) { rows, counts, tags, filter ->
         rows.filter { row -> !filter.active || tags[row.id].orEmpty().any { it.id in filter.selected } }
             .map { it.toRow(counts[it.id] ?: 0, tags[it.id].orEmpty().map { tag -> tag.name }) }
+    }
+
+    /**
+     * The local sessions with their sync state, and the sessions removed
+     * from this device among them by date (issue #69). Removed sessions
+     * have no tags here, so a tag filter hides them.
+     */
+    val sessions: StateFlow<List<SessionRow>> = combine(
+        local,
+        repository.observeSynced(),
+        repository.observeAudioDownloading(),
+        repository.observeRemoved(),
+        tagFilter
+    ) { rows, synced, downloading, removed, filter ->
+        val withSync = rows.map { it.copy(synced = it.syncId in synced, audioDownloading = it.syncId in downloading) }
+        if (filter.active || removed.isEmpty()) {
+            withSync
+        } else {
+            (withSync + removed.map { it.toRemovedRow() }).sortedByDescending { it.createdAt }
+        }
     }
         .stateIn(
             scope = viewModelScope,
@@ -110,7 +145,33 @@ class HomeViewModel(
             repository.deleteSession(id)
         }
     }
+
+    /** *Remove from this device* (issue #69): delete [id] here, keep it on the sync server. */
+    fun removeFromDevice(id: Long) {
+        viewModelScope.launch {
+            repository.deleteSession(id, everywhere = false)
+        }
+    }
+
+    /** Download a session removed from this device again, at the next sync, started now. */
+    fun downloadAgain(syncId: String) {
+        viewModelScope.launch {
+            repository.downloadAgain(syncId)
+            onDownloadRequested()
+        }
+    }
 }
+
+private fun SyncStateEntity.toRemovedRow(): SessionRow = SessionRow(
+    id = 0,
+    title = title.orEmpty(),
+    createdAt = createdAt ?: 0,
+    durationMs = durationMs ?: 0,
+    status = SessionStatus.TRANSCRIBED,
+    syncId = syncId,
+    synced = true,
+    onServerOnly = true
+)
 
 private fun SessionEntity.toRow(speakerCount: Int, tags: List<String>): SessionRow = SessionRow(
     id = id,
@@ -120,7 +181,8 @@ private fun SessionEntity.toRow(speakerCount: Int, tags: List<String>): SessionR
     status = status,
     language = language,
     speakerCount = speakerCount,
-    tags = tags
+    tags = tags,
+    syncId = syncId
 )
 
 /**
