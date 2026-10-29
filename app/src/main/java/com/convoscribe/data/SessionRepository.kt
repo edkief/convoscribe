@@ -258,6 +258,61 @@ class SessionRepository(
         if (row.audioPath.isNotBlank()) row.cleanAudioFile().delete()
     }
 
+    /**
+     * [sessionId] ready to leave the device (issue #25), or `null` when
+     * it does not exist. The rows are read in one transaction so the
+     * manifest is consistent; the recordings are hashed with [fileRef]
+     * afterwards, outside it, since that takes a while.
+     */
+    suspend fun snapshot(
+        sessionId: Long,
+        fileRef: (File) -> SessionManifest.FileRef? = SessionManifests::fileRef
+    ): SessionSnapshot? {
+        val rows = db.withTransaction {
+            val session = sessionDao.get(sessionId) ?: return@withTransaction null
+            SnapshotRows(
+                session = session,
+                lines = segmentDao.getForSession(sessionId),
+                speakers = speakerDao.getForSession(sessionId),
+                messages = chatMessageDao.getForSession(sessionId),
+                marks = markDao.getForSession(sessionId),
+                tags = tagDao.namesFor(sessionId),
+                templates = db.summaryTemplateDao().getAll().associate { it.id to it.name }
+            )
+        } ?: return null
+        val session = rows.session
+        val audioFile = session.audioPath.takeIf { it.isNotBlank() }?.let(::File)
+        val cleanFile = audioFile?.let { session.cleanAudioFile() }?.takeIf { session.cleanedWith != null }
+        val audio = audioFile?.let(fileRef)
+        val clean = cleanFile?.let(fileRef)
+        val manifest = SessionManifests.build(
+            session = session,
+            lines = rows.lines,
+            speakers = rows.speakers,
+            messages = rows.messages,
+            marks = rows.marks,
+            tags = rows.tags,
+            userTemplateNames = rows.templates,
+            audio = audio,
+            cleanAudio = clean
+        )
+        val files = buildMap {
+            if (audio != null && audioFile != null) put(audio.sha256, audioFile)
+            if (clean != null && cleanFile != null) put(clean.sha256, cleanFile)
+        }
+        return SessionSnapshot(manifest, session.updatedAt, files)
+    }
+
+    private class SnapshotRows(
+        val session: SessionEntity,
+        val lines: List<SegmentEntity>,
+        val speakers: List<SpeakerEntity>,
+        val messages: List<ChatMessageEntity>,
+        val marks: List<MarkEntity>,
+        val tags: List<String>,
+        val templates: Map<Long, String>
+    )
+
     // --- Pass-throughs for observe/get ---
 
     fun observeAllSessions(): Flow<List<SessionEntity>> = sessionDao.observeAll()

@@ -15,6 +15,10 @@ interface ChatMessageDao {
     @Insert
     suspend fun insert(entity: ChatMessageEntity): Long
 
+    /** Every message of a session, both kinds, in the order they were written (issue #25). */
+    @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
+    suspend fun getForSession(sessionId: Long): List<ChatMessageEntity>
+
     /**
      * Chat messages for a session, in playback order. The primary
      * sort is [createdAt]; ties are broken by the auto-generated
