@@ -177,11 +177,13 @@ class DiarizeSessionUseCase(
     /**
      * Diarize [sessionId] if it is still pending once no other run
      * holds the engine; `false` when it was not (the user identified
-     * its speakers meanwhile, or deleted it). The charging job's entry
-     * point.
+     * its speakers meanwhile, or deleted it), or its recording is still
+     * downloading from the sync server (issue #69; it waits for the
+     * next run). The charging job's entry point.
      */
     suspend fun runIfPending(sessionId: Long, onProgress: (Float) -> Unit = {}): Boolean = guarded(sessionId) {
-        if (repository.getSession(sessionId)?.status != SessionStatus.DIARIZATION_PENDING) {
+        val session = repository.getSession(sessionId)
+        if (session?.status != SessionStatus.DIARIZATION_PENDING || repository.audioDownloading(session.syncId)) {
             false
         } else {
             diarize(sessionId, onProgress, numSpeakers = null)

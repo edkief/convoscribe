@@ -1,5 +1,6 @@
 package com.convoscribe.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 
 /** Kinds of synced document (issue #67); #70 adds known voices, presets and templates. */
@@ -12,11 +13,20 @@ object SyncKinds {
  * revision [baseRevision], whose manifest hashed to [baseHash]. The
  * document needs pushing while its manifest hashes to anything else.
  *
- * [pendingHash] is the changed hash sync first saw, at [pendingSince];
- * it stands in for when the document changed until every write path
- * stamps `updatedAt` (#69). [lastError] is the last push's failure,
- * and [conflict] is set when the server holds a newer revision from
- * another device, which waits for two-way sync (#69).
+ * [pendingHash] is the changed hash sync first saw, at [pendingSince],
+ * for a session changed before `updatedAt` was stamped (#69).
+ * [lastError] is the last push's failure.
+ *
+ * Two-way sync (issue #69): [remoteRevision] is the newest revision
+ * the change feed has shown ([remoteDeleted] when it is a delete), so
+ * the document is behind while it exceeds [baseRevision]. [conflict]
+ * is set when the server's version won the conflict rule against a
+ * push from here, and replaces the local one at the next download.
+ * [excluded] is *Remove from this device*: the session stays on the
+ * server, is not downloaded again until asked, and the home list shows
+ * it from [title], [createdAt] and [durationMs]. [audioSha] and
+ * [cleanSha] (with their sizes) are recordings of a downloaded session
+ * still to fetch.
  *
  * Keyed by sync id, not the local row, so it outlives a delete long
  * enough to leave a [SyncTombstoneEntity].
@@ -30,19 +40,42 @@ data class SyncStateEntity(
     val pendingHash: String? = null,
     val pendingSince: Long? = null,
     val lastError: String? = null,
-    val conflict: Boolean = false
-)
+    val conflict: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val remoteRevision: Long = 0,
+    @ColumnInfo(defaultValue = "0") val remoteDeleted: Boolean = false,
+    @ColumnInfo(defaultValue = "0") val excluded: Boolean = false,
+    val title: String? = null,
+    val createdAt: Long? = null,
+    val durationMs: Long? = null,
+    val audioSha: String? = null,
+    val audioSize: Long? = null,
+    val cleanSha: String? = null,
+    val cleanSize: Long? = null
+) {
+    /** The server has a revision this device has not applied. */
+    val behind: Boolean get() = remoteRevision > baseRevision
+
+    /** Recordings still to download, as references. */
+    val pendingAudio: SessionManifest.FileRef?
+        get() = audioSha?.let { SessionManifest.FileRef(it, audioSize ?: 0) }
+    val pendingClean: SessionManifest.FileRef?
+        get() = cleanSha?.let { SessionManifest.FileRef(it, cleanSize ?: 0) }
+}
 
 /**
  * A document deleted here after the server had it (issue #68), at
  * [baseRevision]; sync deletes it on the server, then drops this.
+ * [durationMs] is how long the deleted recording was, which the
+ * conflict rule weighs against a version this device never saw (#69);
+ * `null` for a delete made before #69.
  */
 @Entity(tableName = "sync_tombstones", primaryKeys = ["kind", "syncId"])
 data class SyncTombstoneEntity(
     val kind: String,
     val syncId: String,
     val baseRevision: Long,
-    val deletedAt: Long
+    val deletedAt: Long,
+    val durationMs: Long? = null
 )
 
 /**

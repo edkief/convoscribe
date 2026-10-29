@@ -47,7 +47,7 @@ class SyncEngineTest {
         context = ApplicationProvider.getApplicationContext()
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         recordingsDir = File(context.filesDir, "sync-test-${System.nanoTime()}").apply { mkdirs() }
-        repo = SessionRepository(db, recordingsDir)
+        repo = SessionRepository(db, recordingsDir) { now }
         secrets = InMemorySecretStore()
         settings = SettingsRepository(context.getSharedPreferences("sync-test-${System.nanoTime()}", 0), secrets)
         status = SyncStatusStore(context.getSharedPreferences("sync-status-${System.nanoTime()}", 0))
@@ -62,10 +62,14 @@ class SyncEngineTest {
             http = OkHttpClient(),
             status = status,
             isRecording = { recording },
+            downloadDir = File(recordingsDir, "downloads"),
             clock = { now },
             partBytes = PART
         )
     }
+
+    /** Requests other than reading the change feed. */
+    private fun calls() = fake.requests.filterNot { it.startsWith("GET changes") }
 
     @After
     fun tearDown() {
@@ -113,7 +117,7 @@ class SyncEngineTest {
 
         assertEquals(SyncOutcome.DONE, engine.run())
 
-        assertEquals(emptyList<String>(), fake.requests)
+        assertEquals(emptyList<String>(), calls())
     }
 
     @Test
@@ -260,26 +264,6 @@ class SyncEngineTest {
 
         assertEquals(0, fake.partsSent)
         assertEquals(2, fake.documents.size)
-    }
-
-    @Test
-    fun aNewerRevisionFromAnotherDeviceWaitsForTwoWaySync() = runTest {
-        val id = finishedSession()
-        engine.run()
-        fake.documents.getValue(syncId(id)).apply {
-            revision = 7
-            hash = "other"
-        }
-        repo.renameSession(id, "Mine")
-
-        assertEquals(SyncOutcome.DONE, engine.run())
-
-        val state = db.syncDao().state(SyncKinds.SESSION, syncId(id))!!
-        assertTrue(state.conflict)
-        assertEquals(1, status.status.value.waiting)
-        fake.requests.clear()
-        engine.run()
-        assertEquals(emptyList<String>(), documentRequests())
     }
 
     @Test

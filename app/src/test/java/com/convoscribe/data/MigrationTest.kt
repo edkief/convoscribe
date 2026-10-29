@@ -468,4 +468,36 @@ class MigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate17To18_clearsConflictsAndKeepsSyncState() = runTest {
+        helper.createDatabase(DB_NAME, 17).use { db ->
+            db.execSQL(
+                "INSERT INTO sync_state (kind, syncId, baseRevision, baseHash, lastError, conflict) " +
+                    "VALUES ('session', 'sync-1', 3, 'h', 'Changed on another device', 1)"
+            )
+            db.execSQL(
+                "INSERT INTO sync_tombstones (kind, syncId, baseRevision, deletedAt) VALUES ('session', 'sync-2', 2, 5)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 18, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_15_16)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val state = db.syncDao().state(SyncKinds.SESSION, "sync-1")!!
+            assertEquals(3L, state.baseRevision)
+            assertEquals("h", state.baseHash)
+            assertFalse(state.conflict)
+            assertNull(state.lastError)
+            assertEquals(0L, state.remoteRevision)
+            assertFalse(state.excluded)
+            assertNull(state.audioSha)
+            assertNull(db.syncDao().tombstones().single().durationMs)
+        } finally {
+            db.close()
+        }
+    }
 }

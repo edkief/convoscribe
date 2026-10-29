@@ -12,9 +12,10 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 /**
- * The sync job (issue #68): uploads changed sessions through
+ * The sync job (issues #68, #69): syncs sessions both ways through
  * [SyncEngine] once a network is available, even when ConvoScribe is
- * not running. Scheduled by [SyncScheduler].
+ * not running. Scheduled by [SyncScheduler]; recordings that wait for
+ * Wi-Fi get a run of their own on an unmetered network.
  *
  * A run that the network or the server failed is retried with
  * JobScheduler's backoff. A run that met a recording ends without
@@ -43,7 +44,11 @@ class SyncJobService : JobService() {
             }
             val retry = outcome == SyncOutcome.RETRY
             jobFinished(params, retry)
-            if (!retry && scheduler.changedWhileRunning) scheduler.sync()
+            when {
+                retry -> Unit
+                scheduler.changedWhileRunning -> scheduler.sync()
+                outcome == SyncOutcome.AUDIO_WAITING -> scheduler.syncWhenUnmetered()
+            }
         }
         return true
     }

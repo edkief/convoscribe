@@ -5,8 +5,9 @@ app (Node, TypeScript) with Postgres for the index and S3-compatible storage
 for recordings and transcripts. It lives beside the Android project and has
 its own gate, image and release; nothing in Gradle sees it.
 
-Devices upload sessions to it (#68). Downloading them to other devices and
-the conflict rule come with #69.
+Devices upload sessions to it (#68), and download the sessions of other
+devices from it (#69). It decides conflicts between devices (see *Conflict
+rule* below), so every device settles on the same version.
 
 ## API
 
@@ -37,14 +38,26 @@ all be stored first.
 
 | Endpoint | Request | Response |
 |---|---|---|
-| `PUT /api/sync/v1/documents/<kind>/<syncId>` | Manifest body, optionally `Content-Encoding: gzip`. Headers `Sync-Base-Revision` (0 for new), `Sync-Manifest-Hash` (SHA-256 of the uncompressed body), `Sync-Duration-Ms`, `Sync-Changed-At` (ms since epoch) | `200` with the new index entry. `409 conflict` with `current` if the base revision is not the current one (compare-and-swap); repeating the current manifest is `200` with no new revision. `422 missing_blobs` with `missing`, `400 hash_mismatch` |
+| `PUT /api/sync/v1/documents/<kind>/<syncId>` | Manifest body, optionally `Content-Encoding: gzip`. Headers `Sync-Base-Revision` (0 for new), `Sync-Manifest-Hash` (SHA-256 of the uncompressed body), `Sync-Duration-Ms`, `Sync-Changed-At` (ms since epoch) | `200` with the new index entry. From a stale base revision the push is still accepted, as the next revision, if it wins the conflict rule; otherwise `409 conflict` with `current`. Repeating the current manifest is `200` with no new revision. `422 missing_blobs` with `missing`, `400 hash_mismatch` |
 | `GET /api/sync/v1/documents/<kind>/<syncId>` | | The manifest, with `Sync-Revision`, `Sync-Seq`, `Sync-Duration-Ms`, `Sync-Changed-At` and `Sync-Manifest-Hash` headers. `410` with `current` if deleted, `404` if unknown |
-| `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision` | `200`, leaving a tombstone (`deleted: true`, a new revision); deleting again is `200`; `409` as for `PUT`; `404` if unknown |
+| `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision`; `Sync-Duration-Ms`, the length of the deleted version (optional) | `200`, leaving a tombstone (`deleted: true`, a new revision); deleting again is `200`. From a stale base revision the delete wins unless the current recording is longer than `Sync-Duration-Ms`, else `409` with `current`; without the header a stale delete is `409`. `404` if unknown |
 | `GET /api/sync/v1/changes?since=<seq>&limit=<n>` | `limit` 1 to 500, default 100 | `{"changes":[…], "next", "more"}`: index entries written after `since`, oldest first. Pass `next` as `since` while `more` is true |
 
 An index entry is `{kind, syncId, revision, seq, durationMs, changedAt,
 manifestHash, deleted}`. `seq` orders every write of an owner, and writes of
 one owner are serialised, so a device that saved `next` never misses one.
+
+### Conflict rule
+
+When a device pushes from a base revision that is no longer the current one
+(another device changed the document since), `pushWins` in
+`src/lib/documents.ts` compares the push with the current version: the
+**longer recording** (`durationMs`) wins, then the **later `changedAt`**,
+then the higher manifest hash, so a tie never flips between devices. Against
+a tombstone, which keeps the length of the version it deleted, a push wins
+only with a longer recording. A stale delete wins unless the current version
+is longer than the one the device deleted (`deleteWins`). The loser gets
+`409` with the current version and downloads it.
 
 ### Storage
 

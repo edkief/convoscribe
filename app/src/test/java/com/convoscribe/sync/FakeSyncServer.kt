@@ -10,14 +10,24 @@ import okhttp3.mockwebserver.RecordedRequest
 import okio.Buffer
 
 /**
- * The sync server's upload API (issue #68) kept in memory behind a
+ * The sync server's API (issues #68, #69) kept in memory behind a
  * [MockWebServer], close enough to `server/` for [SyncEngine] tests:
- * blobs with resumable parts and a hash check, documents with
- * compare-and-swap, and tombstones. [intercept] answers a request
- * instead, to stage failures.
+ * blobs with resumable parts, a hash check and Range downloads,
+ * documents with compare-and-swap and the conflict rule
+ * (`server/src/lib/documents.ts`), tombstones and the change feed.
+ * [intercept] answers a request instead, to stage failures.
  */
 class FakeSyncServer(val apiKey: String = "test-key") {
-    class Document(var revision: Long, var manifest: String?, var hash: String?, var changedAt: Long)
+    class Document(
+        var revision: Long,
+        var manifest: String?,
+        var hash: String?,
+        var changedAt: Long,
+        var durationMs: Long = 0,
+        var seq: Long = 0
+    )
+
+    private var seq = 0L
 
     val blobs = mutableMapOf<String, ByteArray>()
     val documents = mutableMapOf<String, Document>()
@@ -46,6 +56,8 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         val path = request.path!!.removePrefix(PREFIX).split('/')
         return when {
             path[0] == "blobs" -> blob(request, path)
+            path[0].startsWith("changes") -> changes(request)
+            path[0] == "documents" && request.method == "GET" -> getDocument(path[2])
             path[0] == "documents" -> document(request, path[2])
             else -> MockResponse().setResponseCode(404)
         }
@@ -54,6 +66,7 @@ class FakeSyncServer(val apiKey: String = "test-key") {
     private fun blob(request: RecordedRequest, path: List<String>): MockResponse {
         val sha = path[1]
         return when {
+            path.size == 2 && request.method == "GET" -> download(request, sha)
             path.size == 2 -> MockResponse().setResponseCode(if (sha in blobs) 200 else 404)
             path.size == 3 -> if (sha in blobs) {
                 json(200, """{"exists":true}""")
@@ -81,16 +94,66 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         }
     }
 
+    private fun download(request: RecordedRequest, sha: String): MockResponse {
+        val bytes = blobs[sha] ?: return MockResponse().setResponseCode(404)
+        val from = request.getHeader("Range")?.removePrefix("bytes=")?.substringBefore('-')?.toInt() ?: 0
+        val body = Buffer().write(bytes.copyOfRange(from, bytes.size))
+        return if (from > 0) {
+            MockResponse().setResponseCode(
+                206
+            ).setHeader("Content-Range", "bytes $from-${bytes.size - 1}/${bytes.size}")
+                .setBody(body)
+        } else {
+            MockResponse().setResponseCode(200).setBody(body)
+        }
+    }
+
+    private fun changes(request: RecordedRequest): MockResponse {
+        val since = request.requestUrl!!.queryParameter("since")!!.toLong()
+        val limit = request.requestUrl!!.queryParameter("limit")!!.toInt()
+        val after = documents.entries.filter { it.value.seq > since }.sortedBy { it.value.seq }
+        val page = after.take(limit)
+        val next = page.lastOrNull()?.value?.seq ?: since
+        return json(
+            200,
+            """{"changes":[${page.joinToString(
+                ","
+            ) { meta(it.key, it.value) }}],"next":$next,"more":${after.size > limit}}"""
+        )
+    }
+
+    private fun getDocument(syncId: String): MockResponse {
+        val doc = documents[syncId] ?: return json(404, """{"error":"not_found"}""")
+        if (doc.manifest == null) return json(410, """{"error":"deleted","current":${meta(syncId, doc)}}""")
+        return MockResponse().setResponseCode(200).setHeader("Content-Type", "application/json")
+            .setHeader("Sync-Revision", doc.revision).setHeader("Sync-Changed-At", doc.changedAt)
+            .setBody(Buffer().writeUtf8(doc.manifest!!))
+    }
+
+    /** The server's conflict rule, as `pushWins` in `server/src/lib/documents.ts`. */
+    private fun pushWins(durationMs: Long, changedAt: Long, hash: String, current: Document): Boolean = when {
+        current.manifest == null -> durationMs > current.durationMs
+        durationMs != current.durationMs -> durationMs > current.durationMs
+        changedAt != current.changedAt -> changedAt > current.changedAt
+        else -> hash > (current.hash ?: "")
+    }
+
     private fun document(request: RecordedRequest, syncId: String): MockResponse {
         val base = request.getHeader("Sync-Base-Revision")!!.toLong()
         val current = documents[syncId]
         if (request.method == "DELETE") {
             current ?: return json(404, """{"error":"not_found"}""")
-            if (current.manifest != null && current.revision != base) return conflict(syncId, current)
+            val deleted = request.getHeader("Sync-Duration-Ms")?.toLong()
+            if (current.manifest != null && current.revision != base &&
+                (deleted == null || current.durationMs > deleted)
+            ) {
+                return conflict(syncId, current)
+            }
             if (current.manifest != null) {
                 current.revision++
                 current.manifest = null
                 current.hash = null
+                current.seq = ++seq
             }
             return json(200, meta(syncId, current))
         }
@@ -109,15 +172,18 @@ class FakeSyncServer(val apiKey: String = "test-key") {
             )
         }
         val changedAt = request.getHeader("Sync-Changed-At")!!.toLong()
+        val durationMs = request.getHeader("Sync-Duration-Ms")!!.toLong()
         val doc = when {
-            current == null -> Document(1, text, hash, changedAt).also { documents[syncId] = it }
-            current.revision == base -> current.apply {
+            current == null -> Document(1, text, hash, changedAt, durationMs, ++seq).also { documents[syncId] = it }
+            current.manifest != null && current.hash == hash -> current
+            current.revision == base || pushWins(durationMs, changedAt, hash, current) -> current.apply {
                 revision++
                 manifest = text
                 this.hash = hash
                 this.changedAt = changedAt
+                this.durationMs = durationMs
+                this.seq = ++this@FakeSyncServer.seq
             }
-            current.hash == hash -> current
             else -> return conflict(syncId, current)
         }
         return json(200, meta(syncId, doc))
@@ -125,7 +191,8 @@ class FakeSyncServer(val apiKey: String = "test-key") {
 
     private fun meta(syncId: String, doc: Document): String {
         val hash = doc.hash?.let { "\"$it\"" }
-        return """{"kind":"session","syncId":"$syncId","revision":${doc.revision},"seq":1,""" +
+        return """{"kind":"session","syncId":"$syncId","revision":${doc.revision},"seq":${doc.seq},""" +
+            """"durationMs":${doc.durationMs},"changedAt":${doc.changedAt},""" +
             """"manifestHash":$hash,"deleted":${doc.manifest == null}}"""
     }
 

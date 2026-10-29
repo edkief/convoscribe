@@ -345,6 +345,10 @@ fun SettingsScreen(navController: NavHostController) {
             onIndexSemanticNow = container.semanticIndexScheduler::indexNow,
             onSyncEnabledChange = vm::setSyncEnabled,
             onSyncNow = container.syncScheduler::syncNow,
+            onSyncAudioOnMobileDataChange = { on ->
+                vm.setSyncAudioOnMobileData(on)
+                if (on) container.syncScheduler.syncNow()
+            },
             onDiarizationEmbeddingChange = vm::setDiarizationEmbedding,
             onDownloadVoiceModel = {
                 ContextCompat.startForegroundService(
@@ -407,6 +411,7 @@ internal class SettingsActions(
     val onServerAutoChange: (Boolean) -> Unit = {},
     val onSyncEnabledChange: (Boolean) -> Unit = {},
     val onSyncNow: () -> Unit = {},
+    val onSyncAudioOnMobileDataChange: (Boolean) -> Unit = {},
     val onBackup: () -> Unit = {},
     val onRestore: () -> Unit = {},
     val onCancelBackup: () -> Unit = {},
@@ -530,7 +535,9 @@ internal fun SettingsBody(
                 enabled = state.syncEnabled,
                 status = state.syncStatus,
                 onEnabledChange = actions.onSyncEnabledChange,
-                onSyncNow = actions.onSyncNow
+                onSyncNow = actions.onSyncNow,
+                audioOnMobileData = state.syncAudioOnMobileData,
+                onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange
             )
             NoiseCleanupSection(
                 installed = state.cleanupInstalled,

@@ -94,6 +94,12 @@ import java.util.UUID
  * `sync_tombstones` and `file_hashes` tables, all empty, so every
  * session starts out waiting to be uploaded.
  *
+ * The 17 → 18 migration (issue #69) is automatic ([Migration17To18]):
+ * new `sync_state` columns for two-way sync and
+ * `sync_tombstones.durationMs`. Conflicts #68 recorded are cleared, so
+ * those sessions are pushed again and the server's conflict rule
+ * decides.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -117,7 +123,7 @@ import java.util.UUID
         SyncTombstoneEntity::class,
         FileHashEntity::class
     ],
-    version = 17,
+    version = 18,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -134,7 +140,8 @@ import java.util.UUID
         AutoMigration(from = 12, to = 13),
         AutoMigration(from = 13, to = 14),
         AutoMigration(from = 14, to = 15),
-        AutoMigration(from = 16, to = 17)
+        AutoMigration(from = 16, to = 17),
+        AutoMigration(from = 17, to = 18, spec = Migration17To18::class)
     ]
 )
 @TypeConverters(Converters::class)
@@ -180,6 +187,17 @@ class Migration11To12 : AutoMigrationSpec {
             "UPDATE sessions SET titleSource = '${TitleSource.USER}' WHERE title NOT GLOB " +
                 "'Recording [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [0-9][0-9]:[0-9][0-9]'"
         )
+    }
+}
+
+/**
+ * #68 set `conflict` whenever the server held another revision, with
+ * no rule applied; clear it so the next push lets the server decide
+ * (issue #69).
+ */
+class Migration17To18 : AutoMigrationSpec {
+    override fun onPostMigrate(db: SupportSQLiteDatabase) {
+        db.execSQL("UPDATE sync_state SET conflict = 0, lastError = NULL WHERE conflict = 1")
     }
 }
 

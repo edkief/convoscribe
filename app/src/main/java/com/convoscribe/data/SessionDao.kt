@@ -116,4 +116,17 @@ interface SessionDao {
             "WHERE id = :id AND titleSource = '${TitleSource.DEFAULT}'"
     )
     suspend fun applyAutoTitle(id: Long, title: String): Int
+
+    /** Stamp [SessionEntity.updatedAt] (issue #69): the session changed at [at]. */
+    @Query("UPDATE sessions SET updatedAt = :at WHERE id = :id")
+    suspend fun touch(id: Long, at: Long)
+
+    @Query("UPDATE sessions SET updatedAt = :at WHERE id = (SELECT sessionId FROM marks WHERE id = :markId)")
+    suspend fun touchForMark(markId: Long, at: Long)
+
+    @Query("UPDATE sessions SET updatedAt = :at WHERE id = (SELECT sessionId FROM segments WHERE id = :segmentId)")
+    suspend fun touchForSegment(segmentId: Long, at: Long)
+
+    @Query("UPDATE sessions SET updatedAt = :at WHERE id IN (SELECT sessionId FROM session_tags WHERE tagId = :tagId)")
+    suspend fun touchForTag(tagId: Long, at: Long)
 }

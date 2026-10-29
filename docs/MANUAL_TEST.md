@@ -1611,6 +1611,66 @@ build over the previous one without clearing data (database v17).
 - Step 9: Sync now and the status disappear; nothing more is uploaded.
 - Step 10: no API key is found.
 
+## 41. Sync: two devices (issue #69)
+
+Use two devices, A (a phone) and B (the Boox), both on this build
+(database v18) and both set up for the same sync server as in section 40.
+A has a session with a cleaned recording, identified speakers, a summary,
+a mark and a tag. B starts with no sessions of its own, or a few.
+
+**Steps**
+
+1. On A tap **Sync now**. On B, on Wi-Fi, open the app (or tap **Sync
+   now**).
+2. On B open A's session: play it, search for a word in it, and ask a
+   question about it.
+3. Put B on mobile data only, with *Download recordings on mobile data*
+   off. On A record a new short session and sync. On B tap **Sync now**,
+   open that session, then turn on *Download recordings on mobile data*.
+4. On B rename the session, edit a line, rename a speaker and write a new
+   summary. Sync B, then A.
+5. Conflict, longer wins: on both devices go offline. On A continue a
+   synced session's recording for a minute; on B rename the same
+   session. Bring B online and sync, then A, then B again.
+6. Conflict, most recent wins: offline on both, rename the same session
+   on B, then a minute later differently on A. Sync A, then B.
+7. On B delete a session. Sync B, then A.
+8. Delete against a longer recording: offline on both; on A continue a
+   synced session's recording, on B delete it. Sync A, then B.
+9. On B choose *Remove from this device* on a session, confirm, and sync
+   B twice. Then tap the greyed row (or *Download* in its menu).
+10. On B, while a long recording downloads (watch `GET /blobs/…` in the
+    server log), turn on airplane mode for a few seconds, then off.
+11. Stop the server. On both devices record, edit and delete sessions,
+    and tap **Sync now**. Start the server again and sync both.
+
+**Expected**
+
+- Step 1: A's session appears on B with its title, transcript, speakers,
+  summary, mark and tag, and plays, cleaned or not, once its recording
+  has arrived.
+- Step 2: playback, search and Ask work as for a session recorded on B.
+- Step 3: the session opens with its transcript and *Audio downloading*
+  instead of the player; Re-identify speakers and Re-transcribe are
+  disabled, and Settings counts it as waiting to download. Once mobile
+  data is allowed, the recording arrives and the player appears.
+- Step 4: A shows every change from B.
+- Step 5: both devices end with A's longer recording, under its old
+  title; B's rename is gone.
+- Step 6: both devices show A's later title.
+- Step 7: the session disappears from A.
+- Step 8: the session stays on both devices with A's longer recording.
+- Step 9: the delete dialog for a synced session says it deletes on
+  every device; the remove dialog says it stays on the server. After
+  removing, the session shows greyed with *On server*, is not downloaded
+  again by later syncs, and is untouched on A and on the server.
+  *Download* brings it back complete.
+- Step 10: the download carries on from where it stopped; the session
+  never shows half a transcript or a broken recording.
+- Step 11: everything local works as usual while the server is down,
+  with *Last sync failed* in Settings. Once it is back, both devices
+  settle on the same sessions.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

@@ -3,7 +3,9 @@ package com.convoscribe
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.ConnectivityManager
 import android.os.BatteryManager
+import androidx.core.content.getSystemService
 import androidx.room.InvalidationTracker
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
@@ -536,14 +538,21 @@ class AppContainer(val context: Context) {
         .writeTimeout(5, TimeUnit.MINUTES)
         .build()
 
-    /** Uploads sessions to the self-hosted sync server (issue #68). */
+    /**
+     * Two-way sync with the self-hosted sync server (issues #68, #69).
+     * Recordings download into `filesDir/sync-downloads`; once one is in
+     * place, a session waiting for its speakers can be identified.
+     */
     val syncEngine: SyncEngine = SyncEngine(
         db = database,
         repository = sessionRepository,
         settings = settingsRepository,
         http = syncHttpClient,
         status = syncStatusStore,
-        isRecording = { recordingController.state.value.phase != RecordingPhase.IDLE }
+        isRecording = { recordingController.state.value.phase != RecordingPhase.IDLE },
+        downloadDir = File(context.filesDir, "sync-downloads"),
+        isMetered = { context.getSystemService<ConnectivityManager>()?.isActiveNetworkMetered ?: true },
+        onRecordingAttached = { pendingDiarizationScheduler.sync() }
     )
 
     /**

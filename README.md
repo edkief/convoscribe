@@ -5,7 +5,8 @@ transcribes them on-device with sherpa-onnx (the NPU path uses the Nemotron Spee
 0.6B model and the Hexagon NPU via QNN; the CPU path uses the Kroko streaming zipformer), labels
 speakers with on-device diarization, and forwards the transcript to a user-configured
 OpenAI-compatible endpoint for summaries and questions about the session. Sessions stay on the
-device unless you turn on sync, which uploads them to your own self-hosted sync server.
+device unless you turn on sync, which keeps them on your own self-hosted sync server and
+brings them to your other devices.
 
 ## Features
 
@@ -230,20 +231,29 @@ device unless you turn on sync, which uploads them to your own self-hosted sync 
   model and shows the app's memory use, to judge it on a CPU-only
   device.
 - **Sync to your own server** (optional, off by default) — Settings →
-  *Sync* uploads every finished session (recording, cleaned recording,
+  *Sync* keeps every finished session (recording, cleaned recording,
   transcript with word timings, speakers, summaries and questions,
-  marks and tags) to the self-hosted [sync server](#sync-server), in
-  the background whenever a network is available and never while
-  recording. A session that changes is uploaded again; deleting a
-  session deletes it on the server too. Recordings go up in parts of
-  about 8 MB, so an interrupted upload resumes where it stopped, and a
-  recording the server already has is never sent twice. Turning sync
-  on asks first, since recordings and transcripts leave the device;
-  API keys are never uploaded. Settings shows when it last synced, how
-  many sessions are waiting and the last error, with **Sync now**.
-  With sync off, no server or no network, everything else works as
-  before. This is upload only for now: sessions from other devices and
-  two-way edits come with #69.
+  marks and tags) on the self-hosted [sync server](#sync-server) and
+  on all your devices, in the background whenever a network is
+  available (and when the app opens), never while recording. Record on
+  the phone, then read, search and ask on the Boox: sessions from other
+  devices arrive with their transcript first, and their recording
+  follows on Wi-Fi (or on mobile data with *Download recordings on
+  mobile data*); until then the session says *Audio downloading*.
+  Edits made on any device reach the others. When the same session
+  changed on two devices, the **longer recording wins**, then the
+  **most recently changed**, and every device ends on that version; a
+  delete wins over an edit unless the edited version has a longer
+  recording. **Delete** removes a session from every device; **Remove
+  from this device** (in a session's menu) frees space here and keeps
+  it on the server, where it shows greyed as *On server* in the list
+  until you tap *Download*. Recordings move in parts of about 8 MB, so
+  an interrupted upload or download resumes where it stopped and never
+  leaves half a session. Turning sync on asks first, since recordings
+  and transcripts leave the device; API keys are never uploaded.
+  Settings shows when it last synced, how many sessions are waiting to
+  upload or download and the last error, with **Sync now**. With sync
+  off, no server or no network, everything else works as before.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -620,15 +630,28 @@ one package per concern:
   `syncId`: `sync_state` (the revision and manifest hash the server
   last accepted), `sync_tombstones` (sessions deleted after the server
   had them) and `file_hashes` (recording hashes by size and mtime, and
-  an upload in progress).
-- `sync/` — upload to the sync server (issue #68): `SyncClient` (the
-  `/api/sync/v1` routes, Bearer key), `BlobUploader` (resumable 8 MB
-  parts), `FileHashCache`, and `SyncEngine`, which pushes tombstones,
-  then every session whose manifest hash differs from `sync_state`,
-  recordings before the manifest. It is run by `service/SyncJobService`
-  (job 1104, any network), scheduled by `service/SyncScheduler` on a
-  debounced Room invalidation of the session tables, so no write path
-  is missed. `SyncStatusStore` keeps what Settings shows.
+  an upload in progress). Schema v18 (issue #69) adds two-way sync:
+  `sync_state` also keeps the newest revision the change feed showed,
+  whether the server's version won a conflict, *Remove from this
+  device* (with the title and length the list shows) and recordings
+  still to download, and tombstones keep the deleted length for the
+  conflict rule. Every write path stamps `sessions.updatedAt` through
+  `SessionRepository.touch` for "most recently changed wins".
+- `sync/` — two-way sync with the sync server (issues #68, #69):
+  `SyncClient` (the `/api/sync/v1` routes, Bearer key), `BlobUploader`
+  (resumable 8 MB parts), `FileHashCache`, and `SyncEngine`. A run reads
+  the change feed into `sync_state`, pushes tombstones, then every
+  session whose manifest hash differs from `sync_state` (recordings
+  before the manifest), then downloads each session the server has
+  newer when the local copy is unchanged or lost the conflict rule
+  (applied with `applyManifest` before its recordings), and finally
+  the recordings, through `ResumableFetch`, hash-checked before
+  `attachRecording` puts them in place. The conflict rule itself lives
+  on the server. It is run by `service/SyncJobService` (job 1104, any
+  network; unmetered when only recordings wait), scheduled by
+  `service/SyncScheduler` on a debounced Room invalidation of the
+  session tables, so no write path is missed, and when the app opens.
+  `SyncStatusStore` keeps what Settings shows and the feed cursor.
 - `backup/` — back up and restore (issue #25): `BackupFormat` (the zip
   layout: `backup.json` first, then each `sessions/<syncId>.json`
   followed by its `recordings/<sha256>.wav`, read in one pass),
@@ -748,8 +771,11 @@ development, configuration and deployment.
 To sync a phone (#68): deploy the server, then in Settings → *Sync* enter
 its address (`https://sync.example.com`, without `/api/…`) and the API key
 (`SYNC_API_KEY`, or your `sk_authz_…` key behind authz-proxy), and turn on
-*Sync sessions*. The phone uploads every finished session and keeps it up
-to date; downloading sessions to other devices comes with #69. The
+*Sync sessions*. Do the same on every device. Each uploads its finished
+sessions and downloads the others' (#69); a session that changed on two
+devices is settled by the server: the longer recording wins, then the
+most recent change, then (for a perfect tie) the higher manifest hash,
+and a delete wins unless the other version has a longer recording. The
 reverse proxy must accept request bodies of at least 8 MB.
 
 ## Model licences

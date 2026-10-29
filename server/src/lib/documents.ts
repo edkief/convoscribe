@@ -42,6 +42,31 @@ const meta = (row: typeof documents.$inferSelect): DocumentMeta => ({
 const conflict = (current: DocumentMeta | null) => new HttpError(409, 'conflict', { current });
 
 /**
+ * The conflict rule (#67, decision 5; #69), for a push whose base revision is
+ * no longer the current one: the longer recording wins, then the later
+ * `changedAt`, then the higher manifest hash, so every device settles on the
+ * same version. Against a tombstone, whose `durationMs` is the length of the
+ * version that was deleted, a push wins only with a longer recording.
+ */
+export function pushWins(push: Pick<Push, 'durationMs' | 'changedAt' | 'manifestHash'>, current: DocumentMeta): boolean {
+  if (current.deleted) return push.durationMs > current.durationMs;
+  if (push.durationMs !== current.durationMs) return push.durationMs > current.durationMs;
+  if (push.changedAt !== current.changedAt) return push.changedAt > current.changedAt;
+  return push.manifestHash > (current.manifestHash ?? '');
+}
+
+/**
+ * Whether a delete of a version `deletedDurationMs` long beats the current
+ * one it never saw: it does unless the current recording is longer, so a
+ * continued recording is never thrown away. Without the deleted length (an
+ * older app) the delete waits, as before #69.
+ */
+export function deleteWins(deletedDurationMs: number | null, current: DocumentMeta): boolean {
+  if (current.deleted) return true;
+  return deletedDurationMs !== null && current.durationMs <= deletedDurationMs;
+}
+
+/**
  * Every recording a manifest refers to: any object with a hex `sha256` and a
  * numeric `size` (a `FileRef`). Only this is read from the manifest, so the
  * server need not track the app's schema.
@@ -68,9 +93,10 @@ const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: string) =>
 
 /**
  * Store a new revision of a document if the device's `baseRevision` is the
- * current one (compare-and-swap); otherwise 409 with the current version. A
- * push that repeats the current manifest succeeds without a new revision, so
- * a device can retry after losing the response.
+ * current one (compare-and-swap), or if it is stale but wins the conflict
+ * rule ([pushWins]); otherwise 409 with the current version, which the device
+ * then downloads. A push that repeats the current manifest succeeds without a
+ * new revision, so a device can retry after losing the response.
  */
 export async function putDocument(owner: string, kind: Kind, syncId: string, push: Push): Promise<DocumentMeta> {
   const actual = createHash('sha256').update(push.manifest).digest('hex');
@@ -107,14 +133,14 @@ export async function putDocument(owner: string, kind: Kind, syncId: string, pus
         .insert(documents)
         .values({ owner, kind, syncId, revision: 1, ...values })
         .returning();
-    } else if (current.revision === push.baseRevision) {
+    } else if (!current.deleted && current.manifestHash === push.manifestHash) {
+      return meta(current);
+    } else if (current.revision === push.baseRevision || pushWins(push, meta(current))) {
       [row] = await tx
         .update(documents)
         .set({ revision: current.revision + 1, ...values })
         .where(where)
         .returning();
-    } else if (!current.deleted && current.manifestHash === push.manifestHash) {
-      return meta(current);
     } else {
       throw conflict(meta(current));
     }
@@ -128,17 +154,26 @@ export async function putDocument(owner: string, kind: Kind, syncId: string, pus
 
 /**
  * Delete a document, leaving a tombstone in the feed so other devices delete
- * it too; compare-and-swap as for [putDocument]. Deleting a tombstone again
- * succeeds.
+ * it too. From a stale `baseRevision` the delete still goes ahead when it
+ * wins ([deleteWins]) against the version it never saw, which the device was
+ * `deletedDurationMs` long; otherwise 409. Deleting a tombstone again
+ * succeeds. The tombstone keeps the length of what it replaced, for
+ * [pushWins].
  */
-export async function deleteDocument(owner: string, kind: Kind, syncId: string, baseRevision: number): Promise<DocumentMeta> {
+export async function deleteDocument(
+  owner: string,
+  kind: Kind,
+  syncId: string,
+  baseRevision: number,
+  deletedDurationMs: number | null = null,
+): Promise<DocumentMeta> {
   return db().transaction(async (tx) => {
     await lockOwner(tx, owner);
     const where = and(eq(documents.owner, owner), eq(documents.kind, kind), eq(documents.syncId, syncId));
     const [current] = await tx.select().from(documents).where(where);
     if (!current) throw new HttpError(404, 'not_found');
     if (current.deleted) return meta(current);
-    if (current.revision !== baseRevision) throw conflict(meta(current));
+    if (current.revision !== baseRevision && !deleteWins(deletedDurationMs, meta(current))) throw conflict(meta(current));
     const [row] = await tx
       .update(documents)
       .set({

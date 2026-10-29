@@ -37,15 +37,33 @@ data class DocumentMeta(
     val syncId: String,
     val revision: Long,
     val seq: Long,
+    val durationMs: Long = 0,
+    val changedAt: Long = 0,
     val manifestHash: String? = null,
     val deleted: Boolean = false
 )
+
+/** One page of the change feed (#69): documents written after a cursor, oldest first. */
+@Serializable
+data class ChangesPage(val changes: List<DocumentMeta>, val next: Long, val more: Boolean)
+
+/** What fetching a document's current revision found (#69). */
+sealed interface Fetched {
+    /** The manifest bytes of [revision], last changed at [changedAt]. */
+    class Found(val manifest: ByteArray, val revision: Long, val changedAt: Long) : Fetched
+
+    /** The document was deleted, at [revision]. */
+    data class Deleted(val revision: Long) : Fetched
+
+    /** The server does not know it. */
+    data object Missing : Fetched
+}
 
 /** What a push of a manifest or a delete came to. */
 sealed interface PushResult {
     data class Accepted(val meta: DocumentMeta) : PushResult
 
-    /** The server has another revision, from another device; #69 settles it. */
+    /** The server's version, from another device, won the conflict rule (#69). */
     data class Conflict(val current: DocumentMeta?) : PushResult
 
     /** The manifest names recordings the server does not have yet. */
@@ -137,10 +155,16 @@ class SyncClient(
         }
     }
 
-    /** Delete [syncId] on the server, which leaves a tombstone for other devices. */
-    suspend fun deleteDocument(kind: String, syncId: String, baseRevision: Long): PushResult {
+    /**
+     * Delete [syncId] on the server, which leaves a tombstone for other
+     * devices. [durationMs] is the length of the deleted version, for
+     * the conflict rule when [baseRevision] is no longer current (#69).
+     */
+    suspend fun deleteDocument(kind: String, syncId: String, baseRevision: Long, durationMs: Long?): PushResult {
         val response = call(
-            request("documents/$kind/$syncId").delete().header("Sync-Base-Revision", baseRevision.toString())
+            request("documents/$kind/$syncId").delete()
+                .header("Sync-Base-Revision", baseRevision.toString())
+                .apply { if (durationMs != null) header("Sync-Duration-Ms", durationMs.coerceAtLeast(0).toString()) }
         )
         return when (response.code) {
             200 -> PushResult.Accepted(json.decodeFromString(DocumentMeta.serializer(), response.text))
@@ -150,11 +174,40 @@ class SyncClient(
         }
     }
 
+    /** Documents written after cursor [since], at most [limit] (#69). */
+    suspend fun changes(since: Long, limit: Int): ChangesPage {
+        val response = call(request("changes?since=$since&limit=$limit").get())
+        if (response.code != 200) throw unexpected(response)
+        return json.decodeFromString(ChangesPage.serializer(), response.text)
+    }
+
+    /** The current revision of [syncId] (#69). */
+    suspend fun getDocument(kind: String, syncId: String): Fetched {
+        val response = call(request("documents/$kind/$syncId").get())
+        return when (response.code) {
+            200 -> Fetched.Found(
+                manifest = response.text.toByteArray(Charsets.UTF_8),
+                revision = response.headers["Sync-Revision"]?.toLongOrNull()
+                    ?: throw SyncException("No Sync-Revision from the sync server", code = 502),
+                changedAt = response.headers["Sync-Changed-At"]?.toLongOrNull() ?: 0L
+            )
+            410 -> Fetched.Deleted(json.decodeFromString(ErrorBody.serializer(), response.text).current?.revision ?: 0)
+            404 -> Fetched.Missing
+            else -> throw unexpected(response)
+        }
+    }
+
+    /** Where blob [sha256] downloads from, with Range support (#69); send [authHeaders] with it. */
+    fun blobUrl(sha256: String): String = "$base/blobs/$sha256"
+
+    val authHeaders: Map<String, String>
+        get() = if (apiKey.isBlank()) emptyMap() else mapOf("Authorization" to "Bearer $apiKey")
+
     private fun request(path: String): Request.Builder = Request.Builder().url("$base/$path").apply {
         if (apiKey.isNotBlank()) header("Authorization", "Bearer $apiKey")
     }
 
-    private class Answer(val code: Int, val text: String)
+    private class Answer(val code: Int, val text: String, val headers: okhttp3.Headers = okhttp3.Headers.headersOf())
 
     /** Run [builder]'s request, cancelling it with the calling coroutine. */
     private suspend fun call(builder: Request.Builder): Answer {
@@ -171,7 +224,7 @@ class SyncClient(
                     }
 
                     override fun onResponse(call: Call, response: Response) {
-                        runCatching { response.use { Answer(it.code, it.body?.string().orEmpty()) } }
+                        runCatching { response.use { Answer(it.code, it.body?.string().orEmpty(), it.headers) } }
                             .fold(
                                 onSuccess = { cont.resume(it) },
                                 onFailure = { e ->

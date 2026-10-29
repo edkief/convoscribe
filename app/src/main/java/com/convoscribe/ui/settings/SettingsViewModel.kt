@@ -197,6 +197,8 @@ data class SettingsUiState(
     val serverModels: List<String> = emptyList(),
     /** *Sync sessions* is on (issue #68); written immediately. */
     val syncEnabled: Boolean = false,
+    /** Download recordings from other devices on mobile data too (issue #69). */
+    val syncAudioOnMobileData: Boolean = false,
     /** Last synced, sessions waiting and the last error (issue #68). */
     val syncStatus: SyncStatus = SyncStatus()
 )
@@ -583,6 +585,12 @@ class SettingsViewModel(
         _state.update { it.copy(syncEnabled = enabled) }
     }
 
+    /** Persist *Download recordings on mobile data* immediately (issue #69). */
+    fun setSyncAudioOnMobileData(enabled: Boolean) {
+        repo.update { it.copy(syncAudioOnMobileData = enabled) }
+        _state.update { it.copy(syncAudioOnMobileData = enabled) }
+    }
+
     /** Persist the default summary template immediately (issue #27). */
     fun setDefaultSummaryTemplate(key: String) {
         repo.update { it.copy(defaultSummaryTemplate = key) }
@@ -708,6 +716,7 @@ class SettingsViewModel(
             serverConfigured = current.asrServerConfigured,
             serverAuto = current.asrServerAuto,
             syncEnabled = current.syncEnabled,
+            syncAudioOnMobileData = current.syncAudioOnMobileData,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )

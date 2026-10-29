@@ -87,6 +87,9 @@ import com.convoscribe.llm.SummaryTemplates
  * [syncServerUrl] is the base URL of the self-hosted sync server
  * (issue #68), without `/api/sync/v1`; its key lives in [SecretStore].
  * [syncEnabled] uploads every finished session to it in the background.
+ * [syncAudioOnMobileData] lets sync download recordings from other
+ * devices on a metered network too (issue #69); otherwise they wait
+ * for Wi-Fi.
  *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
@@ -105,6 +108,7 @@ data class AppSettings(
     val asrServerAuto: Boolean = false,
     val syncServerUrl: String = "",
     val syncEnabled: Boolean = false,
+    val syncAudioOnMobileData: Boolean = false,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,

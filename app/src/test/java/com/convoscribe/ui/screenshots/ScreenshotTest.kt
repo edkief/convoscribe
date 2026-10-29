@@ -207,6 +207,19 @@ class ScreenshotTest(private val variant: Variant) {
         )
     }
 
+    /** Two-way sync (issue #69): a recording still downloading, and a session removed from this device. */
+    @Test
+    fun homeSync() = capture("home_sync") {
+        HomeBody(
+            sessions = SYNC_SESSIONS,
+            onNewRecording = {},
+            onOpenSession = {},
+            onDelete = {},
+            onSettings = {},
+            onEngineCheck = {}
+        )
+    }
+
     @Test
     fun homeImporting() = capture("home_importing") {
         HomeBody(
@@ -572,6 +585,23 @@ class ScreenshotTest(private val variant: Variant) {
         )
     }
 
+    /** Two-way sync (issue #69): recordings waiting for Wi-Fi, mobile data off. */
+    @Test
+    fun settingsSyncDownloading() = capture("settings_sync_downloading") {
+        SyncSection(
+            url = "https://sync.example.com",
+            key = "secret",
+            onUrlChange = {},
+            onKeyChange = {},
+            configured = true,
+            enabled = true,
+            status = SyncStatus(lastSyncedAt = 1_761_700_000_000L, downloading = 2),
+            onEnabledChange = {},
+            onSyncNow = {},
+            audioOnMobileData = false
+        )
+    }
+
     /** Sync running after *Sync now*, served over plain http:// (issue #68). */
     @Test
     fun settingsSyncRunning() = capture("settings_sync_running") {
@@ -815,6 +845,12 @@ class ScreenshotTest(private val variant: Variant) {
     @Test
     fun sessionTranscript() = capture("session_transcript") {
         session(playing = true)
+    }
+
+    /** A session from another device whose recording is still downloading (issue #69). */
+    @Test
+    fun sessionAudioDownloading() = capture("session_audio_downloading") {
+        session(audioDownloading = true)
     }
 
     @Test
@@ -1108,7 +1144,8 @@ class ScreenshotTest(private val variant: Variant) {
         marksOpen: Boolean = false,
         cleanup: CleanupUi = CleanupUi(),
         tags: List<String> = emptyList(),
-        ask: AskUiState = AskUiState(messages = CHAT)
+        ask: AskUiState = AskUiState(messages = CHAT),
+        audioDownloading: Boolean = false
     ) {
         SessionBody(
             createdAt = T0 + 2 * DAY,
@@ -1122,7 +1159,7 @@ class ScreenshotTest(private val variant: Variant) {
             initialTab = tab,
             askState = ask,
             playerState = PlayerState(
-                ready = true,
+                ready = !audioDownloading,
                 isPlaying = playing,
                 positionMs = 9_000L,
                 durationMs = 754_000L
@@ -1144,6 +1181,7 @@ class ScreenshotTest(private val variant: Variant) {
             onRenameSession = {},
             effectiveSpeakerCount = 3,
             onReidentifySpeakers = {},
+            audioDownloading = audioDownloading,
             onSummarise = {},
             onCancelSummary = {},
             onAsk = {},
@@ -1275,6 +1313,23 @@ class ScreenshotTest(private val variant: Variant) {
             row(3, "Réunion budget", T0 + DAY, 1_932_000L, SessionStatus.DIARIZED, language = "fr", speakers = 4),
             row(2, "Interview with Carol", T0, 3_725_000L, SessionStatus.DIARIZATION_FAILED),
             row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.DIARIZED, speakers = 2)
+        )
+
+        private val SYNC_SESSIONS = listOf(
+            row(3, "Weekly sync", T0 + 2 * DAY, 754_000L, SessionStatus.DIARIZED, speakers = 3)
+                .copy(synced = true, audioDownloading = true, syncId = "a"),
+            SessionRow(
+                id = 0,
+                title = "Interview with Carol",
+                createdAt = T0 + DAY,
+                durationMs = 3_725_000L,
+                status = SessionStatus.TRANSCRIBED,
+                syncId = "b",
+                synced = true,
+                onServerOnly = true
+            ),
+            row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.DIARIZED, speakers = 2)
+                .copy(synced = true, syncId = "c")
         )
 
         private val TAGS = listOf(Tag(1, "Acme"), Tag(2, "Weekly"), Tag(3, "Hiring"))

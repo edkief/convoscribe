@@ -7,6 +7,8 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
+import com.convoscribe.data.SyncKinds
+import com.convoscribe.data.SyncStateEntity
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -21,6 +23,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -209,5 +212,38 @@ class HomeViewModelTest {
         assertFalse(vm.tagFilter.first { it.tags.size == 1 }.active)
         assertEquals(4, vm.sessions.first { it.size == 4 }.size)
         job.cancel()
+    }
+
+    @Test
+    fun sessions_showRemovedOnesAmongThemAndTheirSyncState() = runTest(dispatcher) {
+        val local = repo.createSession(title = "here", language = "en")
+        val syncId = repo.getSession(local)!!.syncId
+        db.syncDao().upsertState(
+            SyncStateEntity(SyncKinds.SESSION, syncId, baseRevision = 2, audioSha = "a".repeat(64))
+        )
+        db.syncDao().upsertState(
+            SyncStateEntity(
+                SyncKinds.SESSION,
+                "removed",
+                baseRevision = 1,
+                excluded = true,
+                title = "On the server",
+                createdAt = 1L,
+                durationMs = 5_000
+            )
+        )
+        var downloads = 0
+        val vm = HomeViewModel(repo) { downloads++ }
+
+        val rows = vm.sessions.first { it.size == 2 }
+        assertEquals(listOf("here", "On the server"), rows.map { it.title })
+        assertTrue(rows[0].synced)
+        assertTrue(rows[0].audioDownloading)
+        assertTrue(rows[1].onServerOnly)
+
+        vm.downloadAgain("removed")
+        vm.sessions.first { it.size == 1 }
+        assertEquals(1, downloads)
+        assertFalse(db.syncDao().state(SyncKinds.SESSION, "removed")!!.excluded)
     }
 }

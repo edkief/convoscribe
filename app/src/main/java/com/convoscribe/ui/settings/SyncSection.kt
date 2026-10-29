@@ -46,6 +46,10 @@ import java.util.Date
  * *Sync now*, and the status: last synced, sessions waiting and the
  * last error. [configured] is whether an address is saved; [enabled]
  * whether sync is switched on.
+ *
+ * Two-way sync (issue #69) adds *Download recordings on mobile data*
+ * ([audioOnMobileData]) and how many sessions or recordings are still
+ * downloading.
  */
 @Composable
 internal fun SyncSection(
@@ -57,7 +61,9 @@ internal fun SyncSection(
     enabled: Boolean,
     status: SyncStatus,
     onEnabledChange: (Boolean) -> Unit,
-    onSyncNow: () -> Unit
+    onSyncNow: () -> Unit,
+    audioOnMobileData: Boolean = false,
+    onAudioOnMobileDataChange: (Boolean) -> Unit = {}
 ) {
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -119,6 +125,26 @@ internal fun SyncSection(
         }
         if (active) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .toggleable(
+                        value = audioOnMobileData,
+                        role = Role.Switch,
+                        onValueChange = onAudioOnMobileDataChange
+                    ),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(R.string.sync_mobile_data_label),
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    SupportingText(text = stringResource(R.string.sync_mobile_data_help))
+                }
+                Switch(checked = audioOnMobileData, onCheckedChange = null)
+            }
+            Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
@@ -139,6 +165,11 @@ internal fun SyncSection(
             )
             if (status.waiting > 0) {
                 NoticeText(text = pluralStringResource(R.plurals.sync_waiting, status.waiting, status.waiting))
+            }
+            if (status.downloading > 0) {
+                NoticeText(
+                    text = pluralStringResource(R.plurals.sync_downloading, status.downloading, status.downloading)
+                )
             }
             status.lastError?.let { ErrorBanner(message = stringResource(R.string.sync_error, it)) }
         }

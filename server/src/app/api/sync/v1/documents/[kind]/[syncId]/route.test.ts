@@ -16,13 +16,15 @@ const ID = '6f1c2b8e-1d4a-4c51-9b7e-0d2f3a4b5c6d';
 const manifest = (title: string, audio?: { sha256: string; size: number }) =>
   JSON.stringify({ schema: 1, syncId: ID, title, durationMs: 1000, audio: audio ?? null, lines: [] });
 
-function push(body: string, baseRevision: number, opts: { gzip?: boolean; hash?: string; syncId?: string } = {}) {
+type PushOpts = { gzip?: boolean; hash?: string; syncId?: string; durationMs?: number; changedAt?: number };
+
+function push(body: string, baseRevision: number, opts: PushOpts = {}) {
   const syncId = opts.syncId ?? ID;
   const headers: Record<string, string> = {
     'sync-base-revision': String(baseRevision),
     'sync-manifest-hash': opts.hash ?? sha256(body),
-    'sync-duration-ms': '1000',
-    'sync-changed-at': '1700000000000',
+    'sync-duration-ms': String(opts.durationMs ?? 1000),
+    'sync-changed-at': String(opts.changedAt ?? 1700000000000),
   };
   if (opts.gzip) headers['content-encoding'] = 'gzip';
   const bytes = opts.gzip ? gzipSync(body) : Buffer.from(body);
@@ -31,9 +33,15 @@ function push(body: string, baseRevision: number, opts: { gzip?: boolean; hash?:
 
 const get = (syncId = ID) => GET(request(`/documents/session/${syncId}`), ctx({ kind: 'session', syncId }));
 
-const remove = (baseRevision: number) =>
+const remove = (baseRevision: number, deletedDurationMs?: number) =>
   DELETE(
-    request(`/documents/session/${ID}`, { method: 'DELETE', headers: { 'sync-base-revision': String(baseRevision) } }),
+    request(`/documents/session/${ID}`, {
+      method: 'DELETE',
+      headers: {
+        'sync-base-revision': String(baseRevision),
+        ...(deletedDurationMs === undefined ? {} : { 'sync-duration-ms': String(deletedDurationMs) }),
+      },
+    }),
     ctx({ kind: 'session', syncId: ID }),
   );
 
@@ -70,20 +78,37 @@ describe('documents', () => {
     expect(await (await get()).text()).toBe(body);
   });
 
-  it('advances the revision only from the current one (compare-and-swap)', async () => {
+  it('refuses a stale push that loses the conflict rule, with the current version', async () => {
     await push(manifest('One'), 0);
     expect((await (await push(manifest('Two'), 1)).json()).revision).toBe(2);
-    const stale = await push(manifest('Three'), 1);
+    const stale = await push(manifest('Three'), 1, { changedAt: 1600000000000 });
     expect(stale.status).toBe(409);
     expect(await stale.json()).toMatchObject({ error: 'conflict', current: { revision: 2, manifestHash: sha256(manifest('Two')) } });
   });
 
-  it('lets exactly one of two concurrent pushes from the same base win', async () => {
+  it('accepts a stale push with a longer recording as the next revision', async () => {
+    await push(manifest('One'), 0);
+    await push(manifest('Renamed'), 1, { changedAt: 1800000000000 });
+    const longer = await push(manifest('Continued'), 1, { durationMs: 5000 });
+    expect(longer.status).toBe(200);
+    expect(await longer.json()).toMatchObject({ revision: 3, durationMs: 5000 });
+    expect((await (await get()).json()).title).toBe('Continued');
+  });
+
+  it('accepts a stale push of equal length that changed later', async () => {
+    await push(manifest('One'), 0);
+    await push(manifest('Earlier'), 1, { changedAt: 1700000000100 });
+    expect((await push(manifest('Later'), 1, { changedAt: 1700000000200 })).status).toBe(200);
+    expect((await (await get()).json()).title).toBe('Later');
+  });
+
+  it('settles two concurrent pushes from the same base on the same winner', async () => {
     await push(manifest('Base'), 0);
-    const results = await Promise.all([push(manifest('A'), 1), push(manifest('B'), 1)]);
-    expect(results.map((r) => r.status).sort()).toEqual([200, 409]);
-    expect((await (await get()).json()).title).toMatch(/^[AB]$/);
-    expect((await feed()).changes).toHaveLength(1);
+    const [a, b] = [manifest('A'), manifest('B')];
+    await Promise.all([push(a, 1), push(b, 1)]);
+    // Same length and change time: the higher hash wins, whichever came first.
+    const winner = sha256(a) > sha256(b) ? 'A' : 'B';
+    expect((await (await get()).json()).title).toBe(winner);
   });
 
   it('treats a repeated push of the current manifest as done', async () => {
@@ -118,6 +143,30 @@ describe('documents', () => {
     expect((await remove(1)).status).toBe(200);
     expect((await get()).status).toBe(410);
     expect((await feed()).changes).toMatchObject([{ syncId: ID, revision: 2, deleted: true }]);
+  });
+
+  it('lets a stale delete win unless the other version is longer', async () => {
+    await push(manifest('Shared'), 0);
+    await push(manifest('Renamed elsewhere'), 1, { changedAt: 1800000000000 });
+    expect((await remove(1, 1000)).status).toBe(200);
+    expect((await get()).status).toBe(410);
+
+    await push(manifest('Back, longer'), 1, { durationMs: 2000 });
+    expect((await get()).status).toBe(200);
+    await push(manifest('Continued elsewhere'), 4, { durationMs: 3000 });
+    const lost = await remove(4, 2000);
+    expect(lost.status).toBe(409);
+    expect(await lost.json()).toMatchObject({ current: { revision: 5, durationMs: 3000 } });
+  });
+
+  it('brings a deleted document back only with a longer recording', async () => {
+    await push(manifest('Gone'), 0);
+    await remove(1);
+    const same = await push(manifest('Edited'), 1, { changedAt: 1900000000000 });
+    expect(same.status).toBe(409);
+    expect(await same.json()).toMatchObject({ current: { deleted: true } });
+    expect((await push(manifest('Longer'), 1, { durationMs: 1001 })).status).toBe(200);
+    expect((await (await get()).json()).title).toBe('Longer');
   });
 
   it('answers 404 for an unknown document or kind', async () => {

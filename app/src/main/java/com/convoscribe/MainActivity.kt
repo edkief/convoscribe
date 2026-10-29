@@ -87,6 +87,15 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Opening the app looks for changes from other devices (issue #69);
+     * the sync job only runs by itself after a change on this device.
+     */
+    override fun onStart() {
+        super.onStart()
+        (applicationContext as ConvoApp).container.syncScheduler.sync()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         takeImport(intent)

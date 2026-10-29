@@ -264,6 +264,16 @@
     <string name="home_delete_message">This will remove the recording and its transcript from this device.</string>
     <string name="home_delete_confirm">Delete</string>
     <string name="home_delete_cancel">Cancel</string>
+    <string name="home_delete_message_synced">This deletes the recording and its transcript from this device, the sync server and every other device.</string>
+    <string name="home_remove_device">Remove from this device</string>
+    <string name="home_remove_title">Remove from this device?</string>
+    <string name="home_remove_message">This frees the space on this device. The session stays on the sync server and on your other devices, and you can download it again from this list.</string>
+    <string name="home_remove_confirm">Remove</string>
+    <string name="home_download_again">Download</string>
+    <string name="sync_badge_on_server">On server</string>
+    <string name="sync_badge_downloading">Audio downloading</string>
+    <string name="session_audio_downloading">Audio downloading</string>
+    <string name="session_audio_downloading_body">This session came from another device. You can read, search and ask about it now; playback and re-identifying speakers wait for the recording.</string>
     <string name="settings_title">Settings</string>
     <string name="settings_back">Back</string>
     <string name="settings_save">Save</string>
@@ -705,13 +715,15 @@
     <string name="speakers_delete_cd">Remove %1$s</string>
     <!-- Sync server (issue #68) -->
     <string name="sync_section">Sync</string>
-    <string name="sync_help">Optional. Uploads every finished session, with its recording, transcript, speakers, summaries, questions, marks and tags, to your own ConvoScribe sync server, in the background. Recording and everything else keep working on this device without it. API keys are never uploaded.</string>
+    <string name="sync_help">Optional. Keeps every finished session, with its recording, transcript, speakers, summaries, questions, marks and tags, on your own ConvoScribe sync server, in the background, and brings the sessions of your other devices here. Recording and everything else keep working on this device without it. API keys are never uploaded.</string>
     <string name="sync_url_label">Server address</string>
     <string name="sync_url_placeholder">https://sync.example.com</string>
     <string name="sync_url_cleartext">Sessions are sent to an http:// address unencrypted. Use https:// unless the server is on a network you trust.</string>
     <string name="sync_key_label">API key</string>
     <string name="sync_enabled_label">Sync sessions</string>
-    <string name="sync_enabled_help">Uploads when a network is available, never while recording. Deleting a session here deletes it on the server too.</string>
+    <string name="sync_enabled_help">Syncs when a network is available, never while recording. Deleting a session deletes it on the server and every device; Remove from this device only frees space here.</string>
+    <string name="sync_mobile_data_label">Download recordings on mobile data</string>
+    <string name="sync_mobile_data_help">Transcripts always download straight away. Recordings from other devices wait for Wi-Fi unless this is on.</string>
     <string name="sync_now">Sync now</string>
     <string name="sync_running">Syncing…</string>
     <string name="sync_never">Not synced yet</string>
@@ -719,6 +731,10 @@
     <plurals name="sync_waiting">
         <item quantity="one">%1$d session waiting to upload</item>
         <item quantity="other">%1$d sessions waiting to upload</item>
+    </plurals>
+    <plurals name="sync_downloading">
+        <item quantity="one">%1$d session or recording waiting to download</item>
+        <item quantity="other">%1$d sessions or recordings waiting to download</item>
     </plurals>
     <string name="sync_error">Last sync failed: %1$s</string>
     <string name="sync_confirm_title">Upload your sessions?</string>

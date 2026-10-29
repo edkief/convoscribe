@@ -47,6 +47,23 @@ fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier) {
 }
 
 /**
+ * Pill for a session's place in sync (issue #69): its recording still
+ * downloading, or the session removed from this device and kept only
+ * on the sync server. Neutral colours: nothing is wrong.
+ */
+@Composable
+fun SyncBadge(onServerOnly: Boolean, modifier: Modifier = Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    Pill(
+        label = stringResource(if (onServerOnly) R.string.sync_badge_on_server else R.string.sync_badge_downloading),
+        container = scheme.secondaryContainer,
+        content = scheme.onSecondaryContainer,
+        dotColor = scheme.outline,
+        modifier = modifier
+    )
+}
+
+/**
  * Pill for a recording that is paused (issue #7): the session is
  * still open but nothing is being captured. Neutral colours with a
  * hollow-looking dot, so it reads differently from Recording.
