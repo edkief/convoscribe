@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -105,5 +106,97 @@ class SessionManifestTest {
         assertEquals(File(repo.audioPath(id)), snapshot.files[manifest.audio!!.sha256])
         assertNull(manifest.cleanAudio)
         assertEquals(manifest, SessionManifests.decode(text))
+    }
+
+    /** A second install: its own database and recordings. */
+    private fun otherDevice(): Pair<AppDatabase, SessionRepository> {
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val other = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        return other to SessionRepository(other, File(recordingsDir, "other").apply { mkdirs() })
+    }
+
+    /** Copies of [snapshot]'s recordings, as a restore stages them. */
+    private fun staged(snapshot: SessionSnapshot): Map<String, File> = snapshot.files.mapValues { (sha, file) ->
+        File(recordingsDir, "staged-$sha").also { file.copyTo(it, overwrite = true) }
+    }
+
+    @Test
+    fun applyManifest_rebuildsTheSessionElsewhere() = runTest {
+        val id = session()
+        repo.setStatus(id, SessionStatus.DIARIZED)
+        repo.renameSpeaker(id, 0, "Ann")
+        val snapshot = repo.snapshot(id)!!
+        val (other, otherRepo) = otherDevice()
+        try {
+            val newId = otherRepo.applyManifest(snapshot.manifest, 42L, staged(snapshot)) { ref ->
+                ref.key ?: ref.user?.let { "user:7" }
+            }
+            val copy = otherRepo.snapshot(newId)!!
+            assertEquals("user:7", otherRepo.getSession(newId)!!.summaryTemplate)
+            assertEquals(
+                snapshot.manifest.copy(summaryTemplate = null),
+                copy.manifest.copy(summaryTemplate = null)
+            )
+            assertEquals(42L, otherRepo.getSession(newId)!!.updatedAt)
+            assertEquals(
+                File(repo.audioPath(id)).readBytes().toList(),
+                File(otherRepo.audioPath(newId)).readBytes().toList()
+            )
+        } finally {
+            other.close()
+        }
+    }
+
+    @Test
+    fun applyManifest_replacesTheSessionWithTheSameSyncId() = runTest {
+        val id = session()
+        val snapshot = repo.snapshot(id)!!
+        val edited = snapshot.manifest.copy(
+            title = "Renamed",
+            lines = snapshot.manifest.lines.take(1),
+            marks = emptyList()
+        )
+        val sameId = repo.applyManifest(edited, 5L, staged(snapshot))
+        assertEquals(id, sameId)
+        assertEquals("Renamed", repo.getSession(id)!!.title)
+        assertEquals(1, repo.getSegments(id).size)
+        assertEquals(0, repo.countMarks(id))
+        assertEquals(
+            SessionManifests.hash(edited.copy(summaryTemplate = null)),
+            SessionManifests.hash(repo.snapshot(id)!!.manifest.copy(summaryTemplate = null))
+        )
+    }
+
+    @Test
+    fun applyManifest_withAMissingRecordingWritesNothing() = runTest {
+        val id = session()
+        val snapshot = repo.snapshot(id)!!
+        val (other, otherRepo) = otherDevice()
+        try {
+            val failed = runCatching { otherRepo.applyManifest(snapshot.manifest, 1L, emptyMap()) }
+            assertTrue(failed.exceptionOrNull() is IllegalArgumentException)
+            assertNull(other.sessionDao().getBySyncId(snapshot.manifest.syncId))
+        } finally {
+            other.close()
+        }
+    }
+
+    @Test
+    fun applyManifest_rollsBackWhenTheRecordingCannotBeMoved() = runTest {
+        val id = session()
+        val snapshot = repo.snapshot(id)!!
+        val context: Context = ApplicationProvider.getApplicationContext()
+        val other = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        // A file where the recordings directory should be: the move fails.
+        val notADir = File(recordingsDir, "not-a-dir").apply { writeText("x") }
+        try {
+            val failed =
+                runCatching { SessionRepository(other, notADir).applyManifest(snapshot.manifest, 1L, staged(snapshot)) }
+            assertTrue(failed.isFailure)
+            assertNull(other.sessionDao().getBySyncId(snapshot.manifest.syncId))
+            assertEquals(emptyList<Long>(), other.sessionDao().allIds())
+        } finally {
+            other.close()
+        }
     }
 }

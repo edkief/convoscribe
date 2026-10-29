@@ -201,9 +201,17 @@ object SessionManifests {
     fun portableStatus(status: SessionStatus): SessionStatus =
         if (status == SessionStatus.DIARIZING) SessionStatus.DIARIZATION_PENDING else status
 
-    /** [status] as stored; an unknown one reads as waiting for speakers. */
+    /**
+     * [status] as stored here. A session cannot arrive still recording,
+     * so that reads as transcribed; an unknown status as waiting for
+     * speakers.
+     */
     fun status(status: String): SessionStatus =
-        SessionStatus.entries.firstOrNull { it.name == status } ?: SessionStatus.DIARIZATION_PENDING
+        when (val known = SessionStatus.entries.firstOrNull { it.name == status }) {
+            null -> SessionStatus.DIARIZATION_PENDING
+            SessionStatus.RECORDING -> SessionStatus.TRANSCRIBED
+            else -> portableStatus(known)
+        }
 
     fun encode(manifest: SessionManifest): String = json.encodeToString(SessionManifest.serializer(), manifest)
 

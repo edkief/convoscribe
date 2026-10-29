@@ -19,6 +19,9 @@ interface ChatMessageDao {
     @Query("SELECT * FROM chat_messages WHERE sessionId = :sessionId ORDER BY createdAt ASC, id ASC")
     suspend fun getForSession(sessionId: Long): List<ChatMessageEntity>
 
+    @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
+    suspend fun deleteForSession(sessionId: Long)
+
     /**
      * Chat messages for a session, in playback order. The primary
      * sort is [createdAt]; ties are broken by the auto-generated
