@@ -215,6 +215,25 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun deleteSession_leavesATombstoneOnlyWhenTheServerHasTheSession() = runTest {
+        val synced = repo.createSession(title = "Synced", language = "en")
+        val local = repo.createSession(title = "Local", language = "en")
+        val syncedId = repo.getSession(synced)!!.syncId
+        val localId = repo.getSession(local)!!.syncId
+        db.syncDao().upsertState(SyncStateEntity(SyncKinds.SESSION, syncedId, baseRevision = 3, baseHash = "h"))
+        db.syncDao().upsertState(SyncStateEntity(SyncKinds.SESSION, localId, pendingHash = "p", pendingSince = 1L))
+
+        repo.deleteSession(synced)
+        repo.deleteSession(local)
+
+        val tombstones = db.syncDao().tombstones()
+        assertEquals(listOf(syncedId), tombstones.map { it.syncId })
+        assertEquals(3L, tombstones.single().baseRevision)
+        assertNull(db.syncDao().state(SyncKinds.SESSION, syncedId))
+        assertNull(db.syncDao().state(SyncKinds.SESSION, localId))
+    }
+
+    @Test
     fun finishRecording_setsDurationAndStatus() = runTest {
         val id = repo.createSession(title = "Test", language = "en")
         repo.finishRecording(id, durationMs = 12_345L)
