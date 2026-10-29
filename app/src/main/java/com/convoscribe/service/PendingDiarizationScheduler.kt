@@ -30,18 +30,59 @@ import kotlinx.coroutines.sync.withLock
  * cancels the job. It never schedules while the job runs: scheduling
  * the same job id would stop it, and the running job picks up sessions
  * that became pending meanwhile anyway.
+ *
+ * ## Hold until the next charge (issue #64)
+ *
+ * When the user cancels a run while charging, [hold] keeps the job
+ * unscheduled until the charger is unplugged ([release], from the
+ * `ACTION_POWER_DISCONNECTED` receiver [ConvoApp][com.convoscribe.ConvoApp]
+ * registers while it runs, or at app start on battery). The hold is
+ * saved, so a process restarted on the same charge keeps it.
+ *
+ * @property isCharging whether the device is plugged in now.
  */
 class PendingDiarizationScheduler(
     private val context: Context,
     private val settings: SettingsRepository,
     private val runner: () -> PendingDiarizationRunner,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val isCharging: () -> Boolean = { false }
 ) {
     /** Set by [DiarizationJobService] while its work runs. */
     @Volatile
     var jobRunning: Boolean = false
 
     private val lock = Mutex()
+
+    private val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    /** Whether automatic runs wait for the next charge ([hold]). */
+    val held: Boolean get() = prefs.getBoolean(KEY_HELD, false)
+
+    /**
+     * The user cancelled a run: while charging, run nothing more
+     * automatically until the charger is unplugged and plugged in again.
+     * On battery the next charge is already a new one, so nothing is held.
+     */
+    fun hold() {
+        if (!isCharging()) return
+        prefs.edit().putBoolean(KEY_HELD, true).commit()
+        Log.i(TAG, "speaker job held until the next charge")
+        sync()
+    }
+
+    /** The charger was unplugged: lift the [hold] and schedule for the next charge. */
+    fun release() {
+        if (!held) return
+        prefs.edit().putBoolean(KEY_HELD, false).apply()
+        Log.i(TAG, "speaker job hold lifted")
+        sync()
+    }
+
+    /** At app start: a hold left by a charge that has since ended is lifted. */
+    fun releaseIfUnplugged() {
+        if (held && !isCharging()) release()
+    }
 
     /** Bring the job in line with the setting and the pending sessions, in the background. */
     fun sync() {
@@ -50,7 +91,7 @@ class PendingDiarizationScheduler(
 
     private suspend fun syncNow() = lock.withLock {
         val jobs = context.getSystemService<JobScheduler>() ?: return@withLock
-        if (SpeakerIdMode.of(settings.settings.value.speakerIdMode) == SpeakerIdMode.MANUAL) {
+        if (SpeakerIdMode.of(settings.settings.value.speakerIdMode) == SpeakerIdMode.MANUAL || held) {
             jobs.cancel(JOB_ID)
             return@withLock
         }
@@ -71,5 +112,8 @@ class PendingDiarizationScheduler(
     companion object {
         /** The one charging job's id. */
         const val JOB_ID = 1101
+
+        private const val PREFS_NAME = "speaker_job"
+        private const val KEY_HELD = "held"
     }
 }

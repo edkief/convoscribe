@@ -1,6 +1,11 @@
 package com.convoscribe
 
 import android.app.Application
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.ProcessLifecycleOwner
@@ -29,6 +34,19 @@ class ConvoApp : Application() {
             }
         )
         container.updateCheckScheduler.sync()
+        // A speaker run cancelled while charging holds the charging job
+        // until the charger is unplugged (issue #64). Android 8+ only
+        // delivers this to a receiver registered at run time.
+        ContextCompat.registerReceiver(
+            this,
+            object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    container.pendingDiarizationScheduler.release()
+                }
+            },
+            IntentFilter(Intent.ACTION_POWER_DISCONNECTED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
         // Crash-recovery: walk the database for sessions that were
         // left mid-recording / mid-diarization by a previous
         // process and patch them so the user can see them in the
@@ -47,6 +65,8 @@ class ConvoApp : Application() {
                 // Files of an import the previous process died in; no
                 // session was created for it.
                 runCatching { container.importAudioUseCase.cleanUp() }
+                // Unplugged while the process was not running.
+                container.pendingDiarizationScheduler.releaseIfUnplugged()
                 container.pendingDiarizationScheduler.sync()
                 container.semanticIndexScheduler.sync()
             }

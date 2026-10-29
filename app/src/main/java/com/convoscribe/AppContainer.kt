@@ -342,7 +342,8 @@ class AppContainer(val context: Context) {
         enrolled = enrolledSpeakers,
         isCharging = ::isPluggedIn,
         onPending = { pendingDiarizationScheduler.sync() },
-        onDiarized = { markNotesWriter.onDiarized(it) }
+        onDiarized = { markNotesWriter.onDiarized(it) },
+        onCancelled = { pendingDiarizationScheduler.hold() }
     )
 
     /**
@@ -420,7 +421,8 @@ class AppContainer(val context: Context) {
                 retranscribeUseCase.isRunning ||
                 importAudioUseCase.isRunning ||
                 semanticIndexScheduler.jobRunning
-        }
+        },
+        held = { pendingDiarizationScheduler.held }
     )
 
     /**
@@ -432,7 +434,8 @@ class AppContainer(val context: Context) {
         context = context,
         settings = settingsRepository,
         runner = { pendingDiarizationRunner },
-        scope = applicationScope
+        scope = applicationScope,
+        isCharging = ::isPluggedIn
     ).also { scheduler ->
         settingsRepository.settings
             .map { it.speakerIdMode }

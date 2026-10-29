@@ -21,13 +21,16 @@ import com.convoscribe.settings.SpeakerIdMode
  *   has run, so it cannot reset a session this run has just started.
  * @property busy whether a recording, import or re-transcription is
  *   running; the job then gives way and asks to be retried later.
+ * @property held whether the user cancelled a run during this charge
+ *   (issue #64); nothing runs automatically until the next one.
  */
 class PendingDiarizationRunner(
     private val repository: SessionRepository,
     private val diarize: DiarizeSessionUseCase,
     private val settings: SettingsRepository,
     private val awaitRecovery: suspend () -> Unit = {},
-    private val busy: () -> Boolean = { false }
+    private val busy: () -> Boolean = { false },
+    private val held: () -> Boolean = { false }
 ) {
     /** Why [run] returned. */
     enum class Outcome {
@@ -38,7 +41,10 @@ class PendingDiarizationRunner(
         BUSY,
 
         /** The setting is *On demand*; nothing runs automatically. */
-        DISABLED
+        DISABLED,
+
+        /** The user cancelled a run during this charge; wait for the next one. */
+        HELD
     }
 
     suspend fun run(): Outcome {
@@ -48,6 +54,7 @@ class PendingDiarizationRunner(
         val tried = mutableSetOf<Long>()
         while (true) {
             if (SpeakerIdMode.of(settings.settings.value.speakerIdMode) == SpeakerIdMode.MANUAL) return Outcome.DISABLED
+            if (held()) return Outcome.HELD
             if (busy()) return Outcome.BUSY
             val next = repository.sessionsWithStatus(SessionStatus.DIARIZATION_PENDING)
                 .firstOrNull { it.id !in tried }
