@@ -54,6 +54,15 @@ for cmake_dir in "$CONVOSCRIBE_TOOLCHAIN"/cmake-*/bin; do
   fi
 done
 
+# Node.js and pnpm for server/, installed by setup-toolchain.sh at the
+# version it pins; same approach as CMake.
+for node_dir in "$CONVOSCRIBE_TOOLCHAIN"/node-v*/bin; do
+  if [[ -d "$node_dir" ]]; then
+    prepend_path "$node_dir"
+    break
+  fi
+done
+
 # Robolectric caches android-all jars in ~/.m2; keep them in the toolchain too.
 if [[ ! -L "$HOME/.m2" ]]; then
   mkdir -p "$CONVOSCRIBE_TOOLCHAIN/m2"

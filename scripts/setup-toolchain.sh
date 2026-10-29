@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# Idempotent installer for JDK 17, Gradle, and Android command-line tools.
+# Idempotent installer for JDK 17, Gradle, Android command-line tools, and
+# Node.js with pnpm for the sync server (server/).
 # Nothing here uses sudo or apt; everything installs under $CONVOSCRIBE_TOOLCHAIN
 # (default /workspace/toolchain), the same root scripts/env.sh points at.
 #
 # CONVOSCRIBE_APP_ONLY=1 installs only what building the app needs (JDK,
-# Gradle, SDK) and skips CMake, the NDK and the sherpa-onnx build. The
+# Gradle, SDK) and skips CMake, the NDK, Node.js and the sherpa-onnx build. The
 # release builder image uses it and takes sherpa-onnx prebuilt instead
 # (see docker/android-builder.Containerfile).
 
@@ -15,6 +16,10 @@ ANDROID_HOME="$TOOLS/Android/Sdk"
 ANDROID_NDK_VERSION="27.2.12479018"
 GRADLE_VERSION="8.11.1"
 JDK_VERSION="17"
+# Keep NODE_VERSION's major and PNPM_VERSION in step with server/Dockerfile
+# and server/package.json ("packageManager").
+NODE_VERSION="24.22.1"
+PNPM_VERSION="12.15.0"
 ANDROID_PLATFORM="35"
 ANDROID_BUILD_TOOLS="35.0.0"
 ANDROID_PLATFORM_TOOLS="platform-tools"
@@ -77,6 +82,30 @@ elif [[ ! -x "$CMAKES_DIR/bin/cmake" ]]; then
   tar -xzf "$cmake_tmp" --strip-components=1 -C "$TOOLS/cmake-${CMAKE_VERSION}"
 else
   echo "CMake ${CMAKE_VERSION} already installed."
+fi
+
+# ----------------------------------------------------------------------------
+# Node.js and pnpm (the sync server in server/)
+# ----------------------------------------------------------------------------
+NODE_DIR="$TOOLS/node-v${NODE_VERSION}"
+if [[ "$APP_ONLY" == 1 ]]; then
+  echo "CONVOSCRIBE_APP_ONLY=1: skipping Node.js."
+else
+  if [[ ! -x "$NODE_DIR/bin/node" ]]; then
+    echo "Installing Node.js ${NODE_VERSION}..."
+    node_tmp="$TMP_DIR/node.tar.xz"
+    download "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" "$node_tmp"
+    mkdir -p "$NODE_DIR"
+    tar -xJf "$node_tmp" --strip-components=1 -C "$NODE_DIR"
+  else
+    echo "Node.js ${NODE_VERSION} already installed."
+  fi
+  if [[ "$("$NODE_DIR/bin/pnpm" --version 2>/dev/null || true)" != "$PNPM_VERSION" ]]; then
+    echo "Installing pnpm ${PNPM_VERSION}..."
+    PATH="$NODE_DIR/bin:$PATH" npm install --global --prefix "$NODE_DIR" --silent "pnpm@${PNPM_VERSION}"
+  else
+    echo "pnpm ${PNPM_VERSION} already installed."
+  fi
 fi
 
 # ----------------------------------------------------------------------------
@@ -143,6 +172,7 @@ echo "  JAVA_HOME=$JDK_DIR"
 echo "  Gradle  : $GRADLE_DIR"
 echo "  SDK root: $ANDROID_HOME"
 echo "  NDK     : $ANDROID_HOME/ndk/${ANDROID_NDK_VERSION}"
+[[ "$APP_ONLY" == 1 ]] || echo "  Node.js : $NODE_DIR (pnpm ${PNPM_VERSION})"
 
 # sherpa-onnx 1.13.8 native libraries (Qualcomm QNN + speaker diarization
 # enabled) and the Kotlin API jar. This is a no-op on a re-run; pass
