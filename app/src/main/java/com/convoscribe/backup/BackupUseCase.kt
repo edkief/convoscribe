@@ -100,7 +100,7 @@ class BackupException(val failure: BackupFailure, message: String, cause: Throwa
  * **Restore** checks the header before changing anything: a file that
  * is not a backup, or one from a newer version, is refused. Known
  * voices, templates and presets are added unless an identical one is
- * here; settings are applied when asked. Each session is then applied
+ * here; settings are applied when asked, once every session is in. Each session is then applied
  * in one transaction with its recordings moved in last
  * ([SessionRepository.applyManifest]), after their hashes are checked,
  * so a session is restored whole or not at all. A session whose
@@ -321,16 +321,6 @@ class BackupUseCase(
         ZipInputStream(counting).use { zip ->
             val header = readHeader(zip)
             val templateKey = restoreLibrary(header)
-            if (restoreSettings) {
-                header.settings?.let { portable ->
-                    settings.update {
-                        portable.applyTo(
-                            it,
-                            templateKey
-                        )
-                    }
-                }
-            }
             stagingDir.deleteRecursively()
             stagingDir.mkdirs()
             var pending: Pending? = null
@@ -377,6 +367,10 @@ class BackupUseCase(
                     progress()
                 }
                 flush()
+                // Only a restore that finished replaces the settings.
+                if (restoreSettings) {
+                    header.settings?.let { portable -> settings.update { portable.applyTo(it, templateKey) } }
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

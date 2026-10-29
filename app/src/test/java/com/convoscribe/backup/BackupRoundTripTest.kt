@@ -316,6 +316,7 @@ class BackupRoundTripTest {
         val state = tablet.backup.state.value as BackupState.Failed
         assertEquals(BackupFailure.DAMAGED, state.failure)
         assertEquals(1, state.restored)
+        assertEquals("settings wait for a restore that finishes", "", tablet.settings.settings.value.llmModel)
         val restored = tablet.hashes()
         assertEquals(1, restored.size)
         assertEquals(phone.hashes().filterKeys { it in restored }, restored)
@@ -324,6 +325,7 @@ class BackupRoundTripTest {
         // Running it again with a good archive completes the rest.
         assertEquals(2, tablet.restoreFrom(archive))
         assertEquals(3, tablet.syncIds().size)
+        assertEquals("llama", tablet.settings.settings.value.llmModel)
     }
 
     @Test
