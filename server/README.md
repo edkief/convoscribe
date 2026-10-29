@@ -158,11 +158,18 @@ itself answers `405`, because health only takes `GET`.
 
 ## Release
 
-The server releases on its own tags, separately from the app's `vX.Y.Z`:
+The server releases on its own `server-vX.Y.Z` tags, separately from the
+app's `vX.Y.Z`. From the repo root, on `main` with a clean tree:
 
 ```bash
-git tag server-v0.1.0 && git push origin server-v0.1.0
+bash scripts/release.sh prepare-server                    # 0.1.0 -> 0.2.0, push server-v0.2.0
+bash scripts/release.sh prepare-server --patch --dry-run  # print the next version only
 ```
+
+It bumps `version` in `server/package.json` (minor by default; `--patch`,
+`--major` or `--version X.Y.Z`), commits `chore(release): server-vX.Y.Z`,
+tags it, and pushes the branch and tag together. It refuses when nothing
+under `server/` changed since the previous `server-v*` tag.
 
 Tekton builds the image from `server/` and pushes it as `<repo>/server`,
 tagged `git-<sha>` and `latest` (see `.k8s-build.yaml`). It doesn't push a

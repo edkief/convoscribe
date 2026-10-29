@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Cut a GitHub release of the APK, in two halves:
+# Cut a GitHub release of the APK, in two halves, or a release of the sync
+# server:
 #
 #   prepare  (run locally) bump versionName (minor by default) and
 #            versionCode in app/build.gradle.kts, commit
@@ -10,6 +11,10 @@
 #            the verify gate, build the release APK (signed with the shared
 #            debug keystore until issue #16) and `gh release create` with the
 #            APK and its sha256.
+#   prepare-server  (run locally) bump "version" (minor by default) in
+#            server/package.json, commit "chore(release): server-vX.Y.Z",
+#            tag server-vX.Y.Z, push both atomically. Tekton builds the
+#            server image from the tag (see .k8s-build.yaml).
 #
 # sherpa-onnx is never built here. If its outputs are missing from app/,
 # they are copied from $CONVOSCRIBE_SHERPA_PREBUILT (set in the builder
@@ -17,6 +22,7 @@
 # sherpa image with podman/docker (see scripts/build-images.sh).
 #
 # Usage: bash scripts/release.sh prepare [--major|--minor|--patch|--version X.Y.Z] [options]
+#        bash scripts/release.sh prepare-server [--major|--minor|--patch|--version X.Y.Z] [options]
 #        bash scripts/release.sh publish [options]
 
 set -euo pipefail
@@ -24,10 +30,15 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage: bash scripts/release.sh prepare [--major|--minor|--patch|--version X.Y.Z] [options]
+       bash scripts/release.sh prepare-server [--major|--minor|--patch|--version X.Y.Z] [options]
        bash scripts/release.sh publish [options]
 
-prepare: bump the version, commit, tag vX.Y.Z and push the branch and tag.
-The tag push makes Tekton run `publish`.
+prepare: bump the app version, commit, tag vX.Y.Z and push the branch and
+tag. The tag push makes Tekton run `publish`.
+
+prepare-server: bump the sync server's version in server/package.json,
+commit, tag server-vX.Y.Z and push the branch and tag. The tag push makes
+Tekton build the server image. Takes the same options as prepare.
 
   --major             X.Y.Z -> (X+1).0.0
   --minor             X.Y.Z -> X.(Y+1).0 (default)
@@ -82,14 +93,22 @@ log() {
 }
 
 command="${1:-}"
+# What prepare releases: the app (vX.Y.Z) or the sync server (server-vX.Y.Z).
+track=app
 case "$command" in
   prepare | publish) shift ;;
+  prepare-server)
+    # The same steps as prepare, on the server's version and tags.
+    command=prepare
+    track=server
+    shift
+    ;;
   -h | --help)
     usage
     exit 0
     ;;
   *)
-    echo "release: expected 'prepare' or 'publish', got '${command}'" >&2
+    echo "release: expected 'prepare', 'prepare-server' or 'publish', got '${command}'" >&2
     usage >&2
     exit 2
     ;;
@@ -152,12 +171,22 @@ TAG_GLOB='v[0-9]*.[0-9]*.[0-9]*'
 # releases on its own server-v* tags (see .k8s-build.yaml).
 APP_PATHS=(-- . ':(exclude)server')
 
+SERVER_PACKAGE=server/package.json
+SERVER_TAG_GLOB='server-v[0-9]*.[0-9]*.[0-9]*'
+SERVER_PATHS=(-- server)
+
 # Version strings as read from the Gradle file.
 read_versions() {
   current_name=$(sed -n 's/^ *versionName = "\([^"]*\)".*/\1/p' "$GRADLE_FILE")
   current_code=$(sed -n 's/^ *versionCode = \([0-9]*\).*/\1/p' "$GRADLE_FILE")
   [[ "$current_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not read versionName X.Y.Z from $GRADLE_FILE (got '$current_name')."
   [[ "$current_code" =~ ^[0-9]+$ ]] || die "could not read versionCode from $GRADLE_FILE."
+}
+
+# The server's version, from the top-level "version" of its package.json.
+read_server_version() {
+  current_name=$(sed -n 's/^  "version": "\([^"]*\)",*$/\1/p' "$SERVER_PACKAGE" | head -n 1)
+  [[ "$current_name" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "could not read version X.Y.Z from $SERVER_PACKAGE (got '$current_name')."
 }
 
 require_clean_tree() {
@@ -212,9 +241,28 @@ prepare() {
     fi
   fi
 
-  read_versions
+  # What differs between the app and the server: where the version lives,
+  # how tags are named, and which commits count.
+  local version_file tag_prefix tag_glob title
+  local -a paths
+  if [[ "$track" == server ]]; then
+    read_server_version
+    version_file="$SERVER_PACKAGE"
+    tag_prefix=server-v
+    tag_glob="$SERVER_TAG_GLOB"
+    paths=("${SERVER_PATHS[@]}")
+    title="ConvoScribe sync server"
+  else
+    read_versions
+    version_file="$GRADLE_FILE"
+    tag_prefix=v
+    tag_glob="$TAG_GLOB"
+    paths=("${APP_PATHS[@]}")
+    title=ConvoScribe
+  fi
+
   local prev_tag new_name new_code new_tag
-  prev_tag=$(git describe --tags --abbrev=0 --match "$TAG_GLOB" HEAD 2>/dev/null || true)
+  prev_tag=$(git describe --tags --abbrev=0 --match "$tag_glob" HEAD 2>/dev/null || true)
   if [[ -n "$explicit_version" ]]; then
     new_name="$explicit_version"
   else
@@ -226,21 +274,25 @@ prepare() {
       patch) new_name="$major.$minor.$((patch + 1))" ;;
     esac
   fi
-  new_code=$((current_code + 1))
-  new_tag="v$new_name"
+  new_tag="$tag_prefix$new_name"
 
-  if [[ -n "$prev_tag" ]] && ! version_gt "$new_name" "${prev_tag#v}"; then
+  if [[ -n "$prev_tag" ]] && ! version_gt "$new_name" "${prev_tag#"$tag_prefix"}"; then
     die "$new_tag is not newer than the previous release $prev_tag."
   fi
   if git rev-parse --verify --quiet "refs/tags/$new_tag" >/dev/null \
     || git ls-remote --exit-code --tags origin "refs/tags/$new_tag" >/dev/null 2>&1; then
     die "tag $new_tag already exists."
   fi
-  if [[ -z "$(git log --no-merges --format=%h "${prev_tag:+$prev_tag..}HEAD" "${APP_PATHS[@]}")" ]]; then
+  if [[ -z "$(git log --no-merges --format=%h "${prev_tag:+$prev_tag..}HEAD" "${paths[@]}")" ]]; then
     die "no commits since $prev_tag; nothing to release."
   fi
 
-  log "Preparing $new_tag (versionName $current_name -> $new_name, versionCode $current_code -> $new_code)"
+  if [[ "$track" == server ]]; then
+    log "Preparing $new_tag (version $current_name -> $new_name in $SERVER_PACKAGE)"
+  else
+    new_code=$((current_code + 1))
+    log "Preparing $new_tag (versionName $current_name -> $new_name, versionCode $current_code -> $new_code)"
+  fi
   log "Previous release: ${prev_tag:-none}"
   if [[ "$dry_run" == true ]]; then
     log "Dry run: nothing changed."
@@ -249,27 +301,37 @@ prepare() {
 
   if [[ "$assume_yes" == false && -t 0 ]]; then
     local answer
-    read -r -p "Commit, tag and push $new_tag to $branch? CI then builds and publishes it. [y/N] " answer
+    read -r -p "Commit, tag and push $new_tag to $branch? CI then builds it. [y/N] " answer
     [[ "$answer" =~ ^[Yy]$ ]] || die "aborted; nothing changed."
   fi
 
-  # Until the commit exists, any exit puts the Gradle file back.
-  trap 'git checkout --quiet -- "$GRADLE_FILE"' EXIT
-  sed -i \
-    -e "s/^\( *versionName = \)\"$current_name\"/\1\"$new_name\"/" \
-    -e "s/^\( *versionCode = \)$current_code\b/\1$new_code/" \
-    "$GRADLE_FILE"
-  grep -q "versionName = \"$new_name\"" "$GRADLE_FILE" && grep -q "versionCode = $new_code\b" "$GRADLE_FILE" \
-    || die "failed to update the version in $GRADLE_FILE."
+  # Until the commit exists, any exit puts the version file back.
+  trap 'git checkout --quiet -- "$version_file"' EXIT
+  if [[ "$track" == server ]]; then
+    sed -i "0,/^  \"version\": \"$current_name\"/s//  \"version\": \"$new_name\"/" "$SERVER_PACKAGE"
+    [[ "$(sed -n 's/^  "version": "\([^"]*\)",*$/\1/p' "$SERVER_PACKAGE" | head -n 1)" == "$new_name" ]] \
+      || die "failed to update the version in $SERVER_PACKAGE."
+  else
+    sed -i \
+      -e "s/^\( *versionName = \)\"$current_name\"/\1\"$new_name\"/" \
+      -e "s/^\( *versionCode = \)$current_code\b/\1$new_code/" \
+      "$GRADLE_FILE"
+    grep -q "versionName = \"$new_name\"" "$GRADLE_FILE" && grep -q "versionCode = $new_code\b" "$GRADLE_FILE" \
+      || die "failed to update the version in $GRADLE_FILE."
+  fi
 
-  git add "$GRADLE_FILE"
+  git add "$version_file"
   git commit --quiet -m "chore(release): $new_tag"
   trap - EXIT
-  git tag -a "$new_tag" -m "ConvoScribe $new_name"
+  git tag -a "$new_tag" -m "$title $new_name"
 
   log "Pushing $branch and $new_tag ..."
   git push --atomic origin "HEAD:refs/heads/$branch" "refs/tags/$new_tag"
-  log "Done: $new_tag pushed; Tekton builds and publishes the release from the tag."
+  if [[ "$track" == server ]]; then
+    log "Done: $new_tag pushed; Tekton builds the server image from the tag."
+  else
+    log "Done: $new_tag pushed; Tekton builds and publishes the release from the tag."
+  fi
 }
 
 # ===========================================================================

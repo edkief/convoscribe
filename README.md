@@ -420,8 +420,10 @@ first; pushing the tag makes Tekton run the second.
    release already exists, so re-running the pipeline is safe.
 
 The release notes leave out commits that only touch `server/`. The sync
-server releases on its own `server-vX.Y.Z` tags; see
-[`server/README.md`](server/README.md#release).
+server releases on its own `server-vX.Y.Z` tags with
+**`prepare-server`**, which works like `prepare` on the `version` in
+`server/package.json`. Pushing the tag makes Tekton build the server
+image; see [`server/README.md`](server/README.md#release).
 
 Release builds are signed with the shared `app/debug.keystore` for now,
 so they upgrade in place over debug installs (a dedicated release key is
@@ -430,6 +432,7 @@ so they upgrade in place over debug installs (a dedicated release key is
 ```bash
 bash scripts/release.sh prepare                    # 0.1.0 -> 0.2.0, push v0.2.0
 bash scripts/release.sh prepare --patch --dry-run  # print the next version only
+bash scripts/release.sh prepare-server             # server 0.1.0 -> 0.2.0, push server-v0.2.0
 # publish runs in CI; locally, on a checkout of the tag:
 LLM_API_KEY=... bash scripts/release.sh publish
 LLM_API_KEY=... bash scripts/release.sh publish --dry-run   # notes and APK into dist/, any HEAD
