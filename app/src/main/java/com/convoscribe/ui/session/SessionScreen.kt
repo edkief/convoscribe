@@ -343,6 +343,8 @@ fun SessionScreen(
         effectiveSpeakerCount = effectiveSpeakerCount,
         onReidentifySpeakers = reidentify,
         waitingForCharger = appSettings.speakerIdMode == SpeakerIdMode.CHARGING.key,
+        // Straight to the use case: a charging-job run has no notification.
+        onCancelIdentify = { container.diarizeSessionUseCase.cancel() },
         details = SessionDetails(
             language = state.language,
             numSpeakers = effectiveSpeakerCount,
@@ -492,6 +494,7 @@ internal fun SessionBody(
     retranscribe: RetranscribeUi = RetranscribeUi(),
     cleanup: CleanupUi = CleanupUi(),
     waitingForCharger: Boolean = false,
+    onCancelIdentify: (() -> Unit)? = null,
     createdAt: Long = 0L,
     durationMs: Long = 0L,
     initialTab: Int = 0,
@@ -727,6 +730,7 @@ internal fun SessionBody(
                     // The manual trigger works whatever the setting says.
                     onIdentifySpeakersNow = { onReidentifySpeakers(effectiveSpeakerCount) }
                         .takeIf { retranscribe.progress == null },
+                    onCancelIdentify = onCancelIdentify,
                     targetLineId = targetLineId,
                     lineEdits = lineEdits,
                     initialMenuLineId = initialLineMenu,

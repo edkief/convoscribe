@@ -1032,6 +1032,7 @@ class ScreenshotTest(private val variant: Variant) {
             onClearQuestions = {},
             onOpenSettings = {},
             waitingForCharger = waitingForCharger,
+            onCancelIdentify = {},
             lineEdits = LineEditActions(),
             initialLineMenu = lineMenu,
             initialLineDialog = lineDialog,

@@ -99,6 +99,7 @@ internal fun TranscriptTab(
     onSpeakerChipTapped: (Int) -> Unit,
     waitingForCharger: Boolean = false,
     onIdentifySpeakersNow: (() -> Unit)? = null,
+    onCancelIdentify: (() -> Unit)? = null,
     targetLineId: Long? = null,
     lineEdits: LineEditActions? = null,
     initialMenuLineId: Long? = null,
@@ -109,7 +110,12 @@ internal fun TranscriptTab(
     var menuLineId by remember { mutableStateOf(initialMenuLineId) }
     var dialog by remember { mutableStateOf(initialDialog) }
     Column(modifier = Modifier.fillMaxSize()) {
-        StatusBanner(status = status, waitingForCharger = waitingForCharger, onIdentifyNow = onIdentifySpeakersNow)
+        StatusBanner(
+            status = status,
+            waitingForCharger = waitingForCharger,
+            onIdentifyNow = onIdentifySpeakersNow,
+            onCancelIdentify = onCancelIdentify
+        )
         if (speakers.isNotEmpty()) {
             SpeakerChipRow(speakers = speakers, onChipTapped = onSpeakerChipTapped)
         }
@@ -294,14 +300,24 @@ private class LineMenu(
  * otherwise. [onIdentifyNow] is `null` while the button cannot run.
  */
 @Composable
-private fun StatusBanner(status: SessionStatus?, waitingForCharger: Boolean, onIdentifyNow: (() -> Unit)?) {
+private fun StatusBanner(
+    status: SessionStatus?,
+    waitingForCharger: Boolean,
+    onIdentifyNow: (() -> Unit)?,
+    onCancelIdentify: (() -> Unit)?
+) {
     val spacing = AppTheme.spacing
     val modifier = Modifier.padding(horizontal = spacing.screen, vertical = spacing.s)
     when (status) {
-        SessionStatus.DIARIZING -> ProgressBlock(
-            message = stringResource(R.string.session_status_diarizing),
-            modifier = modifier
-        )
+        // Cancel stops the run, whoever started it (issue #64).
+        SessionStatus.DIARIZING -> Column(modifier = modifier) {
+            ProgressBlock(message = stringResource(R.string.session_status_diarizing))
+            if (onCancelIdentify != null) {
+                TextButton(onClick = onCancelIdentify, modifier = Modifier.align(Alignment.End)) {
+                    Text(text = stringResource(R.string.session_cancel_identify))
+                }
+            }
+        }
         SessionStatus.DIARIZATION_FAILED -> ErrorBanner(
             message = stringResource(R.string.session_status_diarization_failed),
             modifier = modifier

@@ -60,6 +60,7 @@
     <string name="import_step_identifying">Identifying speakers… %1$d%%</string>
     <string name="notification_diarizing_title">Identifying speakers</string>
     <string name="notification_diarizing_text">Identifying speakers…</string>
+    <string name="notification_diarizing_cancel">Cancel</string>
     <string name="notification_speakers_pending_title">Speakers not identified yet</string>
     <string name="notification_speakers_pending_text">This session is too long to identify speakers in the background. Open ConvoScribe and tap Identify speakers now.</string>
     <string name="notification_channel_downloads">Downloads</string>
@@ -443,6 +444,7 @@
     <string name="session_tab_summary">Summary</string>
     <string name="session_tab_ask">Ask</string>
     <string name="session_status_diarizing">Identifying speakers…</string>
+    <string name="session_cancel_identify">Cancel</string>
     <string name="session_status_diarization_failed">Speaker detection failed</string>
     <string name="session_status_pending">Speakers not identified yet</string>
     <string name="session_status_pending_charger">Waiting for the charger</string>
