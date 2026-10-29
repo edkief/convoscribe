@@ -55,7 +55,7 @@ class SummaryTemplateRepository(
 
     override suspend fun update(key: String, name: String, body: String) {
         val id = SummaryTemplates.userId(key) ?: return
-        dao.update(id, name.trim(), body.trim())
+        dao.update(id, name.trim(), body.trim(), clock())
     }
 
     override suspend fun delete(key: String) {

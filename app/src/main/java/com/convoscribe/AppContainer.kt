@@ -20,6 +20,7 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.MIGRATION_15_16
+import com.convoscribe.data.MIGRATION_18_19
 import com.convoscribe.data.PresetRepository
 import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SessionRepository
@@ -177,7 +178,7 @@ class AppContainer(val context: Context) {
         context,
         AppDatabase::class.java,
         AppDatabase.NAME
-    ).addMigrations(MIGRATION_15_16).build()
+    ).addMigrations(MIGRATION_15_16, MIGRATION_18_19).build()
 
     /**
      * High-level session/store façade over [database]. Recordings

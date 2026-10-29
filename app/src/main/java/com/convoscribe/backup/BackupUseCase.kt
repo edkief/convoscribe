@@ -252,11 +252,12 @@ class BackupUseCase(
             sessionCount = sessionCount,
             settings = PortableSettings.from(settings.settings.value, ref),
             voices = db.enrolledSpeakerDao().getAll().map {
-                BackupHeader.Voice(it.name, Base64.getEncoder().encodeToString(it.embedding), it.createdAt)
+                BackupHeader.Voice(it.name, Base64.getEncoder().encodeToString(it.embedding), it.createdAt, it.syncId)
             },
-            templates = templates.map { BackupHeader.Template(it.name, it.body, it.createdAt) },
+            templates = templates.map { BackupHeader.Template(it.name, it.body, it.createdAt, it.syncId) },
             presets = presets.observeAll().first().map { preset ->
                 BackupHeader.PresetDoc(
+                    syncId = preset.syncId,
                     name = preset.name,
                     titlePattern = preset.titlePattern,
                     language = preset.language,
@@ -423,7 +424,8 @@ class BackupUseCase(
 
     /**
      * Add the header's voices, templates and presets that are not here
-     * yet. Returns how a template reference resolves on this install.
+     * yet, keeping their sync ids (issue #70) unless one is taken here.
+     * Returns how a template reference resolves on this install.
      */
     private suspend fun restoreLibrary(header: BackupHeader): (SessionManifest.TemplateRef) -> String? {
         val voiceDao = db.enrolledSpeakerDao()
@@ -431,9 +433,9 @@ class BackupUseCase(
         for (voice in header.voices) {
             val embedding = Base64.getDecoder().decode(voice.embedding)
             if (voices.none { it.name == voice.name && it.embedding.contentEquals(embedding) }) {
-                voiceDao.insert(
-                    EnrolledSpeakerEntity(name = voice.name, embedding = embedding, createdAt = voice.createdAt)
-                )
+                val row = EnrolledSpeakerEntity(name = voice.name, embedding = embedding, createdAt = voice.createdAt)
+                val syncId = voice.syncId?.takeIf { voiceDao.getBySyncId(it) == null }
+                voiceDao.insert(if (syncId != null) row.copy(syncId = syncId) else row)
             }
         }
 
@@ -443,14 +445,20 @@ class BackupUseCase(
         existing.forEach { keyByName.putIfAbsent(it.name, SummaryTemplates.userKey(it.id)) }
         for (template in header.templates) {
             val same = existing.firstOrNull { it.name == template.name && it.body == template.body }
-            val id = same?.id ?: templateDao.insert(
-                SummaryTemplateEntity(name = template.name, body = template.body, createdAt = template.createdAt)
-            )
+            val id = same?.id ?: run {
+                val row =
+                    SummaryTemplateEntity(name = template.name, body = template.body, createdAt = template.createdAt)
+                val syncId = template.syncId?.takeIf { templateDao.getBySyncId(it) == null }
+                templateDao.insert(if (syncId != null) row.copy(syncId = syncId) else row)
+            }
             keyByName[template.name] = SummaryTemplates.userKey(id)
         }
         val templateKey = { ref: SessionManifest.TemplateRef -> ref.key ?: ref.user?.let(keyByName::get) }
 
-        val here = presets.observeAll().first().map { it.copy(id = 0, tags = it.tags.sortedBy(TagNames::key)) }
+        val presetDao = db.presetDao()
+        val here = presets.observeAll().first().map {
+            it.copy(id = 0, tags = it.tags.sortedBy(TagNames::key), syncId = null)
+        }
         for (doc in header.presets) {
             val preset = Preset(
                 name = doc.name,
@@ -462,7 +470,9 @@ class BackupUseCase(
                 summaryTemplate = doc.summaryTemplate?.let(templateKey) ?: SummaryTemplates.MEETING_KEY,
                 cleanAudio = doc.cleanAudio
             )
-            if (preset !in here) presets.save(preset)
+            if (preset !in here) {
+                presets.save(preset.copy(syncId = doc.syncId?.takeIf { presetDao.getBySyncId(it) == null }))
+            }
         }
         return templateKey
     }

@@ -100,6 +100,11 @@ import java.util.UUID
  * those sessions are pushed again and the server's conflict rule
  * decides.
  *
+ * The 18 → 19 migration (issue #70) is hand-written ([MIGRATION_18_19]),
+ * like 15 → 16: a unique `syncId` on known voices, presets and summary
+ * templates, `updatedAt` on presets and templates, and
+ * `sync_state.contentKey`.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -123,7 +128,7 @@ import java.util.UUID
         SyncTombstoneEntity::class,
         FileHashEntity::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -220,5 +225,33 @@ val MIGRATION_15_16: Migration = object : Migration(15, 16) {
             db.execSQL("UPDATE sessions SET syncId = ? WHERE id = ?", arrayOf<Any>(UUID.randomUUID().toString(), id))
         }
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_sessions_syncId ON sessions (syncId)")
+    }
+}
+
+/**
+ * Give every known voice, preset and summary template a random
+ * `syncId`, unique per table, and presets and templates an `updatedAt`
+ * of their `createdAt` (issue #70); add `sync_state.contentKey`.
+ * Registered on the database builder.
+ */
+val MIGRATION_18_19: Migration = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        for (table in listOf("enrolled_speakers", "presets", "summary_templates")) {
+            db.execSQL("ALTER TABLE $table ADD COLUMN syncId TEXT NOT NULL DEFAULT ''")
+            if (table != "enrolled_speakers") {
+                db.execSQL("ALTER TABLE $table ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("UPDATE $table SET updatedAt = createdAt")
+            }
+            val ids = buildList {
+                db.query("SELECT id FROM $table").use { cursor ->
+                    while (cursor.moveToNext()) add(cursor.getLong(0))
+                }
+            }
+            for (id in ids) {
+                db.execSQL("UPDATE $table SET syncId = ? WHERE id = ?", arrayOf<Any>(UUID.randomUUID().toString(), id))
+            }
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_${table}_syncId ON $table (syncId)")
+        }
+        db.execSQL("ALTER TABLE sync_state ADD COLUMN contentKey TEXT")
     }
 }

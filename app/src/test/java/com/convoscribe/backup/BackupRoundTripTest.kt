@@ -223,6 +223,13 @@ class BackupRoundTripTest {
         val preset = tablet.presets.observeAll().first().single()
         assertEquals(templateKey, preset.summaryTemplate)
         assertEquals(listOf("Acme"), preset.tags)
+        // The library keeps its identity, so sync later sees one item, not two (issue #70).
+        assertEquals(
+            phone.db.enrolledSpeakerDao().getAll().map { it.syncId },
+            tablet.db.enrolledSpeakerDao().getAll().map { it.syncId }
+        )
+        assertEquals(phone.db.summaryTemplateDao().getAll().single().syncId, template.syncId)
+        assertEquals(phone.presets.observeAll().first().single().syncId, preset.syncId)
         val settings = tablet.settings.settings.value
         assertEquals("llama", settings.llmModel)
         assertEquals(templateKey, settings.defaultSummaryTemplate)

@@ -1,6 +1,7 @@
 package com.convoscribe.data
 
 import androidx.room.withTransaction
+import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -8,7 +9,8 @@ import kotlinx.coroutines.flow.combine
  * Saved conversation options for a recurring meeting (issue #32):
  * the options the Record screen asks for, plus a [titlePattern] that
  * may hold `{date}` and `{time}`. [tags] are names; a tag deleted
- * since the preset was saved is simply gone from it.
+ * since the preset was saved is simply gone from it. [syncId] is its
+ * id on every device (issue #70); `null` for a new one gets a fresh id.
  */
 data class Preset(
     val id: Long = 0,
@@ -19,7 +21,8 @@ data class Preset(
     val participants: List<String>? = null,
     val tags: List<String> = emptyList(),
     val summaryTemplate: String,
-    val cleanAudio: Boolean = false
+    val cleanAudio: Boolean = false,
+    val syncId: String? = null
 )
 
 /** The user's presets (issue #32). */
@@ -75,13 +78,20 @@ class PresetRepository(
             tagIds = tagDao.ensure(preset.tags, now).joinToString("\n"),
             summaryTemplate = preset.summaryTemplate,
             cleanAudio = preset.cleanAudio,
-            createdAt = now
+            createdAt = now,
+            syncId = preset.syncId ?: UUID.randomUUID().toString()
         )
         if (preset.id == 0L) {
             dao.insert(row)
         } else {
             val existing = dao.get(preset.id)
-            dao.update(row.copy(createdAt = existing?.createdAt ?: now))
+            dao.update(
+                row.copy(
+                    createdAt = existing?.createdAt ?: now,
+                    syncId = existing?.syncId ?: row.syncId,
+                    updatedAt = now
+                )
+            )
             preset.id
         }
     }
@@ -97,6 +107,7 @@ class PresetRepository(
         participants = ParticipantsCodec.decode(participants),
         tags = tagIds.split('\n').mapNotNull { it.toLongOrNull()?.let(tagNames::get) },
         summaryTemplate = summaryTemplate,
-        cleanAudio = cleanAudio
+        cleanAudio = cleanAudio,
+        syncId = syncId
     )
 }

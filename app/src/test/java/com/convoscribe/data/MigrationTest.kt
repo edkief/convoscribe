@@ -43,7 +43,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 4, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -76,7 +76,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 5, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -111,7 +111,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 6, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -140,7 +140,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 7, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -165,7 +165,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 8, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -191,7 +191,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 9, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -220,7 +220,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 10, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -245,7 +245,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 11, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -278,7 +278,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 12, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -308,7 +308,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 12, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -342,7 +342,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 13, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -371,7 +371,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 14, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -396,7 +396,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 15, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -428,7 +428,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 16, true, MIGRATION_15_16).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -457,7 +457,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 17, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -483,7 +483,7 @@ class MigrationTest {
         helper.runMigrationsAndValidate(DB_NAME, 18, true).close()
 
         val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
-            .addMigrations(MIGRATION_15_16)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
             .allowMainThreadQueries()
             .build()
         try {
@@ -496,6 +496,53 @@ class MigrationTest {
             assertFalse(state.excluded)
             assertNull(state.audioSha)
             assertNull(db.syncDao().tombstones().single().durationMs)
+        } finally {
+            db.close()
+        }
+    }
+
+    @Test
+    fun migrate18To19_givesLibraryItemsTheirOwnSyncIds() = runTest {
+        helper.createDatabase(DB_NAME, 18).use { db ->
+            for (id in 1..2) {
+                db.execSQL(
+                    "INSERT INTO enrolled_speakers (id, name, embedding, createdAt) VALUES (?, 'Alice', x'00', ?)",
+                    arrayOf<Any>(id, id * 100)
+                )
+                db.execSQL(
+                    "INSERT INTO summary_templates (id, name, body, createdAt) VALUES (?, ?, 'Bullets', ?)",
+                    arrayOf<Any>(id, "Template $id", id * 1000)
+                )
+                db.execSQL(
+                    "INSERT INTO presets (id, name, titlePattern, language, numSpeakers, tagIds, summaryTemplate, " +
+                        "cleanAudio, createdAt) VALUES (?, ?, '', 'en', -1, '', 'meeting', 0, ?)",
+                    arrayOf<Any>(id, "Preset $id", id * 10000)
+                )
+            }
+            db.execSQL(
+                "INSERT INTO sync_state (kind, syncId, baseRevision, conflict) VALUES ('session', 'sync-1', 3, 0)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 19, true, MIGRATION_18_19).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            val voices = db.enrolledSpeakerDao().getAll().map { it.syncId }
+            val templates = db.summaryTemplateDao().getAll()
+            val presets = db.presetDao().getAll()
+            for (ids in listOf(voices, templates.map { it.syncId }, presets.map { it.syncId })) {
+                assertEquals(2, ids.toSet().size)
+                ids.forEach { assertEquals(it, java.util.UUID.fromString(it).toString()) }
+            }
+            assertEquals(listOf(1000L, 2000L), templates.map { it.updatedAt })
+            assertEquals(listOf(10000L, 20000L), presets.map { it.updatedAt })
+            assertEquals("Template 1", db.summaryTemplateDao().getBySyncId(templates[0].syncId)!!.name)
+            val state = db.syncDao().state(SyncKinds.SESSION, "sync-1")!!
+            assertEquals(3L, state.baseRevision)
+            assertNull(state.contentKey)
         } finally {
             db.close()
         }

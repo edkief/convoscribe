@@ -1,8 +1,10 @@
 package com.convoscribe.data
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import java.util.UUID
 
 /**
  * A speaker enrolled by the user in v2: a name plus the
@@ -21,13 +23,21 @@ import androidx.room.PrimaryKey
     tableName = "enrolled_speakers",
     // Not unique since schema v3: a person may have several voice
     // samples (one row each).
-    indices = [Index(value = ["name"])]
+    indices = [Index(value = ["name"]), Index(value = ["syncId"], unique = true)]
 )
 data class EnrolledSpeakerEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val embedding: ByteArray,
-    val createdAt: Long
+    val createdAt: Long,
+    /**
+     * Globally unique id (a UUID) of this voice sample (issue #70), so
+     * sync matches devices' copies; samples from before v19 got a
+     * random one on upgrade ([MIGRATION_18_19]). A sample is never
+     * edited, so it has no `updatedAt`.
+     */
+    @ColumnInfo(defaultValue = "")
+    val syncId: String = UUID.randomUUID().toString()
 ) {
     /**
      * [ByteArray] equality is reference-based, which would make
@@ -43,6 +53,7 @@ data class EnrolledSpeakerEntity(
         if (name != other.name) return false
         if (!embedding.contentEquals(other.embedding)) return false
         if (createdAt != other.createdAt) return false
+        if (syncId != other.syncId) return false
         return true
     }
 
@@ -51,6 +62,7 @@ data class EnrolledSpeakerEntity(
         result = 31 * result + name.hashCode()
         result = 31 * result + embedding.contentHashCode()
         result = 31 * result + createdAt.hashCode()
+        result = 31 * result + syncId.hashCode()
         return result
     }
 }
