@@ -62,11 +62,16 @@ export async function PUT(req: Request, ctx: Ctx) {
   });
 }
 
-// Delete with Sync-Base-Revision; leaves a tombstone in the change feed.
+/**
+ * Delete with Sync-Base-Revision, and Sync-Duration-Ms, the length of the
+ * version the device deleted, for the conflict rule; leaves a tombstone in
+ * the change feed.
+ */
 export async function DELETE(req: Request, ctx: Ctx) {
   return authed(req, async (owner) => {
     const { kind, syncId } = await params(ctx);
-    const meta = await deleteDocument(owner, kind, syncId, intHeader(req, 'sync-base-revision'));
+    const deletedDurationMs = req.headers.has('sync-duration-ms') ? intHeader(req, 'sync-duration-ms') : null;
+    const meta = await deleteDocument(owner, kind, syncId, intHeader(req, 'sync-base-revision'), deletedDurationMs);
     return Response.json(meta, { headers: metaHeaders(meta) });
   });
 }
