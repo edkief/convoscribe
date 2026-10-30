@@ -14,6 +14,10 @@ interface SemanticIndexDao {
     @Query("SELECT * FROM passage_vectors WHERE modelId = :modelId")
     suspend fun vectors(modelId: String): List<PassageVectorEntity>
 
+    /** [sessionId]'s passage vectors, in passage order (issue #70). */
+    @Query("SELECT * FROM passage_vectors WHERE sessionId = :sessionId ORDER BY passageIndex")
+    suspend fun vectorsOf(sessionId: Long): List<PassageVectorEntity>
+
     /** How many passage vectors [modelId] made; changes whenever a session is indexed or deleted. */
     @Query("SELECT COUNT(*) FROM passage_vectors WHERE modelId = :modelId")
     suspend fun vectorCount(modelId: String): Int

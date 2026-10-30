@@ -254,6 +254,15 @@ brings them to your other devices.
   Settings shows when it last synced, how many sessions are waiting to
   upload or download and the last error, with **Sync now**. With sync
   off, no server or no network, everything else works as before.
+  Known voices, presets and your summary templates sync too (#70):
+  adding, editing or deleting one on a device does the same on the
+  others, the most recent edit wins, and a preset keeps its tags and
+  template by name. Items both devices already had (say after
+  restoring a backup) merge into one on the first sync. A session's
+  semantic-search vectors travel with it, so a device that has the
+  same embedding model and the same text uses them instead of indexing
+  the session again; otherwise it indexes the session itself, as
+  before.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -637,6 +646,11 @@ one package per concern:
   still to download, and tombstones keep the deleted length for the
   conflict rule. Every write path stamps `sessions.updatedAt` through
   `SessionRepository.touch` for "most recently changed wins".
+  Schema v19 (issue #70) gives known-voice samples, presets and summary
+  templates a `syncId` (and presets and templates an `updatedAt`),
+  which backups now carry, and `sync_state.contentKey`, the text hash of
+  the vectors the server holds for a session. `LibraryManifest` and
+  `VectorsManifest` are their portable forms.
 - `sync/` — two-way sync with the sync server (issues #68, #69):
   `SyncClient` (the `/api/sync/v1` routes, Bearer key), `BlobUploader`
   (resumable 8 MB parts), `FileHashCache`, and `SyncEngine`. A run reads
@@ -652,6 +666,16 @@ one package per concern:
   `service/SyncScheduler` on a debounced Room invalidation of the
   session tables, so no write path is missed, and when the app opens.
   `SyncStatusStore` keeps what Settings shows and the feed cursor.
+  After sessions, a run syncs the library (#70) through `LibraryKind`,
+  one document per summary template, preset and known-voice sample
+  (templates first, so presets resolve them by name): it downloads,
+  then pushes changes with no recording length, so the most recent
+  change wins. Deleted items are noticed as missing rows with a synced
+  `sync_state`, so the stores need no hooks. Then semantic vectors, one
+  `vectors` document per session through `SessionVectors`
+  (`SemanticIndexRunner`): downloaded ones are kept only when the model
+  id and the recomputed text hash match, and a device pushes its own
+  only when the server has none for the session's current text.
 - `backup/` — back up and restore (issue #25): `BackupFormat` (the zip
   layout: `backup.json` first, then each `sessions/<syncId>.json`
   followed by its `recordings/<sha256>.wav`, read in one pass),
@@ -776,7 +800,10 @@ sessions and downloads the others' (#69); a session that changed on two
 devices is settled by the server: the longer recording wins, then the
 most recent change, then (for a perfect tie) the higher manifest hash,
 and a delete wins unless the other version has a longer recording. The
-reverse proxy must accept request bodies of at least 8 MB.
+reverse proxy must accept request bodies of at least 8 MB. Syncing known
+voices, presets, templates and semantic vectors (#70) needs a server
+from `server-v0.4.0`; an older one keeps syncing sessions and the app
+skips the rest.
 
 ## Model licences
 

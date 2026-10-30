@@ -17,9 +17,16 @@ interface SummaryTemplateDao {
     @Insert
     suspend fun insert(entity: SummaryTemplateEntity): Long
 
-    @Query("UPDATE summary_templates SET name = :name, body = :body WHERE id = :id")
-    suspend fun update(id: Long, name: String, body: String)
+    @Query("UPDATE summary_templates SET name = :name, body = :body, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun update(id: Long, name: String, body: String, updatedAt: Long)
 
     @Query("DELETE FROM summary_templates WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM summary_templates WHERE syncId = :syncId")
+    suspend fun getBySyncId(syncId: String): SummaryTemplateEntity?
+
+    /** Give the item [from] the sync id [to] (issue #70). */
+    @Query("UPDATE summary_templates SET syncId = :to WHERE syncId = :from")
+    suspend fun rekey(from: String, to: String)
 }

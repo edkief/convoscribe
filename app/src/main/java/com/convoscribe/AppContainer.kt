@@ -20,6 +20,7 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.EnrolledSpeakerRepository
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.MIGRATION_15_16
+import com.convoscribe.data.MIGRATION_18_19
 import com.convoscribe.data.PresetRepository
 import com.convoscribe.data.PresetStore
 import com.convoscribe.data.SessionRepository
@@ -177,7 +178,7 @@ class AppContainer(val context: Context) {
         context,
         AppDatabase::class.java,
         AppDatabase.NAME
-    ).addMigrations(MIGRATION_15_16).build()
+    ).addMigrations(MIGRATION_15_16, MIGRATION_18_19).build()
 
     /**
      * High-level session/store façade over [database]. Recordings
@@ -552,7 +553,8 @@ class AppContainer(val context: Context) {
         isRecording = { recordingController.state.value.phase != RecordingPhase.IDLE },
         downloadDir = File(context.filesDir, "sync-downloads"),
         isMetered = { context.getSystemService<ConnectivityManager>()?.isActiveNetworkMetered ?: true },
-        onRecordingAttached = { pendingDiarizationScheduler.sync() }
+        onRecordingAttached = { pendingDiarizationScheduler.sync() },
+        vectors = semanticIndexRunner
     )
 
     /**
@@ -566,7 +568,20 @@ class AppContainer(val context: Context) {
         val changed = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         database.invalidationTracker.addObserver(
             object : InvalidationTracker.Observer(
-                arrayOf("sessions", "segments", "speakers", "chat_messages", "marks", "session_tags", "tags")
+                arrayOf(
+                    "sessions",
+                    "segments",
+                    "speakers",
+                    "chat_messages",
+                    "marks",
+                    "session_tags",
+                    "tags",
+                    // The library and the semantic index sync too (issue #70).
+                    "enrolled_speakers",
+                    "presets",
+                    "summary_templates",
+                    "session_index_state"
+                )
             ) {
                 override fun onInvalidated(tables: Set<String>) {
                     changed.tryEmit(Unit)

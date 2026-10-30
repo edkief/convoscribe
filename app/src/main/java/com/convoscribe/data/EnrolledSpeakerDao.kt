@@ -36,10 +36,14 @@ interface EnrolledSpeakerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entity: EnrolledSpeakerEntity): Long
 
-    /** Keep only the [keep] newest voice samples stored under [name]. */
+    /**
+     * Keep only the [keep] newest voice samples stored under [name]. Ties
+     * break on `syncId`, not the local id, so every device keeps the same
+     * samples (issue #70).
+     */
     @Query(
         "DELETE FROM enrolled_speakers WHERE name = :name AND id NOT IN " +
-            "(SELECT id FROM enrolled_speakers WHERE name = :name ORDER BY createdAt DESC, id DESC LIMIT :keep)"
+            "(SELECT id FROM enrolled_speakers WHERE name = :name ORDER BY createdAt DESC, syncId DESC LIMIT :keep)"
     )
     suspend fun pruneName(name: String, keep: Int)
 
@@ -49,4 +53,11 @@ interface EnrolledSpeakerDao {
 
     @Query("DELETE FROM enrolled_speakers WHERE id = :id")
     suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM enrolled_speakers WHERE syncId = :syncId")
+    suspend fun getBySyncId(syncId: String): EnrolledSpeakerEntity?
+
+    /** Give the item [from] the sync id [to] (issue #70). */
+    @Query("UPDATE enrolled_speakers SET syncId = :to WHERE syncId = :from")
+    suspend fun rekey(from: String, to: String)
 }

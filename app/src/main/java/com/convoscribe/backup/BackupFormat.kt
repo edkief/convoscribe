@@ -52,17 +52,22 @@ data class BackupHeader(
     val templates: List<Template> = emptyList(),
     val presets: List<PresetDoc> = emptyList()
 ) {
-    /** A known voice sample: [embedding] is [com.convoscribe.data.EmbeddingCodec]'s bytes in Base64. */
+    /**
+     * A known voice sample: [embedding] is [com.convoscribe.data.EmbeddingCodec]'s
+     * bytes in Base64. [syncId], here and on [Template] and [PresetDoc],
+     * keeps the item's identity for sync (issue #70); older backups have none.
+     */
     @Serializable
-    data class Voice(val name: String, val embedding: String, val createdAt: Long)
+    data class Voice(val name: String, val embedding: String, val createdAt: Long, val syncId: String? = null)
 
     /** A summary template the user wrote. */
     @Serializable
-    data class Template(val name: String, val body: String, val createdAt: Long)
+    data class Template(val name: String, val body: String, val createdAt: Long, val syncId: String? = null)
 
     /** A preset, with its tags by name and its template by reference. */
     @Serializable
     data class PresetDoc(
+        val syncId: String? = null,
         val name: String,
         val titlePattern: String = "",
         val language: String,

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.room.withTransaction
 import com.convoscribe.TAG
 import com.convoscribe.data.AppDatabase
+import com.convoscribe.data.LibraryManifests
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionManifest
 import com.convoscribe.data.SessionManifests
@@ -13,8 +14,10 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SyncKinds
 import com.convoscribe.data.SyncStateEntity
 import com.convoscribe.data.SyncTombstoneEntity
+import com.convoscribe.data.VectorsManifest
 import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.llm.embedding.SessionVectors
 import com.convoscribe.models.ModelDownloadException
 import com.convoscribe.models.ResumableFetch
 import com.convoscribe.settings.SettingsRepository
@@ -55,7 +58,15 @@ enum class SyncOutcome {
  * 4. downloads the sessions the server has a newer revision of, when
  *    the local copy is unchanged or lost the conflict rule, which the
  *    server applies to a push or delete from a stale revision;
- * 5. downloads the recordings of downloaded sessions, on an unmetered
+ * 5. syncs the library (#70), one document per summary template,
+ *    preset and known-voice sample ([LibraryKind]): downloads what the
+ *    server has newer, then pushes what changed here, with no recording
+ *    length, so the most recent change wins;
+ * 6. syncs semantic vectors (#70) through [vectors], one document per
+ *    session ([VectorsManifest]): keeps downloaded ones the installed
+ *    model made from the same text, and pushes a synced session's own
+ *    when the server has none for its current text;
+ * 7. downloads the recordings of downloaded sessions, on an unmetered
  *    network unless *Download recordings on mobile data* is on.
  *
  * A downloaded session is applied in one transaction before its
@@ -76,12 +87,29 @@ class SyncEngine(
     private val downloadDir: File,
     private val isMetered: () -> Boolean = { false },
     private val onRecordingAttached: () -> Unit = {},
+    private val vectors: SessionVectors? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val partBytes: Long = BlobUploader.PART_BYTES
 ) {
     private val lock = Mutex()
     private val dao = db.syncDao()
     private val hashes = FileHashCache(dao)
+    private val libraries = LibraryKind.all(db)
+
+    /** The kinds this version syncs; the feed's others are left for a newer one. */
+    private val kinds = setOf(SyncKinds.SESSION) + libraries.map { it.kind } +
+        listOfNotNull(SyncKinds.VECTORS.takeIf { vectors != null })
+
+    /**
+     * Whether the item [syncId] of [kind] is here. A session's vectors
+     * are while the session is, or was only removed from this device.
+     */
+    private suspend fun exists(kind: String, syncId: String): Boolean = when (kind) {
+        SyncKinds.SESSION -> db.sessionDao().getBySyncId(syncId) != null
+        SyncKinds.VECTORS ->
+            db.sessionDao().getBySyncId(syncId) != null || dao.state(SyncKinds.SESSION, syncId)?.excluded == true
+        else -> libraries.first { it.kind == kind }.exists(syncId)
+    }
 
     suspend fun run(): SyncOutcome = lock.withLock {
         val current = settings.settings.value
@@ -128,6 +156,8 @@ class SyncEngine(
             if (!offline) pushTombstones()
             if (!offline && !deferred) pushSessions()
             if (!offline && !deferred) downloadSessions()
+            for (library in libraries) if (!offline && !deferred) syncLibrary(library)
+            vectors?.let { if (!offline && !deferred) syncVectors(it) }
             if (!offline && !deferred) downloadRecordings()
             val downloading = dao.behind(SyncKinds.SESSION).size +
                 dao.pendingAudio(SyncKinds.SESSION).sumOf { listOfNotNull(it.audioSha, it.cleanSha).size }
@@ -172,7 +202,7 @@ class SyncEngine(
         }
 
         private suspend fun noteRemote(change: DocumentMeta) {
-            if (change.kind != SyncKinds.SESSION) return
+            if (change.kind !in kinds) return
             val state = dao.state(change.kind, change.syncId)
             if (state != null && change.revision <= maxOf(state.baseRevision, state.remoteRevision)) return
             if (state?.excluded == true && change.deleted) {
@@ -191,8 +221,8 @@ class SyncEngine(
         private suspend fun pushTombstones() {
             orphansToTombstones()
             for (tombstone in dao.tombstones()) {
-                // Left by a delete the process died in before the session went.
-                if (db.sessionDao().getBySyncId(tombstone.syncId) != null) {
+                // Left by a delete the process died in before the item went.
+                if (exists(tombstone.kind, tombstone.syncId)) {
                     dao.deleteTombstone(tombstone.kind, tombstone.syncId)
                     continue
                 }
@@ -229,15 +259,22 @@ class SyncEngine(
          * (deleted while its upload was finishing, or the process died
          * mid-delete) is deleted on the server too. One removed from this
          * device only ([SyncStateEntity.excluded]) is not.
+         *
+         * This is also how a deleted library item (#70) is noticed, so the
+         * stores need no hook; its tombstone has no recording length, so it
+         * beats an edit made elsewhere.
          */
         private suspend fun orphansToTombstones() {
-            for (state in dao.states(SyncKinds.SESSION)) {
-                if (state.baseRevision == 0L || state.excluded) continue
-                if (db.sessionDao().getBySyncId(state.syncId) != null) continue
-                dao.upsertTombstone(
-                    SyncTombstoneEntity(state.kind, state.syncId, state.baseRevision, clock(), state.durationMs)
-                )
-                dao.deleteState(state.kind, state.syncId)
+            for (kind in kinds) {
+                for (state in dao.states(kind)) {
+                    if (state.baseRevision == 0L || state.excluded) continue
+                    if (exists(kind, state.syncId)) continue
+                    val durationMs = if (kind == SyncKinds.SESSION) state.durationMs else 0L
+                    dao.upsertTombstone(
+                        SyncTombstoneEntity(state.kind, state.syncId, state.baseRevision, clock(), durationMs)
+                    )
+                    dao.deleteState(state.kind, state.syncId)
+                }
             }
         }
 
@@ -458,6 +495,300 @@ class SyncEngine(
             // how this install encodes it never counts as a change.
             val local = db.sessionDao().get(id) ?: return
             dao.upsertState(applied.copy(baseHash = snapshot(local, applied)?.manifest?.let(SessionManifests::hash)))
+        }
+
+        /**
+         * Sync one kind of library item (#70): download, push, and download
+         * again whatever lost the conflict rule to another device.
+         */
+        private suspend fun <M> syncLibrary(library: LibraryKind<M>) {
+            downloadLibrary(library)
+            if (!offline && !deferred && pushLibrary(library)) downloadLibrary(library)
+        }
+
+        /**
+         * Apply every item of [library] the server has a newer revision
+         * of, unless it changed here and did not lose the conflict rule,
+         * or its delete here is still to be sent.
+         */
+        private suspend fun <M> downloadLibrary(library: LibraryKind<M>) {
+            val tombstoned = dao.tombstones().filter { it.kind == library.kind }.map { it.syncId }.toSet()
+            val applied = mutableListOf<M>()
+            try {
+                for (state in dao.behind(library.kind)) {
+                    if (isRecording()) {
+                        deferred = true
+                        return
+                    }
+                    if (state.syncId in tombstoned) continue
+                    val local = library.local()[state.syncId]
+                    if (local != null && !state.conflict && library.hash(local.manifest) != state.baseHash) continue
+                    try {
+                        when (val fetched = client.getDocument(library.kind, state.syncId)) {
+                            is Fetched.Found -> applied += applyLibrary(library, state, local == null, fetched)
+                            is Fetched.Deleted -> {
+                                // No state left, so no tombstone: the server has deleted it already.
+                                dao.deleteState(state.kind, state.syncId)
+                                if (local != null) library.delete(state.syncId)
+                            }
+                            Fetched.Missing -> if (local == null) {
+                                dao.deleteState(state.kind, state.syncId)
+                            } else {
+                                dao.upsertState(
+                                    state.copy(remoteRevision = 0, baseRevision = 0, baseHash = null, conflict = false)
+                                )
+                            }
+                        }
+                    } catch (e: SyncException) {
+                        if (fail(e)) return
+                    }
+                }
+            } finally {
+                if (applied.isNotEmpty()) library.afterApply(applied)
+            }
+        }
+
+        /**
+         * Store a downloaded item. A [new] one that matches an item here
+         * that never synced (both devices had it, say from a backup) takes
+         * that item over instead of adding a copy.
+         */
+        private suspend fun <M> applyLibrary(
+            library: LibraryKind<M>,
+            state: SyncStateEntity,
+            new: Boolean,
+            fetched: Fetched.Found
+        ): M {
+            val manifest = try {
+                library.decode(fetched.manifest.toString(Charsets.UTF_8))
+            } catch (e: SerializationException) {
+                throw SyncException(
+                    "Unreadable ${library.kind} ${state.syncId} from the sync server",
+                    code = 422,
+                    cause = e
+                )
+            }
+            if (library.schemaOf(manifest) > LibraryManifests.SCHEMA) {
+                throw SyncException(
+                    "A ${library.kind} from the sync server needs a newer version of ConvoScribe",
+                    code = 422
+                )
+            }
+            if (new) {
+                val twin = library.local().entries.firstOrNull { (syncId, local) ->
+                    val synced = (dao.state(library.kind, syncId)?.baseRevision ?: 0L) > 0L
+                    !synced && library.same(local.manifest, manifest)
+                }
+                if (twin != null) {
+                    library.rekey(twin.key, state.syncId)
+                    dao.deleteState(library.kind, twin.key)
+                }
+            }
+            library.apply(manifest, fetched.changedAt)
+            // The hash of the item as stored here, so a difference in how
+            // this install stores it (a template it lacks) never counts as a change.
+            val stored = library.local()[state.syncId]
+            dao.upsertState(
+                state.copy(
+                    baseRevision = fetched.revision,
+                    remoteRevision = maxOf(state.remoteRevision, fetched.revision),
+                    remoteDeleted = false,
+                    conflict = false,
+                    lastError = null,
+                    baseHash = stored?.let { library.hash(it.manifest) }
+                )
+            )
+            return manifest
+        }
+
+        /**
+         * Push every item of [library] that changed since the server last
+         * accepted it; true when one lost the conflict rule. A server older
+         * than #70 does not know the kind, which is skipped.
+         */
+        private suspend fun <M> pushLibrary(library: LibraryKind<M>): Boolean {
+            var lost = false
+            for ((syncId, local) in library.local()) {
+                if (isRecording()) {
+                    deferred = true
+                    return lost
+                }
+                val state = dao.state(library.kind, syncId) ?: SyncStateEntity(library.kind, syncId)
+                if (state.conflict) continue
+                val manifest = library.encode(local.manifest)
+                val hash = library.hash(local.manifest)
+                if (hash == state.baseHash) continue
+                try {
+                    when (
+                        val result = client.putDocument(
+                            kind = library.kind,
+                            syncId = syncId,
+                            manifest = manifest.toByteArray(Charsets.UTF_8),
+                            manifestHash = hash,
+                            baseRevision = state.baseRevision,
+                            durationMs = 0,
+                            changedAt = local.changedAt
+                        )
+                    ) {
+                        is PushResult.Accepted -> db.withTransaction {
+                            if (library.exists(syncId)) {
+                                dao.upsertState(
+                                    state.copy(baseRevision = result.meta.revision, baseHash = hash, lastError = null)
+                                )
+                            } else {
+                                // Deleted while it was being pushed.
+                                dao.upsertTombstone(
+                                    SyncTombstoneEntity(library.kind, syncId, result.meta.revision, clock(), 0L)
+                                )
+                                dao.deleteState(library.kind, syncId)
+                            }
+                        }
+                        is PushResult.Conflict -> {
+                            lost = true
+                            dao.upsertState(
+                                state.copy(
+                                    conflict = true,
+                                    remoteRevision = maxOf(
+                                        state.remoteRevision,
+                                        result.current?.revision ?: (state.baseRevision + 1)
+                                    ),
+                                    remoteDeleted = result.current?.deleted ?: state.remoteDeleted,
+                                    lastError = null
+                                )
+                            )
+                        }
+                        is PushResult.MissingBlobs -> throw SyncException("Unexpected 422 for $syncId", code = 422)
+                        PushResult.NotFound -> {
+                            Log.w(TAG, "sync: the server does not know ${library.kind} documents; update it")
+                            return lost
+                        }
+                    }
+                } catch (e: SyncException) {
+                    dao.upsertState(state.copy(lastError = e.message))
+                    if (fail(e)) return lost
+                }
+            }
+            return lost
+        }
+
+        /** Download, then push, semantic vectors (#70). */
+        private suspend fun syncVectors(store: SessionVectors) {
+            downloadVectors(store)
+            if (!offline && !deferred) pushVectors(store)
+        }
+
+        /**
+         * Offer each newer vectors document whose session is here to the
+         * index, which keeps it only when the installed model made it from
+         * the same text. Either way the server now has vectors for that
+         * text ([SyncStateEntity.contentKey]), so this device does not push
+         * its own over them. One whose session is not here yet waits.
+         */
+        private suspend fun downloadVectors(store: SessionVectors) {
+            for (state in dao.behind(SyncKinds.VECTORS)) {
+                if (isRecording()) {
+                    deferred = true
+                    return
+                }
+                val row = db.sessionDao().getBySyncId(state.syncId) ?: continue
+                if (row.status == SessionStatus.RECORDING || row.status == SessionStatus.DIARIZING) continue
+                try {
+                    when (val fetched = client.getDocument(SyncKinds.VECTORS, state.syncId)) {
+                        is Fetched.Found -> {
+                            val manifest = try {
+                                LibraryManifests.decode(
+                                    VectorsManifest.serializer(),
+                                    fetched.manifest.toString(Charsets.UTF_8)
+                                )
+                            } catch (e: SerializationException) {
+                                throw SyncException("Unreadable vectors for ${state.syncId}", code = 422, cause = e)
+                            }
+                            val kept = manifest.schema <= LibraryManifests.SCHEMA &&
+                                store.adopt(row.id, manifest.modelId, manifest.textHash, manifest.rows())
+                            if (!kept) Log.i(TAG, "sync: vectors for ${state.syncId} are not of this text or model")
+                            dao.upsertState(
+                                state.copy(
+                                    baseRevision = fetched.revision,
+                                    remoteRevision = maxOf(state.remoteRevision, fetched.revision),
+                                    remoteDeleted = false,
+                                    conflict = false,
+                                    lastError = null,
+                                    baseHash = LibraryManifests.hash(VectorsManifest.serializer(), manifest),
+                                    contentKey = manifest.textHash
+                                )
+                            )
+                        }
+                        // The index keeps what it has; only sync's record goes.
+                        is Fetched.Deleted, Fetched.Missing -> dao.deleteState(state.kind, state.syncId)
+                    }
+                } catch (e: SyncException) {
+                    if (fail(e)) return
+                }
+            }
+        }
+
+        /**
+         * Push the vectors of every session the server has, when they were
+         * made from the session's current text and the server has none for
+         * that text yet. A server older than #70 does not know the kind,
+         * which is skipped.
+         */
+        private suspend fun pushVectors(store: SessionVectors) {
+            val synced = dao.states(SyncKinds.SESSION).filter { it.baseRevision > 0 && !it.excluded }.map { it.syncId }
+            val indexed = store.states().associateBy { it.sessionId }
+            for (syncId in synced) {
+                if (isRecording()) {
+                    deferred = true
+                    return
+                }
+                val row = db.sessionDao().getBySyncId(syncId) ?: continue
+                val index = indexed[row.id] ?: continue
+                val state = dao.state(SyncKinds.VECTORS, syncId) ?: SyncStateEntity(SyncKinds.VECTORS, syncId)
+                if (state.conflict || state.behind || index.textHash == state.contentKey) continue
+                if (store.currentHash(row.id) != index.textHash) continue
+                val manifest = VectorsManifest.of(syncId, index, store.vectors(row.id))
+                val hash = LibraryManifests.hash(VectorsManifest.serializer(), manifest)
+                try {
+                    when (
+                        val result = client.putDocument(
+                            kind = SyncKinds.VECTORS,
+                            syncId = syncId,
+                            manifest = LibraryManifests.encode(VectorsManifest.serializer(), manifest)
+                                .toByteArray(Charsets.UTF_8),
+                            manifestHash = hash,
+                            baseRevision = state.baseRevision,
+                            durationMs = 0,
+                            changedAt = clock()
+                        )
+                    ) {
+                        is PushResult.Accepted -> dao.upsertState(
+                            state.copy(
+                                baseRevision = result.meta.revision,
+                                baseHash = hash,
+                                contentKey = index.textHash,
+                                lastError = null
+                            )
+                        )
+                        // Another device's vectors got there first: they download next run.
+                        is PushResult.Conflict -> dao.upsertState(
+                            state.copy(
+                                conflict = true,
+                                remoteRevision = maxOf(
+                                    state.remoteRevision,
+                                    result.current?.revision ?: (state.baseRevision + 1)
+                                )
+                            )
+                        )
+                        is PushResult.MissingBlobs -> throw SyncException("Unexpected 422 for $syncId", code = 422)
+                        PushResult.NotFound -> {
+                            Log.w(TAG, "sync: the server does not know vectors documents; update it")
+                            return
+                        }
+                    }
+                } catch (e: SyncException) {
+                    if (fail(e)) return
+                }
+            }
         }
 
         /**

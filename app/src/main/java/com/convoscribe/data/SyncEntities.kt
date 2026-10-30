@@ -3,9 +3,19 @@ package com.convoscribe.data
 import androidx.room.ColumnInfo
 import androidx.room.Entity
 
-/** Kinds of synced document (issue #67); #70 adds known voices, presets and templates. */
+/** Kinds of synced document (issue #67). */
 object SyncKinds {
     const val SESSION: String = "session"
+
+    /** One known-voice sample (#70). */
+    const val VOICE: String = "voice"
+    const val PRESET: String = "preset"
+
+    /** A summary template the user wrote. */
+    const val TEMPLATE: String = "template"
+
+    /** A session's semantic vectors, under the session's sync id. */
+    const val VECTORS: String = "vectors"
 }
 
 /**
@@ -27,6 +37,10 @@ object SyncKinds {
  * it from [title], [createdAt] and [durationMs]. [audioSha] and
  * [cleanSha] (with their sizes) are recordings of a downloaded session
  * still to fetch.
+ *
+ * [contentKey] is, for a [SyncKinds.VECTORS] document, the text hash
+ * of the server's copy (issue #70), so a device leaves alone vectors
+ * another model made from the same text.
  *
  * Keyed by sync id, not the local row, so it outlives a delete long
  * enough to leave a [SyncTombstoneEntity].
@@ -50,7 +64,8 @@ data class SyncStateEntity(
     val audioSha: String? = null,
     val audioSize: Long? = null,
     val cleanSha: String? = null,
-    val cleanSize: Long? = null
+    val cleanSize: Long? = null,
+    val contentKey: String? = null
 ) {
     /** The server has a revision this device has not applied. */
     val behind: Boolean get() = remoteRevision > baseRevision
