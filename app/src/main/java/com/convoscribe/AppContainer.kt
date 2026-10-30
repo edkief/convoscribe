@@ -553,7 +553,8 @@ class AppContainer(val context: Context) {
         isRecording = { recordingController.state.value.phase != RecordingPhase.IDLE },
         downloadDir = File(context.filesDir, "sync-downloads"),
         isMetered = { context.getSystemService<ConnectivityManager>()?.isActiveNetworkMetered ?: true },
-        onRecordingAttached = { pendingDiarizationScheduler.sync() }
+        onRecordingAttached = { pendingDiarizationScheduler.sync() },
+        vectors = semanticIndexRunner
     )
 
     /**
@@ -567,7 +568,20 @@ class AppContainer(val context: Context) {
         val changed = MutableSharedFlow<Unit>(extraBufferCapacity = 1, onBufferOverflow = BufferOverflow.DROP_OLDEST)
         database.invalidationTracker.addObserver(
             object : InvalidationTracker.Observer(
-                arrayOf("sessions", "segments", "speakers", "chat_messages", "marks", "session_tags", "tags")
+                arrayOf(
+                    "sessions",
+                    "segments",
+                    "speakers",
+                    "chat_messages",
+                    "marks",
+                    "session_tags",
+                    "tags",
+                    // The library and the semantic index sync too (issue #70).
+                    "enrolled_speakers",
+                    "presets",
+                    "summary_templates",
+                    "session_index_state"
+                )
             ) {
                 override fun onInvalidated(tables: Set<String>) {
                     changed.tryEmit(Unit)

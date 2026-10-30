@@ -14,8 +14,10 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SyncKinds
 import com.convoscribe.data.SyncStateEntity
 import com.convoscribe.data.SyncTombstoneEntity
+import com.convoscribe.data.VectorsManifest
 import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.llm.embedding.SessionVectors
 import com.convoscribe.models.ModelDownloadException
 import com.convoscribe.models.ResumableFetch
 import com.convoscribe.settings.SettingsRepository
@@ -60,7 +62,11 @@ enum class SyncOutcome {
  *    preset and known-voice sample ([LibraryKind]): downloads what the
  *    server has newer, then pushes what changed here, with no recording
  *    length, so the most recent change wins;
- * 6. downloads the recordings of downloaded sessions, on an unmetered
+ * 6. syncs semantic vectors (#70) through [vectors], one document per
+ *    session ([VectorsManifest]): keeps downloaded ones the installed
+ *    model made from the same text, and pushes a synced session's own
+ *    when the server has none for its current text;
+ * 7. downloads the recordings of downloaded sessions, on an unmetered
  *    network unless *Download recordings on mobile data* is on.
  *
  * A downloaded session is applied in one transaction before its
@@ -81,6 +87,7 @@ class SyncEngine(
     private val downloadDir: File,
     private val isMetered: () -> Boolean = { false },
     private val onRecordingAttached: () -> Unit = {},
+    private val vectors: SessionVectors? = null,
     private val clock: () -> Long = System::currentTimeMillis,
     private val partBytes: Long = BlobUploader.PART_BYTES
 ) {
@@ -90,13 +97,18 @@ class SyncEngine(
     private val libraries = LibraryKind.all(db)
 
     /** The kinds this version syncs; the feed's others are left for a newer one. */
-    private val kinds = setOf(SyncKinds.SESSION) + libraries.map { it.kind }
+    private val kinds = setOf(SyncKinds.SESSION) + libraries.map { it.kind } +
+        listOfNotNull(SyncKinds.VECTORS.takeIf { vectors != null })
 
-    /** Whether the item [syncId] of [kind] is here. */
-    private suspend fun exists(kind: String, syncId: String): Boolean = if (kind == SyncKinds.SESSION) {
-        db.sessionDao().getBySyncId(syncId) != null
-    } else {
-        libraries.first { it.kind == kind }.exists(syncId)
+    /**
+     * Whether the item [syncId] of [kind] is here. A session's vectors
+     * are while the session is, or was only removed from this device.
+     */
+    private suspend fun exists(kind: String, syncId: String): Boolean = when (kind) {
+        SyncKinds.SESSION -> db.sessionDao().getBySyncId(syncId) != null
+        SyncKinds.VECTORS ->
+            db.sessionDao().getBySyncId(syncId) != null || dao.state(SyncKinds.SESSION, syncId)?.excluded == true
+        else -> libraries.first { it.kind == kind }.exists(syncId)
     }
 
     suspend fun run(): SyncOutcome = lock.withLock {
@@ -145,6 +157,7 @@ class SyncEngine(
             if (!offline && !deferred) pushSessions()
             if (!offline && !deferred) downloadSessions()
             for (library in libraries) if (!offline && !deferred) syncLibrary(library)
+            vectors?.let { if (!offline && !deferred) syncVectors(it) }
             if (!offline && !deferred) downloadRecordings()
             val downloading = dao.behind(SyncKinds.SESSION).size +
                 dao.pendingAudio(SyncKinds.SESSION).sumOf { listOfNotNull(it.audioSha, it.cleanSha).size }
@@ -656,6 +669,126 @@ class SyncEngine(
                 }
             }
             return lost
+        }
+
+        /** Download, then push, semantic vectors (#70). */
+        private suspend fun syncVectors(store: SessionVectors) {
+            downloadVectors(store)
+            if (!offline && !deferred) pushVectors(store)
+        }
+
+        /**
+         * Offer each newer vectors document whose session is here to the
+         * index, which keeps it only when the installed model made it from
+         * the same text. Either way the server now has vectors for that
+         * text ([SyncStateEntity.contentKey]), so this device does not push
+         * its own over them. One whose session is not here yet waits.
+         */
+        private suspend fun downloadVectors(store: SessionVectors) {
+            for (state in dao.behind(SyncKinds.VECTORS)) {
+                if (isRecording()) {
+                    deferred = true
+                    return
+                }
+                val row = db.sessionDao().getBySyncId(state.syncId) ?: continue
+                if (row.status == SessionStatus.RECORDING || row.status == SessionStatus.DIARIZING) continue
+                try {
+                    when (val fetched = client.getDocument(SyncKinds.VECTORS, state.syncId)) {
+                        is Fetched.Found -> {
+                            val manifest = try {
+                                LibraryManifests.decode(
+                                    VectorsManifest.serializer(),
+                                    fetched.manifest.toString(Charsets.UTF_8)
+                                )
+                            } catch (e: SerializationException) {
+                                throw SyncException("Unreadable vectors for ${state.syncId}", code = 422, cause = e)
+                            }
+                            val kept = manifest.schema <= LibraryManifests.SCHEMA &&
+                                store.adopt(row.id, manifest.modelId, manifest.textHash, manifest.rows())
+                            if (!kept) Log.i(TAG, "sync: vectors for ${state.syncId} are not of this text or model")
+                            dao.upsertState(
+                                state.copy(
+                                    baseRevision = fetched.revision,
+                                    remoteRevision = maxOf(state.remoteRevision, fetched.revision),
+                                    remoteDeleted = false,
+                                    conflict = false,
+                                    lastError = null,
+                                    baseHash = LibraryManifests.hash(VectorsManifest.serializer(), manifest),
+                                    contentKey = manifest.textHash
+                                )
+                            )
+                        }
+                        // The index keeps what it has; only sync's record goes.
+                        is Fetched.Deleted, Fetched.Missing -> dao.deleteState(state.kind, state.syncId)
+                    }
+                } catch (e: SyncException) {
+                    if (fail(e)) return
+                }
+            }
+        }
+
+        /**
+         * Push the vectors of every session the server has, when they were
+         * made from the session's current text and the server has none for
+         * that text yet. A server older than #70 does not know the kind,
+         * which is skipped.
+         */
+        private suspend fun pushVectors(store: SessionVectors) {
+            val synced = dao.states(SyncKinds.SESSION).filter { it.baseRevision > 0 && !it.excluded }.map { it.syncId }
+            val indexed = store.states().associateBy { it.sessionId }
+            for (syncId in synced) {
+                if (isRecording()) {
+                    deferred = true
+                    return
+                }
+                val row = db.sessionDao().getBySyncId(syncId) ?: continue
+                val index = indexed[row.id] ?: continue
+                val state = dao.state(SyncKinds.VECTORS, syncId) ?: SyncStateEntity(SyncKinds.VECTORS, syncId)
+                if (state.conflict || state.behind || index.textHash == state.contentKey) continue
+                if (store.currentHash(row.id) != index.textHash) continue
+                val manifest = VectorsManifest.of(syncId, index, store.vectors(row.id))
+                val hash = LibraryManifests.hash(VectorsManifest.serializer(), manifest)
+                try {
+                    when (
+                        val result = client.putDocument(
+                            kind = SyncKinds.VECTORS,
+                            syncId = syncId,
+                            manifest = LibraryManifests.encode(VectorsManifest.serializer(), manifest)
+                                .toByteArray(Charsets.UTF_8),
+                            manifestHash = hash,
+                            baseRevision = state.baseRevision,
+                            durationMs = 0,
+                            changedAt = clock()
+                        )
+                    ) {
+                        is PushResult.Accepted -> dao.upsertState(
+                            state.copy(
+                                baseRevision = result.meta.revision,
+                                baseHash = hash,
+                                contentKey = index.textHash,
+                                lastError = null
+                            )
+                        )
+                        // Another device's vectors got there first: they download next run.
+                        is PushResult.Conflict -> dao.upsertState(
+                            state.copy(
+                                conflict = true,
+                                remoteRevision = maxOf(
+                                    state.remoteRevision,
+                                    result.current?.revision ?: (state.baseRevision + 1)
+                                )
+                            )
+                        )
+                        is PushResult.MissingBlobs -> throw SyncException("Unexpected 422 for $syncId", code = 422)
+                        PushResult.NotFound -> {
+                            Log.w(TAG, "sync: the server does not know vectors documents; update it")
+                            return
+                        }
+                    }
+                } catch (e: SyncException) {
+                    if (fail(e)) return
+                }
+            }
         }
 
         /**

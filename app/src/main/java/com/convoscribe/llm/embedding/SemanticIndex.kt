@@ -71,6 +71,29 @@ object SemanticPassages {
     }
 }
 
+/**
+ * The semantic index as sync sees it (issue #70): a session's vectors
+ * travel to other devices, and a device keeps downloaded ones only when
+ * its installed model made them from the text it has.
+ */
+interface SessionVectors {
+    /** What each session's stored vectors were made from. */
+    suspend fun states(): List<SessionIndexStateEntity>
+
+    /** [sessionId]'s passage hash as its text stands now, `null` while it records or identifies speakers. */
+    suspend fun currentHash(sessionId: Long): String?
+
+    /** [sessionId]'s stored vectors, in passage order. */
+    suspend fun vectors(sessionId: Long): List<PassageVectorEntity>
+
+    /**
+     * Store [vectors] for [sessionId] if the installed model is [modelId]
+     * and [textHash] is its passage hash now; true when kept. Otherwise
+     * nothing changes and the indexer embeds the session as usual.
+     */
+    suspend fun adopt(sessionId: Long, modelId: String, textHash: String, vectors: List<PassageVectorEntity>): Boolean
+}
+
 /** [indexed] of [total] sessions have vectors from the installed model (issue #61). */
 data class IndexProgress(val indexed: Int, val total: Int)
 
@@ -104,7 +127,7 @@ class SemanticIndexRunner(
     private val embedders: TextEmbedderFactory,
     private val awaitRecovery: suspend () -> Unit = {},
     private val busy: () -> Boolean = { false }
-) {
+) : SessionVectors {
     /** Why [run] returned. */
     enum class Outcome {
         /** Every session is indexed. */
@@ -215,21 +238,48 @@ class SemanticIndexRunner(
      */
     private suspend fun pending(modelId: String, only: Long? = null): List<Work> {
         val states = index.states().associateBy { it.sessionId }
+        return passages(only).filter { work ->
+            val state = states[work.sessionId]
+            state == null || state.modelId != modelId || state.textHash != work.hash
+        }
+    }
+
+    /** Every session's passages as its text stands, newest first; only [only] when given. */
+    private suspend fun passages(only: Long? = null): List<Work> {
         val speakers = search.speakers().groupBy { it.sessionId }
         val summaries = search.summaries().associate { it.sessionId to it.content }
         return search.sessions()
             .filter { only == null || it.id == only }
             .filter { it.status != SessionStatus.RECORDING && it.status != SessionStatus.DIARIZING }
-            .mapNotNull { session ->
+            .map { session ->
                 val lines = TranscriptFormatter.lines(segments(session.id), speakers[session.id].orEmpty())
                 val passages = SemanticPassages.of(lines, summaries[session.id])
-                val hash = SemanticPassages.hash(passages)
-                val state = states[session.id]
-                if (state != null && state.modelId == modelId && state.textHash == hash) {
-                    null
-                } else {
-                    Work(session.id, passages, hash)
-                }
+                Work(session.id, passages, SemanticPassages.hash(passages))
             }
+    }
+
+    override suspend fun states(): List<SessionIndexStateEntity> = index.states()
+
+    override suspend fun currentHash(sessionId: Long): String? = passages(only = sessionId).singleOrNull()?.hash
+
+    override suspend fun vectors(sessionId: Long): List<PassageVectorEntity> = index.vectorsOf(sessionId)
+
+    // Not under [lock]: a run holds it for as long as it embeds, and
+    // replacing a session's passages is one transaction either way.
+    override suspend fun adopt(
+        sessionId: Long,
+        modelId: String,
+        textHash: String,
+        vectors: List<PassageVectorEntity>
+    ): Boolean {
+        if (!embedders.isAvailable() || embedders.modelId() != modelId) return false
+        val work = passages(only = sessionId).singleOrNull() ?: return false
+        if (work.hash != textHash || work.passages.size != vectors.size) return false
+        index.replace(
+            sessionId,
+            vectors.mapIndexed { i, vector -> vector.copy(sessionId = sessionId, passageIndex = i, modelId = modelId) },
+            SessionIndexStateEntity(sessionId, modelId, textHash)
+        )
+        return true
     }
 }
