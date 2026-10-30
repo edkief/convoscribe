@@ -1671,6 +1671,50 @@ a mark and a tag. B starts with no sessions of its own, or a few.
   with *Last sync failed* in Settings. Once it is back, both devices
   settle on the same sessions.
 
+## 42. Sync: known voices, presets, templates and vectors (issue #70)
+
+Use devices A and B as in section 41, both on this build (database v19)
+and a server from `server-v0.4.0`. A has a known voice with a few
+samples, a summary template of your own, a preset that uses that template
+and a tag, and the semantic search model with its index up to date.
+Install the semantic search model on B too.
+
+**Steps**
+
+1. On A tap **Sync now**, then on B.
+2. On B look at Settings → Known voices, the summary templates and the
+   presets. Start a recording from the preset and stop it.
+3. On B search semantically for something in one of A's sessions, before
+   B's charging job has run.
+4. On B edit the template's body and the preset's title pattern, and
+   delete one known voice. Sync B, then A.
+5. Offline on both, edit the template on A, then a minute later
+   differently on B. Sync A, then B, then A.
+6. On B delete the preset. Sync B, then A.
+7. Restore a backup of A onto a new install C, then turn on sync on C.
+8. On A edit a line of a synced session, let the index catch up (or use
+   *Index now*), and sync A, then B.
+9. Point B at a server older than `server-v0.4.0`, add a template and
+   record a session, and tap **Sync now**.
+
+**Expected**
+
+- Step 2: B has A's voice samples, template and preset. The preset picks
+  A's template, its tag and its options, and identifies the known voice
+  in the recording.
+- Step 3: the search finds it straight away. Settings → semantic search
+  counts A's sessions as indexed, and `adb logcat -s ConvoScribe` shows
+  no `semantic index: session=…` lines for them.
+- Step 4: A shows the edits, and the voice is gone from A.
+- Step 5: both devices end with B's later edit.
+- Step 6: the preset disappears from A.
+- Step 7: C shows each voice sample, template and preset once, not
+  twice.
+- Step 8: B shows the edited line and is not indexing that session
+  again.
+- Step 9: the session uploads and *Last sync* updates without an error;
+  the template stays on B only.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
