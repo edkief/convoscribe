@@ -2,6 +2,7 @@ package com.convoscribe.llm
 
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import java.time.LocalDate
 
 /** Notes the model took on the part of a long transcript from [startMs] to [endMs] (issue #28). */
 data class PartNotes(
@@ -34,7 +35,8 @@ sealed interface SummaryStep {
  *     consecutive notes are merged in groups that fit
  *     ([PromptBuilder.mergeNotes]), at most [MAX_MERGE_ROUNDS] times;
  *  3. reduce — the template writes the summary from the notes
- *     ([PromptBuilder.summaryFromParts]).
+ *     ([PromptBuilder.summaryFromParts]), told the [recordedOn] date
+ *     for the due dates of action items (issue #31).
  *
  * Only the reduce step's tokens reach [onToken]; the notes are
  * intermediate and never shown or saved. Failures and cancellation
@@ -56,7 +58,8 @@ object LongSummariser {
         body: String,
         marks: List<TranscriptMark>,
         onStep: (SummaryStep) -> Unit,
-        onToken: (String) -> Unit
+        onToken: (String) -> Unit,
+        recordedOn: LocalDate? = null
     ) {
         val chunks = TranscriptChunker.chunk(lines, maxChars)
         var notes = chunks.mapIndexed { index, chunk ->
@@ -93,7 +96,7 @@ object LongSummariser {
         }
 
         onStep(SummaryStep.Writing)
-        client.stream(PromptBuilder.summaryFromParts(notes, maxChars, body, marks)).collect { onToken(it) }
+        client.stream(PromptBuilder.summaryFromParts(notes, maxChars, body, marks, recordedOn)).collect { onToken(it) }
     }
 
     /** Consecutive runs of [notes] whose [PromptBuilder.notesText] fits [maxChars]; a note too long alone is a run of one. */

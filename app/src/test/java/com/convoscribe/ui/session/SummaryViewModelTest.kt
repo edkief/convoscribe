@@ -141,6 +141,31 @@ class SummaryViewModelTest {
         )
     }
 
+    /** Issue #31: the action items' JSON block is neither shown while streaming nor saved. */
+    @Test
+    fun summarise_hidesAndDropsTheActionItemsBlock() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        lateinit var vm: SummaryViewModel
+        val shown = ArrayList<String>()
+        val client = ScriptedChatClient { _ ->
+            flow {
+                listOf("Summary.", "\n``", "`json\n[{\"text\": ", "\"Ship it\"}]\n```").forEach {
+                    emit(it)
+                    shown += vm.state.value.streaming
+                }
+            }
+        }
+        vm = SummaryViewModel(id, repo, client, newSettings().also { configureSettings(it) }, templates)
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        assertEquals(listOf("Summary.", "Summary.", "Summary.", "Summary."), shown)
+        val rows = db.chatMessageDao().observe(id, MessageKind.SUMMARY).first()
+        assertEquals(listOf("Summary."), rows.map { it.content })
+    }
+
     @Test
     fun summarise_streamsTokensPersistsOneAssistantSummary() = runTest(dispatcher) {
         val id = repo.createSession(title = "demo", language = "en")
@@ -348,7 +373,8 @@ class SummaryViewModelTest {
         assertNotNull(client.lastMessages)
         val expected = PromptBuilder.summary(
             transcript = expectedTranscriptFor(id),
-            maxChars = settings.settings.value.maxTranscriptChars
+            maxChars = settings.settings.value.maxTranscriptChars,
+            recordedOn = recordedOn(id)
         )
         assertEquals(expected, client.lastMessages)
     }
@@ -376,7 +402,8 @@ class SummaryViewModelTest {
         val expected = PromptBuilder.summary(
             transcript = expectedTranscriptFor(id),
             maxChars = settings.settings.value.maxTranscriptChars,
-            marks = listOf(TranscriptMark(mark.id, 2_000L, "follow up"))
+            marks = listOf(TranscriptMark(mark.id, 2_000L, "follow up")),
+            recordedOn = recordedOn(id)
         )
         assertEquals(expected, client.lastMessages)
     }
@@ -408,6 +435,11 @@ class SummaryViewModelTest {
      * Build the transcript the ViewModel sees so the test does not
      * have to mirror the formatter's behaviour.
      */
+    /** The local day session [id] was recorded on, as the summary prompt states it (issue #31). */
+    private suspend fun recordedOn(id: Long): java.time.LocalDate =
+        java.time.Instant.ofEpochMilli(repo.getSession(id)!!.createdAt)
+            .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+
     private suspend fun expectedTranscriptFor(id: Long): String {
         val segments = repo.getSegments(id)
         val speakers = repo.getSpeakers(id)
