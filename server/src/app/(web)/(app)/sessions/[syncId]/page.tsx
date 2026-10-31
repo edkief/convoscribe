@@ -19,6 +19,7 @@ import {
 import { Markdown } from '../../../_components/Markdown';
 import { PlayerBar, PlayerProvider, SeekTime } from '../../../_components/Player';
 import { Tabs, type Tab } from '../../../_components/Tabs';
+import { DeleteSession } from '../../../_components/TrashActions';
 import { Transcript } from '../../../_components/Transcript';
 
 const SYNC_ID = /^[0-9A-Za-z-]{1,64}$/;
@@ -33,7 +34,7 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
 /**
  * One session (#80): the transcript beside its summaries, action items,
  * marks and questions, with the recording in a player the transcript
- * follows. Read-only.
+ * follows. Read-only, but for *Delete*, which moves it to the trash (#81).
  */
 export default async function SessionPage({ params }: PageProps<'/sessions/[syncId]'>) {
   const { owner } = await requireIdentity();
@@ -41,7 +42,7 @@ export default async function SessionPage({ params }: PageProps<'/sessions/[sync
   if (!SYNC_ID.test(syncId)) notFound();
   const session = await readSession(owner, syncId);
   if (!session) notFound();
-  const { view } = session;
+  const { meta, view } = session;
   const { zone, locale } = await pageLocale();
   const when = (ms: number | null) => (ms !== null ? formatDateTime(ms, zone, locale) : null);
 
@@ -71,7 +72,10 @@ export default async function SessionPage({ params }: PageProps<'/sessions/[sync
           </Link>
           <div className="title-row">
             <h1>{view.title}</h1>
-            <DownloadMenu items={downloads} />
+            <div className="title-actions">
+              <DownloadMenu items={downloads} />
+              <DeleteSession syncId={syncId} revision={meta.revision} title={view.title} />
+            </div>
           </div>
           <div className="session-meta">
             {view.createdAt !== null && (
