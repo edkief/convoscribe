@@ -4,7 +4,12 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.llm.embedding.FakeTextEmbedderFactory
+import com.convoscribe.llm.embedding.SemanticIndexRunner
+import com.convoscribe.llm.embedding.SemanticMatches
+import com.convoscribe.llm.embedding.SemanticSearch
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -285,5 +290,133 @@ class SessionSearchTest {
             search.candidates("budget", semantic = listOf(meaning)).single { it.session.id == meaning }.hits
         )
         assertEquals(listOf(words, french, meaning), search.sessionIds())
+    }
+
+    private val embedders = FakeTextEmbedderFactory()
+
+    /** Embed every session's passages with the fake model, as the charging job would. */
+    private suspend fun indexAll() {
+        SemanticIndexRunner(db.searchDao(), db.semanticIndexDao(), repo::getSegments, embedders).run()
+    }
+
+    private suspend fun meaning(query: String): SemanticMatches =
+        SemanticSearch(db.semanticIndexDao(), embedders, Dispatchers.Unconfined).match(query)!!
+
+    private suspend fun searchByMeaning(query: String, filters: SearchFilters = SearchFilters()) =
+        search.search(query, filters, meaning(query))
+
+    @Test
+    fun meaning_findsAParaphraseSharingNoWord_atThePassagesFirstLine() = runTest {
+        val planning = session("Planning", createdAt = 2_000)
+        val first = repo.addSegment(planning, startMs = 3_000, endMs = 4_000, text = "Hello everyone")
+        repo.addSegment(planning, startMs = 4_000, endMs = 6_000, text = "Our budget for the vacances is 2,000 euros")
+        repo.applyDiarization(planning, mapOf(first to 0), speakerCount = 1, labels = mapOf(0 to "Alice"))
+        val doctor = session("Doctor", createdAt = 1_000)
+        repo.addSegment(doctor, startMs = 0, endMs = 1_000, text = "My knee hurts")
+        indexAll()
+
+        val query = "money for the trip"
+        assertEquals(emptyList<SearchResult>(), search.search(query))
+        val result = searchByMeaning(query).single()
+        assertEquals(planning, result.session.id)
+        assertEquals(Highlighted("Planning"), result.title)
+        val line = result.lines.single()
+        assertTrue(line.byMeaning)
+        assertEquals(first, line.segmentId)
+        assertEquals(3_000L, line.startMs)
+        assertEquals("Alice", line.speaker)
+        assertEquals(Highlighted("Hello everyone Our budget for the vacances is 2,000 euros"), line.text)
+        assertNull(result.summary)
+    }
+
+    @Test
+    fun meaning_respectsTheLanguageDatePersonAndTagFilters() = runTest {
+        val old = session("Old", createdAt = 1_000, participants = listOf("Bob"))
+        repo.addSegment(old, startMs = 0, endMs = 1_000, text = "we can spend ten euros")
+        val french = session("Réunion", language = "fr", createdAt = 2_000)
+        repo.addSegment(french, startMs = 0, endMs = 1_000, text = "on a peu d'argent")
+        val recent = session("Recent", createdAt = 3_000, participants = listOf("Élodie"))
+        repo.addSegment(recent, startMs = 0, endMs = 1_000, text = "what does it cost")
+        repo.setSessionTags(recent, listOf("Acme"))
+        indexAll()
+
+        assertEquals(setOf(old, french, recent), searchByMeaning("money").map { it.session.id }.toSet())
+        assertEquals(listOf(french), searchByMeaning("money", SearchFilters(language = "fr")).map { it.session.id })
+        assertEquals(
+            setOf(french, recent),
+            searchByMeaning("money", SearchFilters(since = 2_000)).map { it.session.id }.toSet()
+        )
+        assertEquals(listOf(recent), searchByMeaning("money", SearchFilters(speaker = "elodie")).map { it.session.id })
+        val acme = search.options().tags.single().id
+        val tagged = searchByMeaning("money", SearchFilters(tagIds = setOf(acme)))
+        assertEquals(listOf(recent), tagged.map { it.session.id })
+    }
+
+    @Test
+    fun meaning_shortQueryKeepsTheWordMatchesFirst_asTheyAre() = runTest {
+        val older = session("Older", createdAt = 1_000)
+        repo.addSegment(older, startMs = 0, endMs = 1_000, text = "we can spend ten euros")
+        val middle = session("Middle", createdAt = 2_000)
+        repo.addSegment(middle, startMs = 0, endMs = 1_000, text = "the budget is fine")
+        val newer = session("Newer", createdAt = 3_000)
+        repo.addSegment(newer, startMs = 0, endMs = 1_000, text = "budget first")
+        repo.addSegment(newer, startMs = 1_000, endMs = 2_000, text = "budget again")
+        indexAll()
+
+        val words = search.search("budget")
+        val results = searchByMeaning("budget")
+        assertEquals(listOf(newer, middle, older), results.map { it.session.id })
+        assertEquals(words, results.take(2))
+        assertTrue(results.last().lines.single().byMeaning)
+    }
+
+    @Test
+    fun meaning_longQueryFusesBothRankings_withoutRepeatingAWordMatch() = runTest {
+        // Words: two matching lines, also the closest in meaning, and a summary close in meaning only.
+        val best = session("Best", createdAt = 1_000)
+        repo.addSegment(best, startMs = 0, endMs = 1_000, text = "budget ten thousand euros")
+        repo.addSegment(best, startMs = 1_000, endMs = 2_000, text = "the budget ten thousand stands")
+        repo.addMessage(best, MessageKind.SUMMARY, MessageRole.ASSISTANT, "We can spend money.")
+        // Words: one line, which also talks about a knee, so further in meaning.
+        val newest = session("Newest", createdAt = 3_000)
+        repo.addSegment(newest, startMs = 0, endMs = 1_000, text = "budget ten thousand for the knee doctor")
+        // Meaning only: money and a trip.
+        val paraphrase = session("Paraphrase", createdAt = 2_000)
+        repo.addSegment(paraphrase, startMs = 0, endMs = 1_000, text = "we can spend money on the trip")
+        indexAll()
+
+        val query = "budget ten thousand"
+        assertEquals(listOf(newest, best), search.search(query).map { it.session.id })
+        val results = searchByMeaning(query)
+        assertEquals(listOf(best, newest, paraphrase), results.map { it.session.id })
+        assertTrue("word lines are not repeated", results[0].lines.none { it.byMeaning })
+        assertEquals(2, results[0].lines.size)
+        assertTrue(results[0].summaryByMeaning)
+        assertEquals(Highlighted("We can spend money."), results[0].summary)
+        assertTrue(results[1].lines.none { it.byMeaning })
+        assertTrue(results[2].lines.single().byMeaning)
+    }
+
+    @Test
+    fun meaning_skipsPassagesPastTheEndOfAnEditedTranscript() = runTest {
+        val id = session("Edited")
+        repo.addSegment(id, startMs = 0, endMs = 1_000, text = "we can spend ten euros")
+        indexAll()
+        val matches = meaning("money")
+        db.openHelper.writableDatabase.execSQL("DELETE FROM segments WHERE sessionId = $id")
+
+        assertEquals(emptyList<SearchResult>(), search.search("money", semantic = matches))
+    }
+
+    @Test
+    fun meaning_unavailable_leavesTheResultsAsTheyAre() = runTest {
+        val id = session("Budget")
+        repo.addSegment(id, startMs = 0, endMs = 1_000, text = "the budget review")
+        repo.addSegment(id, startMs = 1_000, endMs = 2_000, text = "we can spend ten euros")
+        indexAll()
+
+        val words = search.search("budget")
+        assertEquals(words, search.search("budget", semantic = null))
+        assertEquals(words, search.search("budget", semantic = SemanticMatches(emptyMap())))
     }
 }

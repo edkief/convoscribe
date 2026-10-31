@@ -3,6 +3,7 @@ package com.convoscribe.ui.search
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.SearchDao
+import com.convoscribe.data.SegmentEntity
 import com.convoscribe.data.SegmentHit
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionHits
@@ -207,6 +208,8 @@ class SearchViewModelTest {
             since: Long,
             limit: Int
         ): List<SessionHits> = listOf(SessionHits(1, 1))
+
+        override suspend fun segments(sessionId: Long): List<SegmentEntity> = emptyList()
 
         override suspend fun sessions(): List<SessionEntity> = listOf(session)
 

@@ -82,6 +82,9 @@ class SemanticSearchTest {
         assertNull("lines past the passage", matches.score(budget, 4, 9))
         assertTrue(matches.isIndexed(weather))
         assertFalse(matches.isIndexed(999))
+        assertEquals(listOf(0 to 0), matches.passages(budget).map { it.firstLine to it.lastLine })
+        assertEquals("below MIN_COSINE", emptyList<ScoredPassage>(), matches.passages(knee))
+        assertEquals(emptyList<ScoredPassage>(), matches.passages(999))
     }
 
     @Test
