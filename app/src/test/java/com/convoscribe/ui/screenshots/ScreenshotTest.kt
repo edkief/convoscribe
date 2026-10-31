@@ -26,11 +26,13 @@ import com.convoscribe.audio.PlayerState
 import com.convoscribe.backup.BackupFailure
 import com.convoscribe.backup.BackupKind
 import com.convoscribe.backup.BackupState
+import com.convoscribe.data.ActionItemEntity
 import com.convoscribe.data.ChatMessageEntity
 import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.Highlighted
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
+import com.convoscribe.data.OpenActionItem
 import com.convoscribe.data.Preset
 import com.convoscribe.data.SearchLine
 import com.convoscribe.data.SearchOptions
@@ -61,6 +63,10 @@ import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.settings.FloatingShape
 import com.convoscribe.sync.SyncStatus
+import com.convoscribe.ui.actions.ActionsBody
+import com.convoscribe.ui.actions.ActionsGrouping
+import com.convoscribe.ui.actions.ActionsUiState
+import com.convoscribe.ui.actions.ActionsViewModel
 import com.convoscribe.ui.ask.AskAcrossBody
 import com.convoscribe.ui.ask.AskAcrossMessage
 import com.convoscribe.ui.ask.AskAcrossUiState
@@ -80,6 +86,7 @@ import com.convoscribe.ui.search.DateRange
 import com.convoscribe.ui.search.FilterState
 import com.convoscribe.ui.search.SearchBody
 import com.convoscribe.ui.search.SearchResults
+import com.convoscribe.ui.session.ActionItemActions
 import com.convoscribe.ui.session.AskUiState
 import com.convoscribe.ui.session.CleanupUi
 import com.convoscribe.ui.session.ExportState
@@ -959,6 +966,79 @@ class ScreenshotTest(private val variant: Variant) {
         session(tab = 1, marks = NOTED_MARKS, summary = SummaryUiState(notes = MarkNotesProgress(done = 2, total = 3)))
     }
 
+    /** Issue #31: the summary's action items as a checklist, one ticked off. */
+    @Test
+    fun sessionSummaryActions() = capture("session_summary_actions") {
+        val brief = "- Release moves a week.\n- QA tests the Boox build for another week."
+        session(tab = 1, summary = SummaryUiState(saved = brief, savedTemplateName = "Meeting", items = ACTION_ITEMS))
+    }
+
+    @Test
+    fun openActions() = capture("open_actions") {
+        ActionsBody(
+            state = ActionsUiState(
+                groups = ActionsViewModel.group(OPEN_ACTIONS, ActionsGrouping.SESSION),
+                loaded = true
+            ),
+            onBack = {},
+            onGrouping = {},
+            actions = ActionItemActions(),
+            onShare = {},
+            onAddToCalendar = {},
+            onOpen = {}
+        )
+    }
+
+    @Test
+    fun openActionsByOwner() = capture("open_actions_by_owner") {
+        ActionsBody(
+            state = ActionsUiState(
+                grouping = ActionsGrouping.OWNER,
+                groups = ActionsViewModel.group(OPEN_ACTIONS, ActionsGrouping.OWNER),
+                loaded = true
+            ),
+            onBack = {},
+            onGrouping = {},
+            actions = ActionItemActions(),
+            onShare = {},
+            onAddToCalendar = {},
+            onOpen = {}
+        )
+    }
+
+    @Test
+    fun openActionsEmpty() = capture("open_actions_empty") {
+        ActionsBody(
+            state = ActionsUiState(loaded = true),
+            onBack = {},
+            onGrouping = {},
+            actions = ActionItemActions(),
+            onShare = {},
+            onAddToCalendar = {},
+            onOpen = {}
+        )
+    }
+
+    @Test
+    fun actionItemEditor() {
+        assumeTextFieldDialogsRender()
+        captureScreen("action_item_editor") {
+            ActionsBody(
+                state = ActionsUiState(
+                    groups = ActionsViewModel.group(OPEN_ACTIONS, ActionsGrouping.SESSION),
+                    loaded = true
+                ),
+                onBack = {},
+                onGrouping = {},
+                actions = ActionItemActions(),
+                onShare = {},
+                onAddToCalendar = {},
+                onOpen = {},
+                initialEditing = OPEN_ACTIONS.first().item
+            )
+        }
+    }
+
     @Test
     fun sessionMarksListNotes() = captureScreen("session_marks_list_notes") {
         session(marks = NOTED_MARKS, marksOpen = true)
@@ -1547,6 +1627,44 @@ class ScreenshotTest(private val variant: Variant) {
             "## Action items\n\n" +
             "1. Bob — ship the e-ink build.\n" +
             "2. Alice — check the store listing by Friday."
+
+        private fun actionItem(
+            id: Long,
+            text: String,
+            owner: String? = null,
+            due: String? = null,
+            atMs: Long? = null,
+            done: Boolean = false,
+            sessionId: Long = 1
+        ) = ActionItemEntity(
+            id = id,
+            sessionId = sessionId,
+            text = text,
+            extractedText = text,
+            owner = owner,
+            dueDate = due,
+            atMs = atMs,
+            done = done,
+            position = id.toInt(),
+            createdAt = T0
+        )
+
+        private val ACTION_ITEMS = listOf(
+            actionItem(1, "Ship the e-ink build", owner = "Bob", atMs = 64_000L),
+            actionItem(2, "Check the store listing", owner = "Alice", due = "2025-03-21", atMs = 128_000L),
+            actionItem(3, "Share the budget sheet", owner = "Élodie", done = true)
+        )
+
+        private val OPEN_ACTIONS = listOf(
+            OpenActionItem(ACTION_ITEMS[0], "Weekly sync", T0 + 2 * DAY),
+            OpenActionItem(ACTION_ITEMS[1], "Weekly sync", T0 + 2 * DAY),
+            OpenActionItem(
+                actionItem(4, "Send the signed contract to legal", owner = "alice", due = "2025-03-18", sessionId = 2),
+                "Acme kickoff",
+                T0
+            ),
+            OpenActionItem(actionItem(5, "Book a room for the retro", sessionId = 2), "Acme kickoff", T0)
+        )
 
         private val ASK_ACROSS_CHAT = listOf(
             AskAcrossMessage(1L, MessageRole.USER, "What did Élodie say about the budget?"),

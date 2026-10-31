@@ -3,6 +3,9 @@ package com.convoscribe.llm
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import java.time.LocalDate
+import java.time.format.TextStyle
+import java.util.Locale
 
 /**
  * Builds the exact list of [LlmMessage]s the app sends to the LLM
@@ -41,24 +44,47 @@ object PromptBuilder {
         "Use the speaker names exactly as they appear. Do not invent facts that are not in the transcript."
 
     /**
+     * Last line of every summary system prompt (issue #31): the action
+     * items the summary lists, again as a JSON array in a closing code
+     * block that [ActionItemsParser] reads and strips. A template
+     * without action items gets `[]`. The keys and formats are the
+     * contract with the parser.
+     */
+    const val ACTION_ITEMS_CONTRACT: String =
+        "After the summary, list the action items it contains as a JSON array in a ```json code block, " +
+            "one object per item: {\"text\": what is to be done, \"owner\": the name of who will do it, or null, " +
+            "\"due\": the due date as YYYY-MM-DD if one was said, or null, " +
+            "\"at\": the transcript timestamp like \"12:34\" where it was agreed, or null}. " +
+            "Write [] if there are none. Write nothing after the code block."
+
+    /**
      * System prompt for a one-shot summary with the Meeting template:
      * a fixed structure (Overview → Key points → Decisions → Action
-     * items), framed by [SUMMARY_PREAMBLE] and [SUMMARY_GUARDRAILS].
-     * The literal text is part of the contract with the model:
-     * changing it changes what the user sees on the Summary screen.
+     * items), framed by [SUMMARY_PREAMBLE], [SUMMARY_GUARDRAILS] and
+     * [ACTION_ITEMS_CONTRACT]. The literal text is part of the
+     * contract with the model: changing it changes what the user sees
+     * on the Summary screen.
      */
     val SUMMARY_SYSTEM: String = summarySystem(SummaryTemplates.MEETING_BODY)
 
     /**
      * The summary system prompt for a template [body]:
      * [SUMMARY_PREAMBLE], the body trimmed and ended with a newline,
-     * then [SUMMARY_GUARDRAILS]. A blank body leaves just the two.
+     * [SUMMARY_GUARDRAILS], then [ACTION_ITEMS_CONTRACT] on its own
+     * line. A blank body leaves just the three.
      */
     fun summarySystem(body: String): String {
         val trimmed = body.trim()
         val framed = if (trimmed.isEmpty()) "" else trimmed + "\n"
-        return SUMMARY_PREAMBLE + framed + SUMMARY_GUARDRAILS
+        return SUMMARY_PREAMBLE + framed + SUMMARY_GUARDRAILS + "\n" + ACTION_ITEMS_CONTRACT
     }
+
+    /**
+     * Opening of a summary's user turn when the recording date is
+     * known (issue #31), so a due date said as "next Friday" can be
+     * written out; `%s` is the date as `yyyy-MM-dd (Weekday)`.
+     */
+    const val RECORDED_ON_FORMAT: String = "The conversation was recorded on %s.\n\n"
 
     /**
      * System prompt prefix for a Q&A turn. The transcript is
@@ -99,17 +125,21 @@ object PromptBuilder {
      * [MARKS_HEADER] and a `[mm:ss] note` line per mark, then a blank
      * line, before `Transcript:`. They come first so truncating a long
      * transcript never drops them, and the system prompt is unchanged.
+     * With [recordedOn] (issue #31) a [RECORDED_ON_FORMAT] line comes
+     * before everything else.
      */
     fun summary(
         transcript: String,
         maxChars: Int,
         body: String = SummaryTemplates.MEETING_BODY,
-        marks: List<TranscriptMark> = emptyList()
+        marks: List<TranscriptMark> = emptyList(),
+        recordedOn: LocalDate? = null
     ): List<LlmMessage> = listOf(
         LlmMessage(LlmMessage.ROLE_SYSTEM, summarySystem(body)),
         LlmMessage(
             LlmMessage.ROLE_USER,
-            marksSection(marks) + "Transcript:\n\n" + TranscriptTruncator.fit(transcript, maxChars)
+            recordedOnSection(recordedOn) + marksSection(marks) + "Transcript:\n\n" +
+                TranscriptTruncator.fit(transcript, maxChars)
         )
     )
 
@@ -171,8 +201,8 @@ object PromptBuilder {
     /**
      * Messages for the summary of a long transcript from the [notes]
      * on its parts: the template's system prompt as in [summary], then
-     * a user turn with all the [marks], [PARTS_INTRO_FORMAT] and the
-     * notes. The notes are fitted to [maxChars] with
+     * a user turn with the [recordedOn] line, all the [marks],
+     * [PARTS_INTRO_FORMAT] and the notes. The notes are fitted to [maxChars] with
      * [TranscriptTruncator.fit], which leaves them as they are unless
      * combining them failed to make them short enough.
      */
@@ -180,12 +210,13 @@ object PromptBuilder {
         notes: List<PartNotes>,
         maxChars: Int,
         body: String = SummaryTemplates.MEETING_BODY,
-        marks: List<TranscriptMark> = emptyList()
+        marks: List<TranscriptMark> = emptyList(),
+        recordedOn: LocalDate? = null
     ): List<LlmMessage> = listOf(
         LlmMessage(LlmMessage.ROLE_SYSTEM, summarySystem(body)),
         LlmMessage(
             LlmMessage.ROLE_USER,
-            marksSection(marks) + PARTS_INTRO_FORMAT.format(notes.size) +
+            recordedOnSection(recordedOn) + marksSection(marks) + PARTS_INTRO_FORMAT.format(notes.size) +
                 TranscriptTruncator.fit(notesText(notes), maxChars)
         )
     )
@@ -197,6 +228,13 @@ object PromptBuilder {
 
     private fun span(startMs: Long, endMs: Long): String =
         "[${TranscriptFormatter.timestamp(startMs)}–${TranscriptFormatter.timestamp(endMs)}]"
+
+    /** [RECORDED_ON_FORMAT] for [date], or nothing when it is unknown. */
+    private fun recordedOnSection(date: LocalDate?): String {
+        if (date == null) return ""
+        val weekday = date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.ENGLISH)
+        return RECORDED_ON_FORMAT.format("$date ($weekday)")
+    }
 
     /** [MARKS_HEADER] and one line per mark in time order, then a blank line; empty without marks. */
     private fun marksSection(marks: List<TranscriptMark>): String {

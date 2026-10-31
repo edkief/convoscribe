@@ -1733,6 +1733,64 @@ Install the semantic search model on B too.
 - Step 9: the session uploads and *Last sync* updates without an error;
   the template stays on B only.
 
+## 43. Action items (issue #31)
+
+Use a session of a few minutes where people agree on two or three
+things to do, one with a day ("by Friday"), with its speakers named
+(say Alice and Bob), and a working LLM endpoint. Use the Meeting
+template. A second device set up for sync as in section 41 is needed
+for step 10.
+
+**Steps**
+
+1. On the Summary tab tap **Summarise** and watch the text stream in.
+2. Tick the first action item. Edit the second: change its text, set
+   its owner to someone else and pick a due date. Delete the third and
+   confirm.
+3. Tap the time on an item.
+4. On an item's menu tap **Share**, then **Add to calendar**, for an
+   item with a due date and one without.
+5. Tap **Regenerate**.
+6. Switch the template to *Brief* and Regenerate, then back to
+   *Meeting* and Regenerate.
+7. Summarise a second session with action items. On Home open the menu
+   → **Open actions**; switch between *By session* and *By owner*.
+8. In *Open actions* tick an item, then tap another one.
+9. Delete the second session from Home and open *Open actions* again.
+10. Sync the first session to the second device and open its Summary
+    tab there; tick an item there and sync both ways.
+11. Disable the calendar app (or use a device without one) and tap
+    **Add to calendar**.
+
+**Expected**
+
+- Step 1: no `` ```json `` block or JSON ever shows, while streaming or
+  after. *Action items (n)* lists the items under the summary, with the
+  owners spelled as the speakers are, the due date the summary
+  mentioned (as a date, e.g. *Due 7 Nov 2026* for "Friday") and a time.
+  Copy copies the summary without the JSON.
+- Step 2: the ticked item is struck through and the count drops; the
+  edit shows at once; the deleted item is gone.
+- Step 3: the Transcript tab opens and playback is placed at that time.
+- Step 4: Share opens the share sheet with the text, owner, due date and
+  session; the calendar app opens a new event titled with the item, an
+  all-day event on its due date (no date chosen when it has none), with
+  the rest in its description.
+- Step 5: the ticked, edited and deleted items stay as you left them;
+  nothing appears twice; the deleted one does not come back.
+- Step 6: *Brief* keeps only the items you ticked or edited; back on
+  *Meeting* the model's items return, still without duplicates.
+- Step 7: items are grouped under each session (newest first, with its
+  date), or under each owner (alphabetical, *No owner* last, each row
+  naming its session).
+- Step 8: the ticked item leaves the list; tapping the other opens its
+  session at that moment (the Summary tab when it has no time).
+- Step 9: that session's items are gone from *Open actions*.
+- Step 10: the second device shows the same items in the same state,
+  and the tick made there reaches the first.
+- Step 11: a message says no calendar app can add the event; nothing
+  crashes.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

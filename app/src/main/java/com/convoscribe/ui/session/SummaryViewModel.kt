@@ -5,12 +5,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.R
 import com.convoscribe.TAG
+import com.convoscribe.data.ActionItemEntity
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
+import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
+import com.convoscribe.llm.ActionItemsParser
 import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.LongSummariser
@@ -23,6 +26,9 @@ import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.ui.UiText
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -59,6 +65,8 @@ import kotlinx.coroutines.launch
  * @property notes how writing the full notes of the session's marks
  *   is going (issue #48), from the Summary tab or after speakers were
  *   identified; `null` when nothing is running and nothing failed.
+ * @property items the summary's action items (issue #31), done ones
+ *   included, in the summary's order.
  */
 data class SummaryUiState(
     val saved: String? = null,
@@ -70,7 +78,8 @@ data class SummaryUiState(
     val templates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     val selectedKey: String = SummaryTemplates.MEETING_KEY,
     val step: SummaryStep? = null,
-    val notes: MarkNotesProgress? = null
+    val notes: MarkNotesProgress? = null,
+    val items: List<ActionItemEntity> = emptyList()
 )
 
 /**
@@ -97,7 +106,13 @@ data class SummaryUiState(
  *    summarised in parts by [LongSummariser] instead, with `step`
  *    following its progress; only the final summary streams into
  *    `streaming`.
- *  - On completion the SUMMARY kind is wiped, the full text is
+ *  - The model closes the summary with its action items as JSON
+ *    (issue #31); `streaming` never shows that block and only the
+ *    prose before it is saved. The items are read from it (or from
+ *    the summary's bullet list), with owners matched to the speakers
+ *    and participants, and merged into the session's: the ones the
+ *    user checked, edited or deleted stay.
+ *  - On completion the SUMMARY kind is wiped, the prose is
  *    saved as a fresh ASSISTANT row with the template's name, and
  *    `streaming` / `running` / `step` are reset. A run that fails
  *    or is cancelled part-way saves nothing.
@@ -163,6 +178,9 @@ class SummaryViewModel(
                     savedTemplateName = assistant?.templateName
                 )
             }
+        }
+        viewModelScope.launch {
+            repository.observeActionItems(sessionId).collect { rows -> _state.update { it.copy(items = rows) } }
         }
         markNotes?.let { writer ->
             viewModelScope.launch {
@@ -241,11 +259,13 @@ class SummaryViewModel(
             val accumulated = StringBuilder()
             val onToken: (String) -> Unit = { token ->
                 accumulated.append(token)
-                _state.value = _state.value.copy(streaming = accumulated.toString())
+                // The action items' JSON block (issue #31) is never shown.
+                _state.value = _state.value.copy(streaming = ActionItemsParser.visible(accumulated.toString()))
             }
+            val recordedOn = repository.getSession(sessionId)?.createdAt?.let(::recordingDate)
             try {
                 if (transcript.length <= maxChars) {
-                    chatClient.stream(PromptBuilder.summary(transcript, maxChars, template.body, marks))
+                    chatClient.stream(PromptBuilder.summary(transcript, maxChars, template.body, marks, recordedOn))
                         .collect { onToken(it) }
                 } else {
                     LongSummariser.summarise(
@@ -255,16 +275,19 @@ class SummaryViewModel(
                         body = template.body,
                         marks = marks,
                         onStep = { step -> _state.update { it.copy(step = step) } },
-                        onToken = onToken
+                        onToken = onToken,
+                        recordedOn = recordedOn
                     )
                 }
 
-                val full = accumulated.toString()
+                val parsed = ActionItemsParser.split(accumulated.toString(), knownNames())
+                val full = parsed.prose
                 // Persist the new summary only when every call
                 // completed normally and the last produced at least
                 // one token. An empty run leaves the previous saved
                 // value untouched.
                 if (full.isNotEmpty()) {
+                    repository.replaceExtractedItems(sessionId, parsed.items)
                     repository.clearMessages(sessionId, MessageKind.SUMMARY)
                     repository.addMessage(
                         sessionId = sessionId,
@@ -307,6 +330,21 @@ class SummaryViewModel(
         job = null
     }
 
+    /** Tick action item [itemId] off, or open it again (issue #31). */
+    fun setItemDone(itemId: Long, done: Boolean) {
+        viewModelScope.launch { repository.setActionItemDone(itemId, done) }
+    }
+
+    /** Save the user's version of action item [itemId]; regenerating keeps it. */
+    fun editItem(itemId: Long, text: String, owner: String, dueDate: String?) {
+        viewModelScope.launch { repository.editActionItem(itemId, text, owner, dueDate) }
+    }
+
+    /** Remove action item [itemId]; regenerating does not bring it back. */
+    fun deleteItem(itemId: Long) {
+        viewModelScope.launch { repository.deleteActionItem(itemId) }
+    }
+
     /** Write (or rewrite) the full note of every mark (issue #48); it goes on if the screen closes. */
     fun writeNotes() {
         markNotes?.start(sessionId)
@@ -325,4 +363,16 @@ class SummaryViewModel(
      */
     private suspend fun buildLines(): List<TranscriptLine> =
         TranscriptFormatter.lines(repository.getSegments(sessionId), repository.getSpeakers(sessionId))
+
+    /** The session's speaker names and participants, that action item owners are matched to. */
+    private suspend fun knownNames(): List<String> = (
+        repository.getSpeakers(sessionId).map { it.label } +
+            ParticipantsCodec.decode(repository.getSession(sessionId)?.participants).orEmpty()
+        ).filter { it.isNotBlank() }.distinct()
+
+    private companion object {
+        /** The local day a session recorded at [createdAt] (epoch ms) happened on. */
+        fun recordingDate(createdAt: Long): LocalDate =
+            Instant.ofEpochMilli(createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
+    }
 }

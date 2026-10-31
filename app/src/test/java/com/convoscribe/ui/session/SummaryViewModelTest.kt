@@ -80,16 +80,23 @@ class SummaryViewModelTest {
     fun setUp() {
         Dispatchers.setMain(dispatcher)
         context = ApplicationProvider.getApplicationContext()
-        // Both Room executors run synchronously on the calling
-        // thread. Without this, `advanceUntilIdle()` never
+        // Room's executors are driven by the test: transactions run
+        // on the calling thread and queries are queued on the test
+        // dispatcher. Without this, `advanceUntilIdle()` never
         // observes the suspend DAO calls (`getSegments`,
         // `getSpeakers`, `addMessage`) because they would be
         // dispatched to Room's background executor pool, which
-        // the test scheduler does not drive.
+        // the test scheduler does not drive. Queries are not run
+        // inline: an observer re-running inside a transaction (the
+        // action items of issue #31 are merged in one) would then
+        // query on the transaction's thread, which Room refuses.
         val syncExecutor = java.util.concurrent.Executor { it.run() }
+        val queryExecutor = java.util.concurrent.Executor {
+            dispatcher.dispatch(kotlin.coroutines.EmptyCoroutineContext, it)
+        }
         db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
-            .setQueryExecutor(syncExecutor)
+            .setQueryExecutor(queryExecutor)
             .setTransactionExecutor(syncExecutor)
             .build()
         recordingsDir = File(context.filesDir, "summary-vm-test-${System.nanoTime()}")
@@ -139,6 +146,80 @@ class SummaryViewModelTest {
             assignments = mapOf(segments[0].id to 0, segments[1].id to 0),
             speakerCount = 1
         )
+    }
+
+    /** Issue #31: a summary's action items are stored, owners matched to participants, and listed on the tab. */
+    @Test
+    fun summarise_storesTheActionItems() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en", participants = listOf("Élodie"))
+        seedTranscript(id)
+        val reply = "Summary.\n```json\n[{\"text\": \"Send the deck\", \"owner\": \"elodie\", " +
+            "\"due\": \"2026-11-06\", \"at\": \"00:01\"}, {\"text\": \"Book the room\"}]\n```"
+        val client = ScriptedChatClient { _ -> flow { emit(reply) } }
+        val vm = SummaryViewModel(id, repo, client, newSettings().also { configureSettings(it) }, templates)
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        val items = vm.state.first { it.items.size == 2 }.items
+        assertEquals(listOf("Send the deck", "Book the room"), items.map { it.text })
+        assertEquals(listOf("Élodie", null), items.map { it.owner })
+        assertEquals("2026-11-06", items[0].dueDate)
+        assertEquals(1_000L, items[0].atMs)
+    }
+
+    /** Issue #31: regenerating keeps what the user ticked, edited or deleted, and lists nothing twice. */
+    @Test
+    fun regenerate_keepsTheUsersActionItems() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        var reply = "Summary.\n```json\n[{\"text\": \"Send the deck\"}, {\"text\": \"Book the room\"}, " +
+            "{\"text\": \"Call the bank\"}, {\"text\": \"Hire\"}]\n```"
+        val client = ScriptedChatClient { _ -> flow { emit(reply) } }
+        val vm = SummaryViewModel(id, repo, client, newSettings().also { configureSettings(it) }, templates)
+        vm.summarise()
+        advanceUntilIdle()
+        val (send, book, call) = vm.state.first { it.items.size == 4 }.items
+        vm.setItemDone(send.id, true)
+        vm.editItem(book.id, "Book the big room", " Bob ", "not a date")
+        vm.deleteItem(call.id)
+        advanceUntilIdle()
+
+        reply = "Summary 2.\n```json\n[{\"text\": \"send the deck\"}, {\"text\": \"Book the room\"}, " +
+            "{\"text\": \"Call the bank\"}, {\"text\": \"Order lunch\"}]\n```"
+        vm.summarise()
+        advanceUntilIdle()
+
+        val items = vm.state.first { s -> s.items.any { it.text == "Order lunch" } }.items
+        assertEquals(listOf("Send the deck", "Book the big room", "Order lunch"), items.map { it.text })
+        assertEquals(listOf(true, false, false), items.map { it.done })
+        assertEquals("Bob", items[1].owner)
+        assertNull(items[1].dueDate)
+    }
+
+    /** Issue #31: the action items' JSON block is neither shown while streaming nor saved. */
+    @Test
+    fun summarise_hidesAndDropsTheActionItemsBlock() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en")
+        seedTranscript(id)
+        lateinit var vm: SummaryViewModel
+        val shown = ArrayList<String>()
+        val client = ScriptedChatClient { _ ->
+            flow {
+                listOf("Summary.", "\n``", "`json\n[{\"text\": ", "\"Ship it\"}]\n```").forEach {
+                    emit(it)
+                    shown += vm.state.value.streaming
+                }
+            }
+        }
+        vm = SummaryViewModel(id, repo, client, newSettings().also { configureSettings(it) }, templates)
+
+        vm.summarise()
+        advanceUntilIdle()
+
+        assertEquals(listOf("Summary.", "Summary.", "Summary.", "Summary."), shown)
+        val rows = db.chatMessageDao().observe(id, MessageKind.SUMMARY).first()
+        assertEquals(listOf("Summary."), rows.map { it.content })
     }
 
     @Test
@@ -348,7 +429,8 @@ class SummaryViewModelTest {
         assertNotNull(client.lastMessages)
         val expected = PromptBuilder.summary(
             transcript = expectedTranscriptFor(id),
-            maxChars = settings.settings.value.maxTranscriptChars
+            maxChars = settings.settings.value.maxTranscriptChars,
+            recordedOn = recordedOn(id)
         )
         assertEquals(expected, client.lastMessages)
     }
@@ -376,7 +458,8 @@ class SummaryViewModelTest {
         val expected = PromptBuilder.summary(
             transcript = expectedTranscriptFor(id),
             maxChars = settings.settings.value.maxTranscriptChars,
-            marks = listOf(TranscriptMark(mark.id, 2_000L, "follow up"))
+            marks = listOf(TranscriptMark(mark.id, 2_000L, "follow up")),
+            recordedOn = recordedOn(id)
         )
         assertEquals(expected, client.lastMessages)
     }
@@ -408,6 +491,11 @@ class SummaryViewModelTest {
      * Build the transcript the ViewModel sees so the test does not
      * have to mirror the formatter's behaviour.
      */
+    /** The local day session [id] was recorded on, as the summary prompt states it (issue #31). */
+    private suspend fun recordedOn(id: Long): java.time.LocalDate =
+        java.time.Instant.ofEpochMilli(repo.getSession(id)!!.createdAt)
+            .atZone(java.time.ZoneId.systemDefault()).toLocalDate()
+
     private suspend fun expectedTranscriptFor(id: Long): String {
         val segments = repo.getSegments(id)
         val speakers = repo.getSpeakers(id)

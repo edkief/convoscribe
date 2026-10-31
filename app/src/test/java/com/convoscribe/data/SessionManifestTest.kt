@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.llm.ExtractedActionItem
 import com.convoscribe.llm.SummaryTemplates
 import java.io.File
 import kotlinx.coroutines.test.runTest
@@ -141,6 +142,55 @@ class SessionManifestTest {
             assertEquals(
                 File(repo.audioPath(id)).readBytes().toList(),
                 File(otherRepo.audioPath(newId)).readBytes().toList()
+            )
+        } finally {
+            other.close()
+        }
+    }
+
+    /** Issue #31: a session without action items encodes as it did before they existed. */
+    @Test
+    fun manifest_leavesOutAnEmptyActionItemsList() = runTest {
+        val id = session()
+        val manifest = repo.snapshot(id)!!.manifest
+        assertFalse(SessionManifests.encode(manifest).contains("actionItems"))
+        assertEquals(manifest, SessionManifests.decode(SessionManifests.encode(manifest)))
+    }
+
+    /** Issue #31: action items, deleted ones included, travel with their session and keep the user's state. */
+    @Test
+    fun applyManifest_carriesTheActionItems() = runTest {
+        val id = session()
+        repo.replaceExtractedItems(
+            id,
+            listOf(
+                ExtractedActionItem("Send the deck", owner = "Ann", due = "2026-11-06", atMs = 500),
+                ExtractedActionItem("Book the room"),
+                ExtractedActionItem("Call the bank")
+            )
+        )
+        val (send, book, call) = db.actionItemDao().getForSession(id)
+        repo.setActionItemDone(send.id, true)
+        repo.editActionItem(book.id, "Book the big room", "Bob", null)
+        repo.deleteActionItem(call.id)
+        val snapshot = repo.snapshot(id)!!
+        assertTrue(SessionManifests.encode(snapshot.manifest).contains("actionItems"))
+        assertEquals(
+            listOf("Send the deck", "Book the big room", "Call the bank"),
+            snapshot.manifest.actionItems.map { it.text }
+        )
+        val (other, otherRepo) = otherDevice()
+        try {
+            val newId = otherRepo.applyManifest(snapshot.manifest, 42L, staged(snapshot))
+            val copied = other.actionItemDao().getForSession(newId)
+            assertEquals(listOf(true, false, false), copied.map { it.done })
+            assertEquals(listOf(false, true, false), copied.map { it.edited })
+            assertEquals(listOf(false, false, true), copied.map { it.deleted })
+            assertEquals("Book the room", copied[1].extractedText)
+            assertEquals(listOf("2026-11-06", null, null), copied.map { it.dueDate })
+            assertEquals(
+                SessionManifests.hash(snapshot.manifest.copy(summaryTemplate = null)),
+                SessionManifests.hash(otherRepo.snapshot(newId)!!.manifest.copy(summaryTemplate = null))
             )
         } finally {
             other.close()

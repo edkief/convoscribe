@@ -3,6 +3,7 @@ package com.convoscribe.data
 import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.llm.ExtractedActionItem
 import java.io.File
 import kotlinx.coroutines.test.runTest
 import org.junit.After
@@ -73,6 +74,30 @@ class SessionSyncRepositoryTest {
         }
         now += 10
         repo.setStatus(id, SessionStatus.DIARIZING)
+        assertEquals(now - 10, repo.getSession(id)!!.updatedAt)
+    }
+
+    /** Issue #31: every change to an action item is a change to its session. */
+    @Test
+    fun actionItemWrites_stampUpdatedAt() = runTest {
+        val id = session()
+        now += 10
+        repo.replaceExtractedItems(id, listOf(ExtractedActionItem("Send the deck"), ExtractedActionItem("Book")))
+        assertEquals(now, repo.getSession(id)!!.updatedAt)
+        val (first, second) = db.actionItemDao().getForSession(id).map { it.id }
+        val writes: List<suspend () -> Unit> = listOf(
+            { repo.setActionItemDone(first, true) },
+            { repo.editActionItem(first, "Send the slides", "Ann", "2026-11-06") },
+            { repo.deleteActionItem(second) }
+        )
+        for (write in writes) {
+            now += 10
+            write()
+            assertEquals(now, repo.getSession(id)!!.updatedAt)
+        }
+        // The same list again changes nothing, so the session is not pushed for it.
+        now += 10
+        repo.replaceExtractedItems(id, listOf(ExtractedActionItem("Send the deck"), ExtractedActionItem("Book")))
         assertEquals(now - 10, repo.getSession(id)!!.updatedAt)
     }
 

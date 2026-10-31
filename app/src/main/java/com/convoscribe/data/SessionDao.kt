@@ -124,6 +124,11 @@ interface SessionDao {
     @Query("UPDATE sessions SET updatedAt = :at WHERE id = (SELECT sessionId FROM marks WHERE id = :markId)")
     suspend fun touchForMark(markId: Long, at: Long)
 
+    @Query(
+        "UPDATE sessions SET updatedAt = :at WHERE id = (SELECT sessionId FROM action_items WHERE id = :itemId)"
+    )
+    suspend fun touchForActionItem(itemId: Long, at: Long)
+
     @Query("UPDATE sessions SET updatedAt = :at WHERE id = (SELECT sessionId FROM segments WHERE id = :segmentId)")
     suspend fun touchForSegment(segmentId: Long, at: Long)
 

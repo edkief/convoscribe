@@ -11,6 +11,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.convoscribe.ConvoApp
+import com.convoscribe.ui.actions.ActionsScreen
 import com.convoscribe.ui.ask.AskAcrossScreen
 import com.convoscribe.ui.enginecheck.EngineCheckScreen
 import com.convoscribe.ui.home.HomeScreen
@@ -38,6 +39,7 @@ private const val ROUTE_SEARCH = "search"
 private const val ROUTE_TAGS = "tags"
 private const val ROUTE_PRESETS = "presets"
 private const val ROUTE_ASK_ACROSS = "ask"
+private const val ROUTE_ACTIONS = "actions"
 
 private const val NO_ARG = -1L
 
@@ -188,6 +190,9 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
         composable(ROUTE_ASK_ACROSS) {
             AskAcrossScreen(navController = navController)
+        }
+        composable(ROUTE_ACTIONS) {
+            ActionsScreen(navController = navController)
         }
         composable(ROUTE_TAGS) {
             TagsScreen(navController = navController)

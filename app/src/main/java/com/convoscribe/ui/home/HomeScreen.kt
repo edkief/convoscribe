@@ -114,7 +114,8 @@ import kotlinx.coroutines.launch
  * Once sessions are tagged (issue #32), a row of tag chips above the
  * list filters it to sessions with any of the ticked tags.
  *
- * The top bar has Settings and an overflow menu with Engine check. Each
+ * The top bar has Settings and an overflow menu with Open actions
+ * (issue #31), Import audio and Engine check. Each
  * session is a card (title, date, duration, speakers, language, a
  * status badge and its tags); tapping it opens `session/{id}`, and Delete is in the
  * card's overflow menu (long-press still works) behind a confirmation.
@@ -233,7 +234,8 @@ fun HomeScreen(navController: NavHostController) {
         onSettings = { navController.navigate("settings") },
         onEngineCheck = { navController.navigate("engine-check") },
         onSearch = { navController.navigate("search") },
-        onAskAcross = { navController.navigate("ask") }
+        onAskAcross = { navController.navigate("ask") },
+        onOpenActions = { navController.navigate("actions") }
     )
 }
 
@@ -263,7 +265,8 @@ internal fun HomeBody(
     onSettings: () -> Unit,
     onEngineCheck: () -> Unit,
     onSearch: () -> Unit = {},
-    onAskAcross: () -> Unit = {}
+    onAskAcross: () -> Unit = {},
+    onOpenActions: () -> Unit = {}
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<SessionRow?>(null) }
@@ -311,6 +314,14 @@ internal fun HomeBody(
                     expanded = overflowExpanded,
                     onDismissRequest = { overflowExpanded = false }
                 ) {
+                    // Every session's unticked action items (issue #31).
+                    DropdownMenuItem(
+                        text = { Text(text = stringResource(R.string.home_open_actions)) },
+                        onClick = {
+                            overflowExpanded = false
+                            onOpenActions()
+                        }
+                    )
                     DropdownMenuItem(
                         text = { Text(text = stringResource(R.string.home_import_audio_menu)) },
                         onClick = {

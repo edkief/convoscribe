@@ -15,8 +15,8 @@ import java.util.UUID
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
  * index over transcript lines, (v7) summary templates and (v8)
  * marks, (v12) tags and presets, (v14) the *Ask across sessions* history,
- * (v15) semantic search and (v16) stable session ids. The current version
- * is 16; the generated JSON for every version is committed
+ * (v15) semantic search, (v16) stable session ids and (v20) action
+ * items. The current version is 20; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -105,6 +105,10 @@ import java.util.UUID
  * templates, `updatedAt` on presets and templates, and
  * `sync_state.contentKey`.
  *
+ * The 19 → 20 migration (issue #31) is automatic: the `action_items`
+ * table only, so existing summaries have no action items until they
+ * are regenerated.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -126,9 +130,10 @@ import java.util.UUID
         SessionIndexStateEntity::class,
         SyncStateEntity::class,
         SyncTombstoneEntity::class,
-        FileHashEntity::class
+        FileHashEntity::class,
+        ActionItemEntity::class
     ],
-    version = 19,
+    version = 20,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -146,7 +151,8 @@ import java.util.UUID
         AutoMigration(from = 13, to = 14),
         AutoMigration(from = 14, to = 15),
         AutoMigration(from = 16, to = 17),
-        AutoMigration(from = 17, to = 18, spec = Migration17To18::class)
+        AutoMigration(from = 17, to = 18, spec = Migration17To18::class),
+        AutoMigration(from = 19, to = 20)
     ]
 )
 @TypeConverters(Converters::class)
@@ -164,6 +170,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun globalChatMessageDao(): GlobalChatMessageDao
     abstract fun semanticIndexDao(): SemanticIndexDao
     abstract fun syncDao(): SyncDao
+    abstract fun actionItemDao(): ActionItemDao
 
     companion object {
         const val NAME: String = "convoscribe.db"
