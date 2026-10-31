@@ -105,7 +105,9 @@ brings them to your other devices.
   there with the player positioned on it (not playing), and a summary
   hit opens the Summary tab. Filter by language, date (last 7 / 30
   days, this year) and person. On e-ink the search waits for a longer
-  pause in typing, so the screen refreshes once per burst.
+  pause in typing, so the screen refreshes once per burst. With the
+  semantic search model installed (below), Search also finds what was
+  said in other words or in the other language.
 - **Edit the transcript.** Long-press a line (or use TalkBack's
   actions on it) for *Edit text*, *Change speaker* (to an existing
   speaker or a new one), *Merge with next*, *Split here* (at the
@@ -224,9 +226,18 @@ brings them to your other devices.
   transcript, speakers or summary change is indexed again. A question
   then picks sessions and excerpts by meaning as well as by words, and
   the answer says *matched by meaning*. Sessions not indexed yet still
-  count by their words, and the screen says how many there are. Without
-  the model, or if it fails, Ask across sessions matches words only, as
-  before. Settings shows how many sessions are indexed, and deleting the
+  count by their words, and the screen says how many there are. Search
+  uses the same passages: a query also finds sessions close to it in
+  meaning (*money for the trip* finds *the holiday budget is 2,000
+  euros*), within the same filters, and such hits are marked *Matched
+  by meaning* with nothing highlighted; a line opens the transcript at
+  the start of the passage that matched. Word matches show at once and
+  the meaning matches join them a moment later. A query of one or two
+  words keeps its word matches first, in the usual order, with the
+  meaning matches after them; a longer query is ranked by both, so a
+  natural question (*when did we talk about money for the trip?*) puts
+  the closest sessions first. Without the model, or if it fails, Ask
+  across sessions and Search match words only, as before. Settings shows how many sessions are indexed, and deleting the
   model drops the index. Engine check → *Semantic search* times the
   model and shows the app's memory use, to judge it on a CPU-only
   device.
