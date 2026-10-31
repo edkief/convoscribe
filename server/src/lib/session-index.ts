@@ -22,7 +22,9 @@ type FileRef = { sha256: string; size: number };
 
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-const str = (value: unknown, max = 500) => (typeof value === 'string' ? value.slice(0, max) : null);
+// Postgres text cannot hold NUL, which JSON strings can.
+const withoutNul = (value: string) => value.replace(/\u0000/g, '');
+const str = (value: unknown, max = 500) => (typeof value === 'string' ? withoutNul(value).slice(0, max) : null);
 const int = (value: unknown) => (typeof value === 'number' && Number.isSafeInteger(value) ? value : null);
 const fileRef = (value: unknown): FileRef | null => {
   const ref = record(value);
@@ -40,7 +42,14 @@ const fileRef = (value: unknown): FileRef | null => {
 export function indexValues(manifest: unknown, fallbackCreatedAt: number) {
   const m = record(manifest);
   const tags = Array.isArray(m.tags)
-    ? [...new Set(m.tags.filter((t): t is string => typeof t === 'string' && t.trim() !== '').map((t) => t.slice(0, 200)))]
+    ? [
+        ...new Set(
+          m.tags
+            .filter((t): t is string => typeof t === 'string')
+            .map((t) => withoutNul(t).slice(0, 200))
+            .filter((t) => t.trim() !== ''),
+        ),
+      ]
     : [];
   const speakers = Array.isArray(m.speakers) ? m.speakers.length : null;
   const audio = fileRef(m.audio);

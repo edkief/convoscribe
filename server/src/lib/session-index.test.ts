@@ -57,6 +57,12 @@ describe('the session index (#80)', () => {
     expect((await listSessions('alice')).sessions.map((s) => [s.syncId, s.title])).toEqual([['odd', null]]);
   });
 
+  it('accepts text Postgres cannot store as is', async () => {
+    await pushManifest('alice', sessionManifest('nul', { title: 'A\u0000B', tags: ['x\u0000y', '\u0000'] }));
+    const row = await getSessionIndex('alice', 'nul');
+    expect([row?.title, row?.tags]).toEqual(['AB', ['xy']]);
+  });
+
   it('lists only the owner’s live sessions, newest first', async () => {
     await pushManifest('alice', sessionManifest('old', { createdAt: T0 }));
     await pushManifest('alice', sessionManifest('new', { createdAt: T0 + DAY }));

@@ -10,7 +10,9 @@ export function Markdown({ text }: { text: string }) {
   return <div className="markdown">{blocks(text.replace(/\r\n?/g, '\n').split('\n'))}</div>;
 }
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(\*[^*\s][^*]*\*|_[^_\s][^_]*_)|(\[[^\]]+\]\([^)\s]+\))/;
+// Underscores only emphasise at word edges, so snake_case stays as written.
+const INLINE =
+  /(`[^`]+`)|(\*\*[^*]+\*\*|(?<!\w)__[^_]+__(?!\w))|(\*[^*\s][^*]*\*|(?<!\w)_[^_\s][^_]*_(?!\w))|(\[[^\]]+\]\([^)\s]+\))/;
 
 function inline(text: string): ReactNode[] {
   const out: ReactNode[] = [];
