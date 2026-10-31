@@ -40,4 +40,11 @@ describe('loadEnv', () => {
     const env = loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, S3_FORCE_PATH_STYLE: 'false' });
     expect(env.S3_FORCE_PATH_STYLE).toBe(false);
   });
+
+  it('splits ADMIN_ROLES and treats blank as the SDK default', () => {
+    const roles = (value: string) =>
+      loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, ADMIN_ROLES: value }).ADMIN_ROLES;
+    expect(roles('ops, convoscribe-admin ,')).toEqual(['ops', 'convoscribe-admin']);
+    expect(roles('')).toBeUndefined();
+  });
 });

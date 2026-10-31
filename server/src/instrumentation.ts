@@ -1,5 +1,6 @@
-// Runs once when the server starts: fail fast on bad configuration, then
-// bring the database schema up to date.
+// Runs once when the server starts: fail fast on bad configuration, bring
+// the database schema up to date, then index sessions pushed before the web
+// app existed (#80) in the background.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   try {
@@ -12,4 +13,11 @@ export async function register() {
     console.error(err);
     process.exit(1);
   }
+  const { backfillSessionIndex } = await import('./lib/backfill');
+  backfillSessionIndex().then(
+    ({ indexed, skipped }) => {
+      if (indexed || skipped) console.log(`session index: indexed ${indexed} session(s), skipped ${skipped}`);
+    },
+    (err) => console.error('session index backfill failed', err),
+  );
 }
