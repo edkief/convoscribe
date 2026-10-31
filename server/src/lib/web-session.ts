@@ -1,12 +1,17 @@
+import { cache } from 'react';
 import { getDocumentMeta, readManifest, type DocumentMeta } from './documents';
 import { sessionView, type SessionView } from './transcript-export';
 
 /**
  * A live session of `owner` with its current manifest read (#80), or null
  * when the owner has no such session or it was deleted. Another owner's
- * session is just as absent.
+ * session is just as absent. Read once per page render, however many
+ * parts of the page ask.
  */
-export async function readSession(owner: string, syncId: string): Promise<{ meta: DocumentMeta; view: SessionView } | null> {
+export const readSession = cache(async function readSession(
+  owner: string,
+  syncId: string,
+): Promise<{ meta: DocumentMeta; view: SessionView } | null> {
   const meta = await getDocumentMeta(owner, 'session', syncId);
   if (!meta || meta.deleted || !meta.manifestHash) return null;
   const bytes = await readManifest(owner, 'session', syncId, meta.manifestHash);
@@ -17,4 +22,4 @@ export async function readSession(owner: string, syncId: string): Promise<{ meta
     // Stored manifests were valid JSON when pushed; show an empty session rather than fail.
   }
   return { meta, view: sessionView(parsed) };
-}
+});

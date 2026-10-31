@@ -78,3 +78,51 @@ export function formatBytes(bytes: number): string {
   } while (value >= 1000 && unit < units.length - 1);
   return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
+
+/** A time of day like the browser would write it, in `zone`. */
+export function formatTime(ms: number, zone: string, locale = 'en'): string {
+  return new Intl.DateTimeFormat(locale, { timeStyle: 'short', timeZone: zone }).format(ms);
+}
+
+/**
+ * The heading of a day in the library: Today, Yesterday, a weekday within
+ * the week, else the date (with the year when it is not this year).
+ */
+export function dayLabel(ms: number, zone: string, locale = 'en', now: number = Date.now()): string {
+  const day = isoDate(ms, zone);
+  const today = isoDate(now, zone);
+  const daysAgo = Math.round((Date.parse(today) - Date.parse(day)) / 86_400_000);
+  if (daysAgo === 0) return 'Today';
+  if (daysAgo === 1) return 'Yesterday';
+  if (daysAgo > 1 && daysAgo < 7) return new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: zone }).format(ms);
+  const sameYear = day.slice(0, 4) === today.slice(0, 4);
+  return new Intl.DateTimeFormat(locale, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'long',
+    ...(sameYear ? {} : { year: 'numeric' }),
+    timeZone: zone,
+  }).format(ms);
+}
+
+/** A recording's length to read at a glance: `40 sec`, `12 min`, `1 h 05 min`. */
+export function formatLength(ms: number): string {
+  const seconds = Math.round(Math.max(0, ms) / 1000);
+  if (seconds < 60) return `${seconds} sec`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
+/** A name's initials for an avatar: its first and last words' first letters, or the one word's. */
+export function initials(name: string): string {
+  const words = name.trim().split(/[\s._@-]+/).filter(Boolean);
+  if (words.length === 0) return '?';
+  const letters = words.length === 1 ? [[...words[0]][0]] : [[...words[0]][0], [...words.at(-1)!][0]];
+  return letters.join('').toUpperCase();
+}
+
+/** Today's date in `zone`, `yyyy-mm-dd`. */
+export function today(zone: string): string {
+  return isoDate(Date.now(), zone);
+}

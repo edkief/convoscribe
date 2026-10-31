@@ -28,19 +28,28 @@ Signing in depends on `AUTH_MODE`:
 
 You see only your own sessions. Nothing can be changed from the web yet.
 
-- **Library** (`/`): your sessions, newest first, 50 to a page, with their
-  date, length, speakers and tags, and the size of the recordings you
-  store. Filter by tag and by a date range (days in the browser's time
-  zone). The list comes from Postgres (`session_index`), never from S3.
-- **Session** (`/sessions/<syncId>`): title, date, length, language,
-  speakers and tags; the latest summary (earlier ones folded away);
-  action items, ticked ones struck through; marks with their notes;
-  questions and answers; and the transcript, with each mark above the line
-  it belongs to. The recording plays in a player that stays in view; tap a
-  line, a mark or an action item's time to play from there, and the line
-  being played is highlighted. Downloads: the recording, the cleaned
-  recording when there is one, and the transcript as Markdown, SRT or
-  WebVTT.
+On a laptop or a tablet in landscape, a sidebar lists your sessions, your
+tags with how many sessions carry each, the size of the recordings you
+store and who is signed in; below 1200 px wide it folds into a top bar.
+
+- **Library** (`/`): your sessions, newest first and grouped by day (in
+  the browser's time zone), 50 to a page. Each row shows the title, the
+  start of the latest summary (else of the transcript), the tags, the
+  speakers, how many action items are open, the length and the time.
+  Filter by tag (sidebar) and by a date range. The list comes from
+  Postgres (`session_index`), never from S3.
+- **Session** (`/sessions/<syncId>`): title, date, length, language, tags
+  and speakers, and a *Download* menu (the recording, the cleaned
+  recording when there is one, the transcript as Markdown, and subtitles
+  as SRT or WebVTT). The transcript fills the page as speaker turns, each
+  mark between them where it was made; beside it, a panel holds the
+  latest summary (earlier ones folded away), the action items, the marks
+  and the questions and answers, one tab each. A player stays at the
+  bottom: play, back 10 s, forward 30 s, a timeline showing the marks,
+  speed and mute; space plays and pauses, the arrow keys step 5 s. Tap a
+  sentence, a mark or an action item's time to play from there. The
+  sentence being played is highlighted and kept in view; scroll away and
+  *Back to current line* returns to it.
 
 A manifest from a newer app version is shown as far as the server
 understands it, with a note.
@@ -116,7 +125,8 @@ is longer than the one the device deleted (`deleteWins`). The loser gets
 Postgres holds the index (`documents`, plus `document_blobs`, `blobs`,
 `uploads` and `upload_parts`) and `session_index`, what the web app lists
 and filters sessions by: title, date, length, language, status, tags,
-speaker and line counts and recording refs, copied from a session's
+speakers, a preview line, the number of open action items, the line count
+and recording refs, copied from a session's
 manifest in the same transaction as each push. It is read tolerantly (a
 missing or unknown field is null) and is only for display; sync never
 reads it. When the server starts it indexes, in the background and one
