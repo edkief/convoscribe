@@ -1,14 +1,16 @@
-import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import { documents, sessionIndex } from '@/db/schema';
 import { blobKeys, blobStore } from './blob-store';
 import { db } from './db';
 import { lockOwner, readManifest } from './documents';
 import { upsertSessionIndex } from './session-index';
+import { SEARCH_TEXT_VERSION } from './session-search';
 
 /**
  * Index every live session whose index row is missing or was read from
  * another manifest: those pushed before the web app existed (#80), or
- * after a row was lost. One manifest at a time, since a manifest can
+ * after a row was lost. Also those whose search text is missing or was
+ * written by older code (#83). One manifest at a time, since a manifest can
  * inflate to 128 MB. Each row is written under the owner's lock, and only
  * if the session still has the manifest that was read, so a push made
  * meanwhile (which indexes itself) is never overwritten. It keeps no
@@ -33,7 +35,11 @@ export async function backfillSessionIndex(
           eq(documents.kind, 'session'),
           eq(documents.deleted, false),
           isNotNull(documents.manifestHash),
-          or(isNull(sessionIndex.manifestHash), ne(sessionIndex.manifestHash, documents.manifestHash)),
+          or(
+            isNull(sessionIndex.manifestHash),
+            ne(sessionIndex.manifestHash, documents.manifestHash),
+            lt(sessionIndex.textVersion, SEARCH_TEXT_VERSION),
+          ),
           after ? sql`(${documents.owner}, ${documents.syncId}) > (${after.owner}, ${after.syncId})` : undefined,
         ),
       )

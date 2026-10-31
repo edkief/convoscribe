@@ -7,6 +7,7 @@ import { missingBlobs } from './blobs';
 import { db, type Db } from './db';
 import { HttpError, type Kind } from './http';
 import { upsertSessionIndex } from './session-index';
+import { deleteSessionText } from './session-search';
 
 /** What the index knows about a document's current revision. */
 export type DocumentMeta = {
@@ -210,6 +211,7 @@ export async function deleteDocument(
       .where(where)
       .returning();
     if (!trash) await tx.delete(documentBlobs).where(and(eq(documentBlobs.owner, owner), eq(documentBlobs.kind, kind), eq(documentBlobs.syncId, syncId)));
+    if (kind === 'session') await deleteSessionText(tx, owner, syncId);
     return meta(row);
   });
 }
