@@ -257,7 +257,11 @@ brings them to your other devices.
   delete wins over an edit unless the edited version has a longer
   recording. **Delete** removes a session from every device; the sync
   server keeps it in its trash for 30 days, where you can restore it
-  from the server's web app (#81). **Remove from this device** (in a session's menu) frees space here and keeps
+  from the server's web app (#81). Whoever runs the server can see each
+  user's session count, storage and last activity, never their titles,
+  transcripts or audio, and can set a storage quota: over it, new
+  recordings stop uploading and Settings says the quota was reached,
+  while edits and deletes still sync (#82). **Remove from this device** (in a session's menu) frees space here and keeps
   it on the server, where it shows greyed as *On server* in the list
   until you tap *Download*. Recordings move in parts of about 8 MB, so
   an interrupted upload or download resumes where it stopped and never
