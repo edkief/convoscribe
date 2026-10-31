@@ -65,6 +65,7 @@ import com.convoscribe.data.SearchLine
 import com.convoscribe.data.SearchOptions
 import com.convoscribe.data.SearchResult
 import com.convoscribe.data.TranscriptFormatter
+import com.convoscribe.llm.embedding.SemanticSearch
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
@@ -88,7 +89,10 @@ private const val TAB_SUMMARY = 1
  * the keyboard's Search key; filter chips narrow by language, date and
  * person. A transcript hit opens its session on the Transcript tab at
  * that line with the player cued there; a summary hit opens the
- * Summary tab; anything else opens the session.
+ * Summary tab; anything else opens the session. With the semantic
+ * search model (issue #63) hits found by meaning are added and marked
+ * *Matched by meaning*; such a line opens the transcript at the start
+ * of the passage that matched.
  */
 @Composable
 fun SearchScreen(navController: NavHostController) {
@@ -96,7 +100,13 @@ fun SearchScreen(navController: NavHostController) {
     val debounceMs = if (AppTheme.isEink) SearchViewModel.EINK_DEBOUNCE_MS else SearchViewModel.DEBOUNCE_MS
     val vm: SearchViewModel = viewModel(
         factory = viewModelFactory {
-            initializer { SearchViewModel(search = container.sessionSearch, debounceMs = debounceMs) }
+            initializer {
+                SearchViewModel(
+                    search = container.sessionSearch,
+                    debounceMs = debounceMs,
+                    semantic = SemanticSearch(container.database.semanticIndexDao(), container.textEmbedderFactory)
+                )
+            }
         }
     )
     val query by vm.query.collectAsStateWithLifecycle()
@@ -383,7 +393,13 @@ private fun ResultCard(
             }
             result.summary?.let { summary ->
                 LabelledHit(
-                    label = stringResource(R.string.search_summary_label),
+                    label = stringResource(
+                        if (result.summaryByMeaning) {
+                            R.string.search_summary_by_meaning_label
+                        } else {
+                            R.string.search_summary_label
+                        }
+                    ),
                     text = summary.annotated(highlight),
                     onClick = { onOpen(session.id, TAB_SUMMARY, null) }
                 )
@@ -417,7 +433,10 @@ private fun LabelledHit(label: String, text: AnnotatedString, onClick: (() -> Un
     }
 }
 
-/** A matching transcript line: speaker and timestamp, then the snippet. */
+/**
+ * A matching transcript line: speaker and timestamp, then the snippet;
+ * a line found by meaning (issue #63) says so after the timestamp.
+ */
 @Composable
 private fun LineHit(line: SearchLine, highlight: SpanStyle, onClick: () -> Unit) {
     val spacing = AppTheme.spacing
@@ -451,6 +470,13 @@ private fun LineHit(line: SearchLine, highlight: SpanStyle, onClick: () -> Unit)
                 style = AppTheme.typography.figures,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+            if (line.byMeaning) {
+                Text(
+                    text = stringResource(R.string.search_matched_by_meaning),
+                    style = AppTheme.typography.transcriptMeta,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
         Text(text = line.text.annotated(highlight), style = AppTheme.typography.transcript)
     }

@@ -5,7 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.SearchFilters
 import com.convoscribe.data.SearchOptions
 import com.convoscribe.data.SearchResult
+import com.convoscribe.data.SearchText
 import com.convoscribe.data.SessionSearch
+import com.convoscribe.llm.embedding.SemanticSearch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZonedDateTime
@@ -20,9 +22,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.update
 
 /** The date filter's presets. */
@@ -68,13 +70,19 @@ data class SearchResults(val query: String = "", val items: List<SearchResult> =
  * change applies at once. [results] keeps the previous results until
  * the new ones are ready, and does not re-emit identical ones, so the
  * list does not flash in between.
+ *
+ * With the semantic search model ([semantic], issue #63) the word
+ * results come first, then the same results with what was found by
+ * meaning once the query is embedded, so exact matches never wait for
+ * the model to load.
  */
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class SearchViewModel(
     private val search: SessionSearch,
     private val debounceMs: Long = DEBOUNCE_MS,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val zone: ZoneId = ZoneId.systemDefault()
+    private val zone: ZoneId = ZoneId.systemDefault(),
+    private val semantic: SemanticSearch? = null
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -90,8 +98,18 @@ class SearchViewModel(
         _filters
     ) { query, filters -> query.trim() to filters }
         .distinctUntilChanged()
-        .mapLatest { (query, filters) ->
-            SearchResults(query, if (query.isEmpty()) emptyList() else search.search(query, filters.toSearchFilters()))
+        .transformLatest { (query, filters) ->
+            if (query.isEmpty()) {
+                emit(SearchResults(query))
+                return@transformLatest
+            }
+            val searchFilters = filters.toSearchFilters()
+            emit(SearchResults(query, search.search(query, searchFilters)))
+            if (SearchText.terms(query).isEmpty()) return@transformLatest
+            val matches = semantic?.match(query)
+            if (matches != null && matches.sessions.isNotEmpty()) {
+                emit(SearchResults(query, search.search(query, searchFilters, matches)))
+            }
         }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), SearchResults())
@@ -117,6 +135,10 @@ class SearchViewModel(
 
     /** Only sessions with tag [tagId] (issue #32); `null` any. */
     fun setTag(tagId: Long?) = _filters.update { it.copy(tagId = tagId) }
+
+    override fun onCleared() {
+        semantic?.close()
+    }
 
     private fun FilterState.toSearchFilters() = SearchFilters(
         language = language,
