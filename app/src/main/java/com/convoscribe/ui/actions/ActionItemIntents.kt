@@ -13,7 +13,7 @@ import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
-import java.time.format.FormatStyle
+import java.util.Locale
 
 /**
  * Sending an action item out of the app (issue #31): as text to any
@@ -81,9 +81,11 @@ object ActionItemIntents {
         }
     }
 
-    /** [dueDate] (`yyyy-MM-dd`) as the user reads dates, or `null` when there is none. */
-    fun dueLabel(dueDate: String?): String? =
-        dueDate(dueDate)?.format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+    /** Dates as the session list writes them ([com.convoscribe.ui.home.formatSessionDate]), without the time. */
+    private val DAY_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.UK)
+
+    /** [dueDate] (`yyyy-MM-dd`) as the app writes dates, or `null` when there is none. */
+    fun dueLabel(dueDate: String?): String? = dueDate(dueDate)?.format(DAY_FORMAT)
 
     fun dueDate(dueDate: String?): LocalDate? = dueDate?.let {
         try {
@@ -94,5 +96,5 @@ object ActionItemIntents {
     }
 
     private fun dateLabel(epochMs: Long): String = Instant.ofEpochMilli(epochMs).atZone(ZoneId.systemDefault())
-        .toLocalDate().format(DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM))
+        .toLocalDate().format(DAY_FORMAT)
 }
