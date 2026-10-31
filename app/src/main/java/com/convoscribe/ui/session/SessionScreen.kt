@@ -78,6 +78,7 @@ import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
 import com.convoscribe.settings.SpeakerIdMode
+import com.convoscribe.ui.actions.ActionItemIntents
 import com.convoscribe.ui.asString
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
@@ -455,6 +456,13 @@ fun SessionScreen(
         onSelectSummaryTemplate = summaryVm::selectTemplate,
         onWriteNotes = { summaryVm.writeNotes() },
         onCancelNotes = { summaryVm.cancelNotes() },
+        itemActions = ActionItemActions(
+            onDone = summaryVm::setItemDone,
+            onEdit = summaryVm::editItem,
+            onDelete = summaryVm::deleteItem,
+            onShare = { item -> ActionItemIntents.share(context, item, state.title, state.createdAt) },
+            onAddToCalendar = { item -> ActionItemIntents.addToCalendar(context, item, state.title, state.createdAt) }
+        ),
         onAsk = { question -> askVm.ask(question) },
         onRetryAsk = { askVm.retryLast() },
         onCancelAsk = { askVm.cancel() },
@@ -520,6 +528,7 @@ internal fun SessionBody(
     onSelectSummaryTemplate: (String) -> Unit = {},
     onWriteNotes: () -> Unit = {},
     onCancelNotes: () -> Unit = {},
+    itemActions: ActionItemActions = ActionItemActions(),
     onAsk: (String) -> Unit,
     onRetryAsk: () -> Unit,
     onCancelAsk: () -> Unit,
@@ -810,6 +819,13 @@ internal fun SessionBody(
                     onOpenMark = { mark ->
                         selectedTab = 0
                         if (canPlay) playback.onSeek(mark.atMs)
+                    },
+                    itemActions = itemActions,
+                    // To the transcript where the item was agreed, as for a mark.
+                    onOpenItem = { item ->
+                        selectedTab = 0
+                        val at = item.atMs
+                        if (canPlay && at != null) playback.onSeek(at)
                     }
                 )
                 else -> AskTab(

@@ -22,6 +22,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -32,12 +36,16 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import com.convoscribe.R
+import com.convoscribe.data.ActionItemEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptMark
 import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.SummaryStep
 import com.convoscribe.ui.asString
+import com.convoscribe.ui.components.ActionItemDialog
+import com.convoscribe.ui.components.ActionItemRow
 import com.convoscribe.ui.components.AppCard
+import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InlineProgress
@@ -67,6 +75,10 @@ import com.convoscribe.ui.theme.AppTheme
  * A session with [marks] also gets a Notes section below the summary
  * (issue #48), and skips the empty state so its notes show without a
  * summary; see [MarkNotesSection].
+ *
+ * The summary's action items (issue #31) are a checklist between the
+ * summary and the notes; see [ActionItemsSection]. [onOpenItem] goes
+ * to the moment one was agreed.
  */
 @Composable
 internal fun SummaryTab(
@@ -78,7 +90,9 @@ internal fun SummaryTab(
     marks: List<TranscriptMark> = emptyList(),
     onWriteNotes: () -> Unit = {},
     onCancelNotes: () -> Unit = {},
-    onOpenMark: (TranscriptMark) -> Unit = {}
+    onOpenMark: (TranscriptMark) -> Unit = {},
+    itemActions: ActionItemActions = ActionItemActions(),
+    onOpenItem: (ActionItemEntity) -> Unit = {}
 ) {
     if (!state.configured) {
         EmptyState(
@@ -101,7 +115,7 @@ internal fun SummaryTab(
             enabled = !state.running
         )
     }
-    if (text.isBlank() && !state.running && state.error == null && marks.isEmpty()) {
+    if (text.isBlank() && !state.running && state.error == null && marks.isEmpty() && state.items.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
@@ -191,6 +205,10 @@ internal fun SummaryTab(
                     }
                 }
             }
+            // Hidden while a new summary streams: its items replace these.
+            if (state.items.isNotEmpty() && !state.running) {
+                ActionItemsSection(items = state.items, actions = itemActions, onOpen = onOpenItem)
+            }
             if (marks.isNotEmpty()) {
                 MarkNotesSection(
                     marks = marks,
@@ -201,6 +219,81 @@ internal fun SummaryTab(
                 )
             }
         }
+    }
+}
+
+/**
+ * What can be done to an action item (issue #31), on the Summary tab
+ * and in *Open actions*: tick it ([onDone] with its id), save an edit
+ * ([onEdit] with id, text, owner and due date), delete it, or send it
+ * out of the app.
+ */
+internal data class ActionItemActions(
+    val onDone: (Long, Boolean) -> Unit = { _, _ -> },
+    val onEdit: (Long, String, String, String?) -> Unit = { _, _, _, _ -> },
+    val onDelete: (Long) -> Unit = {},
+    val onShare: (ActionItemEntity) -> Unit = {},
+    val onAddToCalendar: (ActionItemEntity) -> Unit = {}
+)
+
+/**
+ * The summary's action items as a checklist (issue #31), in one card:
+ * a row per item ([ActionItemRow]), Edit in [ActionItemDialog] and
+ * Delete behind a confirmation. Done items stay, struck through, so
+ * they can be ticked again.
+ */
+@Composable
+private fun ActionItemsSection(
+    items: List<ActionItemEntity>,
+    actions: ActionItemActions,
+    onOpen: (ActionItemEntity) -> Unit
+) {
+    val spacing = AppTheme.spacing
+    var editing by remember { mutableStateOf<ActionItemEntity?>(null) }
+    var deleting by remember { mutableStateOf<ActionItemEntity?>(null) }
+    Text(
+        text = stringResource(R.string.action_items_title, items.count { !it.done }),
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.padding(top = spacing.s)
+    )
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(vertical = spacing.s)) {
+            items.forEach { item ->
+                ActionItemRow(
+                    item = item,
+                    onCheckedChange = { actions.onDone(item.id, it) },
+                    onEdit = { editing = item },
+                    onShare = { actions.onShare(item) },
+                    onAddToCalendar = { actions.onAddToCalendar(item) },
+                    onDelete = { deleting = item },
+                    onOpenSource = item.atMs?.let { { onOpen(item) } }
+                )
+            }
+        }
+    }
+    editing?.let { item ->
+        ActionItemDialog(
+            item = item,
+            onConfirm = { text, owner, due ->
+                actions.onEdit(item.id, text, owner, due)
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
+    }
+    deleting?.let { item ->
+        ConfirmDialog(
+            title = stringResource(R.string.action_item_delete_title),
+            message = stringResource(R.string.action_item_delete_message),
+            confirmLabel = stringResource(R.string.action_item_delete),
+            dismissLabel = stringResource(R.string.session_rename_cancel),
+            onConfirm = {
+                actions.onDelete(item.id)
+                deleting = null
+            },
+            onDismiss = { deleting = null },
+            destructive = true
+        )
     }
 }
 
