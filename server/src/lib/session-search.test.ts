@@ -6,7 +6,8 @@ import { pushManifest, sessionManifest } from '@/test/sessions';
 import { backfillSessionIndex } from './backfill';
 import { db } from './db';
 import { deleteDocument, purgeTrash, restoreSession } from './documents';
-import { SEARCH_TEXT_VERSION, sessionTextRows } from './session-search';
+import { searchSessions, SEARCH_TEXT_VERSION, sessionTextRows } from './session-search';
+import type { Segment } from './search-text';
 import { sessionView, spoken } from './transcript-export';
 
 setupSyncServer();
@@ -122,5 +123,101 @@ describe('session text (#83)', () => {
     expect(await backfillSessionIndex({ log: quiet })).toEqual({ indexed: 1, skipped: 0 });
     for (const id of ['s1', 's2', 's3']) expect(await rows('alice', id)).not.toEqual([]);
     expect(await backfillSessionIndex({ log: quiet })).toEqual({ indexed: 0, skipped: 0 });
+  });
+});
+
+const marked = (segments: Segment[]) => segments.map((s) => (s.match ? `[${s.text}]` : s.text)).join('');
+
+const ids = async (owner: string, query: string) => (await searchSessions(owner, query)).sessions.map((s) => s.syncId);
+
+const said = (...lines: string[]) => lines.map((text, i) => ({ startMs: i * 1000, endMs: i * 1000 + 500, text, speakerIndex: 0 }));
+
+describe('searchSessions (#83)', () => {
+  it('finds words ignoring case and accents, by prefix, with the matched words marked', async () => {
+    await pushManifest('alice', sessionManifest('s1', { lines: said('On parle de la réunion demain.') }));
+    await pushManifest('alice', sessionManifest('s2', { lines: said('Nothing like it.') }));
+    for (const query of ['reunion', 'RÉUNION', 'reun', 're\u0301union']) expect(await ids('alice', query)).toEqual(['s1']);
+    const [session] = (await searchSessions('alice', 'reun')).sessions;
+    expect(session.lines.map((l) => [l.line, l.startMs, l.speaker, marked(l.text)])).toEqual([
+      [0, 0, 'Alice', 'On parle de la [réunion] demain.'],
+    ]);
+  });
+
+  it('needs every word in the same place', async () => {
+    await pushManifest('alice', sessionManifest('s1', { lines: said('The budget is set.', 'The team agreed.') }));
+    await pushManifest('alice', sessionManifest('s2', { lines: said('The team budget is set.') }));
+    expect(await ids('alice', 'team budget')).toEqual(['s2']);
+  });
+
+  it('finds titles, speakers and every summary, saying where', async () => {
+    await pushManifest(
+      'alice',
+      sessionManifest('s1', {
+        title: 'Quarterly plan',
+        speakers: [{ index: 0, label: 'Élodie' }],
+        messages: [summary('Old zebra notes'), summary('## Decisions\nNew zebra notes')],
+        lines: said('Nothing.'),
+      }),
+    );
+    const search = async (query: string) => (await searchSessions('alice', query)).sessions[0];
+    expect(marked((await search('quarter')).titleMatch!)).toBe('[Quarterly] plan');
+    expect((await search('elodie')).speakers.map(marked)).toEqual(['[Élodie]']);
+    expect((await search('zebra')).summaries.map((s) => [s.position, marked(s.text)])).toEqual([
+      [0, 'Decisions New [zebra] notes'],
+      [1, 'Old [zebra] notes'],
+    ]);
+    expect((await search('decisions')).summaries.map((s) => s.position)).toEqual([0]);
+  });
+
+  it("never returns another user's sessions, even with the same id", async () => {
+    await pushManifest('alice', sessionManifest('same', { lines: said('Alpha secret.') }));
+    await pushManifest('bob', sessionManifest('same', { lines: said('Beta secret.') }));
+    await pushManifest('bob', sessionManifest('other', { lines: said('Alpha elsewhere.') }));
+    const alice = await searchSessions('alice', 'secret');
+    expect(alice.sessions.flatMap((s) => s.lines.map((l) => marked(l.text)))).toEqual(['Alpha [secret].']);
+    expect(await ids('alice', 'beta')).toEqual([]);
+    expect(await ids('alice', 'elsewhere')).toEqual([]);
+    expect(await ids('carol', 'secret')).toEqual([]);
+  });
+
+  it('leaves out trashed sessions until restored', async () => {
+    await pushManifest('alice', sessionManifest('s1', { lines: said('Findable words.') }));
+    await deleteDocument('alice', 'session', 's1', 1);
+    expect(await ids('alice', 'findable')).toEqual([]);
+    await restoreSession('alice', 's1');
+    expect(await ids('alice', 'findable')).toEqual(['s1']);
+  });
+
+  it('finds a word past any size limit of a very long transcript', async () => {
+    const long = `${Array.from({ length: 300_000 }, (_, i) => `w${i}`).join(' ')} needle`;
+    await pushManifest('alice', sessionManifest('s1', { lines: [{ startMs: 0, text: long }] }));
+    const [session] = (await searchSessions('alice', 'needle')).sessions;
+    expect(session.lines).toHaveLength(1);
+    expect(marked(session.lines[0].text)).toMatch(/\[needle\]$/);
+  }, 60_000);
+
+  it('treats operators as nothing, and finds nothing without a word', async () => {
+    await pushManifest('alice', sessionManifest('s1', { lines: said('Plain words here.') }));
+    for (const query of ['', '   ', `' & | ! :*`, '<->']) expect(await searchSessions('alice', query)).toEqual({ sessions: [] });
+    expect(await ids('alice', `plain' | 'nothing`)).toEqual([]);
+    expect(await ids('alice', `plain:* & !words`)).toEqual(['s1']);
+  });
+
+  it('pages newest first', async () => {
+    for (const [i, id] of ['s1', 's2', 's3'].entries()) {
+      await pushManifest('alice', sessionManifest(id, { createdAt: 1000 + i, lines: said('Common word.') }));
+    }
+    const first = await searchSessions('alice', 'common', { limit: 2 });
+    expect(first.sessions.map((s) => s.syncId)).toEqual(['s3', 's2']);
+    const second = await searchSessions('alice', 'common', { limit: 2, after: first.next });
+    expect(second.sessions.map((s) => s.syncId)).toEqual(['s1']);
+    expect(second.next).toBeUndefined();
+  });
+
+  it('returns matching lines in reading order, up to a cap, and counts the rest', async () => {
+    await pushManifest('alice', sessionManifest('s1', { lines: said(...Array.from({ length: 60 }, (_, i) => `Repeat ${i}.`)) }));
+    const [session] = (await searchSessions('alice', 'repeat')).sessions;
+    expect(session.lines.map((l) => l.line)).toEqual(Array.from({ length: 50 }, (_, i) => i));
+    expect(session.moreLines).toBe(10);
   });
 });
