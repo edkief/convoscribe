@@ -12,6 +12,9 @@ export type SessionListItem = {
   status: string | null;
   tags: string[];
   speakerCount: number | null;
+  speakers: string[];
+  preview: string | null;
+  openActions: number;
   lineCount: number | null;
 };
 
@@ -33,6 +36,41 @@ const fileRef = (value: unknown): FileRef | null => {
     : null;
 };
 
+/** Markdown as one line of plain text: headings, tables and code dropped, markers removed. */
+function plainText(markdown: string): string {
+  return markdown
+    .split('\n')
+    .filter((line) => !/^\s*(#{1,6}\s|```|\|?\s*:?-{3,}|[-*_]{3,}\s*$)/.test(line))
+    .map((line) =>
+      line
+        .replace(/^\s*(?:[-*+]|\d+[.)]|>)\s+/, '')
+        .replace(/\|/g, ' ')
+        .replace(/[*_`]+/g, '')
+        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'),
+    )
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+const PREVIEW_CHARS = 280;
+
+/** The start of the session's latest summary, else of its transcript, as plain text. */
+function preview(m: Record<string, unknown>): string | null {
+  const messages = Array.isArray(m.messages) ? m.messages.map(record) : [];
+  const summary = messages.filter((x) => x.kind === 'SUMMARY' && x.role === 'ASSISTANT' && typeof x.content === 'string').at(-1);
+  const lines = Array.isArray(m.lines) ? m.lines.map(record) : [];
+  const text = summary
+    ? plainText(summary.content as string)
+    : lines
+        .map((l) => (typeof l.text === 'string' ? l.text : ''))
+        .join(' ')
+        .slice(0, PREVIEW_CHARS * 2)
+        .replace(/\s+/g, ' ')
+        .trim();
+  return text ? withoutNul(text).slice(0, PREVIEW_CHARS) : null;
+}
+
 /**
  * What the index keeps of a session manifest. Tolerant by design: a field
  * the manifest lacks or has in a shape this server does not know is null
@@ -51,7 +89,18 @@ export function indexValues(manifest: unknown, fallbackCreatedAt: number) {
         ),
       ]
     : [];
+  const speakerLabels = Array.isArray(m.speakers)
+    ? m.speakers
+        .map(record)
+        .filter((sp) => typeof sp.label === 'string' && typeof sp.index === 'number')
+        .sort((a, b) => (a.index as number) - (b.index as number))
+        .map((sp) => withoutNul(sp.label as string).slice(0, 100))
+        .slice(0, 20)
+    : [];
   const speakers = Array.isArray(m.speakers) ? m.speakers.length : null;
+  const openActions = Array.isArray(m.actionItems)
+    ? m.actionItems.map(record).filter((a) => a.deleted !== true && a.done !== true && typeof a.text === 'string').length
+    : 0;
   const audio = fileRef(m.audio);
   const clean = fileRef(m.cleanAudio);
   return {
@@ -62,6 +111,9 @@ export function indexValues(manifest: unknown, fallbackCreatedAt: number) {
     status: str(m.status, 64),
     tags,
     speakerCount: speakers || int(m.numSpeakers),
+    speakers: speakerLabels,
+    preview: preview(m),
+    openActions,
     lineCount: Array.isArray(m.lines) ? m.lines.length : null,
     audioSha256: audio?.sha256 ?? null,
     audioSize: audio?.size ?? null,
@@ -142,6 +194,9 @@ export async function listSessions(
       status: sessionIndex.status,
       tags: sessionIndex.tags,
       speakerCount: sessionIndex.speakerCount,
+      speakers: sessionIndex.speakers,
+      preview: sessionIndex.preview,
+      openActions: sessionIndex.openActions,
       lineCount: sessionIndex.lineCount,
     })
     .from(sessionIndex)
@@ -164,14 +219,26 @@ export async function listSessions(
   return { sessions, next: rows.length > limit && last ? { createdAt: last.createdAt, syncId: last.syncId } : undefined };
 }
 
-/** Every tag on an owner's live sessions, alphabetically. */
-export async function listTags(owner: string): Promise<string[]> {
+/** Every tag on an owner's live sessions with how many carry it, alphabetically. */
+export async function listTags(owner: string): Promise<{ tag: string; count: number }[]> {
+  const tag = sql<string>`unnest(${sessionIndex.tags})`;
   const rows = await db()
-    .selectDistinct({ tag: sql<string>`unnest(${sessionIndex.tags})` })
+    .select({ tag, count: sql<number>`count(*)::int` })
+    .from(sessionIndex)
+    .innerJoin(documents, live)
+    .where(eq(sessionIndex.owner, owner))
+    .groupBy(tag);
+  return rows.sort((a, b) => a.tag.localeCompare(b.tag, undefined, { sensitivity: 'base' }));
+}
+
+/** How many live sessions an owner has. */
+export async function countSessions(owner: string): Promise<number> {
+  const [row] = await db()
+    .select({ count: sql<number>`count(*)::int` })
     .from(sessionIndex)
     .innerJoin(documents, live)
     .where(eq(sessionIndex.owner, owner));
-  return rows.map((r) => r.tag).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return row?.count ?? 0;
 }
 
 /** Bytes of recordings an owner has stored. */

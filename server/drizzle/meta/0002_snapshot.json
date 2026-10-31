@@ -1,5 +1,5 @@
 {
-  "id": "e2d51deb-a65b-40fd-aa4b-f86eeba87a66",
+  "id": "f46501ae-f3f2-4d4c-ad4d-94f694ae60b6",
   "prevId": "8b340c02-e2a6-4f8e-8910-eff3fc92fd89",
   "version": "7",
   "dialect": "postgresql",
@@ -269,6 +269,26 @@
           "type": "integer",
           "primaryKey": false,
           "notNull": false
+        },
+        "speakers": {
+          "name": "speakers",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
+        "preview": {
+          "name": "preview",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "open_actions": {
+          "name": "open_actions",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
         },
         "line_count": {
           "name": "line_count",

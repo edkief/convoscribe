@@ -108,6 +108,12 @@ export const sessionIndex = pgTable(
     status: text('status'),
     tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
     speakerCount: integer('speaker_count'),
+    /** Speaker labels, in speaker order. */
+    speakers: text('speakers').array().notNull().default(sql`'{}'::text[]`),
+    /** A line to recognise the session by: the start of its latest summary, else of its transcript. */
+    preview: text('preview'),
+    /** Action items neither done nor deleted. */
+    openActions: integer('open_actions').notNull().default(0),
     lineCount: integer('line_count'),
     audioSha256: text('audio_sha256'),
     audioSize: bigint('audio_size', { mode: 'number' }),

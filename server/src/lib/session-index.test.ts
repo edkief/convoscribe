@@ -2,7 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest, storeBlob } from '@/test/sessions';
 import { deleteDocument } from './documents';
-import { decodeCursor, encodeCursor, getSessionIndex, indexValues, listSessions, listTags, storageUsed } from './session-index';
+import {
+  countSessions,
+  decodeCursor,
+  encodeCursor,
+  getSessionIndex,
+  indexValues,
+  listSessions,
+  listTags,
+  storageUsed,
+} from './session-index';
 
 setupSyncServer();
 
@@ -20,12 +29,40 @@ describe('indexValues', () => {
       status: 'DIARIZED',
       tags: ['Work', 'work'],
       speakerCount: 2,
+      speakers: ['Alice', 'Bob'],
+      preview: 'Hello there. Hi, how are you?',
+      openActions: 0,
       lineCount: 2,
       audioSha256: audio.sha256,
       audioSize: 10,
       cleanAudioSha256: null,
       cleanAudioSize: null,
     });
+  });
+
+  it('previews the latest summary as plain text, and counts open action items', () => {
+    const values = indexValues(
+      sessionManifest('s1', {
+        messages: [
+          { kind: 'SUMMARY', role: 'ASSISTANT', content: 'Old summary', createdAt: 1 },
+          { kind: 'QA', role: 'ASSISTANT', content: 'An answer', createdAt: 2 },
+          {
+            kind: 'SUMMARY',
+            role: 'ASSISTANT',
+            content: '## Overview\nThe **team** agreed on [the plan](https://x.y).\n\n- Ship it\n\n| A | B |\n|---|---|\n| 1 | 2 |',
+            createdAt: 3,
+          },
+        ],
+        actionItems: [
+          { text: 'Open', createdAt: 1 },
+          { text: 'Done', done: true, createdAt: 1 },
+          { text: 'Gone', deleted: true, createdAt: 1 },
+        ],
+      }),
+      0,
+    );
+    expect(values.preview).toBe('The team agreed on the plan. Ship it A B 1 2');
+    expect(values.openActions).toBe(1);
   });
 
   it('turns anything missing or unknown into null, never throwing', () => {
@@ -93,7 +130,12 @@ describe('the session index (#80)', () => {
     expect(third.sessions.map((s) => s.syncId)).toEqual(['s0']);
     expect(third.next).toBeUndefined();
 
-    expect(await listTags('alice')).toEqual(['Even', 'Odd', 'Work']);
+    expect(await listTags('alice')).toEqual([
+      { tag: 'Even', count: 3 },
+      { tag: 'Odd', count: 2 },
+      { tag: 'Work', count: 3 },
+    ]);
+    expect(await countSessions('alice')).toBe(5);
   });
 
   it('keeps sessions recorded at the same moment apart across pages', async () => {
