@@ -5,7 +5,7 @@ import { formatBytes, initials } from '@/lib/format';
 import { countSessions, listTags, storageUsed } from '@/lib/session-index';
 import { countTrash } from '@/lib/trash';
 import { requireIdentity } from '@/lib/web-identity';
-import { IconActivity, IconDatabase, IconKey, IconLogOut, IconTrash, LogoMark } from '../_components/Icons';
+import { IconActivity, IconDatabase, IconKey, IconLogOut, IconSearch, IconTrash, LogoMark } from '../_components/Icons';
 import { SidebarNav } from '../_components/SidebarNav';
 
 /**
@@ -59,7 +59,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               <span className="name">{proxy ? owner : 'Sync key'}</span>
               <span className="sub">{proxy ? 'Signed in' : 'Signed in on this server'}</span>
             </span>
-            {/* Narrow screens hide the sidebar's links; the trash and admin pages stay a tap away. */}
+            {/* Narrow screens hide the sidebar's links; search, the trash and admin pages stay a tap away. */}
+            <Link href="/search" className="icon-button narrow-only" title="Search" aria-label="Search">
+              <IconSearch />
+            </Link>
             {isAdmin && (
               <Link href="/admin/status" className="icon-button narrow-only" title="Admin" aria-label="Admin">
                 <IconActivity />

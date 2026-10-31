@@ -11,6 +11,8 @@ type PlayerApi = {
   src: string;
   /** Jump to `ms` and play. */
   seek(ms: number): void;
+  /** Jump to `ms` without playing (#83). */
+  position(ms: number): void;
   /** Call `listener` with the playback position (ms) as it moves; returns the unsubscribe. */
   subscribe(listener: (ms: number, playing: boolean) => void): () => void;
 };
@@ -24,6 +26,11 @@ function seek(ms: number) {
   if (!audio) return;
   audio.currentTime = Math.max(0, ms / 1000);
   void audio.play().catch(() => {});
+}
+
+function position(ms: number) {
+  const audio = element();
+  if (audio) audio.currentTime = Math.max(0, ms / 1000);
 }
 
 function subscribe(listener: (ms: number, playing: boolean) => void) {
@@ -41,7 +48,7 @@ function subscribe(listener: (ms: number, playing: boolean) => void) {
  * children render as they are, with times as plain text.
  */
 export function PlayerProvider({ src, children }: { src: string | null; children: ReactNode }) {
-  return <PlayerContext.Provider value={src === null ? null : { src, seek, subscribe }}>{children}</PlayerContext.Provider>;
+  return <PlayerContext.Provider value={src === null ? null : { src, seek, position, subscribe }}>{children}</PlayerContext.Provider>;
 }
 
 const RATES = [1, 1.25, 1.5, 2, 0.75];

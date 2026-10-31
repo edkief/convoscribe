@@ -553,6 +553,151 @@ a.chip:hover {
   display: none;
 }
 
+/* Search */
+
+.side-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-2);
+  background: var(--surface-2);
+}
+
+.side-search:focus-within,
+.search-box:focus-within {
+  border-color: var(--accent-text);
+}
+
+.side-search input,
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--text);
+  background: none;
+  font: inherit;
+}
+
+.side-search input {
+  font-size: 0.88rem;
+}
+
+.search-page {
+  max-width: 1120px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.25rem;
+  padding: 0.4rem 0.4rem 0.4rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-2);
+  background: var(--surface);
+}
+
+.results,
+.hits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.result {
+  padding: 1rem 1.25rem;
+}
+
+.result + .result {
+  margin-top: 0.85rem;
+}
+
+.result-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.result-title {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  color: var(--text-2);
+  font-size: 0.85rem;
+}
+
+.hit {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: inherit;
+  font-size: 0.92rem;
+}
+
+.hit:hover {
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.hit-where {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 0.82rem;
+  line-height: 1.6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hit-text {
+  overflow-wrap: anywhere;
+}
+
+.results mark {
+  border-radius: 3px;
+  color: inherit;
+  background: var(--highlight);
+  box-shadow: 0 0 0 1px var(--highlight);
+  font-weight: 600;
+}
+
+.more-hits summary {
+  margin-top: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  color: var(--accent-text);
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.more-hits p {
+  margin: 0.25rem 0.5rem 0;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 640px) {
+  .hit {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
 /* Library */
 
 .library {
@@ -1099,7 +1244,9 @@ a.chip:hover {
 }
 
 .seg.active,
-.seg.active:hover {
+.seg.active:hover,
+.seg.target,
+.seg.target:hover {
   background: var(--highlight);
   box-shadow: 0 0 0 2px var(--highlight);
 }

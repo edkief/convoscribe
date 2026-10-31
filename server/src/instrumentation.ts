@@ -1,7 +1,7 @@
 // Runs once when the server starts: fail fast on bad configuration, bring
 // the database schema up to date, then index sessions pushed before the web
-// app existed (#80) and size manifests pushed before usage was tracked (#82)
-// in the background, and schedule the daily storage
+// app (#80) or search (#83) existed and size manifests pushed before usage
+// was tracked (#82) in the background, and schedule the daily storage
 // clean-up (#81).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;

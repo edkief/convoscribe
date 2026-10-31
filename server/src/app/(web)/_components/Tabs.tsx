@@ -1,12 +1,21 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 export type Tab = { id: string; label: string; count?: number; content: ReactNode };
 
-/** Panels behind tabs (#80); every panel is rendered, the others hidden. */
-export function Tabs({ tabs, label }: { tabs: Tab[]; label: string }) {
-  const [current, setCurrent] = useState(tabs[0]?.id);
+/**
+ * Panels behind tabs (#80); every panel is rendered, the others hidden. The
+ * `initial` tab, when there is one, opens first and is scrolled to.
+ */
+export function Tabs({ tabs, label, initial }: { tabs: Tab[]; label: string; initial?: string }) {
+  const opened = tabs.some((tab) => tab.id === initial) ? initial : undefined;
+  const [current, setCurrent] = useState(opened ?? tabs[0]?.id);
+
+  useEffect(() => {
+    if (opened) document.getElementById(`tab-${opened}`)?.scrollIntoView({ block: 'nearest' });
+  }, [opened]);
+
   return (
     <div className="tabs">
       <div className="tab-list" role="tablist" aria-label={label}>

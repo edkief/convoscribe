@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { formatBytes, formatDateTime, formatLength } from '@/lib/format';
-import { KNOWN_SCHEMA, marksByLine, timestamp, type Message, type SessionView } from '@/lib/transcript-export';
+import { KNOWN_SCHEMA, marksByLine, spoken, timestamp, type Message, type SessionView } from '@/lib/transcript-export';
 import { pageLocale, requireIdentity } from '@/lib/web-identity';
 import { readSession } from '@/lib/web-session';
 import { Avatar } from '../../../_components/Avatar';
@@ -35,8 +35,10 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
  * One session (#80): the transcript beside its summaries, action items,
  * marks and questions, with the recording in a player the transcript
  * follows. Read-only, but for *Delete*, which moves it to the trash (#81).
+ * A search result (#83) opens it on a line (`?line=`) or the summaries
+ * (`?tab=summary`, with `&earlier=1` for an older one).
  */
-export default async function SessionPage({ params }: PageProps<'/sessions/[syncId]'>) {
+export default async function SessionPage({ params, searchParams }: PageProps<'/sessions/[syncId]'>) {
   const { owner } = await requireIdentity();
   const { syncId } = await params;
   if (!SYNC_ID.test(syncId)) notFound();
@@ -50,7 +52,9 @@ export default async function SessionPage({ params }: PageProps<'/sessions/[sync
   const marks = Object.fromEntries(
     [...marksByLine(view)].map(([index, list]) => [index, list.map((m) => ({ ...m, stamp: timestamp(m.atMs) }))]),
   );
-  const lines = view.lines.filter((l) => l.text.trim()).map((line) => ({ ...line, stamp: timestamp(line.startMs) }));
+  const lines = spoken(view).map((line) => ({ ...line, stamp: timestamp(line.startMs) }));
+  const { line, tab, earlier } = await searchParams;
+  const target = typeof line === 'string' && /^\d{1,7}$/.test(line) && Number(line) < lines.length ? Number(line) : undefined;
   const base = `/api/web/v1/sessions/${syncId}`;
   const downloads: Download[] = [
     ...(view.audio ? [{ href: `${base}/audio?download=1`, label: 'Recording', detail: `WAV · ${formatBytes(view.audio.size)}` }] : []),
@@ -61,7 +65,7 @@ export default async function SessionPage({ params }: PageProps<'/sessions/[sync
     { href: `${base}/transcript/srt`, label: 'Subtitles', detail: 'SRT' },
     { href: `${base}/transcript/vtt`, label: 'Subtitles', detail: 'WebVTT' },
   ];
-  const tabs = panels(view, when, tones);
+  const tabs = panels(view, when, tones, earlier === '1');
 
   return (
     <PlayerProvider src={view.audio ? `${base}/audio` : null}>
@@ -128,11 +132,11 @@ export default async function SessionPage({ params }: PageProps<'/sessions/[sync
                 {view.audio && ' · tap a sentence to play from there'}
               </span>
             </div>
-            <Transcript lines={lines} marks={marks} tones={tones} />
+            <Transcript lines={lines} marks={marks} tones={tones} target={target} />
           </section>
           {tabs.length > 0 && (
             <aside className="card side-panel" aria-label="Notes">
-              <Tabs tabs={tabs} label="Session notes" />
+              <Tabs tabs={tabs} label="Session notes" initial={typeof tab === 'string' ? tab : undefined} />
             </aside>
           )}
         </div>
@@ -159,7 +163,7 @@ function dueDate(value: string): string {
   return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(ms);
 }
 
-function panels(view: SessionView, when: (ms: number | null) => string | null, tones: Record<number, number>): Tab[] {
+function panels(view: SessionView, when: (ms: number | null) => string | null, tones: Record<number, number>, openEarlier: boolean): Tab[] {
   const tabs: Tab[] = [];
   const summaries = [...view.summaries].reverse();
   if (summaries.length) {
@@ -171,7 +175,7 @@ function panels(view: SessionView, when: (ms: number | null) => string | null, t
           <SummaryMeta message={summaries[0]} when={when} />
           <Markdown text={summaries[0].content} />
           {summaries.length > 1 && (
-            <details className="earlier">
+            <details className="earlier" open={openEarlier}>
               <summary>Earlier summaries ({summaries.length - 1})</summary>
               {summaries.slice(1).map((m, i) => (
                 <div key={i} className="earlier-item">

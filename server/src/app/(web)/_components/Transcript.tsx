@@ -15,6 +15,8 @@ type Props = {
   marks: Record<number, StampedMark[]>;
   /** Each speaker index's position in the session, for its colour. */
   tones: Record<number, number>;
+  /** The line a search result opened on (#83). */
+  target?: number;
 };
 
 /** Consecutive lines of one speaker, broken by a mark. */
@@ -70,12 +72,15 @@ const TurnView = memo(function TurnView({
   turn,
   lines,
   active,
+  target,
   onSeek,
 }: {
   turn: Turn;
   lines: Line[];
   /** The playing line, when it is in this turn; else -1. */
   active: number;
+  /** The line opened from search, when it is in this turn; else -1. */
+  target: number;
   onSeek?: (index: number) => void;
 }) {
   const own = lines.slice(turn.first, turn.last + 1);
@@ -100,7 +105,7 @@ const TurnView = memo(function TurnView({
         <p className="turn-text">
           {own.map((line, j) => {
             const index = turn.first + j;
-            const className = index === active ? 'seg active' : 'seg';
+            const className = ['seg', index === active && 'active', index === target && 'target'].filter(Boolean).join(' ');
             return onSeek ? (
               <span
                 key={index}
@@ -130,9 +135,10 @@ const TurnView = memo(function TurnView({
  * The transcript as speaker turns, each mark between them where it was
  * made (#80). With a recording, tapping a sentence plays from it; the one
  * being played is highlighted and kept in view until the reader scrolls
- * away, when a button brings it back.
+ * away, when a button brings it back. Opened from a search result (#83), it
+ * starts at that line, marked, with the player there but not playing.
  */
-export function Transcript({ lines, marks, tones }: Props) {
+export function Transcript({ lines, marks, tones, target }: Props) {
   const player = usePlayer();
   const [active, setActive] = useState(-1);
   const [follow, setFollow] = useState(true);
@@ -149,6 +155,12 @@ export function Transcript({ lines, marks, tones }: Props) {
   useEffect(() => {
     if (follow && active >= 0) lineElement(active)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }, [active, follow]);
+
+  useEffect(() => {
+    if (target === undefined) return;
+    lineElement(target)?.scrollIntoView({ block: 'center' });
+    player?.position(lines[target].startMs);
+  }, [target, player, lines]);
 
   useEffect(() => {
     // Reading elsewhere in the transcript stops it following playback.
@@ -192,6 +204,7 @@ export function Transcript({ lines, marks, tones }: Props) {
             turn={item}
             lines={lines}
             active={active >= item.first && active <= item.last ? active : -1}
+            target={target !== undefined && target >= item.first && target <= item.last ? target : -1}
             onSeek={onSeek}
           />
         ),
