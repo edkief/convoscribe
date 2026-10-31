@@ -1791,6 +1791,65 @@ for step 10.
 - Step 11: a message says no calendar app can add the event; nothing
   crashes.
 
+## 44. Sync server web app (issue #80)
+
+Use a sync server from this release with at least one device synced to
+it (section 40), including a session with a summary, action items and a
+mark, and one with a cleaned recording. For step 8, a session of an hour
+or more (over 1 GB of audio) synced to it. Steps 1 to 3 need the
+production deployment behind authz-proxy; the rest work in either mode.
+
+**Steps**
+
+1. Behind authz-proxy, open `https://<sync server>/` in a browser signed
+   out of the proxy.
+2. Sign in through the proxy.
+3. Behind authz-proxy, sign in as a second user who has synced too.
+4. In `api-key` mode, open the server's address, enter a wrong key, then
+   `SYNC_API_KEY`.
+5. In the library, pick a tag, then a *From* and *To* range covering a
+   few days, and tap *Filter*. Tap *Clear*. With more than 50 sessions,
+   tap *Older sessions* and then *Newest*.
+6. Open the session with a summary. Tap a transcript line, then an action
+   item's time, then a mark's time. Let it play and scroll down.
+7. Download the recording, the cleaned recording, and the transcript as
+   Markdown, SRT and VTT. Open the SRT next to the recording in a video
+   player (VLC: *Subtitle → Add subtitle file*).
+8. Open the long session, seek near its end, and download its recording.
+9. From another site, submit a form to the sign-out route: on any other
+   origin, run in the browser console
+   `f=document.createElement('form');f.method='post';f.action='https://<sync server>/api/web/v1/sign-out';document.body.append(f);f.submit()`.
+10. On a device, tap *Sync now* and check it still syncs; rename a
+    session there, sync, and reload its page in the browser.
+11. Tap *Sign out* (`api-key` mode), then open the library address.
+
+**Expected**
+
+- Step 1: the proxy's sign-in page, not the server's.
+- Step 2: the library shows your sessions. If it shows the server's
+  sign-in page instead, the proxy does not pass `X-Auth-Request-JWT`:
+  set `AUTHZ_PROXY_DEBUG=1` on the server and check its log (server
+  README, *Deployment*).
+- Step 3: only that user's sessions; a session address of the first user
+  is *404*.
+- Step 4: the wrong key shows *That key is not this server's*; the right
+  one opens the library. Sessions synced before this release are there
+  too (the server log says how many it indexed at start).
+- Step 5: the list narrows to that tag and those days (dates as your
+  browser's time zone has them); *Clear* lists everything again; paging
+  never repeats or skips a session.
+- Step 6: playback starts at each time; the line being played is
+  highlighted and stays in view, and the player stays at the top.
+  Summary, action items (ticked ones struck through), marks with their
+  notes and questions match the app.
+- Step 7: files named after the session; the subtitles follow the speech,
+  labelled with the speakers.
+- Step 8: it plays from near the end straight away, and the download
+  completes; the server's memory stays flat (`kubectl top pod`).
+- Step 9: the server answers *403* and you stay signed in.
+- Step 10: the device syncs as before; the page shows the new title.
+- Step 11: the sign-in page, in both cases.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

@@ -830,6 +830,14 @@ voices, presets, templates and semantic vectors (#70) needs a server
 from `server-v0.4.0`; an older one keeps syncing sessions and the app
 skips the rest.
 
+Open the server's address in a browser to read your sessions there (#80):
+sign in (with `SYNC_API_KEY`, or through authz-proxy), browse them by tag
+and date, and open one to see its summaries, action items, marks and
+transcript while its recording plays; tap a line to play from it.
+Recordings and transcripts (Markdown, SRT or WebVTT) download from there.
+You see only your own sessions, and nothing can be changed from the web
+yet. See the [server README](server/README.md#web-app).
+
 ## Model licences
 
 Every model bundled by the on-device ASR / diarization pipeline
