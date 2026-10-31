@@ -1541,6 +1541,190 @@ button.t-mark-time:hover {
   margin-top: 1.4rem;
 }
 
+/* Admin pages (#82) */
+
+.admin-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.admin-tabs a {
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-size: 0.9rem;
+  font-weight: 550;
+}
+
+.admin-tabs a:hover {
+  background: var(--surface-3);
+  text-decoration: none;
+}
+
+.admin-tabs a[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.admin-table th {
+  padding: 0.7rem 1.25rem;
+  color: var(--text-3);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.admin-table td {
+  padding: 0.75rem 1.25rem;
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.admin-table .num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.admin-table .owner {
+  font-weight: 600;
+}
+
+.over-quota {
+  margin-left: 0.5rem;
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.quota-form {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.quota-form input {
+  width: 6.5rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.quota-form .unit {
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+
+.quota-form .saved {
+  color: var(--success);
+  font-size: 0.82rem;
+}
+
+.admin-cards {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 760px;
+}
+
+.card-head h2 {
+  margin: 0;
+  font-size: 1.02rem;
+}
+
+.card-body {
+  padding: 1rem 1.5rem 1.25rem;
+}
+
+.card-note {
+  margin: 0.85rem 0 0;
+  color: var(--text-3);
+  font-size: 0.84rem;
+}
+
+.facts {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.facts > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.facts dt {
+  color: var(--text-2);
+}
+
+.facts dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.facts .total {
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  font-weight: 620;
+}
+
+.reach {
+  font-weight: 600;
+}
+
+.reach.ok {
+  color: var(--success);
+}
+
+.reach.down {
+  color: var(--danger);
+}
+
+.reach-time {
+  margin-left: 0.5rem;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  font-weight: 400;
+}
+
+.cleanup-kind + .cleanup-kind {
+  margin-top: 1.1rem;
+}
+
+.cleanup-kind h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.92rem;
+}
+
+.cleanup-kind p {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 0.88rem;
+}
+
+.cleanup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.1rem;
+}
+
 /* Narrower screens: tablets, small laptops */
 
 @media (max-width: 1200px) {

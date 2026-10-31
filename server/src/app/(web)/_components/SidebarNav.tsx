@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { IconLibrary, IconTag, IconTrash } from './Icons';
+import { IconActivity, IconLibrary, IconTag, IconTrash, IconUsers } from './Icons';
 
-type Props = { total: number; tags: { tag: string; count: number }[]; trash: number };
+type Props = { total: number; tags: { tag: string; count: number }[]; trash: number; isAdmin: boolean };
 
-/** The sidebar's links (#80) and the trash (#81), the current one highlighted. */
-export function SidebarNav({ total, tags, trash }: Props) {
+/** The sidebar's links (#80), the trash (#81) and for admins their pages (#82), the current one highlighted. */
+export function SidebarNav({ total, tags, trash, isAdmin }: Props) {
   const path = usePathname();
   const current = useSearchParams().get('tag');
   const onLibrary = path === '/';
@@ -41,6 +41,19 @@ export function SidebarNav({ total, tags, trash }: Props) {
               </li>
             ))}
           </ul>
+        </>
+      )}
+      {isAdmin && (
+        <>
+          <p className="side-heading">Admin</p>
+          <Link href="/admin/users" className="side-link" aria-current={path === '/admin/users' ? 'page' : undefined}>
+            <IconUsers />
+            <span>Users</span>
+          </Link>
+          <Link href="/admin/status" className="side-link" aria-current={path === '/admin/status' ? 'page' : undefined}>
+            <IconActivity />
+            <span>Status</span>
+          </Link>
         </>
       )}
     </nav>

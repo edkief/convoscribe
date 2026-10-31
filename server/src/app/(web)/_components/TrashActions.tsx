@@ -5,7 +5,7 @@ import { useRef, useState, type ReactNode } from 'react';
 import { IconRestore, IconTrash } from './Icons';
 
 /** Run a state-changing request of the web API, returning an error message or null. */
-async function send(url: string, method: string, body?: unknown, messages: Record<number, string> = {}): Promise<string | null> {
+export async function send(url: string, method: string, body?: unknown, messages: Record<number, string> = {}): Promise<string | null> {
   try {
     const res = await fetch(url, {
       method,
@@ -30,7 +30,7 @@ type ConfirmProps = {
 };
 
 /** A button that asks first, in a modal dialog (#81). */
-function ConfirmButton({ label, className, title, children, confirm, onConfirm }: ConfirmProps) {
+export function ConfirmButton({ label, className, title, children, confirm, onConfirm }: ConfirmProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
