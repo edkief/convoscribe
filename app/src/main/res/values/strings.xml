@@ -267,7 +267,7 @@
     <string name="home_delete_message">This will remove the recording and its transcript from this device.</string>
     <string name="home_delete_confirm">Delete</string>
     <string name="home_delete_cancel">Cancel</string>
-    <string name="home_delete_message_synced">This deletes the recording and its transcript from this device, the sync server and every other device.</string>
+    <string name="home_delete_message_synced">This deletes the recording and its transcript from this device and every other device. The sync server keeps it in its trash for 30 days, where you can restore it from the server’s web app.</string>
     <string name="home_remove_device">Remove from this device</string>
     <string name="home_remove_title">Remove from this device?</string>
     <string name="home_remove_message">This frees the space on this device. The session stays on the sync server and on your other devices, and you can download it again from this list.</string>
