@@ -17,6 +17,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.SummaryTemplateEntity
 import com.convoscribe.data.cleanAudioPathFor
+import com.convoscribe.llm.ExtractedActionItem
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
@@ -124,6 +125,14 @@ class BackupRoundTripTest {
             )
             repo.addMark(id, 300, "budget")
             db.markDao().setExpanded(repo.getMarks(id).first().id, "The budget was discussed.", 7)
+            repo.replaceExtractedItems(
+                id,
+                listOf(
+                    ExtractedActionItem("Send the budget", owner = "Ann", due = "2026-11-06", atMs = 300),
+                    ExtractedActionItem("Book the room")
+                )
+            )
+            repo.setActionItemDone(db.actionItemDao().getForSession(id).first().id, true)
             repo.finishRecording(id, 2000)
             File(repo.audioPath(id)).writeBytes(ByteArray(200_000) { (it * n).toByte() })
             db.sessionDao().setCleanedWith(id, "gtcrn")

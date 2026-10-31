@@ -5,6 +5,8 @@ import com.convoscribe.llm.SummaryTemplates
 import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -22,7 +24,14 @@ import kotlinx.serialization.json.Json
  *
  * [summaryTemplate] names a user template by its name, since its key
  * holds a local id ([SummaryTemplates.userKey]).
+ *
+ * [actionItems] (issue #31) is left out of the encoding while it is
+ * empty, so a session without action items keeps the bytes, and the
+ * hash, it had before they existed and is not pushed again for them.
+ * Deleted items travel too, so another device's next summary does not
+ * bring them back.
  */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class SessionManifest(
     val schema: Int = SessionManifests.SCHEMA,
@@ -50,7 +59,9 @@ data class SessionManifest(
     val speakers: List<Speaker> = emptyList(),
     val messages: List<Message> = emptyList(),
     val marks: List<Mark> = emptyList(),
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val actionItems: List<ActionItem> = emptyList()
 ) {
     /** A recording, by the SHA-256 of its bytes (lower-case hex) and its size. */
     @Serializable
@@ -97,6 +108,19 @@ data class SessionManifest(
         val expandedAt: Long? = null,
         val expandedStale: Boolean = false
     )
+
+    @Serializable
+    data class ActionItem(
+        val text: String,
+        val extractedText: String,
+        val owner: String? = null,
+        val dueDate: String? = null,
+        val atMs: Long? = null,
+        val done: Boolean = false,
+        val edited: Boolean = false,
+        val deleted: Boolean = false,
+        val createdAt: Long
+    )
 }
 
 /**
@@ -124,7 +148,9 @@ object SessionManifests {
     /**
      * The manifest of [session] and its rows. [userTemplateNames] maps
      * a user template's id to its name; [audio] and [cleanAudio]
-     * describe the recordings, `null` when they are missing.
+     * describe the recordings, `null` when they are missing. The
+     * [actionItems] are listed in their order; their position is
+     * where they come in the list.
      */
     fun build(
         session: SessionEntity,
@@ -135,7 +161,8 @@ object SessionManifests {
         tags: List<String>,
         userTemplateNames: Map<Long, String>,
         audio: SessionManifest.FileRef?,
-        cleanAudio: SessionManifest.FileRef?
+        cleanAudio: SessionManifest.FileRef?,
+        actionItems: List<ActionItemEntity> = emptyList()
     ): SessionManifest = SessionManifest(
         syncId = session.syncId,
         title = session.title,
@@ -190,7 +217,20 @@ object SessionManifests {
                 expandedStale = mark.expandedStale
             )
         },
-        tags = tags.sortedBy { TagNames.key(it) }
+        tags = tags.sortedBy { TagNames.key(it) },
+        actionItems = actionItems.sortedWith(compareBy({ it.position }, { it.id })).map { item ->
+            SessionManifest.ActionItem(
+                text = item.text,
+                extractedText = item.extractedText,
+                owner = item.owner,
+                dueDate = item.dueDate,
+                atMs = item.atMs,
+                done = item.done,
+                edited = item.edited,
+                deleted = item.deleted,
+                createdAt = item.createdAt
+            )
+        }
     )
 
     /**

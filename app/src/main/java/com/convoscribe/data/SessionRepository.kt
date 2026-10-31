@@ -2,7 +2,9 @@ package com.convoscribe.data
 
 import androidx.room.withTransaction
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.llm.ActionItemsParser
 import com.convoscribe.llm.Citation
+import com.convoscribe.llm.ExtractedActionItem
 import com.convoscribe.recording.RecordingStore
 import java.io.File
 import kotlinx.coroutines.flow.Flow
@@ -42,6 +44,7 @@ class SessionRepository(
     private val markDao: MarkDao = db.markDao()
     private val tagDao: TagDao = db.tagDao()
     private val globalChatDao: GlobalChatMessageDao = db.globalChatMessageDao()
+    private val actionItemDao: ActionItemDao = db.actionItemDao()
 
     /**
      * Create a new session row with [status] = RECORDING and
@@ -218,6 +221,55 @@ class SessionRepository(
         sessionDao.touchForMark(markId, clock())
     }
 
+    /** The session's action items (issue #31) the user sees, in the summary's order. */
+    fun observeActionItems(sessionId: Long): Flow<List<ActionItemEntity>> = actionItemDao.observeForSession(sessionId)
+
+    /** Action items neither done nor deleted, across sessions, newest session first (issue #31). */
+    fun observeOpenActionItems(): Flow<List<OpenActionItem>> = actionItemDao.observeOpen()
+
+    /**
+     * Fold the action items of a new summary into the session's
+     * ([ActionItemMerge]), in one transaction: the ones the user
+     * checked, edited or deleted stay, the rest are replaced.
+     */
+    suspend fun replaceExtractedItems(sessionId: Long, items: List<ExtractedActionItem>) {
+        db.withTransaction {
+            val existing = actionItemDao.getForSession(sessionId)
+            val merged = ActionItemMerge.merge(sessionId, existing, items, clock())
+            if (merged.removeIds.isEmpty() && merged.add.isEmpty()) return@withTransaction
+            if (merged.removeIds.isNotEmpty()) actionItemDao.deleteIds(merged.removeIds)
+            actionItemDao.insertAll(merged.add)
+            touch(sessionId)
+        }
+    }
+
+    suspend fun setActionItemDone(itemId: Long, done: Boolean) {
+        actionItemDao.setDone(itemId, done)
+        sessionDao.touchForActionItem(itemId, clock())
+    }
+
+    /**
+     * Replace an action item's [text], [owner] and [dueDate]; it is the
+     * user's from now on. A blank text changes nothing; a blank owner
+     * or a due date that is not `yyyy-MM-dd` is cleared.
+     */
+    suspend fun editActionItem(itemId: Long, text: String, owner: String?, dueDate: String?) {
+        val trimmed = text.trim().takeIf { it.isNotEmpty() } ?: return
+        actionItemDao.edit(
+            itemId,
+            trimmed,
+            owner?.trim()?.takeIf { it.isNotEmpty() },
+            dueDate?.let(ActionItemsParser::isoDate)
+        )
+        sessionDao.touchForActionItem(itemId, clock())
+    }
+
+    /** Hide an action item; it stays as a record so the next summary does not bring it back. */
+    suspend fun deleteActionItem(itemId: Long) {
+        actionItemDao.softDelete(itemId)
+        sessionDao.touchForActionItem(itemId, clock())
+    }
+
     /**
      * Recording finished. Stamp the duration and move the session
      * to [SessionStatus.TRANSCRIBED]; the service then diarizes it or
@@ -386,6 +438,7 @@ class SessionRepository(
                 speakers = speakerDao.getForSession(sessionId),
                 messages = chatMessageDao.getForSession(sessionId),
                 marks = markDao.getForSession(sessionId),
+                actionItems = actionItemDao.getForSession(sessionId),
                 tags = tagDao.namesFor(sessionId),
                 templates = db.summaryTemplateDao().getAll().associate { it.id to it.name }
             )
@@ -404,7 +457,8 @@ class SessionRepository(
             tags = rows.tags,
             userTemplateNames = rows.templates,
             audio = audio,
-            cleanAudio = clean
+            cleanAudio = clean,
+            actionItems = rows.actionItems
         )
         val files = buildMap {
             if (audio != null && audioFile != null) put(audio.sha256, audioFile)
@@ -416,8 +470,8 @@ class SessionRepository(
     /**
      * Create the session [manifest] describes, or replace the one with
      * its [SessionManifest.syncId], in one transaction (issue #25): the
-     * row (stamped [updatedAt]), its lines, speakers, messages, marks
-     * and tags, then the recordings moved into place last, as in
+     * row (stamped [updatedAt]), its lines, speakers, messages, marks,
+     * action items and tags, then the recordings moved into place last, as in
      * [createImportedSession]. [files] maps each recording's SHA-256 to
      * a staged copy; [templateKey] turns a template reference into a
      * key of this install, `null` for the default. If anything fails,
@@ -481,6 +535,7 @@ class SessionRepository(
             speakerDao.deleteForSession(existing.id)
             chatMessageDao.deleteForSession(existing.id)
             markDao.deleteForSession(existing.id)
+            actionItemDao.deleteForSession(existing.id)
             tagDao.unlinkAll(existing.id)
             existing.id
         }
@@ -528,6 +583,23 @@ class SessionRepository(
                 )
             )
         }
+        actionItemDao.insertAll(
+            manifest.actionItems.mapIndexed { index, item ->
+                ActionItemEntity(
+                    sessionId = id,
+                    text = item.text,
+                    extractedText = item.extractedText,
+                    owner = item.owner,
+                    dueDate = item.dueDate,
+                    atMs = item.atMs,
+                    done = item.done,
+                    edited = item.edited,
+                    deleted = item.deleted,
+                    position = index,
+                    createdAt = item.createdAt
+                )
+            }
+        )
         linkTags(id, manifest.tags)
         when {
             audio != null -> moveFile(audio, target)
@@ -547,6 +619,7 @@ class SessionRepository(
         val speakers: List<SpeakerEntity>,
         val messages: List<ChatMessageEntity>,
         val marks: List<MarkEntity>,
+        val actionItems: List<ActionItemEntity>,
         val tags: List<String>,
         val templates: Map<Long, String>
     )

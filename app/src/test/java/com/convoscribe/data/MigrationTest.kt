@@ -547,4 +547,34 @@ class MigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate19To20_actionItemsStartEmptyAndGoWithTheirSession() = runTest {
+        helper.createDatabase(DB_NAME, 19).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status, " +
+                    "transcriptEdited, titleSource, syncId, updatedAt) " +
+                    "VALUES (1, 'Weekly', 100, 0, 'en', '', 'DIARIZED', 0, 'user', 'sync-1', 100)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 20, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals(emptyList<ActionItemEntity>(), db.actionItemDao().getForSession(1))
+            db.actionItemDao().insertAll(
+                listOf(
+                    ActionItemEntity(sessionId = 1, text = "Ship", extractedText = "Ship", position = 0, createdAt = 1)
+                )
+            )
+            assertEquals(listOf(false), db.actionItemDao().getForSession(1).map { it.done })
+            db.sessionDao().delete(1)
+            assertEquals(emptyList<ActionItemEntity>(), db.actionItemDao().getForSession(1))
+        } finally {
+            db.close()
+        }
+    }
 }
