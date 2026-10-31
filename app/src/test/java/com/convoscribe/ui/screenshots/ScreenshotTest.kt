@@ -457,6 +457,25 @@ class ScreenshotTest(private val variant: Variant) {
         )
     }
 
+    /** Search by meaning (issue #63): a word match with a passage found by meaning, then a meaning-only session. */
+    @Test
+    fun searchByMeaning() = capture("search_by_meaning") {
+        SearchBody(
+            query = "budget pour les vacances",
+            filters = FilterState(),
+            options = SearchOptions(languages = listOf("en", "fr"), speakers = listOf("Alice", "Élodie")),
+            results = SearchResults(query = "budget pour les vacances", items = SEARCH_BY_MEANING_RESULTS),
+            onQueryChange = {},
+            onSubmit = {},
+            onLanguage = {},
+            onDateRange = {},
+            onSpeaker = {},
+            onOpen = { _, _, _ -> },
+            onBack = {},
+            autoFocus = false
+        )
+    }
+
     @Test
     fun askAcross() = capture("ask_across") {
         AskAcrossBody(
@@ -1269,6 +1288,67 @@ class ScreenshotTest(private val variant: Variant) {
                     SEARCH_TERMS
                 ),
                 lines = emptyList()
+            )
+        )
+
+        private val MEANING_TERMS = SearchText.terms("budget pour les vacances")
+
+        private val SEARCH_BY_MEANING_RESULTS = listOf(
+            SearchResult(
+                session = SessionEntity(
+                    id = 1,
+                    title = "Réunion budget Q2",
+                    createdAt = T0 + DAY,
+                    language = "fr",
+                    status = SessionStatus.DIARIZED
+                ),
+                title = Highlighted("Réunion budget Q2"),
+                speakers = emptyList(),
+                summary = null,
+                lines = listOf(
+                    SearchLine(
+                        segmentId = 11,
+                        startMs = 64_000,
+                        speaker = "Élodie",
+                        speakerIndex = 0,
+                        text = SearchText.match("Le budget pour les vacances de juillet est validé.", MEANING_TERMS)!!
+                    ),
+                    SearchLine(
+                        segmentId = 15,
+                        startMs = 402_000,
+                        speaker = "Alice",
+                        speakerIndex = 1,
+                        text = Highlighted(
+                            "On ne peut pas dépenser plus de deux mille euros pour le voyage, hôtel compris."
+                        ),
+                        byMeaning = true
+                    )
+                )
+            ),
+            SearchResult(
+                session = SessionEntity(
+                    id = 2,
+                    title = "Trip planning",
+                    createdAt = T0,
+                    language = "en",
+                    status = SessionStatus.DIARIZED
+                ),
+                title = Highlighted("Trip planning"),
+                speakers = emptyList(),
+                summary = Highlighted("We capped the holiday spending at 2,000 euros and booked the train."),
+                summaryByMeaning = true,
+                lines = listOf(
+                    SearchLine(
+                        segmentId = 21,
+                        startMs = 95_000,
+                        speaker = "Carol",
+                        speakerIndex = 2,
+                        text = Highlighted(
+                            "How much money can we put into the summer trip? Flights first, then hotels."
+                        ),
+                        byMeaning = true
+                    )
+                )
             )
         )
 

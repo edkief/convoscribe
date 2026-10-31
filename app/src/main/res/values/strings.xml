@@ -254,6 +254,9 @@
     <string name="search_filter_tag_any">Any tag</string>
     <string name="search_speakers_label">Speakers</string>
     <string name="search_summary_label">Summary</string>
+    <!-- Issue #63: a hit found by meaning, not by the query's words. -->
+    <string name="search_matched_by_meaning">Matched by meaning</string>
+    <string name="search_summary_by_meaning_label">Summary · matched by meaning</string>
     <string name="search_open_at">Open at %1$s</string>
     <plurals name="search_more_lines">
         <item quantity="one">Show %d more line</item>

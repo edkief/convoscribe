@@ -73,6 +73,14 @@ class SemanticMatches(private val passages: Map<Long, List<ScoredPassage>>) {
     fun isIndexed(sessionId: Long): Boolean = sessionId in passages
 
     /**
+     * [sessionId]'s passages reaching [SemanticRanking.MIN_COSINE],
+     * closest first (issue #63, for Search); empty when it has none.
+     */
+    fun passages(sessionId: Long): List<ScoredPassage> = passages[sessionId].orEmpty()
+        .filter { it.cosine >= SemanticRanking.MIN_COSINE }
+        .sortedByDescending { it.cosine }
+
+    /**
      * The best cosine among [sessionId]'s passages overlapping lines
      * [firstLine] to [lastLine]; the summary chunk (both
      * [SemanticPassage.SUMMARY_LINE]) matches the summary passage.

@@ -1,5 +1,7 @@
 package com.convoscribe.data
 
+import com.convoscribe.llm.embedding.SemanticMatches
+import com.convoscribe.llm.embedding.SemanticPassage
 import com.convoscribe.llm.embedding.SemanticRanking
 import kotlinx.serialization.Serializable
 
@@ -19,27 +21,35 @@ data class SearchFilters(
     val tagIds: Set<Long> = emptySet()
 )
 
-/** A matching transcript line: where it starts, who said it, and the snippet. */
+/**
+ * A matching transcript line: where it starts, who said it, and the
+ * snippet. [byMeaning] (issue #63): the line starts a passage close to
+ * the query in meaning, and [text] is an excerpt of that passage with
+ * nothing highlighted.
+ */
 data class SearchLine(
     val segmentId: Long,
     val startMs: Long,
     val speaker: String?,
     val speakerIndex: Int?,
-    val text: Highlighted
+    val text: Highlighted,
+    val byMeaning: Boolean = false
 )
 
 /**
  * One session's matches: its [title] (highlighted when it matched),
  * the speaker names that matched, an excerpt of the saved summary
  * when it matched, and the matching transcript [lines] in reading
- * order.
+ * order. [summaryByMeaning] (issue #63): the summary is shown because
+ * it is close to the query in meaning, not because it shares a word.
  */
 data class SearchResult(
     val session: SessionEntity,
     val title: Highlighted,
     val speakers: List<Highlighted>,
     val summary: Highlighted?,
-    val lines: List<SearchLine>
+    val lines: List<SearchLine>,
+    val summaryByMeaning: Boolean = false
 )
 
 /**
@@ -71,7 +81,24 @@ data class SearchOptions(
  */
 class SessionSearch(private val dao: SearchDao) {
 
-    suspend fun search(query: String, filters: SearchFilters = SearchFilters()): List<SearchResult> {
+    /**
+     * Sessions matching every word of [query] and passing [filters],
+     * newest first.
+     *
+     * With [semantic] (issue #63), the stored passages close to the
+     * query in meaning count as well, within the same filters. A query
+     * of up to [SHORT_QUERY_TERMS] words keeps the word matches first,
+     * as they are, and lists the sessions found only by meaning after
+     * them, closest first. A longer one orders sessions by
+     * reciprocal-rank fusion of the word ranking (most matches first)
+     * and the meaning ranking, and adds to each session the passages
+     * found by meaning that hold no matching line.
+     */
+    suspend fun search(
+        query: String,
+        filters: SearchFilters = SearchFilters(),
+        semantic: SemanticMatches? = null
+    ): List<SearchResult> {
         val terms = SearchText.terms(query)
         if (terms.isEmpty()) return emptyList()
         val speakers = dao.speakers().groupBy { it.sessionId }
@@ -88,7 +115,7 @@ class SessionSearch(private val dao: SearchDao) {
             limit = MAX_LINES
         ).filter { it.sessionId in allowed }.groupBy { it.sessionId }
 
-        return sessions.mapNotNull { session ->
+        val words = sessions.mapNotNull { session ->
             val sessionSpeakers = speakers[session.id].orEmpty()
             val title = SearchText.match(session.title, terms)
             val speakerHits = sessionSpeakers.mapNotNull { SearchText.match(it.label, terms) }
@@ -117,6 +144,102 @@ class SessionSearch(private val dao: SearchDao) {
                 )
             }
         }
+        val close = semantic?.sessions.orEmpty().filter { it in allowed }
+        if (semantic == null || close.isEmpty()) return words
+        return withMeaning(words, terms.size <= SHORT_QUERY_TERMS, semantic, close, sessions, speakers, summaries)
+    }
+
+    /** [words] with what [semantic] found in the sessions [close] to the query, best first (see [search]). */
+    private suspend fun withMeaning(
+        words: List<SearchResult>,
+        short: Boolean,
+        semantic: SemanticMatches,
+        close: List<Long>,
+        sessions: List<SessionEntity>,
+        speakers: Map<Long, List<SpeakerEntity>>,
+        summaries: Map<Long, String>
+    ): List<SearchResult> {
+        val byId = sessions.associateBy { it.id }
+        val found = words.mapTo(HashSet()) { it.session.id }
+        val meaningOnly = close.filter { it !in found }.take(MAX_MEANING_SESSIONS).mapNotNull { id ->
+            withMeaningHits(byId.getValue(id), null, semantic, speakers[id].orEmpty(), summaries[id])
+        }
+        if (short) return words + meaningOnly
+        // Stable sort: sessions with as many matches stay newest first.
+        val wordRanking = words.sortedByDescending { it.matchCount() }.map { it.session.id }
+        val results = words.map { result ->
+            val id = result.session.id
+            withMeaningHits(result.session, result, semantic, speakers[id].orEmpty(), summaries[id]) ?: result
+        }.associateBy { it.session.id } + meaningOnly.associateBy { it.session.id }
+        return SemanticRanking.fuse(wordRanking, close).mapNotNull { results[it] }
+    }
+
+    /**
+     * [base] (`null` when [session] matched no word) with [session]'s
+     * passages close in meaning: at most [MEANING_LINES_PER_SESSION]
+     * lines, each the first line of a passage holding no line [base]
+     * already shows, and the summary when it did not match by words.
+     * `null` when there is nothing to show. A passage past the end of
+     * the transcript (vectors from before lines were deleted) is skipped.
+     */
+    private suspend fun withMeaningHits(
+        session: SessionEntity,
+        base: SearchResult?,
+        semantic: SemanticMatches,
+        speakers: List<SpeakerEntity>,
+        summary: String?
+    ): SearchResult? {
+        val passages = semantic.passages(session.id)
+        val transcript = passages.filter { it.firstLine >= 0 }
+        val lines = if (transcript.isEmpty()) {
+            emptyList()
+        } else {
+            TranscriptFormatter.lines(dao.segments(session.id), speakers)
+        }
+        val shown = base?.lines.orEmpty().mapTo(HashSet()) { it.segmentId }
+        val meaningLines = transcript.mapNotNull { passage ->
+            if (passage.firstLine >= lines.size) return@mapNotNull null
+            val range = lines.subList(passage.firstLine, minOf(passage.lastLine, lines.lastIndex) + 1)
+            if (range.any { it.id in shown }) return@mapNotNull null
+            val first = range.first()
+            SearchLine(
+                segmentId = first.id,
+                startMs = first.startMs,
+                speaker = first.speaker,
+                speakerIndex = first.speakerIndex,
+                text = Highlighted(excerpt(range.joinToString(" ") { it.text })),
+                byMeaning = true
+            )
+        }.take(MEANING_LINES_PER_SESSION)
+        val summaryClose = passages.any { it.firstLine == SemanticPassage.SUMMARY_LINE }
+        val meaningSummary = if (base?.summary == null && summaryClose) {
+            summary?.let { Highlighted(excerpt(it)) }
+        } else {
+            null
+        }
+        if (meaningLines.isEmpty() && meaningSummary == null) return base
+        return SearchResult(
+            session = session,
+            title = base?.title ?: Highlighted(session.title),
+            speakers = base?.speakers.orEmpty(),
+            summary = base?.summary ?: meaningSummary,
+            // Stable sort: word matches keep their order among lines starting together.
+            lines = (base?.lines.orEmpty() + meaningLines).sortedBy { it.startMs },
+            summaryByMeaning = meaningSummary != null
+        )
+    }
+
+    /** How many places matched by words: lines, speakers, the title and the summary. */
+    private fun SearchResult.matchCount(): Int =
+        lines.size + speakers.size + (if (title.ranges.isEmpty()) 0 else 1) + (if (summary == null) 0 else 1)
+
+    /** The start of [text], cut at a word to about [MEANING_EXCERPT_CHARS] characters. */
+    private fun excerpt(text: String): String {
+        val flat = text.trim().replace(SPACES, " ")
+        if (flat.length <= MEANING_EXCERPT_CHARS) return flat
+        val cut = flat.lastIndexOf(' ', MEANING_EXCERPT_CHARS).takeIf { it > MEANING_EXCERPT_CHARS / 2 }
+            ?: MEANING_EXCERPT_CHARS
+        return flat.take(cut).trimEnd() + "…"
     }
 
     /**
@@ -225,6 +348,20 @@ class SessionSearch(private val dao: SearchDao) {
     companion object {
         /** Cap on transcript lines returned per search, across sessions. */
         const val MAX_LINES: Int = 300
+
+        /** Queries of at most this many words keep word matches first (issue #63). */
+        const val SHORT_QUERY_TERMS: Int = 2
+
+        /** Most sessions a search adds that match by meaning only (issue #63). */
+        const val MAX_MEANING_SESSIONS: Int = 20
+
+        /** Most passages found by meaning shown per session (issue #63). */
+        const val MEANING_LINES_PER_SESSION: Int = 3
+
+        /** Length of the excerpt shown for a passage or summary found by meaning. */
+        const val MEANING_EXCERPT_CHARS: Int = 200
+
+        private val SPACES = Regex("\\s+")
 
         /** Most sessions a cross-session question draws on (issue #49). */
         const val MAX_CANDIDATES: Int = 20

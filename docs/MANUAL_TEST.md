@@ -1432,7 +1432,7 @@ session with a saved summary. To check the upgrade, install this build
 - After the upgrade from v0.13.0, existing sessions are found and the
   history starts empty.
 
-## 38. Semantic search (issue #61)
+## 38. Semantic search (issues #61, #63)
 
 Run this on the **Boox** (CPU only) and on a phone, with a language
 model endpoint set up and the sessions from test 37. One **older**
@@ -1465,8 +1465,16 @@ previous one without clearing data.
     app and wait a few minutes on battery
     (`adb shell dumpsys jobscheduler | grep -A5 com.convoscribe` shows
     the job's constraints). Switch back to **While charging**.
-11. Settings → Semantic search → *Delete the semantic search model*,
-    then ask the question from step 1 again.
+11. Search (issue #63): with every session indexed, search *money we
+    can spend* (no word of the older session's fact). Then search the
+    English question about the French fact. Then search a two-word
+    query that is said word for word in one session and paraphrased in
+    another (e.g. *budget cap*). Then set the language filter to
+    exclude the paraphrasing session and search again.
+12. Tap a result marked *Matched by meaning*.
+13. Settings → Semantic search → *Delete the semantic search model*,
+    then ask the question from step 1 again and repeat the searches
+    from step 11.
 
 **Expected**
 
@@ -1500,9 +1508,19 @@ previous one without clearing data.
   the session is indexed on battery. The Settings and Ask across texts
   say indexing runs whenever the battery is not low; switching back
   restores the charging wording and constraint.
-- Step 11: the section offers the download again, the count disappears,
+- Step 11: the older session and the French session are listed, their
+  lines marked *Matched by meaning* with nothing highlighted. Word
+  results appear at once and the meaning results join them shortly
+  after (on the first search the model loads first, which takes longer).
+  For the two-word query, the session saying it word for word comes
+  first with its words highlighted, and the paraphrasing session
+  follows. With the language filter, the excluded session is not listed.
+- Step 12: the transcript opens at the start of the passage that matched
+  (the first line of the excerpt shown), with the player cued there.
+- Step 13: the section offers the download again, the count disappears,
   and the answer is word-based as in step 1, without *matched by
-  meaning*.
+  meaning*. The searches find only what shares their words, as before
+  this build; nothing is marked *Matched by meaning*.
 
 ## 39. Back up and restore (issue #25)
 

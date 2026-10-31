@@ -60,6 +60,14 @@ interface SearchDao {
     )
     suspend fun matchingSessions(match: String, language: String?, since: Long, limit: Int): List<SessionHits>
 
+    /**
+     * [sessionId]'s transcript lines in time order, as the semantic
+     * index numbers them, so a passage's line range maps onto them
+     * (issue #63).
+     */
+    @Query("SELECT * FROM segments WHERE sessionId = :sessionId ORDER BY startMs ASC")
+    suspend fun segments(sessionId: Long): List<SegmentEntity>
+
     /** Every session, newest first. */
     @Query("SELECT * FROM sessions ORDER BY createdAt DESC, id DESC")
     suspend fun sessions(): List<SessionEntity>
