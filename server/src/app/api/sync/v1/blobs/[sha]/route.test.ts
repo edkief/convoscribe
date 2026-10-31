@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
+import { deleteDocument } from '@/lib/documents';
+import { noteActivity, setQuota, usedBytes } from '@/lib/owners';
 import { ctx, request, sha256, setupSyncServer } from '@/test/http';
+import { pushManifest, sessionManifest, storeBlob } from '@/test/sessions';
 import { POST as complete } from './uploads/[id]/complete/route';
 import { GET as parts } from './uploads/[id]/route';
 import { PUT as putPart } from './uploads/[id]/parts/[n]/route';
@@ -91,5 +94,69 @@ describe('blob uploads', () => {
 
   it('rejects a malformed hash', async () => {
     expect((await startUpload('not-a-hash')).status).toBe(400);
+  });
+});
+
+describe('storage quotas (#82)', () => {
+  const OWNER = 'default';
+  const quota = async (bytes: number | null) => {
+    await noteActivity(OWNER);
+    await setQuota(OWNER, bytes);
+  };
+  const refused = async (res: Response) => {
+    expect(res.status).toBe(507);
+    expect(await res.json()).toEqual({ error: 'quota_exceeded' });
+  };
+
+  it('refuses starting an upload with no room left', async () => {
+    await storeBlob(OWNER, 'ten bytes!');
+    await quota(10);
+    const res = await start(request(`/blobs/${sha}/uploads`, { method: 'POST' }), ctx({ sha }));
+    await refused(res);
+    await quota(11);
+    expect((await startUpload()).status).toBe(201);
+  });
+
+  it('refuses a part that would go over, keeping the ones before it', async () => {
+    await quota(30);
+    const { body } = await startUpload();
+    expect((await sendPart(body.id!, 1, bytes.subarray(0, 20))).status).toBe(204);
+    await refused(await sendPart(body.id!, 2, bytes.subarray(20)));
+    expect(await usedBytes(OWNER)).toBe(20);
+    await quota(null);
+    expect((await sendPart(body.id!, 2, bytes.subarray(20))).status).toBe(204);
+    expect((await finish(body.id!)).status).toBe(200);
+  });
+
+  it('counts a part sent again only for what it adds', async () => {
+    await quota(20);
+    const { body } = await startUpload();
+    expect((await sendPart(body.id!, 1, bytes.subarray(0, 20))).status).toBe(204);
+    expect((await sendPart(body.id!, 1, bytes.subarray(0, 20))).status).toBe(204);
+    await refused(await sendPart(body.id!, 1, bytes.subarray(0, 21)));
+    expect((await sendPart(body.id!, 1, bytes.subarray(0, 5))).status).toBe(204);
+    expect(await usedBytes(OWNER)).toBe(5);
+  });
+
+  it('still says a stored blob exists, and finishes an upload already received', async () => {
+    const { body } = await startUpload();
+    await sendPart(body.id!, 1, bytes);
+    await quota(1);
+    expect((await finish(body.id!)).status).toBe(200);
+    expect(await startUpload()).toEqual({ status: 200, body: { exists: true } });
+  });
+
+  it('lets edits and deletes through over quota', async () => {
+    const first = await pushManifest(OWNER, sessionManifest('s1'));
+    await quota(1);
+    const edited = await pushManifest(OWNER, sessionManifest('s1', { title: 'Edited' }), first.revision);
+    expect(edited.revision).toBe(first.revision + 1);
+    expect((await deleteDocument(OWNER, 'session', 's1', edited.revision)).deleted).toBe(true);
+  });
+
+  it('applies to no one else', async () => {
+    await noteActivity('alice');
+    await setQuota('alice', 1);
+    expect((await startUpload()).status).toBe(201);
   });
 });
