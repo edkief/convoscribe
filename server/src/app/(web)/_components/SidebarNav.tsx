@@ -2,12 +2,12 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { IconLibrary, IconTag } from './Icons';
+import { IconLibrary, IconTag, IconTrash } from './Icons';
 
-type Props = { total: number; tags: { tag: string; count: number }[] };
+type Props = { total: number; tags: { tag: string; count: number }[]; trash: number };
 
-/** The sidebar's links (#80), the current one highlighted. */
-export function SidebarNav({ total, tags }: Props) {
+/** The sidebar's links (#80) and the trash (#81), the current one highlighted. */
+export function SidebarNav({ total, tags, trash }: Props) {
   const path = usePathname();
   const current = useSearchParams().get('tag');
   const onLibrary = path === '/';
@@ -17,6 +17,11 @@ export function SidebarNav({ total, tags }: Props) {
         <IconLibrary />
         <span>All sessions</span>
         <span className="count">{total}</span>
+      </Link>
+      <Link href="/trash" className="side-link" aria-current={path === '/trash' ? 'page' : undefined}>
+        <IconTrash />
+        <span>Trash</span>
+        {trash > 0 && <span className="count">{trash}</span>}
       </Link>
       {tags.length > 0 && (
         <>

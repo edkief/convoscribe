@@ -3,17 +3,24 @@ import { Suspense, type ReactNode } from 'react';
 import { env } from '@/lib/env';
 import { formatBytes, initials } from '@/lib/format';
 import { countSessions, listTags, storageUsed } from '@/lib/session-index';
+import { countTrash } from '@/lib/trash';
 import { requireIdentity } from '@/lib/web-identity';
-import { IconDatabase, IconKey, IconLogOut, LogoMark } from '../_components/Icons';
+import { IconDatabase, IconKey, IconLogOut, IconTrash, LogoMark } from '../_components/Icons';
 import { SidebarNav } from '../_components/SidebarNav';
 
 /**
  * The frame of every signed-in page (#80): a sidebar with the library, its
- * tags, the storage used and who is signed in; a top bar on narrow screens.
+ * tags, the trash (#81), the storage used and who is signed in; a top bar
+ * on narrow screens.
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
   const { owner } = await requireIdentity();
-  const [tags, total, used] = await Promise.all([listTags(owner), countSessions(owner), storageUsed(owner)]);
+  const [tags, total, used, trash] = await Promise.all([
+    listTags(owner),
+    countSessions(owner),
+    storageUsed(owner),
+    countTrash(owner),
+  ]);
   const config = env();
   const proxy = config.AUTH_MODE === 'authz-proxy';
   const canSignOut = !proxy || config.WEB_SIGN_OUT_URL !== undefined;
@@ -25,10 +32,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <span>ConvoScribe</span>
         </Link>
         <Suspense fallback={null}>
-          <SidebarNav total={total} tags={tags} />
+          <SidebarNav total={total} tags={tags} trash={trash} />
         </Suspense>
         <div className="side-foot">
-          <div className="storage" title="Recordings stored on this server">
+          <div className="storage" title="Recordings stored on this server, including the trash">
             <IconDatabase />
             <span>
               <strong>{formatBytes(used)}</strong> of recordings
@@ -48,6 +55,10 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
               <span className="name">{proxy ? owner : 'Sync key'}</span>
               <span className="sub">{proxy ? 'Signed in' : 'Signed in on this server'}</span>
             </span>
+            {/* Narrow screens hide the sidebar's links; the trash stays a tap away. */}
+            <Link href="/trash" className="icon-button narrow-only" title="Trash" aria-label="Trash">
+              <IconTrash />
+            </Link>
             {canSignOut && (
               <form method="post" action="/api/web/v1/sign-out">
                 <button type="submit" className="icon-button" title="Sign out" aria-label="Sign out">
