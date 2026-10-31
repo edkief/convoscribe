@@ -255,8 +255,9 @@ brings them to your other devices.
   changed on two devices, the **longer recording wins**, then the
   **most recently changed**, and every device ends on that version; a
   delete wins over an edit unless the edited version has a longer
-  recording. **Delete** removes a session from every device; **Remove
-  from this device** (in a session's menu) frees space here and keeps
+  recording. **Delete** removes a session from every device; the sync
+  server keeps it in its trash for 30 days, where you can restore it
+  from the server's web app (#81). **Remove from this device** (in a session's menu) frees space here and keeps
   it on the server, where it shows greyed as *On server* in the list
   until you tap *Download*. Recordings move in parts of about 8 MB, so
   an interrupted upload or download resumes where it stopped and never
@@ -837,8 +838,13 @@ and open one to read its transcript beside its summary, action items,
 marks and questions while its recording plays; tap a sentence to play
 from it.
 Recordings and transcripts (Markdown, SRT or WebVTT) download from there.
-You see only your own sessions, and nothing can be changed from the web
-yet. See the [server README](server/README.md#web-app).
+You see only your own sessions. A session deleted there or on a device
+waits in the web app's trash for 30 days (#81): restoring it brings it
+back to the web and to every device, with its recording; after 30 days,
+or when you empty the trash, it is gone for good. Once a day the server
+also removes storage nothing uses any more (old versions of sessions,
+abandoned uploads), so deleting finally frees space. See the
+[server README](server/README.md#web-app) and its *Trash and clean-up*.
 
 ## Model licences
 

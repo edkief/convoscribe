@@ -9,7 +9,8 @@ Devices upload sessions to it (#68), and download the sessions of other
 devices from it (#69). It decides conflicts between devices (see *Conflict
 rule* below), so every device settles on the same version. It also serves a
 web app (#80, see *Web app* below) where you sign in from a browser to
-read, play and download your sessions.
+read, play and download your sessions, delete them, and restore them from
+the trash (#81, see *Trash and clean-up* below).
 
 ## Web app
 
@@ -26,11 +27,13 @@ Signing in depends on `AUTH_MODE`:
   verifies against the proxy's JWKS. *Sign out* goes to
   `WEB_SIGN_OUT_URL`, and is hidden when that is not set.
 
-You see only your own sessions. Nothing can be changed from the web yet.
+You see only your own sessions. The one change the web app makes is
+deleting a session, which moves it to the trash (#81).
 
 On a laptop or a tablet in landscape, a sidebar lists your sessions, your
-tags with how many sessions carry each, the size of the recordings you
-store and who is signed in; below 1200 px wide it folds into a top bar.
+tags with how many sessions carry each, the trash, the size of the
+recordings you store (trash included) and who is signed in; below 1200 px
+wide it folds into a top bar, with a trash button beside *Sign out*.
 
 - **Library** (`/`): your sessions, newest first and grouped by day (in
   the browser's time zone), 50 to a page. Each row shows the title, the
@@ -39,7 +42,7 @@ store and who is signed in; below 1200 px wide it folds into a top bar.
   Filter by tag (sidebar) and by a date range. The list comes from
   Postgres (`session_index`), never from S3.
 - **Session** (`/sessions/<syncId>`): title, date, length, language, tags
-  and speakers, and a *Download* menu (the recording, the cleaned
+  and speakers, *Delete* (see *Trash and clean-up*), and a *Download* menu (the recording, the cleaned
   recording when there is one, the transcript as Markdown, and subtitles
   as SRT or WebVTT). The transcript fills the page as speaker turns, each
   mark between them where it was made; beside it, a panel holds the
@@ -50,6 +53,10 @@ store and who is signed in; below 1200 px wide it folds into a top bar.
   sentence, a mark or an action item's time to play from there. The
   sentence being played is highlighted and kept in view; scroll away and
   *Back to current line* returns to it.
+- **Trash** (`/trash`): sessions deleted in the last 30 days, here or on a
+  device, the most recently deleted first, each with when it was deleted
+  and when it goes for good. *Restore* brings one back; *Empty trash*
+  removes them all for good.
 
 A manifest from a newer app version is shown as far as the server
 understands it, with a note.
@@ -69,7 +76,7 @@ Every route below needs the same `Authorization: Bearer <key>` and answers
 
 | Endpoint | Response |
 |---|---|
-| `HEAD /api/sync/v1/blobs/<sha>` | `200` with `Content-Length` if stored, `404` if not |
+| `HEAD /api/sync/v1/blobs/<sha>` | `200` with `Content-Length` if stored, `404` if not. A `200` also keeps the blob from clean-up for its grace period, for the push about to refer to it |
 | `GET /api/sync/v1/blobs/<sha>` | The bytes; `Range: bytes=a-b` gives `206` |
 | `POST /api/sync/v1/blobs/<sha>/uploads` | `201 {"id"}` to start an upload, or `200 {"exists":true}` |
 | `GET /api/sync/v1/blobs/<sha>/uploads/<id>` | `{"parts":[{"n","size"}]}` received so far, for resuming; `404` if unknown |
@@ -89,13 +96,13 @@ all be stored first.
 |---|---|---|
 | `PUT /api/sync/v1/documents/<kind>/<syncId>` | Manifest body, optionally `Content-Encoding: gzip`. Headers `Sync-Base-Revision` (0 for new), `Sync-Manifest-Hash` (SHA-256 of the uncompressed body), `Sync-Duration-Ms`, `Sync-Changed-At` (ms since epoch) | `200` with the new index entry. From a stale base revision the push is still accepted, as the next revision, if it wins the conflict rule; otherwise `409 conflict` with `current`. Repeating the current manifest is `200` with no new revision. `422 missing_blobs` with `missing`, `400 hash_mismatch` |
 | `GET /api/sync/v1/documents/<kind>/<syncId>` | | The manifest, with `Sync-Revision`, `Sync-Seq`, `Sync-Duration-Ms`, `Sync-Changed-At` and `Sync-Manifest-Hash` headers. `410` with `current` if deleted, `404` if unknown |
-| `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision`; `Sync-Duration-Ms`, the length of the deleted version (optional) | `200`, leaving a tombstone (`deleted: true`, a new revision); deleting again is `200`. From a stale base revision the delete wins unless the current recording is longer than `Sync-Duration-Ms`, else `409` with `current`; without the header a stale delete is `409`. `404` if unknown |
+| `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision`; `Sync-Duration-Ms`, the length of the deleted version (optional) | `200`, leaving a tombstone (`deleted: true`, a new revision); a session goes to the trash for 30 days. Deleting again is `200`. From a stale base revision the delete wins unless the current recording is longer than `Sync-Duration-Ms`, else `409` with `current`; without the header a stale delete is `409`. `404` if unknown |
 | `GET /api/sync/v1/changes?since=<seq>&limit=<n>` | `limit` 1 to 500, default 100 | `{"changes":[…], "next", "more"}`: index entries written after `since`, oldest first. Pass `next` as `since` while `more` is true |
 
 **Web** routes are what the web app's pages call. They take the browser's
 sign-in (a Bearer key works too), answer `401` without it, and refuse a
-`POST` whose `Origin` is not this server (`X-Forwarded-Host`, else `Host`)
-with `403 cross_site`. Another owner's session is `404`.
+`POST` or `DELETE` whose `Origin` is not this server (`X-Forwarded-Host`,
+else `Host`) with `403 cross_site`. Another owner's session is `404`.
 
 | Endpoint | Request | Response |
 |---|---|---|
@@ -103,6 +110,9 @@ with `403 cross_site`. Another owner's session is `404`.
 | `POST /api/web/v1/sign-out` | | `303` to `/sign-in`, clearing the cookie; in `authz-proxy` mode to `WEB_SIGN_OUT_URL` (or `/`) |
 | `GET /api/web/v1/sessions/<syncId>/audio` | `?clean=1` for the cleaned recording, `?download=1` to download it; `Range: bytes=a-b` | `audio/wav`, streamed from S3 (`206` for a range), so a recording of any size never sits in memory |
 | `GET /api/web/v1/sessions/<syncId>/transcript/<format>` | `format` is `md`, `srt` or `vtt` | The transcript as a download named after the session; `404` for another format |
+| `DELETE /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n}`, the revision the page shows | `200 {"syncId","revision"}`, the session in the trash and its semantic vectors deleted. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
+| `POST /api/web/v1/sessions/<syncId>/restore` | | `200 {"syncId","revision"}`: the session is live again as a new revision. `404 not_in_trash` once purged, after 30 days, or for a session deleted before the trash existed |
+| `DELETE /api/web/v1/trash` | | `200 {"purged"}`: every session in the trash removed for good |
 
 An index entry is `{kind, syncId, revision, seq, durationMs, changedAt,
 manifestHash, deleted}`. `seq` orders every write of an owner, and writes of
@@ -123,7 +133,7 @@ is longer than the one the device deleted (`deleteWins`). The loser gets
 ### Storage
 
 Postgres holds the index (`documents`, plus `document_blobs`, `blobs`,
-`uploads` and `upload_parts`) and `session_index`, what the web app lists
+`uploads` and `upload_parts`), `cleanup_runs`, and `session_index`, what the web app lists
 and filters sessions by: title, date, length, language, status, tags,
 speakers, a preview line, the number of open action items, the line count
 and recording refs, copied from a session's
@@ -143,12 +153,59 @@ owner:
 - `users/<owner>/uploads/<id>`: an upload being assembled, until its hash
   is checked.
 
-Old manifests and recordings no longer referenced are kept for now; a
-clean-up job comes later. Parts of an upload a device abandoned stay in
-S3 as an incomplete multipart upload, so give the bucket a lifecycle rule
-that aborts incomplete multipart uploads after a few days (on AWS, an
-`AbortIncompleteMultipartUpload` rule; most S3-compatible stores have an
-equivalent).
+### Trash and clean-up
+
+**Trash (#81).** Every session delete, from the web app or a device, moves
+the session to the trash for 30 days. Devices see the usual tombstone and
+delete it; the server keeps its last manifest and the recordings it refers
+to (`documents.trashed_at` and `trashed_manifest_hash`, and its
+`document_blobs` rows). Restoring it from the web app writes that manifest
+back as a new revision, so every device downloads it again with its
+recordings; its semantic vectors are not restored, and devices index it
+again. Known voices, presets, templates and vectors are deleted outright.
+
+A device that deleted a session while offline can still send that delete
+after the session was restored: the delete wins as any stale delete does
+(see *Conflict rule*), and the session goes back to the trash, to be
+restored again.
+
+After 30 days, or on *Empty trash*, a session is purged: its tombstone
+stays for the change feed but keeps nothing, it can no longer be
+restored, and clean-up removes its data. Sessions deleted before #81 kept
+nothing and cannot be restored.
+
+**Clean-up.** Once a day the server removes what nothing uses any more:
+
+1. sessions in the trash for more than 30 days (purged as above);
+2. uploads a device started more than 7 days ago and never finished: the
+   multipart upload is aborted and its rows removed;
+3. recordings no live or trashed session refers to;
+4. manifests that are neither a document's current one nor a trashed
+   session's, and objects an interrupted upload left behind.
+
+Anything newer than 7 days is left alone, so a push in progress never
+loses what it depends on: a recording counts as new again whenever a device
+is told it is stored (`HEAD`, or an upload of it). Each removal re-checks
+under the owner's lock that pushes also take, deletes the database row
+first and the bytes before releasing the lock. The job runs from the
+server process, checking hourly whether a day has passed since the last
+scheduled run, so restarts neither skip nor repeat it. Objects outside the
+key layout above are never touched.
+
+`CLEANUP` sets it to `on` (default), `dry-run` or `off`. A dry run removes
+nothing and records what a run would remove. Each run is a row in
+`cleanup_runs` with its report (sessions purged, and the count and bytes of
+recordings, manifests and uploads) and is logged:
+
+```sql
+select started_at, dry_run, report, error from cleanup_runs order by started_at desc limit 5;
+```
+
+On a server with existing data, start with `CLEANUP=dry-run`, compare the
+first report with a listing of the bucket, then switch to `on`. A bucket
+lifecycle rule that aborts incomplete multipart uploads after a few days
+(on AWS, `AbortIncompleteMultipartUpload`) is no longer needed, but is a
+harmless backstop.
 
 ## Development
 
@@ -208,6 +265,7 @@ exits with the list of problems if any is missing or invalid.
 | `AUTHZ_PROXY_URL` | `authz-proxy` mode | Base URL of authz-proxy, reachable from the server. |
 | `ADMIN_ROLES` | no | `authz-proxy` mode: comma-separated roles that make a user an admin. Default `role-authz-admin`. In `api-key` mode the one user is the admin. Nothing uses it yet (#82). |
 | `WEB_SIGN_OUT_URL` | no | `authz-proxy` mode: where the web app's *Sign out* goes, e.g. the proxy's sign-out page. Without it the web app shows no *Sign out*. |
+| `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |
 
 ### Auth modes

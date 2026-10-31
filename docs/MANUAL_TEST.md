@@ -1860,6 +1860,67 @@ production deployment behind authz-proxy; the rest work in either mode.
   the sidebar folds into a top bar and the tag filter moves next to the
   dates; below 900 px the notes panel sits above the transcript.
 
+## 45. Trash, restore and clean-up (issue #81)
+
+Use a sync server from this release with two devices synced to it
+(section 41), *A* and *B*, both with sync on, and a browser signed in to
+its web app (section 44). Start the server with `CLEANUP=dry-run` for
+step 9, and have `psql` access to its database.
+
+**Steps**
+
+1. On *A*, open the delete confirmation of a synced session and read it.
+   Delete it, then *Sync now* on *A* and on *B*.
+2. In the browser, open *Trash*.
+3. Tap *Restore* on that session. *Sync now* on *A* and *B*, and open it on
+   both.
+4. In the browser, open another session, leave the page open, rename that
+   session on *A* and *Sync now* on *A*. Back in the browser, tap
+   *Delete* and confirm.
+5. Reload the page, tap *Delete* and confirm. *Sync now* on *A* and *B*.
+6. Put *B* in airplane mode, delete a session on *B*, restore the same
+   session from the browser's trash, then turn airplane mode off and tap
+   *Sync now* on *B*.
+7. In *Trash*, tap *Empty trash* and confirm, then try the restore address
+   of an emptied session:
+   `curl -X POST -H 'Origin: https://<sync server>' -H 'Authorization: Bearer <key>' https://<sync server>/api/web/v1/sessions/<syncId>/restore`.
+8. From another site, in the browser console on any other origin, run
+   `fetch('https://<sync server>/api/web/v1/trash',{method:'DELETE',credentials:'include'})`.
+9. Wait for the first clean-up (a few minutes after the server starts),
+   then run
+   `select started_at, dry_run, report, error from cleanup_runs order by started_at desc;`
+   and compare the report with a listing of the bucket
+   (`aws s3 ls --recursive s3://<bucket>/users/ --summarize`).
+10. Restart the server with `CLEANUP=on`, wait for the next run (or a day
+    after the dry run), check `cleanup_runs` again, and list the bucket.
+11. Open a session on a device, *Sync now*, and play it.
+
+**Expected**
+
+- Step 1: the confirmation says the server keeps the session in its trash
+  for 30 days; it leaves *A*, then *B*.
+- Step 2: the session is listed with when it was deleted and when it goes
+  for good (30 days later); the sidebar's *Trash* shows the count, and
+  *All sessions* no longer lists it.
+- Step 3: it leaves the trash and is back in the library; both devices
+  download it again, transcript first, then the recording, which plays.
+- Step 4: the dialog says the session changed on a device since the page
+  loaded; nothing is deleted.
+- Step 5: the library opens without it, it is in *Trash*, and it leaves
+  both devices.
+- Step 6: *B*'s delete arrives after the restore and wins (a delete wins
+  over the version it deleted): the session goes back to the trash and
+  leaves *A*. Restoring it again brings it back for good.
+- Step 7: *Trash* says it is empty; the restore answers *404*
+  `not_in_trash`.
+- Step 8: the server answers *403*; the trash is unchanged.
+- Step 9: a dry run with a report of sessions purged, recordings,
+  manifests and uploads; the bucket still holds everything. Nothing newer
+  than 7 days is counted.
+- Step 10: a run with `dry_run` false; the bucket shrinks by about what
+  the report says. Live and trashed sessions are untouched.
+- Step 11: syncing and playback work as before.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
