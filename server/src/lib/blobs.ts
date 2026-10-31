@@ -4,6 +4,7 @@ import { blobs, uploadParts, uploads } from '@/db/schema';
 import { blobKeys, blobStore } from './blob-store';
 import { db, type Db } from './db';
 import { HttpError } from './http';
+import { assertQuota } from './owners';
 
 /** Largest part accepted; devices send about 8 MB (#67). */
 export const MAX_PART_BYTES = 16 * 1024 * 1024;
@@ -44,9 +45,13 @@ export async function claimBlob(owner: string, sha256: string): Promise<number |
   return row?.size ?? null;
 }
 
-/** Start an upload of `sha256`; a blob already stored needs none. */
+/**
+ * Start an upload of `sha256`; a blob already stored needs none, and takes
+ * no more room. Refused with a 507 when the owner has no room left (#82).
+ */
 export async function startUpload(owner: string, sha256: string): Promise<{ exists: true } | { id: string }> {
   if ((await claimBlob(owner, sha256)) !== null) return { exists: true };
+  await assertQuota(owner, 1);
   const id = randomUUID();
   const storeUploadId = await blobStore().createMultipart(blobKeys.staging(owner, id));
   await db().insert(uploads).values({ id, owner, sha256, storeUploadId });
@@ -72,11 +77,19 @@ export async function listParts(owner: string, sha256: string, id: string) {
     .orderBy(asc(uploadParts.n));
 }
 
-/** Store part `n` (1 to 10000); sending a part again replaces it. */
+/**
+ * Store part `n` (1 to 10000); sending a part again replaces it. Refused with
+ * a 507 when it would take the owner over their quota (#82).
+ */
 export async function putPart(owner: string, sha256: string, id: string, n: number, bytes: Uint8Array) {
   if (!Number.isInteger(n) || n < 1 || n > 10000) throw new HttpError(400, 'invalid_part');
   if (bytes.length === 0) throw new HttpError(400, 'empty_part');
   const row = await upload(owner, sha256, id);
+  const [replaced] = await db()
+    .select({ size: uploadParts.size })
+    .from(uploadParts)
+    .where(and(eq(uploadParts.uploadId, id), eq(uploadParts.n, n)));
+  await assertQuota(owner, bytes.length - (replaced?.size ?? 0));
   const etag = await blobStore().uploadPart(blobKeys.staging(owner, id), row.storeUploadId, n, bytes);
   await db()
     .insert(uploadParts)

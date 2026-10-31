@@ -3,9 +3,10 @@ import { describe, expect, it } from 'vitest';
 import { documents, sessionIndex } from '@/db/schema';
 import { setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest } from '@/test/sessions';
-import { backfillSessionIndex } from './backfill';
+import { backfillManifestSizes, backfillSessionIndex } from './backfill';
 import { blobKeys, blobStore } from './blob-store';
 import { db } from './db';
+import { deleteDocument } from './documents';
 import { getSessionIndex, listSessions } from './session-index';
 
 setupSyncServer();
@@ -76,5 +77,37 @@ describe('backfillSessionIndex (#80)', () => {
     };
     expect(await backfillSessionIndex({ log: quiet })).toEqual({ indexed: 0, skipped: 0 });
     expect((await getSessionIndex('alice', 's1'))?.title).toBe('Pushed meanwhile');
+  });
+});
+
+describe('backfillManifestSizes (#82)', () => {
+  const sizes = async () =>
+    Object.fromEntries(
+      (await db().select({ syncId: documents.syncId, size: documents.manifestSize }).from(documents)).map((d) => [d.syncId, d.size]),
+    );
+  const stored = (owner: string, id: string, hash: string) => blobStore().head(blobKeys.manifest(owner, 'session', id, hash));
+
+  it('sizes live and trashed manifests pushed before #82, and resumes', async () => {
+    const live = await pushManifest('alice', sessionManifest('s1'));
+    const gone = await pushManifest('alice', sessionManifest('s2', { title: 'Longer title' }));
+    await pushManifest('alice', sessionManifest('s3'));
+    await deleteDocument('alice', 'session', 's2', gone.revision);
+    await db().update(documents).set({ manifestSize: null });
+
+    expect(await backfillManifestSizes({ limit: 2, log: quiet })).toEqual({ filled: 2, skipped: 0 });
+    expect(await backfillManifestSizes({ log: quiet })).toEqual({ filled: 1, skipped: 0 });
+    const filled = await sizes();
+    expect(filled.s1).toBe(await stored('alice', 's1', live.manifestHash!));
+    expect(filled.s2).toBe(await stored('alice', 's2', gone.manifestHash!));
+    expect(await backfillManifestSizes({ log: quiet })).toEqual({ filled: 0, skipped: 0 });
+  });
+
+  it('skips a manifest it cannot find, and carries on', async () => {
+    const lost = await pushManifest('alice', sessionManifest('s1'));
+    await pushManifest('alice', sessionManifest('s2'));
+    await db().update(documents).set({ manifestSize: null });
+    await blobStore().delete(blobKeys.manifest('alice', 'session', 's1', lost.manifestHash!));
+    expect(await backfillManifestSizes({ log: quiet })).toEqual({ filled: 1, skipped: 1 });
+    expect((await sizes()).s1).toBeNull();
   });
 });

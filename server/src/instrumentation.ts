@@ -1,6 +1,7 @@
 // Runs once when the server starts: fail fast on bad configuration, bring
 // the database schema up to date, then index sessions pushed before the web
-// app existed (#80) in the background, and schedule the daily storage
+// app existed (#80) and size manifests pushed before usage was tracked (#82)
+// in the background, and schedule the daily storage
 // clean-up (#81).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
@@ -14,7 +15,13 @@ export async function register() {
     console.error(err);
     process.exit(1);
   }
-  const { backfillSessionIndex } = await import('./lib/backfill');
+  const { backfillManifestSizes, backfillSessionIndex } = await import('./lib/backfill');
+  backfillManifestSizes().then(
+    ({ filled, skipped }) => {
+      if (filled || skipped) console.log(`manifest sizes: filled ${filled}, skipped ${skipped}`);
+    },
+    (err) => console.error('manifest size backfill failed', err),
+  );
   backfillSessionIndex().then(
     ({ indexed, skipped }) => {
       if (indexed || skipped) console.log(`session index: indexed ${indexed} session(s), skipped ${skipped}`);

@@ -1921,6 +1921,56 @@ step 9, and have `psql` access to its database.
   the report says. Live and trashed sessions are untouched.
 - Step 11: syncing and playback work as before.
 
+## 46. Admin users, status, clean-up and quotas (issue #82)
+
+Use a sync server from this release behind authz-proxy, with two users: an
+admin holding one of `ADMIN_ROLES`, and *U*, who is not an admin and has a
+device syncing with at least one session and a recording. Sign in to the web
+app as each, in separate browser profiles. Have one more finished session on
+*U*'s device, not yet synced.
+
+**Steps**
+
+1. As *U*, look at the sidebar, then open `/admin/users` and `/admin/status`.
+   Run `curl -i -H 'Authorization: Bearer <U's key>' https://<sync server>/api/web/v1/admin/status`.
+2. As the admin, open *Users*.
+3. Open *Status*.
+4. Tap *Preview*, then wait for it to finish. List the bucket before and after
+   (`aws s3 ls --recursive s3://<bucket>/users/ --summarize`).
+5. Tap *Run clean-up* and confirm. While it goes, reload the page.
+6. On *Users*, set *U*'s quota to a value below what *U* stores, for example
+   `0.001` GB, and *Save*.
+7. On *U*'s device, *Sync now* with the unsynced session. Open Settings → *Sync*.
+8. On the same device, rename a session already synced, delete another, and
+   *Sync now*.
+9. On *Users*, empty *U*'s quota and *Save*. On the device, *Sync now*.
+10. Stop S3 (or point the server at a wrong endpoint) and reload *Status*.
+    Bring it back.
+11. Stop Postgres and reload *Status*. Bring it back, and reload.
+
+**Expected**
+
+- Step 1: no *Admin* section; both pages answer *404*; `curl` answers *403*.
+- Step 2: both users, with their sessions, trash, stored bytes and last
+  activity. No title, tag, transcript or recording of *U*'s appears.
+- Step 3: Postgres and S3 reachable; live, in the trash, unreferenced and in
+  unfinished uploads add up to the total, which is near what the bucket holds
+  (earlier versions of manifests are not counted). Clean-up shows its daily
+  mode and when it last ran.
+- Step 4: *Last preview* shows what a run would remove; the bucket is unchanged.
+- Step 5: *Clean-up going…* while it runs, and a second start is not offered;
+  *Last run* then shows when it ran and what it removed.
+- Step 6: *U*'s row says *Quota reached*.
+- Step 7: the session stays waiting; the error says `HTTP 507` and that the
+  storage quota on the server is reached. Other sessions still sync.
+- Step 8: the rename and the delete reach the server and other devices.
+- Step 9: the waiting session uploads, and the error clears.
+- Step 10: S3 *Unreachable*, the rest of the page still there; no endpoint,
+  credential or error text on the page. The server's log says why.
+- Step 11: Postgres *Unreachable*, with the stored figures and clean-up marked
+  not available and the page otherwise working; no error text. After it is
+  back, everything is reachable again.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

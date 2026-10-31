@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { FsBlobStore, setBlobStore } from '@/lib/blob-store';
 import { setDb } from '@/lib/db';
+import { resetActivity } from '@/lib/owners';
 import { createTestDb } from './db';
 import { stubServerEnv, TEST_API_KEY } from './env';
 
@@ -27,6 +28,7 @@ export function setupSyncServer() {
   beforeEach(async () => {
     stubServerEnv();
     await createTestDb();
+    resetActivity();
     root = await mkdtemp(path.join(tmpdir(), 'blobs-'));
     setBlobStore(new FsBlobStore(root));
   });

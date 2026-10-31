@@ -133,6 +133,7 @@ export async function putDocument(owner: string, kind: Kind, syncId: string, pus
       durationMs: push.durationMs,
       changedAt: push.changedAt,
       manifestHash: push.manifestHash,
+      manifestSize: gzipped.length,
       deleted: false,
       // A push that wins over a trashed session replaces what the trash kept.
       trashedAt: null,
@@ -204,6 +205,7 @@ export async function deleteDocument(
         updatedAt: new Date(),
         trashedAt: trash ? new Date() : null,
         trashedManifestHash: trash ? current.manifestHash : null,
+        manifestSize: trash ? current.manifestSize : null,
       })
       .where(where)
       .returning();
@@ -286,7 +288,7 @@ export async function purgeTrash(filter: { owner?: string; before?: Date }): Pro
       for (const syncId of syncIds) {
         const [row] = await tx
           .update(documents)
-          .set({ trashedAt: null, trashedManifestHash: null, updatedAt: new Date() })
+          .set({ trashedAt: null, trashedManifestHash: null, manifestSize: null, updatedAt: new Date() })
           .where(and(eq(documents.syncId, syncId), trashedWhere({ owner, before: filter.before })))
           .returning({ syncId: documents.syncId });
         if (!row) continue;

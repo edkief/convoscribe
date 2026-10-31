@@ -42,6 +42,12 @@ export const documents = pgTable(
     trashedAt: timestamp('trashed_at', { withTimezone: true }),
     /** The manifest a restore brings back, while the session is in the trash. */
     trashedManifestHash: text('trashed_manifest_hash'),
+    /**
+     * The stored size of the current or trashed manifest, for usage (#82);
+     * null once purged, and until the backfill reaches a document pushed
+     * before #82.
+     */
+    manifestSize: bigint('manifest_size', { mode: 'number' }),
   },
   (t) => [primaryKey({ columns: [t.owner, t.kind, t.syncId] }), index('documents_owner_seq').on(t.owner, t.seq)],
 );
@@ -143,6 +149,18 @@ export const sessionIndex = pgTable(
     index('session_index_tags').using('gin', t.tags),
   ],
 );
+
+/**
+ * Everyone seen by this server (#79, decision 8; #82): when, and how much
+ * they may store. A row appears on a user's first authenticated request.
+ */
+export const owners = pgTable('owners', {
+  owner: text('owner').primaryKey(),
+  firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+  /** The most an owner may store, in bytes; null is unlimited. */
+  quotaBytes: bigint('quota_bytes', { mode: 'number' }),
+});
 
 /** One run of storage clean-up (#81), with what it removed or, dry, would remove. */
 export const cleanupRuns = pgTable('cleanup_runs', {

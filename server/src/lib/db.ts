@@ -11,8 +11,11 @@ export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 
 let database: Db | undefined;
 
+/** A Postgres that does not answer fails requests rather than hanging them (#82). */
+const CONNECT_TIMEOUT_MS = 5000;
+
 export function db(): Db {
-  database ??= drizzle(new Pool({ connectionString: env().DATABASE_URL }), { schema });
+  database ??= drizzle(new Pool({ connectionString: env().DATABASE_URL, connectionTimeoutMillis: CONNECT_TIMEOUT_MS }), { schema });
   return database;
 }
 
@@ -23,7 +26,7 @@ export function setDb(value: Db | undefined) {
 
 /** Apply pending migrations from drizzle/ (shipped next to the server in the image). */
 export async function migrateDb() {
-  const pg = drizzle(new Pool({ connectionString: env().DATABASE_URL }), { schema });
+  const pg = drizzle(new Pool({ connectionString: env().DATABASE_URL, connectionTimeoutMillis: CONNECT_TIMEOUT_MS }), { schema });
   await migrate(pg, { migrationsFolder: path.join(process.cwd(), 'drizzle') });
   database ??= pg;
 }

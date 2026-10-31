@@ -5,6 +5,7 @@ import {
   CreateMultipartUploadCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   NoSuchKey,
@@ -50,6 +51,8 @@ export interface BlobStore {
   abortMultipart(key: string, uploadId: string): Promise<void>;
   /** Every object whose key starts with `prefix`, a page at a time (#81). */
   list(prefix: string): AsyncIterable<ListedObject>;
+  /** Throws unless the store can be reached with these credentials (#82). */
+  check(): Promise<void>;
 }
 
 /** Keys are scoped by owner from the first version, so multi-user needs no migration. */
@@ -145,6 +148,10 @@ export class S3BlobStore implements BlobStore {
       }
       token = res.IsTruncated ? res.NextContinuationToken : undefined;
     } while (token);
+  }
+
+  async check() {
+    await s3().send(new HeadBucketCommand({ Bucket: this.bucket }));
   }
 }
 
@@ -244,6 +251,10 @@ export class FsBlobStore implements BlobStore {
       }
     };
     yield* walk(objects);
+  }
+
+  async check() {
+    await stat(this.root);
   }
 }
 

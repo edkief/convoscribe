@@ -235,6 +235,24 @@ class SyncEngineTest {
     }
 
     @Test
+    fun aFullQuotaIsNamedInTheErrorAndOtherSessionsStillSync() = runTest {
+        val refused = finishedSession("Long", audio = ByteArray(1024) { 1 })
+        val fits = finishedSession("Short", audio = ByteArray(1024) { 2 })
+        var starts = 0
+        fake.intercept = {
+            val start = it.method == "POST" && it.path!!.endsWith("/uploads")
+            if (start && starts++ == 0) MockResponse().setResponseCode(507).setBody("{\"error\":\"quota_exceeded\"}") else null
+        }
+
+        assertEquals(SyncOutcome.RETRY, engine.run())
+
+        assertTrue(status.status.value.lastError!!.contains("storage quota on the server is reached"))
+        assertEquals(1, status.status.value.waiting)
+        assertTrue(db.syncDao().state(SyncKinds.SESSION, syncId(refused))!!.lastError!!.contains("HTTP 507"))
+        assertEquals(setOf(syncId(fits)), fake.documents.keys.toSet())
+    }
+
+    @Test
     fun anInterruptedUploadResumesWithoutResendingFinishedParts() = runTest {
         val id = finishedSession()
         fake.intercept = { if (it.path!!.endsWith("/parts/2")) MockResponse().setResponseCode(503) else null }

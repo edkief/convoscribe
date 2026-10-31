@@ -250,6 +250,7 @@ class SyncClient(
         val hint = when (answer.code) {
             401 -> " (check the sync API key)"
             413 -> " (the reverse proxy refused the size; allow at least 8 MB)"
+            507 -> " (your storage quota on the server is reached; free up space or ask the admin to raise it)"
             else -> ""
         }
         return SyncException("HTTP ${answer.code} from the sync server$hint: ${answer.text.take(300)}", answer.code)

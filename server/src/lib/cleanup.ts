@@ -1,8 +1,10 @@
-import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import { blobs, cleanupRuns, documents, uploadParts, uploads } from '@/db/schema';
 import { blobKeys, blobStore } from './blob-store';
 import { db, type Db } from './db';
 import { lockOwner, purgeTrash, TRASH_MS, trashedWhere } from './documents';
+import { env } from './env';
+import { HttpError } from './http';
 
 /**
  * How old anything must be before clean-up removes it: a recording not yet
@@ -69,10 +71,23 @@ const emptyReport = (): CleanupReport => ({
  * in `cleanup_runs`. A run of the same kind still going skips this one.
  */
 export async function runCleanup(options: Options): Promise<CleanupResult> {
-  const log = options.log ?? ((message: string) => console.warn(message));
+  const started = await startCleanup(options);
+  if ('skipped' in started) return started;
+  return { id: started.id, report: await started.done };
+}
+
+/** Claim a run and start it without waiting for it (#82): see [runCleanup]. */
+export async function startCleanup(
+  options: Options,
+): Promise<{ id: number; done: Promise<CleanupReport> } | { skipped: 'running' }> {
   const now = options.now ?? new Date();
   const id = await claimRun(options.dryRun, options.trigger, now);
   if (id === null) return { skipped: 'running' };
+  return { id, done: execute(id, options, now) };
+}
+
+async function execute(id: number, options: Options, now: Date): Promise<CleanupReport> {
+  const log = options.log ?? ((message: string) => console.warn(message));
   const report = emptyReport();
   const cutoffs = { grace: new Date(now.getTime() - CLEANUP_GRACE_MS), trash: new Date(now.getTime() - TRASH_MS) };
   const run = { ...options, log, report, ...cutoffs };
@@ -89,7 +104,7 @@ export async function runCleanup(options: Options): Promise<CleanupResult> {
     throw err;
   }
   await db().update(cleanupRuns).set({ finishedAt: new Date(), report }).where(eq(cleanupRuns.id, id));
-  return { id, report };
+  return report;
 }
 
 type Run = Options & { log: (message: string) => void; report: CleanupReport; grace: Date; trash: Date };
@@ -252,6 +267,74 @@ async function leftoverObjects(run: Run) {
       if (removed) tally(t, object.size);
     });
   }
+}
+
+/**
+ * An admin's *Preview* or *Run* (#82): started in the background, since a
+ * pass over the whole bucket can outlast a reverse proxy's timeout. `409
+ * cleanup_running` when one of the same kind is still going. The run is
+ * recorded like any other, for [cleanupStatus] to show.
+ */
+export async function startManualCleanup(dryRun: boolean): Promise<{ id: number }> {
+  const started = await startCleanup({ dryRun, trigger: 'manual' });
+  if ('skipped' in started) throw new HttpError(409, 'cleanup_running');
+  started.done.then(
+    (report) => console.log(`manual clean-up${dryRun ? ' (dry run)' : ''}: ${summarise(report)}`),
+    (err) => console.error('manual clean-up failed', err),
+  );
+  return { id: started.id };
+}
+
+/** A finished run as the admin pages show it: never its error text, which can hold S3's internals. */
+export type CleanupRunView = {
+  trigger: string;
+  startedAt: number;
+  finishedAt: number | null;
+  report: CleanupReport | null;
+  /** It stopped on an error, or died with its server. */
+  failed: boolean;
+};
+
+/** One kind of run: whether one is going, and the last that is not. */
+export type CleanupKindStatus = { running: boolean; last: CleanupRunView | null };
+
+/** What the status page shows of clean-up. */
+export type CleanupStatus = { mode: 'on' | 'dry-run' | 'off'; run: CleanupKindStatus; preview: CleanupKindStatus };
+
+async function kindStatus(dryRun: boolean, now: Date): Promise<CleanupKindStatus> {
+  const stale = new Date(now.getTime() - STALE_RUN_MS);
+  const going = and(eq(cleanupRuns.dryRun, dryRun), isNull(cleanupRuns.finishedAt), gte(cleanupRuns.startedAt, stale));
+  const [running] = await db().select({ id: cleanupRuns.id }).from(cleanupRuns).where(going).limit(1);
+  const [last] = await db()
+    .select({
+      trigger: cleanupRuns.trigger,
+      startedAt: cleanupRuns.startedAt,
+      finishedAt: cleanupRuns.finishedAt,
+      report: cleanupRuns.report,
+      failed: sql<boolean>`${cleanupRuns.error} is not null or ${cleanupRuns.finishedAt} is null`,
+    })
+    .from(cleanupRuns)
+    .where(and(eq(cleanupRuns.dryRun, dryRun), or(isNotNull(cleanupRuns.finishedAt), lt(cleanupRuns.startedAt, stale))))
+    .orderBy(desc(cleanupRuns.startedAt), desc(cleanupRuns.id))
+    .limit(1);
+  return {
+    running: running !== undefined,
+    last: last
+      ? {
+          trigger: last.trigger,
+          startedAt: last.startedAt.getTime(),
+          finishedAt: last.finishedAt?.getTime() ?? null,
+          report: last.report as CleanupReport | null,
+          failed: last.failed,
+        }
+      : null,
+  };
+}
+
+/** Clean-up's daily mode, its last run and preview, and whether either is going (#82). */
+export async function cleanupStatus(now = new Date()): Promise<CleanupStatus> {
+  const [run, preview] = await Promise.all([kindStatus(false, now), kindStatus(true, now)]);
+  return { mode: env().CLEANUP, run, preview };
 }
 
 /** When the last scheduled run started, or null. */

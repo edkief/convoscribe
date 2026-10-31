@@ -5,7 +5,7 @@ import { setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest, storeBlob } from '@/test/sessions';
 import { blobKeys, blobStore } from './blob-store';
 import { claimBlob, putPart, startUpload } from './blobs';
-import { CLEANUP_GRACE_MS, runCleanup, scheduledCleanup, type CleanupReport } from './cleanup';
+import { CLEANUP_GRACE_MS, cleanupStatus, runCleanup, scheduledCleanup, startManualCleanup, type CleanupReport } from './cleanup';
 import { db } from './db';
 import { deleteDocument, getDocumentMeta, restoreSession, TRASH_MS } from './documents';
 import { HttpError } from './http';
@@ -183,4 +183,52 @@ describe('runCleanup (#81)', () => {
     const runs = await db().select().from(cleanupRuns).where(and(eq(cleanupRuns.trigger, 'scheduled')));
     expect(runs.map((r) => r.dryRun)).toEqual([true, false]);
   });
+});
+
+describe('clean-up from the admin pages (#82)', () => {
+  const finished = async (dryRun: boolean) => {
+    for (let i = 0; i < 200; i++) {
+      const status = await cleanupStatus();
+      if (!(dryRun ? status.preview : status.run).running) return status;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error('still running');
+  };
+
+  it('starts in the background and shows the result', async () => {
+    const lib = await library();
+    await db().update(blobs).set({ createdAt: at(-CLEANUP_GRACE_MS - DAY) }).where(eq(blobs.sha256, lib.orphan.sha256));
+    const { id } = await startManualCleanup(true);
+    expect(id).toBeGreaterThan(0);
+    const status = await finished(true);
+    expect(status.preview.last).toMatchObject({ trigger: 'manual', failed: false, report: { recordings: { count: 1, bytes: lib.orphan.size } } });
+    expect(status.preview.last!.finishedAt).toBeGreaterThan(0);
+    expect(status.run.last).toBeNull();
+    expect(await exists(blobKeys.blob('alice', lib.orphan.sha256))).toBe(true);
+
+    await startManualCleanup(false);
+    const after = await finished(false);
+    expect(after.run.last).toMatchObject({ report: { recordings: { count: 1, bytes: lib.orphan.size } } });
+    expect(await exists(blobKeys.blob('alice', lib.orphan.sha256))).toBe(false);
+  });
+
+  it('refuses a run while one of the same kind is going, and reports it going', async () => {
+    await db().insert(cleanupRuns).values({ dryRun: false, trigger: 'scheduled' });
+    await expect(startManualCleanup(false)).rejects.toMatchObject({ status: 409, code: 'cleanup_running' });
+    const status = await cleanupStatus();
+    expect(status.run).toEqual({ running: true, last: null });
+    expect(status.preview.running).toBe(false);
+  });
+
+  it('shows a failed run without its error text, and a dead one as failed', async () => {
+    await db()
+      .insert(cleanupRuns)
+      .values({ dryRun: false, trigger: 'manual', startedAt: at(-DAY), finishedAt: at(-DAY), report: nothing, error: 'S3 said secret-endpoint' });
+    await db().insert(cleanupRuns).values({ dryRun: true, trigger: 'scheduled', startedAt: at(-DAY) });
+    const status = await cleanupStatus();
+    expect(status.run).toMatchObject({ running: false, last: { failed: true, report: nothing } });
+    expect(status.preview).toMatchObject({ running: false, last: { failed: true, finishedAt: null } });
+    expect(JSON.stringify(status)).not.toContain('secret-endpoint');
+  });
+
 });

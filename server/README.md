@@ -10,7 +10,9 @@ devices from it (#69). It decides conflicts between devices (see *Conflict
 rule* below), so every device settles on the same version. It also serves a
 web app (#80, see *Web app* below) where you sign in from a browser to
 read, play and download your sessions, delete them, and restore them from
-the trash (#81, see *Trash and clean-up* below).
+the trash (#81, see *Trash and clean-up* below). Admins also see who uses
+the server and how much they store, whether its storage can be reached, and
+run clean-up and set quotas (#82, see *Admin pages* below).
 
 ## Web app
 
@@ -33,7 +35,8 @@ deleting a session, which moves it to the trash (#81).
 On a laptop or a tablet in landscape, a sidebar lists your sessions, your
 tags with how many sessions carry each, the trash, the size of the
 recordings you store (trash included) and who is signed in; below 1200 px
-wide it folds into a top bar, with a trash button beside *Sign out*.
+wide it folds into a top bar, with a trash button beside *Sign out*, and for
+admins a button to the admin pages.
 
 - **Library** (`/`): your sessions, newest first and grouped by day (in
   the browser's time zone), 50 to a page. Each row shows the title, the
@@ -60,6 +63,40 @@ wide it folds into a top bar, with a trash button beside *Sign out*.
 
 A manifest from a newer app version is shown as far as the server
 understands it, with a note.
+
+### Admin pages
+
+For admins only (#82): in `api-key` mode the one user, behind authz-proxy
+whoever holds one of `ADMIN_ROLES`. The sidebar shows them an *Admin* section.
+To anyone else the pages answer `404` and their API `403`. They show counts,
+bytes and times, and never another user's titles, transcripts or audio.
+
+- **Users** (`/admin/users`): everyone seen by this server, with their
+  sessions, what is in their trash, the bytes they store, their last
+  activity (noted at most every 5 minutes, from devices and the web app) and
+  their quota.
+- **Status** (`/admin/status`): whether Postgres and S3 can be reached;
+  bytes stored across all users, split into live, in the trash, unreferenced
+  and in unfinished uploads; and clean-up, with its daily mode, when it last
+  ran, what it removed, and *Preview* and *Run clean-up*. Why a dependency
+  can't be reached goes to the server's log, never to the page. The page
+  still renders with Postgres or S3 down. `/api/health` stays a liveness
+  check that touches neither.
+
+The stored figures come from Postgres, so reading them costs no S3 calls.
+They leave out earlier versions of manifests, which Postgres does not track;
+a clean-up preview reports those old enough to remove. A manifest pushed
+before #82 counts once a background job at startup has read its size.
+
+**Quotas.** Set one per user on the *Users* page, in GB (powers of 1000);
+empty is no limit, the default. Usage is recordings, current and trashed
+manifests and parts of unfinished uploads, so a trashed session counts until
+it is purged. Over quota, starting an upload or sending a part answers `507
+quota_exceeded`, and the app's sync error says the quota was reached. A
+recording the server already holds still counts as stored, and manifests are
+never refused, so edits and deletes always work, and an upload whose parts all
+arrived can still finish. Uploads running at once can pass the quota by about a
+part each.
 
 ## API
 
@@ -113,6 +150,11 @@ else `Host`) with `403 cross_site`. Another owner's session is `404`.
 | `DELETE /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n}`, the revision the page shows | `200 {"syncId","revision"}`, the session in the trash and its semantic vectors deleted. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
 | `POST /api/web/v1/sessions/<syncId>/restore` | | `200 {"syncId","revision"}`: the session is live again as a new revision. `404 not_in_trash` once purged, after 30 days, or for a session deleted before the trash existed |
 | `DELETE /api/web/v1/trash` | | `200 {"purged"}`: every session in the trash removed for good |
+| `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","firstSeenAt","lastSeenAt"}]}` |
+| `PUT /api/web/v1/admin/users` | Admin. JSON `{"owner", "quotaBytes": n}`, null for no limit | `200` with the same, `404 unknown_owner` for someone not seen |
+| `GET /api/web/v1/admin/status` | Admin | `200 {"postgres":{"ok","latencyMs"},"s3":{"ok","latencyMs"},"storage":{"live","trash","unreferenced","uploads","total"}}`; `storage` is null while Postgres is down |
+| `GET /api/web/v1/admin/cleanup` | Admin | `200 {"mode","run":{"running","last"},"preview":{"running","last"}}`: each `last` has `trigger`, `startedAt`, `finishedAt`, `report` and `failed`, never the error text |
+| `POST /api/web/v1/admin/cleanup` | Admin. JSON `{"dryRun": bool}` | `202 {"id"}`: started in the background; `409 cleanup_running` while one of the same kind is going |
 
 An index entry is `{kind, syncId, revision, seq, durationMs, changedAt,
 manifestHash, deleted}`. `seq` orders every write of an owner, and writes of
@@ -201,6 +243,11 @@ recordings, manifests and uploads) and is logged:
 select started_at, dry_run, report, error from cleanup_runs order by started_at desc limit 5;
 ```
 
+Admins can also preview and run clean-up from the *Status* page (see *Admin
+pages*). `CLEANUP` governs only the daily run: *Run clean-up* removes even
+with `dry-run` or `off`. A run whose server died counts as going for 6 hours,
+then shows as not finished.
+
 On a server with existing data, start with `CLEANUP=dry-run`, compare the
 first report with a listing of the bucket, then switch to `on`. A bucket
 lifecycle rule that aborts incomplete multipart uploads after a few days
@@ -263,9 +310,9 @@ exits with the list of problems if any is missing or invalid.
 | `AUTH_MODE` | yes | `api-key` or `authz-proxy`; see below. |
 | `SYNC_API_KEY` | `api-key` mode | The key devices send, at least 32 characters (`openssl rand -hex 32`). |
 | `AUTHZ_PROXY_URL` | `authz-proxy` mode | Base URL of authz-proxy, reachable from the server. |
-| `ADMIN_ROLES` | no | `authz-proxy` mode: comma-separated roles that make a user an admin. Default `role-authz-admin`. In `api-key` mode the one user is the admin. Nothing uses it yet (#82). |
+| `ADMIN_ROLES` | no | `authz-proxy` mode: comma-separated roles that make a user an admin. Default `role-authz-admin`. In `api-key` mode the one user is the admin. See *Admin pages*. |
 | `WEB_SIGN_OUT_URL` | no | `authz-proxy` mode: where the web app's *Sign out* goes, e.g. the proxy's sign-out page. Without it the web app shows no *Sign out*. |
-| `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. See *Trash and clean-up*. |
+| `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. An admin's *Run clean-up* is not affected. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |
 
 ### Auth modes
