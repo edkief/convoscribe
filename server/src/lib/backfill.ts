@@ -1,5 +1,6 @@
 import { and, asc, eq, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { documents, sessionIndex } from '@/db/schema';
+import { blobKeys, blobStore } from './blob-store';
 import { db } from './db';
 import { lockOwner, readManifest } from './documents';
 import { upsertSessionIndex } from './session-index';
@@ -62,4 +63,64 @@ export async function backfillSessionIndex(
     }
   }
   return { indexed, skipped };
+}
+
+/**
+ * Record the stored size of every current or trashed manifest pushed before
+ * #82, for usage. One at a time, asking the store only for each size. It
+ * keeps no state: run again, it picks up whatever is still missing. A
+ * manifest changed meanwhile already has its size, and is left alone. One
+ * that cannot be found is logged and skipped. At most `limit` are filled.
+ */
+export async function backfillManifestSizes(
+  options: { limit?: number; log?: (message: string) => void } = {},
+): Promise<{ filled: number; skipped: number }> {
+  const log = options.log ?? ((message: string) => console.warn(message));
+  let filled = 0;
+  let skipped = 0;
+  let after: { owner: string; kind: string; syncId: string } | undefined;
+  while (options.limit === undefined || filled < options.limit) {
+    const [doc] = await db()
+      .select({
+        owner: documents.owner,
+        kind: documents.kind,
+        syncId: documents.syncId,
+        manifestHash: documents.manifestHash,
+        trashedManifestHash: documents.trashedManifestHash,
+      })
+      .from(documents)
+      .where(
+        and(
+          isNull(documents.manifestSize),
+          or(isNotNull(documents.manifestHash), isNotNull(documents.trashedManifestHash)),
+          after ? sql`(${documents.owner}, ${documents.kind}, ${documents.syncId}) > (${after.owner}, ${after.kind}, ${after.syncId})` : undefined,
+        ),
+      )
+      .orderBy(asc(documents.owner), asc(documents.kind), asc(documents.syncId))
+      .limit(1);
+    if (!doc) break;
+    after = doc;
+    const manifestHash = (doc.manifestHash ?? doc.trashedManifestHash)!;
+    try {
+      const size = await blobStore().head(blobKeys.manifest(doc.owner, doc.kind, doc.syncId, manifestHash));
+      if (size === null) throw new Error('no such manifest');
+      await db()
+        .update(documents)
+        .set({ manifestSize: size })
+        .where(
+          and(
+            eq(documents.owner, doc.owner),
+            eq(documents.kind, doc.kind),
+            eq(documents.syncId, doc.syncId),
+            isNull(documents.manifestSize),
+            sql`coalesce(${documents.manifestHash}, ${documents.trashedManifestHash}) = ${manifestHash}`,
+          ),
+        );
+      filled++;
+    } catch (err) {
+      skipped++;
+      log(`manifest sizes: skipped ${doc.kind} ${doc.syncId} of ${doc.owner}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { filled, skipped };
 }

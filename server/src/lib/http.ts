@@ -96,6 +96,8 @@ export async function authed(req: Request, handler: (owner: string) => Promise<R
   const { resolveOwner, unauthorized } = await import('./auth');
   const owner = await resolveOwner(req);
   if (!owner) return unauthorized();
+  const { noteActivity } = await import('./owners');
+  await noteActivity(owner);
   return handle(() => handler(owner));
 }
 
@@ -130,7 +132,20 @@ export async function webAuthed(req: Request, handler: (identity: Identity) => P
   const { resolveIdentity } = await import('./auth');
   const identity = await resolveIdentity(req);
   if (!identity) return new HttpError(401, 'unauthorized').toResponse();
+  const { noteActivity } = await import('./owners');
+  await noteActivity(identity.owner);
   return handle(() => handler(identity));
+}
+
+/**
+ * For the admin API (#82): [webAuthed], then `403 forbidden` for anyone but
+ * an admin.
+ */
+export async function adminAuthed(req: Request, handler: (identity: Identity) => Promise<Response>): Promise<Response> {
+  return webAuthed(req, async (identity) => {
+    if (!identity.isAdmin) throw new HttpError(403, 'forbidden');
+    return handler(identity);
+  });
 }
 
 /** A required non-negative integer header, or a 400 naming it. */

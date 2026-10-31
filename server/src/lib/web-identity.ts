@@ -1,7 +1,8 @@
 import { cookies, headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { resolveIdentity, type Identity } from './auth';
 import { preferredLocale, validZone } from './format';
+import { noteActivity } from './owners';
 
 /** The signed-in browser behind the page being rendered, or null (#80). */
 export async function pageIdentity(): Promise<Identity | null> {
@@ -15,6 +16,17 @@ export async function pageIdentity(): Promise<Identity | null> {
 export async function requireIdentity(): Promise<Identity> {
   const identity = await pageIdentity();
   if (!identity) redirect('/sign-in');
+  await noteActivity(identity.owner);
+  return identity;
+}
+
+/**
+ * The signed-in admin behind the page being rendered (#82). Every admin page
+ * calls this itself; to anyone else the page does not exist.
+ */
+export async function requireAdmin(): Promise<Identity> {
+  const identity = await requireIdentity();
+  if (!identity.isAdmin) notFound();
   return identity;
 }
 
