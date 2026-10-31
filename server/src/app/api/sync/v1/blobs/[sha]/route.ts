@@ -1,13 +1,14 @@
 import { blobKeys, blobStore } from '@/lib/blob-store';
-import { blobSize } from '@/lib/blobs';
+import { blobSize, claimBlob } from '@/lib/blobs';
 import { authed, HttpError, parseRange, sha256Param } from '@/lib/http';
 
 type Ctx = RouteContext<'/api/sync/v1/blobs/[sha]'>;
 
-// Whether a blob is stored, so a device never sends it twice.
+// Whether a blob is stored, so a device never sends it twice. A blob found
+// is claimed, so clean-up keeps it for the push that will refer to it (#81).
 export async function HEAD(req: Request, ctx: Ctx) {
   return authed(req, async (owner) => {
-    const size = await blobSize(owner, sha256Param((await ctx.params).sha));
+    const size = await claimBlob(owner, sha256Param((await ctx.params).sha));
     if (size === null) return new Response(null, { status: 404 });
     return new Response(null, { status: 200, headers: { 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
   });
