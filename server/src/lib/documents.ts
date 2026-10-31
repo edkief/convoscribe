@@ -6,6 +6,7 @@ import { blobKeys, blobStore } from './blob-store';
 import { missingBlobs } from './blobs';
 import { db } from './db';
 import { HttpError, type Kind } from './http';
+import { upsertSessionIndex } from './session-index';
 
 /** What the index knows about a document's current revision. */
 export type DocumentMeta = {
@@ -88,7 +89,7 @@ export function blobRefs(manifest: unknown): string[] {
 }
 
 /** Writes for one owner run one at a time, so `seq` order is commit order for the feed. */
-const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: string) =>
+export const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: string) =>
   tx.execute(sql`select pg_advisory_xact_lock(hashtext(${owner}))`);
 
 /**
@@ -96,7 +97,8 @@ const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: string) =>
  * current one (compare-and-swap), or if it is stale but wins the conflict
  * rule ([pushWins]); otherwise 409 with the current version, which the device
  * then downloads. A push that repeats the current manifest succeeds without a
- * new revision, so a device can retry after losing the response.
+ * new revision, so a device can retry after losing the response. A session's
+ * index row for the web app is written in the same transaction (#80).
  */
 export async function putDocument(owner: string, kind: Kind, syncId: string, push: Push): Promise<DocumentMeta> {
   const actual = createHash('sha256').update(push.manifest).digest('hex');
@@ -148,6 +150,7 @@ export async function putDocument(owner: string, kind: Kind, syncId: string, pus
     if (refs.length > 0) {
       await tx.insert(documentBlobs).values(refs.map((sha256) => ({ owner, kind, syncId, sha256 })));
     }
+    if (kind === 'session') await upsertSessionIndex(tx, owner, syncId, push.manifestHash, parsed, push.changedAt);
     return meta(row);
   });
 }
