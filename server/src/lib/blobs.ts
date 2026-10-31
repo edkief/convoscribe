@@ -1,8 +1,8 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { createHash, randomUUID } from 'node:crypto';
 import { blobs, uploadParts, uploads } from '@/db/schema';
 import { blobKeys, blobStore } from './blob-store';
-import { db } from './db';
+import { db, type Db } from './db';
 import { HttpError } from './http';
 
 /** Largest part accepted; devices send about 8 MB (#67). */
@@ -17,16 +17,36 @@ export async function blobSize(owner: string, sha256: string): Promise<number | 
   return row?.size ?? null;
 }
 
-/** Which of `shas` the owner has not stored yet. */
-export async function missingBlobs(owner: string, shas: string[]): Promise<string[]> {
-  const missing: string[] = [];
-  for (const sha of new Set(shas)) if ((await blobSize(owner, sha)) === null) missing.push(sha);
-  return missing;
+/** Which of `shas` the owner has not stored yet; run in the push's transaction, under the owner's lock. */
+export async function missingBlobs(owner: string, shas: string[], executor: Pick<Db, 'select'> = db()): Promise<string[]> {
+  const wanted = [...new Set(shas)];
+  if (wanted.length === 0) return [];
+  const stored = await executor
+    .select({ sha256: blobs.sha256 })
+    .from(blobs)
+    .where(and(eq(blobs.owner, owner), inArray(blobs.sha256, wanted)));
+  const have = new Set(stored.map((row) => row.sha256));
+  return wanted.filter((sha) => !have.has(sha));
+}
+
+/**
+ * The size of a stored blob, or null, for a device about to rely on it
+ * being there: a blob found is claimed again (its `createdAt` set to now),
+ * so clean-up's grace period keeps it until the device's push refers to
+ * it (#81).
+ */
+export async function claimBlob(owner: string, sha256: string): Promise<number | null> {
+  const [row] = await db()
+    .update(blobs)
+    .set({ createdAt: new Date() })
+    .where(and(eq(blobs.owner, owner), eq(blobs.sha256, sha256)))
+    .returning({ size: blobs.size });
+  return row?.size ?? null;
 }
 
 /** Start an upload of `sha256`; a blob already stored needs none. */
 export async function startUpload(owner: string, sha256: string): Promise<{ exists: true } | { id: string }> {
-  if ((await blobSize(owner, sha256)) !== null) return { exists: true };
+  if ((await claimBlob(owner, sha256)) !== null) return { exists: true };
   const id = randomUUID();
   const storeUploadId = await blobStore().createMultipart(blobKeys.staging(owner, id));
   await db().insert(uploads).values({ id, owner, sha256, storeUploadId });
@@ -100,6 +120,9 @@ export async function completeUpload(owner: string, sha256: string, id: string):
   }
   const size = object!.size;
   await store.move(staging, blobKeys.blob(owner, sha256));
-  await db().insert(blobs).values({ owner, sha256, size }).onConflictDoNothing();
+  await db()
+    .insert(blobs)
+    .values({ owner, sha256, size })
+    .onConflictDoUpdate({ target: [blobs.owner, blobs.sha256], set: { createdAt: new Date() } });
   return { size };
 }
