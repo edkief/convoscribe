@@ -274,6 +274,19 @@ brings them to your other devices.
   same embedding model and the same text uses them instead of indexing
   the session again; otherwise it indexes the session itself, as
   before.
+- **Action items as a checklist** (issue #31). A summary's action
+  items become a checklist on the Summary tab, below the summary. The
+  model lists them again as JSON after the summary (the bullet list is
+  read when that is missing or broken), with who will do each one
+  (matched to the speakers and participants), a due date when one was
+  said, and the moment it was agreed. Tick an item off, edit its text,
+  owner and due date, or delete it. Tap its time to go to that moment
+  in the transcript. Its menu also shares it as text or adds it to the
+  calendar (an all-day event on its due date). Regenerating keeps what
+  you ticked, edited or deleted and adds only new items. Home's menu →
+  *Open actions* lists every session's unticked items, by session or
+  by owner. Items are backed up and synced with their session.
+  Summaries saved before this version get items when regenerated.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -697,7 +710,8 @@ one package per concern:
   the LLM API key.
 - `llm/` — `ChatClient` (OkHttp + kotlinx.serialization, SSE
   streaming), `LlmException`, `LlmMessage`, `PromptBuilder`,
-  `SseParser`, `TranscriptTruncator`; `MarkNotesWriter` and
+  `SseParser`, `TranscriptTruncator`, `ActionItemsParser` (a summary's
+  action items, #31); `MarkNotesWriter` and
   `AutoTitler` run their LLM calls on the application scope, one at a
   time.
 - `recording/` — `RecordingController` (the audio + ASR loop),
