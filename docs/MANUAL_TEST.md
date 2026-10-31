@@ -1807,13 +1807,16 @@ production deployment behind authz-proxy; the rest work in either mode.
 3. Behind authz-proxy, sign in as a second user who has synced too.
 4. In `api-key` mode, open the server's address, enter a wrong key, then
    `SYNC_API_KEY`.
-5. In the library, pick a tag, then a *From* and *To* range covering a
-   few days, and tap *Filter*. Tap *Clear*. With more than 50 sessions,
-   tap *Older sessions* and then *Newest*.
-6. Open the session with a summary. Tap a transcript line, then an action
-   item's time, then a mark's time. Let it play and scroll down.
-7. Download the recording, the cleaned recording, and the transcript as
-   Markdown, SRT and VTT. Open the SRT next to the recording in a video
+5. On a laptop, pick a tag in the sidebar, then a *From* and *To* range
+   covering a few days, and tap *Apply*. Tap *Clear*. With more than 50
+   sessions, tap *Older sessions* and then *Newest*.
+6. Open the session with a summary. Tap a sentence, then an action item's
+   time (*Actions* tab), then a mark's time (*Marks* tab) and a mark on
+   the player's timeline. Let it play; press space, the arrow keys, *10*,
+   *30* and the speed button. Scroll the transcript with the mouse wheel,
+   then tap *Back to current line*.
+7. From *Download*, get the recording, the cleaned recording, the
+   transcript (Markdown) and the subtitles (SRT and WebVTT). Open the SRT next to the recording in a video
    player (VLC: *Subtitle → Add subtitle file*).
 8. Open the long session, seek near its end, and download its recording.
 9. From another site, submit a form to the sign-out route: on any other
@@ -1835,13 +1838,17 @@ production deployment behind authz-proxy; the rest work in either mode.
 - Step 4: the wrong key shows *That key is not this server's*; the right
   one opens the library. Sessions synced before this release are there
   too (the server log says how many it indexed at start).
-- Step 5: the list narrows to that tag and those days (dates as your
-  browser's time zone has them); *Clear* lists everything again; paging
-  never repeats or skips a session.
-- Step 6: playback starts at each time; the line being played is
-  highlighted and stays in view, and the player stays at the top.
-  Summary, action items (ticked ones struck through), marks with their
-  notes and questions match the app.
+- Step 5: sessions are grouped under *Today*, *Yesterday*, weekdays and
+  dates, each with a preview, speakers, open actions and length; the tag
+  is highlighted in the sidebar; the list narrows to that tag and those
+  days (in your browser's time zone); *Clear* lists everything again;
+  paging never repeats or skips a session.
+- Step 6: playback starts at each time; the sentence being played is
+  highlighted and kept in view until you scroll, then *Back to current
+  line* returns to it; space pauses and resumes, the arrows step 5 s, *10*
+  and *30* skip, the speed goes 1×, 1.25×, 1.5×, 2×, 0.75×. Summary,
+  action items (done ones struck through), marks with their notes and
+  questions match the app.
 - Step 7: files named after the session; the subtitles follow the speech,
   labelled with the speakers.
 - Step 8: it plays from near the end straight away, and the download
@@ -1849,6 +1856,9 @@ production deployment behind authz-proxy; the rest work in either mode.
 - Step 9: the server answers *403* and you stay signed in.
 - Step 10: the device syncs as before; the page shows the new title.
 - Step 11: the sign-in page, in both cases.
+- Steps 4 to 8 also on a tablet in landscape and portrait: below 1200 px
+  the sidebar folds into a top bar and the tag filter moves next to the
+  dates; below 900 px the notes panel sits above the transcript.
 
 ## Troubleshooting
 
