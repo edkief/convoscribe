@@ -1,3 +1,5 @@
+import type { Identity } from './auth';
+
 /** An error a route answers with as `{ error, ...details }` and `status`. */
 export class HttpError extends Error {
   constructor(
@@ -95,6 +97,40 @@ export async function authed(req: Request, handler: (owner: string) => Promise<R
   const owner = await resolveOwner(req);
   if (!owner) return unauthorized();
   return handle(() => handler(owner));
+}
+
+/**
+ * Whether a browser request comes from a page of this server: its `Origin`
+ * names the host the request was sent to (`X-Forwarded-Host` behind the
+ * reverse proxy). Browsers send `Origin` on every state-changing request,
+ * so a missing one is refused too (#79, decision 2).
+ */
+export function sameOrigin(req: Request): boolean {
+  const origin = req.headers.get('origin');
+  if (!origin) return false;
+  let host: string;
+  try {
+    host = new URL(origin).host;
+  } catch {
+    return false;
+  }
+  const target = req.headers.get('x-forwarded-host') ?? req.headers.get('host') ?? new URL(req.url).host;
+  return host.toLowerCase() === target.split(',')[0].trim().toLowerCase();
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD']);
+
+/**
+ * For the web app's routes (#80): refuse a state-changing request from
+ * another site with `403 cross_site`, resolve the browser's identity (401
+ * without one), and run `handler` with HttpErrors mapped.
+ */
+export async function webAuthed(req: Request, handler: (identity: Identity) => Promise<Response>): Promise<Response> {
+  if (!SAFE_METHODS.has(req.method) && !sameOrigin(req)) return new HttpError(403, 'cross_site').toResponse();
+  const { resolveIdentity } = await import('./auth');
+  const identity = await resolveIdentity(req);
+  if (!identity) return new HttpError(401, 'unauthorized').toResponse();
+  return handle(() => handler(identity));
 }
 
 /** A required non-negative integer header, or a 400 naming it. */

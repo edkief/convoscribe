@@ -18,6 +18,16 @@ const schema = z
     AUTH_MODE: z.enum(['api-key', 'authz-proxy']),
     SYNC_API_KEY: z.preprocess(blankToUndefined, z.string().min(32).optional()),
     AUTHZ_PROXY_URL: z.preprocess(blankToUndefined, z.url().optional()),
+    // authz-proxy roles that make a user an admin (#79); the SDK's default otherwise.
+    ADMIN_ROLES: z.preprocess(
+      blankToUndefined,
+      z
+        .string()
+        .transform((value) => value.split(',').map((role) => role.trim()).filter(Boolean))
+        .optional(),
+    ),
+    // Where the web app's Sign out goes in authz-proxy mode, whose session is the proxy's (#80).
+    WEB_SIGN_OUT_URL: z.preprocess(blankToUndefined, z.url().optional()),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === 'api-key' && !env.SYNC_API_KEY) {
