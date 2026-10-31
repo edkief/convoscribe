@@ -4,9 +4,8 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, vi } from 'vitest';
 import { FsBlobStore, setBlobStore } from '@/lib/blob-store';
-import { setDb } from '@/lib/db';
 import { resetActivity } from '@/lib/owners';
-import { createTestDb } from './db';
+import { closeTestDb, createTestDb } from './db';
 import { stubServerEnv, TEST_API_KEY } from './env';
 
 /** Request headers for an authenticated device. */
@@ -33,7 +32,7 @@ export function setupSyncServer() {
     setBlobStore(new FsBlobStore(root));
   });
   afterEach(async () => {
-    setDb(undefined);
+    await closeTestDb();
     setBlobStore(undefined);
     vi.unstubAllEnvs();
     await rm(root, { recursive: true, force: true });

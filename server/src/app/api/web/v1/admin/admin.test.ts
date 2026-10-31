@@ -18,6 +18,12 @@ const put = (body: unknown, headers: Record<string, string> = JSON_ORIGIN) =>
 const post = (body: unknown, headers: Record<string, string> = JSON_ORIGIN) =>
   cleanupPost(request('/api/web/v1/admin/cleanup', { method: 'POST', body: JSON.stringify(body), headers }));
 
+/** Wait for a preview started by a test, which must not outlive the test's database. */
+const previewDone = () =>
+  expect
+    .poll(async () => ((await (await cleanupGet(request('/x'))).json()) as { preview: { running: boolean } }).preview.running, { timeout: 4000 })
+    .toBe(false);
+
 type Route = { name: string; call: (headers: Record<string, string>) => Promise<Response> };
 
 /** Every admin route, given a browser's headers. */
@@ -79,6 +85,8 @@ describe('who may use the admin API (#82)', () => {
       await noteActivity('alice@example.com');
       const res = await call(await proxyJwt('root@example.com'));
       expect(res.status).toBeLessThan(300);
+      stubServerEnv();
+      await previewDone();
     });
 
     it.each(routes)('$name refuses anyone not signed in', async ({ call }) => {
@@ -179,7 +187,7 @@ describe('clean-up from the admin API (#82)', () => {
     const res = await post({ dryRun: true });
     expect(res.status).toBe(202);
     expect(await res.json()).toEqual({ id: expect.any(Number) });
-    await expect.poll(async () => ((await (await cleanupGet(request('/x'))).json()) as { preview: { last: unknown } }).preview.last).not.toBeNull();
+    await previewDone();
   });
 
   it('refuses a bad body', async () => {
