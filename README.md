@@ -840,7 +840,8 @@ your sessions there (#80): sign in (with `SYNC_API_KEY`, or through
 authz-proxy), browse them by day, tag and date with a preview of each,
 and open one to read its transcript beside its summary, action items,
 marks and questions while its recording plays; tap a sentence to play
-from it.
+from it. Search the words of all your transcripts and summaries there
+too, and open a result at the matching line (#83).
 Recordings and transcripts (Markdown, SRT or WebVTT) download from there.
 You see only your own sessions. A session deleted there or on a device
 waits in the web app's trash for 30 days (#81): restoring it brings it

@@ -1971,6 +1971,55 @@ app as each, in separate browser profiles. Have one more finished session on
   not available and the page otherwise working; no error text. After it is
   back, everything is reachable again.
 
+## 47. Search in the server web app (issue #83)
+
+Use a sync server from this release with sessions synced by a device from
+**before** this release, without syncing again: one in French with accented
+words (e.g. *réunion*), one with a recording and a transcript long enough to
+scroll, one with two summaries, and a renamed speaker (e.g. *Élodie*). For
+step 7 a second user on the same server, signed in with a separate browser
+profile, and for step 8 the longest session you have.
+
+**Steps**
+
+1. Start the server on this release, wait for `session index: indexed …` in
+   its log, and sign in. Don't let a device sync.
+2. In the sidebar's search field type `reunion`, then `RÉUNION`, then `reun`.
+3. Search for the speaker without accents (`elodie`), a word of a session's
+   title, a word only in the latest summary, and one only in the older summary.
+4. Search for two words said in the same line, then two never in the same line,
+   title, summary or speaker name.
+5. Open a transcript line from the results, then press play.
+6. Go back and open each summary result.
+7. As the second user, search for a word only the first user's sessions hold.
+8. Search for a word near the end of the longest session and open it.
+9. Delete a session that matched and search again; restore it from the trash
+   and search again.
+10. On a device, rename a session and edit a line, sync, and search for the new
+    words and the old ones.
+11. At a width under 1200 px, tap the search button in the top bar and search.
+12. Search for a word on many lines (e.g. `the`).
+
+**Expected**
+
+- Step 1: the log counts the older sessions, and the bucket is unchanged.
+- Step 2: all three find the French session; the matched word is marked, and
+  each line shows its time and speaker. Sessions are newest first.
+- Step 3: each finds its session, showing *Speakers*, the title, *Summary* or
+  *Earlier summary* with the match marked.
+- Step 4: the first finds the line; the second says *Nothing found*.
+- Step 5: the session opens scrolled to that line, which is highlighted; the
+  player shows its time and is **not playing**. Play starts from there.
+- Step 6: the *Summary* tab is open; for an older summary, *Earlier summaries*
+  is unfolded too. Nothing plays.
+- Step 7: *Nothing found*.
+- Step 8: the session is found and opens at the line.
+- Step 9: gone from results while in the trash, found again once restored.
+- Step 10: found by the new words, no longer by the old ones.
+- Step 11: the search page opens with its own field, and fits the width.
+- Step 12: three lines per session, *Show N more lines* for up to 50 in all, and
+  a count of any beyond that.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
