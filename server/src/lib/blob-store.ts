@@ -6,6 +6,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   NotFound,
   PutObjectCommand,
@@ -25,6 +26,9 @@ export type ByteRange = { start: number; end: number };
 /** An object's bytes, or the requested range of them. */
 export type StoredObject = { body: ReadableStream<Uint8Array>; size: number; range?: ByteRange };
 
+/** An object as a listing shows it. */
+export type ListedObject = { key: string; size: number; lastModified: Date };
+
 /**
  * Where synced bytes live (#68): manifests and recordings, by key. Multipart
  * uploads let a device send a large recording part by part and resume.
@@ -42,7 +46,10 @@ export interface BlobStore {
   /** Stores part `n` (from 1) and returns its ETag. */
   uploadPart(key: string, uploadId: string, n: number, bytes: Uint8Array): Promise<string>;
   completeMultipart(key: string, uploadId: string, parts: { n: number; etag: string }[]): Promise<void>;
+  /** Abort an upload; one already gone (aborted by a bucket lifecycle rule, say) is fine. */
   abortMultipart(key: string, uploadId: string): Promise<void>;
+  /** Every object whose key starts with `prefix`, a page at a time (#81). */
+  list(prefix: string): AsyncIterable<ListedObject>;
 }
 
 /** Keys are scoped by owner from the first version, so multi-user needs no migration. */
@@ -119,7 +126,25 @@ export class S3BlobStore implements BlobStore {
   }
 
   async abortMultipart(key: string, uploadId: string) {
-    await s3().send(new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }));
+    try {
+      await s3().send(new AbortMultipartUploadCommand({ Bucket: this.bucket, Key: key, UploadId: uploadId }));
+    } catch (err) {
+      if ((err as { name?: string }).name !== 'NoSuchUpload') throw err;
+    }
+  }
+
+  async *list(prefix: string): AsyncIterable<ListedObject> {
+    let token: string | undefined;
+    do {
+      const res = await s3().send(
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: prefix, ContinuationToken: token }),
+      );
+      for (const object of res.Contents ?? []) {
+        if (object.Key === undefined) continue;
+        yield { key: object.Key, size: Number(object.Size ?? 0), lastModified: object.LastModified ?? new Date(0) };
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
   }
 }
 
@@ -193,6 +218,32 @@ export class FsBlobStore implements BlobStore {
 
   async abortMultipart(_key: string, uploadId: string) {
     await rm(this.uploadDir(uploadId), { recursive: true, force: true });
+  }
+
+  async *list(prefix: string): AsyncIterable<ListedObject> {
+    const objects = path.join(this.root, 'objects');
+    const walk = async function* (dir: string): AsyncIterable<ListedObject> {
+      let entries;
+      try {
+        entries = await readdir(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+        const file = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          yield* walk(file);
+          continue;
+        }
+        // A part file completeMultipart is still assembling is not an object yet.
+        if (entry.name.endsWith('.tmp')) continue;
+        const key = path.relative(objects, file).split(path.sep).join('/');
+        if (!key.startsWith(prefix)) continue;
+        const info = await stat(file);
+        yield { key, size: info.size, lastModified: info.mtime };
+      }
+    };
+    yield* walk(objects);
   }
 }
 

@@ -4,9 +4,11 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgSequence,
   pgTable,
   primaryKey,
+  serial,
   text,
   timestamp,
 } from 'drizzle-orm/pg-core';
@@ -17,7 +19,9 @@ export const changeSeq = pgSequence('change_seq');
 /**
  * One synced document per owner, kind and sync id (#68). The manifest itself
  * lives in the blob store; this row is the index the conflict rule and the
- * change feed work from. A delete keeps the row as a tombstone.
+ * change feed work from. A delete keeps the row as a tombstone; a deleted
+ * session's tombstone also keeps its manifest and recordings in the trash
+ * for 30 days (#81), so the web app can restore it.
  */
 export const documents = pgTable(
   'documents',
@@ -34,11 +38,18 @@ export const documents = pgTable(
     manifestHash: text('manifest_hash'),
     deleted: boolean('deleted').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    /** When a deleted session went to the trash; null when live, purged, or deleted before #81. */
+    trashedAt: timestamp('trashed_at', { withTimezone: true }),
+    /** The manifest a restore brings back, while the session is in the trash. */
+    trashedManifestHash: text('trashed_manifest_hash'),
   },
   (t) => [primaryKey({ columns: [t.owner, t.kind, t.syncId] }), index('documents_owner_seq').on(t.owner, t.seq)],
 );
 
-/** The blobs a document's current revision refers to, for later clean-up. */
+/**
+ * The blobs a document's current revision refers to, or a trashed
+ * session's; clean-up removes any blob no row refers to (#81).
+ */
 export const documentBlobs = pgTable(
   'document_blobs',
   {
@@ -57,6 +68,11 @@ export const blobs = pgTable(
     owner: text('owner').notNull(),
     sha256: text('sha256').notNull(),
     size: bigint('size', { mode: 'number' }).notNull(),
+    /**
+     * When the blob was last stored or confirmed to a device as stored;
+     * clean-up's grace period counts from it, so a push about to refer to
+     * the blob finds it still there (#81).
+     */
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.owner, t.sha256] })],
@@ -127,3 +143,15 @@ export const sessionIndex = pgTable(
     index('session_index_tags').using('gin', t.tags),
   ],
 );
+
+/** One run of storage clean-up (#81), with what it removed or, dry, would remove. */
+export const cleanupRuns = pgTable('cleanup_runs', {
+  id: serial('id').primaryKey(),
+  /** `scheduled` (the daily run) or `manual`. */
+  trigger: text('trigger').notNull(),
+  dryRun: boolean('dry_run').notNull(),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  report: jsonb('report'),
+  error: text('error'),
+});

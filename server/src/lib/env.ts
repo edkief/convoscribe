@@ -28,6 +28,8 @@ const schema = z
     ),
     // Where the web app's Sign out goes in authz-proxy mode, whose session is the proxy's (#80).
     WEB_SIGN_OUT_URL: z.preprocess(blankToUndefined, z.url().optional()),
+    // The daily storage clean-up (#81): `dry-run` records what it would remove and removes nothing.
+    CLEANUP: z.preprocess(blankToUndefined, z.enum(['on', 'dry-run', 'off']).default('on')),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === 'api-key' && !env.SYNC_API_KEY) {
