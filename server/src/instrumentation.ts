@@ -1,6 +1,7 @@
 // Runs once when the server starts: fail fast on bad configuration, bring
 // the database schema up to date, then index sessions pushed before the web
-// app existed (#80) in the background.
+// app existed (#80) in the background, and schedule the daily storage
+// clean-up (#81).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
   try {
@@ -20,4 +21,10 @@ export async function register() {
     },
     (err) => console.error('session index backfill failed', err),
   );
+  const { env } = await import('./lib/env');
+  const mode = env().CLEANUP;
+  if (mode !== 'off') {
+    const { scheduleCleanup } = await import('./lib/cleanup');
+    scheduleCleanup(mode);
+  }
 }
