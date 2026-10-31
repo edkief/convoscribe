@@ -47,4 +47,14 @@ describe('loadEnv', () => {
     expect(roles('ops, convoscribe-admin ,')).toEqual(['ops', 'convoscribe-admin']);
     expect(roles('')).toBeUndefined();
   });
+
+  it('runs clean-up by default, and accepts dry-run and off (#81)', () => {
+    const cleanup = (value?: string) =>
+      loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, ...(value === undefined ? {} : { CLEANUP: value }) }).CLEANUP;
+    expect(cleanup()).toBe('on');
+    expect(cleanup('')).toBe('on');
+    expect(cleanup('dry-run')).toBe('dry-run');
+    expect(cleanup('off')).toBe('off');
+    expect(() => cleanup('maybe')).toThrow(/CLEANUP/);
+  });
 });
