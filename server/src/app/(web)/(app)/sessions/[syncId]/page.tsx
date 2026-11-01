@@ -5,19 +5,12 @@ import { formatBytes, formatDateTime, formatLength } from '@/lib/format';
 import { KNOWN_SCHEMA, marksByLine, spoken, timestamp, type Message, type SessionView } from '@/lib/transcript-export';
 import { pageLocale, requireIdentity } from '@/lib/web-identity';
 import { readSession } from '@/lib/web-session';
-import { Avatar } from '../../../_components/Avatar';
+import { ActionList } from '../../../_components/ActionList';
 import { DownloadMenu, type Download } from '../../../_components/DownloadMenu';
-import {
-  IconAlert,
-  IconCalendar,
-  IconCheckCircle,
-  IconChevronLeft,
-  IconCircle,
-  IconClock,
-  IconGlobe,
-} from '../../../_components/Icons';
+import { IconAlert, IconCalendar, IconChevronLeft, IconClock, IconGlobe } from '../../../_components/Icons';
 import { Markdown } from '../../../_components/Markdown';
 import { PlayerBar, PlayerProvider, SeekTime } from '../../../_components/Player';
+import { EditableSpeakers, EditableTags, EditableTitle, SessionEditor } from '../../../_components/SessionEditor';
 import { Tabs, type Tab } from '../../../_components/Tabs';
 import { DeleteSession } from '../../../_components/TrashActions';
 import { Transcript } from '../../../_components/Transcript';
@@ -34,7 +27,9 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
 /**
  * One session (#80): the transcript beside its summaries, action items,
  * marks and questions, with the recording in a player the transcript
- * follows. Read-only, but for *Delete*, which moves it to the trash (#81).
+ * follows. *Delete* moves it to the trash (#81). Its title, tags, speakers,
+ * lines and action items can be edited (#84), unless it comes from a newer
+ * app than this server knows.
  * A search result (#83) opens it on a line (`?line=`) or the summaries
  * (`?tab=summary`, with `&earlier=1` for an older one).
  */
@@ -66,83 +61,73 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
     { href: `${base}/transcript/vtt`, label: 'Subtitles', detail: 'WebVTT' },
   ];
   const tabs = panels(view, when, tones, earlier === '1');
+  const newer = (view.schema ?? 0) > KNOWN_SCHEMA;
 
   return (
-    <PlayerProvider src={view.audio ? `${base}/audio` : null}>
-      <div className={view.audio ? 'page session with-player' : 'page session'}>
-        <header className="session-head">
-          <Link href="/" className="back">
-            <IconChevronLeft size={16} /> All sessions
-          </Link>
-          <div className="title-row">
-            <h1>{view.title}</h1>
-            <div className="title-actions">
-              <DownloadMenu items={downloads} />
-              <DeleteSession syncId={syncId} revision={meta.revision} title={view.title} />
+    <SessionEditor syncId={syncId} revision={meta.revision} editable={!newer}>
+      <PlayerProvider src={view.audio ? `${base}/audio` : null}>
+        <div className={view.audio ? 'page session with-player' : 'page session'}>
+          <header className="session-head">
+            <Link href="/" className="back">
+              <IconChevronLeft size={16} /> All sessions
+            </Link>
+            <div className="title-row">
+              <EditableTitle title={view.title} />
+              <div className="title-actions">
+                <DownloadMenu items={downloads} />
+                <DeleteSession syncId={syncId} revision={meta.revision} title={view.title} />
+              </div>
             </div>
-          </div>
-          <div className="session-meta">
-            {view.createdAt !== null && (
-              <span className="meta-item">
-                <IconCalendar size={15} />
-                {when(view.createdAt)}
-              </span>
+            <div className="session-meta">
+              {view.createdAt !== null && (
+                <span className="meta-item">
+                  <IconCalendar size={15} />
+                  {when(view.createdAt)}
+                </span>
+              )}
+              {view.durationMs ? (
+                <span className="meta-item">
+                  <IconClock size={15} />
+                  {formatLength(view.durationMs)}
+                </span>
+              ) : null}
+              {view.language && (
+                <span className="meta-item">
+                  <IconGlobe size={15} />
+                  {languageName(view.language, locale)}
+                </span>
+              )}
+              <EditableTags tags={view.tags} />
+            </div>
+            {view.speakers.length > 0 && <EditableSpeakers speakers={view.speakers} />}
+            {newer && (
+              <p className="notice">
+                <IconAlert size={16} /> This session comes from a newer version of the app; parts of it may not show here, and it can’t be edited here.
+              </p>
             )}
-            {view.durationMs ? (
-              <span className="meta-item">
-                <IconClock size={15} />
-                {formatLength(view.durationMs)}
-              </span>
-            ) : null}
-            {view.language && (
-              <span className="meta-item">
-                <IconGlobe size={15} />
-                {languageName(view.language, locale)}
-              </span>
-            )}
-            {view.tags.map((t) => (
-              <Link key={t} className="chip" href={`/?tag=${encodeURIComponent(t)}`}>
-                {t}
-              </Link>
-            ))}
-          </div>
-          {view.speakers.length > 0 && (
-            <ul className="speakers" aria-label="Speakers">
-              {view.speakers.map((s, i) => (
-                <li key={s.index}>
-                  <Avatar name={s.label} tone={i} size="sm" />
-                  {s.label}
-                </li>
-              ))}
-            </ul>
-          )}
-          {(view.schema ?? 0) > KNOWN_SCHEMA && (
-            <p className="notice">
-              <IconAlert size={16} /> This session comes from a newer version of the app; parts of it may not show here.
-            </p>
-          )}
-        </header>
+          </header>
 
-        <div className={tabs.length ? 'session-grid' : 'session-grid single'}>
-          <section className="card transcript-card" aria-labelledby="transcript-heading">
-            <div className="card-head">
-              <h2 id="transcript-heading">Transcript</h2>
-              <span className="muted">
-                {lines.length} {lines.length === 1 ? 'line' : 'lines'}
-                {view.audio && ' · tap a sentence to play from there'}
-              </span>
-            </div>
-            <Transcript lines={lines} marks={marks} tones={tones} target={target} />
-          </section>
-          {tabs.length > 0 && (
-            <aside className="card side-panel" aria-label="Notes">
-              <Tabs tabs={tabs} label="Session notes" initial={typeof tab === 'string' ? tab : undefined} />
-            </aside>
-          )}
+          <div className={tabs.length ? 'session-grid' : 'session-grid single'}>
+            <section className="card transcript-card" aria-labelledby="transcript-heading">
+              <div className="card-head">
+                <h2 id="transcript-heading">Transcript</h2>
+                <span className="muted">
+                  {lines.length} {lines.length === 1 ? 'line' : 'lines'}
+                  {view.audio && ' · tap a sentence to play from there'}
+                </span>
+              </div>
+              <Transcript lines={lines} marks={marks} tones={tones} target={target} />
+            </section>
+            {tabs.length > 0 && (
+              <aside className="card side-panel" aria-label="Notes">
+                <Tabs tabs={tabs} label="Session notes" initial={typeof tab === 'string' ? tab : undefined} />
+              </aside>
+            )}
+          </div>
         </div>
-      </div>
-      <PlayerBar durationMs={view.durationMs} marks={view.marks.map((m) => ({ atMs: m.atMs, label: `${timestamp(m.atMs)} · ${m.note || 'Mark'}` }))} />
-    </PlayerProvider>
+        <PlayerBar durationMs={view.durationMs} marks={view.marks.map((m) => ({ atMs: m.atMs, label: `${timestamp(m.atMs)} · ${m.note || 'Mark'}` }))} />
+      </PlayerProvider>
+    </SessionEditor>
   );
 }
 
@@ -154,13 +139,6 @@ function languageName(code: string, locale: string): string {
   } catch {
     return code;
   }
-}
-
-/** A `yyyy-mm-dd` due date as words, like `Fri 6 Nov`. */
-function dueDate(value: string): string {
-  const ms = Date.parse(`${value}T00:00:00Z`);
-  if (Number.isNaN(ms)) return value;
-  return new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(ms);
 }
 
 function panels(view: SessionView, when: (ms: number | null) => string | null, tones: Record<number, number>, openEarlier: boolean): Tab[] {
@@ -190,41 +168,13 @@ function panels(view: SessionView, when: (ms: number | null) => string | null, t
     });
   }
   if (view.actionItems.length) {
-    const toneOf = new Map(view.speakers.map((s) => [s.label.toLowerCase(), tones[s.index] ?? 0]));
+    const toneOf = Object.fromEntries(view.speakers.map((s) => [s.label.toLowerCase(), tones[s.index] ?? 0]));
     const open = view.actionItems.filter((a) => !a.done).length;
     tabs.push({
       id: 'actions',
       label: 'Actions',
       count: open,
-      content: (
-        <ul className="actions">
-          {view.actionItems.map((item, i) => (
-            <li key={i} className={item.done ? 'action done' : 'action'}>
-              <span className="action-check" aria-label={item.done ? 'Done' : 'Open'}>
-                {item.done ? <IconCheckCircle size={20} /> : <IconCircle size={20} />}
-              </span>
-              <div className="action-body">
-                <p className="action-text">{item.text}</p>
-                <div className="action-meta">
-                  {item.owner && (
-                    <span className="meta-item">
-                      <Avatar name={item.owner} tone={toneOf.get(item.owner.toLowerCase()) ?? 7} size="sm" />
-                      {item.owner}
-                    </span>
-                  )}
-                  {item.dueDate && (
-                    <span className="meta-item">
-                      <IconCalendar size={14} />
-                      Due {dueDate(item.dueDate)}
-                    </span>
-                  )}
-                  {item.atMs !== null && <SeekTime ms={item.atMs} label={timestamp(item.atMs)} />}
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ),
+      content: <ActionList items={view.actionItems} tones={toneOf} />,
     });
   }
   if (view.marks.length) {

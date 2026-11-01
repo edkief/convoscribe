@@ -199,6 +199,18 @@ export const IconTrash = (p: IconProps) => (
   </Icon>
 );
 
+export const IconPencil = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 20h4L19.3 8.7a1.4 1.4 0 0 0 0-2L17.3 4.7a1.4 1.4 0 0 0-2 0L4 16v4ZM13.5 6.5l4 4" />
+  </Icon>
+);
+
+export const IconClose = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Icon>
+);
+
 export const IconRestore = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6" />

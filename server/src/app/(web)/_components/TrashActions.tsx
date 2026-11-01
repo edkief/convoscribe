@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useRef, useState, type ReactNode } from 'react';
 import { IconRestore, IconTrash } from './Icons';
+import { useSessionEditor } from './SessionEditor';
 
 /** Run a state-changing request of the web API, returning an error message or null. */
 export async function send(url: string, method: string, body?: unknown, messages: Record<number, string> = {}): Promise<string | null> {
@@ -21,6 +22,8 @@ export async function send(url: string, method: string, body?: unknown, messages
 
 type ConfirmProps = {
   label: ReactNode;
+  /** For a button showing only an icon. */
+  ariaLabel?: string;
   className: string;
   title: string;
   children: ReactNode;
@@ -30,7 +33,7 @@ type ConfirmProps = {
 };
 
 /** A button that asks first, in a modal dialog (#81). */
-export function ConfirmButton({ label, className, title, children, confirm, onConfirm }: ConfirmProps) {
+export function ConfirmButton({ label, ariaLabel, className, title, children, confirm, onConfirm }: ConfirmProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +47,7 @@ export function ConfirmButton({ label, className, title, children, confirm, onCo
   };
   return (
     <>
-      <button type="button" className={className} onClick={() => dialog.current?.showModal()}>
+      <button type="button" className={className} aria-label={ariaLabel} onClick={() => dialog.current?.showModal()}>
         {label}
       </button>
       <dialog ref={dialog} className="dialog" onClose={() => setError(null)}>
@@ -71,6 +74,7 @@ export function ConfirmButton({ label, className, title, children, confirm, onCo
 /** The session page's *Delete*: to the trash, from the revision the page shows. */
 export function DeleteSession({ syncId, revision, title }: { syncId: string; revision: number; title: string }) {
   const router = useRouter();
+  const editor = useSessionEditor();
   return (
     <ConfirmButton
       label={
@@ -82,7 +86,7 @@ export function DeleteSession({ syncId, revision, title }: { syncId: string; rev
       title="Delete this session?"
       confirm="Delete"
       onConfirm={async () => {
-        const error = await send(`/api/web/v1/sessions/${encodeURIComponent(syncId)}`, 'DELETE', { baseRevision: revision }, {
+        const error = await send(`/api/web/v1/sessions/${encodeURIComponent(syncId)}`, 'DELETE', { baseRevision: editor?.revision() ?? revision }, {
           409: 'This session changed on a device since this page loaded. Reload the page, then delete it again.',
           404: 'This session was already deleted.',
         });
