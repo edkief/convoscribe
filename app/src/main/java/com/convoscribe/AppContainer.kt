@@ -554,7 +554,8 @@ class AppContainer(val context: Context) {
         downloadDir = File(context.filesDir, "sync-downloads"),
         isMetered = { context.getSystemService<ConnectivityManager>()?.isActiveNetworkMetered ?: true },
         onRecordingAttached = { pendingDiarizationScheduler.sync() },
-        vectors = semanticIndexRunner
+        vectors = semanticIndexRunner,
+        baseDir = File(context.filesDir, "sync-base")
     )
 
     /**

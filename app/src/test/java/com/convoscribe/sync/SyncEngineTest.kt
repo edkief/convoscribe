@@ -91,6 +91,60 @@ class SyncEngineTest {
 
     private fun documentRequests() = fake.requests.filter { it.startsWith("PUT documents/") }
 
+    private fun bases() = File(recordingsDir, "sync-base").listFiles().orEmpty().map { it.name }
+
+    @Test
+    fun keepsOneBaseCopyOfWhatLastSynced() = runTest {
+        val id = finishedSession()
+        val syncId = syncId(id)
+        assertEquals(emptyList<String>(), bases())
+
+        engine.run()
+        val first = db.syncDao().state(SyncKinds.SESSION, syncId)!!.baseHash!!
+        assertEquals(listOf("$syncId-$first.json.gz"), bases())
+        assertEquals("Standup", SyncBase(File(recordingsDir, "sync-base")).read(syncId, first)!!.title)
+
+        now += 10
+        repo.renameSession(id, "Renamed")
+        engine.run()
+        val second = db.syncDao().state(SyncKinds.SESSION, syncId)!!.baseHash!!
+        assertEquals(listOf("$syncId-$second.json.gz"), bases())
+        assertEquals("Renamed", SyncBase(File(recordingsDir, "sync-base")).read(syncId, second)!!.title)
+    }
+
+    @Test
+    fun aSessionSyncedBeforeBasesExistedGetsOneOnTheNextRun() = runTest {
+        val syncId = syncId(finishedSession())
+        engine.run()
+        File(recordingsDir, "sync-base").deleteRecursively()
+
+        engine.run()
+
+        val hash = db.syncDao().state(SyncKinds.SESSION, syncId)!!.baseHash!!
+        assertEquals(listOf("$syncId-$hash.json.gz"), bases())
+        assertEquals(1, documentRequests().size)
+    }
+
+    @Test
+    fun aDeletedSessionsBaseGoes() = runTest {
+        val id = finishedSession()
+        engine.run()
+
+        repo.deleteSession(id)
+        engine.run()
+
+        assertEquals(emptyList<String>(), bases())
+    }
+
+    @Test
+    fun aBaseThatDoesNotReadCountsAsNone() {
+        val dir = File(recordingsDir, "sync-base").apply { mkdirs() }
+        File(dir, "s-h.json.gz").writeText("not gzip")
+
+        assertNull(SyncBase(dir).read("s", "h"))
+        assertNull(SyncBase(dir).read("s", "other"))
+    }
+
     @Test
     fun uploadsAFinishedSessionWithItsRecording() = runTest {
         val id = finishedSession()

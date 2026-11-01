@@ -89,11 +89,13 @@ class SyncEngine(
     private val onRecordingAttached: () -> Unit = {},
     private val vectors: SessionVectors? = null,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val partBytes: Long = BlobUploader.PART_BYTES
+    private val partBytes: Long = BlobUploader.PART_BYTES,
+    baseDir: File = File(downloadDir.parentFile, "sync-base")
 ) {
     private val lock = Mutex()
     private val dao = db.syncDao()
     private val hashes = FileHashCache(dao)
+    private val bases = SyncBase(baseDir)
     private val libraries = LibraryKind.all(db)
 
     /** The kinds this version syncs; the feed's others are left for a newer one. */
@@ -159,6 +161,9 @@ class SyncEngine(
             for (library in libraries) if (!offline && !deferred) syncLibrary(library)
             vectors?.let { if (!offline && !deferred) syncVectors(it) }
             if (!offline && !deferred) downloadRecordings()
+            if (!offline && !deferred) {
+                bases.retain(dao.states(SyncKinds.SESSION).filterNot { it.excluded }.map { it.syncId }.toSet())
+            }
             val downloading = dao.behind(SyncKinds.SESSION).size +
                 dao.pendingAudio(SyncKinds.SESSION).sumOf { listOfNotNull(it.audioSha, it.cleanSha).size }
             status.update { previous ->
@@ -318,7 +323,11 @@ class SyncEngine(
             val snapshot = snapshot(row, state) ?: return true
             val manifest = snapshot.manifest
             val hash = SessionManifests.hash(manifest)
-            if (hash == state.baseHash) return true
+            if (hash == state.baseHash) {
+                // Synced before this device kept bases (#90).
+                if (!bases.has(manifest.syncId, hash)) bases.write(manifest.syncId, hash, manifest)
+                return true
+            }
             val pending = if (state.pendingHash == hash) {
                 state
             } else {
@@ -346,7 +355,7 @@ class SyncEngine(
                 )
                 return when (result) {
                     is PushResult.Accepted -> {
-                        accepted(pending, result.meta.revision, hash)
+                        accepted(pending, result.meta.revision, hash, manifest)
                         true
                     }
                     is PushResult.Conflict -> {
@@ -381,22 +390,31 @@ class SyncEngine(
          * being pushed found no state to make a tombstone from, so it
          * gets one here and the server copy goes too.
          */
-        private suspend fun accepted(pending: SyncStateEntity, revision: Long, hash: String) = db.withTransaction {
-            val row = db.sessionDao().getBySyncId(pending.syncId)
-            if (row == null) {
-                dao.upsertTombstone(SyncTombstoneEntity(pending.kind, pending.syncId, revision, clock()))
-                dao.deleteState(pending.kind, pending.syncId)
-            } else {
-                dao.upsertState(
-                    pending.copy(
-                        baseRevision = revision,
-                        baseHash = hash,
-                        pendingHash = null,
-                        pendingSince = null,
-                        lastError = null
+        private suspend fun accepted(
+            pending: SyncStateEntity,
+            revision: Long,
+            hash: String,
+            manifest: SessionManifest
+        ) {
+            bases.write(pending.syncId, hash, manifest)
+            db.withTransaction {
+                val row = db.sessionDao().getBySyncId(pending.syncId)
+                if (row == null) {
+                    dao.upsertTombstone(SyncTombstoneEntity(pending.kind, pending.syncId, revision, clock()))
+                    dao.deleteState(pending.kind, pending.syncId)
+                } else {
+                    dao.upsertState(
+                        pending.copy(
+                            baseRevision = revision,
+                            baseHash = hash,
+                            pendingHash = null,
+                            pendingSince = null,
+                            lastError = null
+                        )
                     )
-                )
+                }
             }
+            bases.keepOnly(pending.syncId, hash)
         }
 
         /**
@@ -494,7 +512,11 @@ class SyncEngine(
             // The hash of the session as stored here, so a difference in
             // how this install encodes it never counts as a change.
             val local = db.sessionDao().get(id) ?: return
-            dao.upsertState(applied.copy(baseHash = snapshot(local, applied)?.manifest?.let(SessionManifests::hash)))
+            val stored = snapshot(local, applied)?.manifest
+            val hash = stored?.let(SessionManifests::hash)
+            if (stored != null && hash != null) bases.write(state.syncId, hash, stored)
+            dao.upsertState(applied.copy(baseHash = hash))
+            if (hash != null) bases.keepOnly(state.syncId, hash)
         }
 
         /**
