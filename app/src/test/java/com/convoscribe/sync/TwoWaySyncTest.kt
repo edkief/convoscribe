@@ -6,11 +6,13 @@ import androidx.test.core.app.ApplicationProvider
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
+import com.convoscribe.data.PresetEntity
 import com.convoscribe.data.SessionManifests
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.SyncKinds
 import com.convoscribe.data.cleanAudioFile
+import com.convoscribe.llm.ExtractedActionItem
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
@@ -38,7 +40,7 @@ import org.robolectric.RobolectricTestRunner
 
 /**
  * Two devices syncing through one [FakeSyncServer] (issue #69):
- * downloads, edits both ways, the conflict rule, deletes everywhere and
+ * downloads, edits both ways, merging (#90), deletes everywhere and
  * *Remove from this device*.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -190,7 +192,7 @@ class TwoWaySyncTest {
     }
 
     @Test
-    fun theLongerRecordingWinsAConflict() = runTest {
+    fun theLongerRecordingWinsAndTheRenameSurvives() = runTest {
         val syncId = fullSession(a)
         a.sync()
         b.sync()
@@ -203,7 +205,8 @@ class TwoWaySyncTest {
         b.sync()
 
         assertEquals(5_000L, b.session(syncId)!!.durationMs)
-        assertEquals("Standup", b.session(syncId)!!.title)
+        assertEquals("Renamed later on B", b.session(syncId)!!.title)
+        assertEquals("Renamed later on B", a.session(syncId)!!.title)
         assertEquals(a.hash(syncId), b.hash(syncId))
     }
 
@@ -464,8 +467,404 @@ class TwoWaySyncTest {
         assertNotNull(b.status.status.value.lastError)
     }
 
+    /** Sync until nothing moves, and check every device has one version and pushes nothing more. */
+    private suspend fun settle(syncId: String) {
+        repeat(2) {
+            a.sync()
+            b.sync()
+        }
+        assertEquals(a.hash(syncId), b.hash(syncId))
+        fake.requests.clear()
+        a.sync()
+        b.sync()
+        assertEquals(emptyList<String>(), fake.requests.filter { it.startsWith("PUT documents/session") })
+    }
+
+    /**
+     * A session on both devices, [edit]ed on each while the other can't
+     * see it, then synced with each device going first in turn.
+     */
+    private fun inEitherOrder(edit: suspend (syncId: String) -> Unit, check: suspend (Device, String) -> Unit) =
+        runTest {
+            for ((first, second) in listOf(a to b, b to a)) {
+                val syncId = fullSession(a)
+                a.sync()
+                b.sync()
+                edit(syncId)
+                first.sync()
+                second.sync()
+                settle(syncId)
+                check(a, syncId)
+                check(b, syncId)
+            }
+        }
+
+    private suspend fun Device.id(syncId: String) = session(syncId)!!.id
+
+    private suspend fun Device.lines(syncId: String) = repo.getSegments(id(syncId))
+
+    private suspend fun Device.items(syncId: String) = db.actionItemDao().getForSession(id(syncId))
+
+    private suspend fun Device.tags(syncId: String) = db.tagDao().namesFor(id(syncId))
+
+    @Test
+    fun aRenameAndALineEditOnDifferentDevicesBothSurvive() = inEitherOrder(
+        edit = { syncId ->
+            a.repo.renameSession(a.id(syncId), "Renamed on A")
+            now += 100
+            b.repo.editLineText(b.lines(syncId).single().id, "corrected on B")
+        },
+        check = { device, syncId ->
+            assertEquals("Renamed on A", device.session(syncId)!!.title)
+            assertEquals("corrected on B", device.lines(syncId).single().text)
+        }
+    )
+
+    @Test
+    fun aDeviceEditSurvivesAWebEditItNeverSaw() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        a.repo.renameSpeaker(a.id(syncId), 0, "Anna")
+        now += 100
+
+        fake.serverWrite(syncId, webEdited(syncId), now)
+        a.sync()
+        b.sync()
+        settle(syncId)
+
+        for (device in listOf(a, b)) {
+            assertEquals("Renamed on the web", device.session(syncId)!!.title)
+            assertEquals("Hello there", device.lines(syncId).single().text)
+            assertEquals("Anna", device.repo.getSpeakers(device.id(syncId)).single().label)
+        }
+    }
+
+    @Test
+    fun aDeviceOfflinePastTheServersCleanupStillMerges() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        b.sync()
+        b.repo.renameSession(b.id(syncId), "Offline on B")
+        now += 8L * 24 * 60 * 60 * 1000
+        repeat(3) { round ->
+            now += 100
+            a.repo.addMark(a.id(syncId), atMs = 200L + round, note = "mark $round")
+            a.sync()
+        }
+
+        b.sync()
+        settle(syncId)
+
+        assertEquals("Offline on B", a.session(syncId)!!.title)
+        assertEquals(4, b.repo.getMarks(b.id(syncId)).size)
+    }
+
+    @Test
+    fun theLaterChangeToOneValueWinsAndTheRestMerge() = inEitherOrder(
+        edit = { syncId ->
+            b.repo.renameSession(b.id(syncId), "Earlier on B")
+            b.repo.renameSpeaker(b.id(syncId), 0, "Anna")
+            now += 100
+            a.repo.renameSession(a.id(syncId), "Later on A")
+        },
+        check = { device, syncId ->
+            assertEquals("Later on A", device.session(syncId)!!.title)
+            assertEquals("Anna", device.repo.getSpeakers(device.id(syncId)).single().label)
+        }
+    )
+
+    @Test
+    fun tagsAddedAndRemovedOnDifferentDevicesAllApply() = inEitherOrder(
+        edit = { syncId ->
+            a.repo.setSessionTags(a.id(syncId), listOf("from-a"))
+            now += 100
+            b.repo.setSessionTags(b.id(syncId), listOf("from-b", "work"))
+        },
+        check = { device, syncId -> assertEquals(listOf("from-a", "from-b"), device.tags(syncId).sorted()) }
+    )
+
+    @Test
+    fun actionItemsWorkedOnOnDifferentDevicesAllApply() = runTest {
+        val syncId = fullSession(a)
+        val items = listOf(
+            ExtractedActionItem("Call the client"),
+            ExtractedActionItem("Write the plan"),
+            ExtractedActionItem("Book the room")
+        )
+        a.repo.replaceExtractedItems(a.id(syncId), items)
+        a.sync()
+        b.sync()
+        val onA = a.items(syncId)
+        val onB = b.items(syncId)
+        a.repo.setActionItemDone(onA[0].id, true)
+        a.repo.deleteActionItem(onA[1].id)
+        now += 100
+        b.repo.editActionItem(onB[0].id, "Phone the client", "Ann", null)
+        b.repo.editActionItem(onB[1].id, "Draft the plan", null, null)
+        b.repo.setActionItemDone(onB[2].id, true)
+
+        b.sync()
+        a.sync()
+        settle(syncId)
+
+        for (device in listOf(a, b)) {
+            val (call, plan, room) = device.items(syncId)
+            assertEquals("Phone the client", call.text)
+            assertEquals("Ann", call.owner)
+            assertTrue(call.done)
+            assertTrue("a delete sticks", plan.deleted)
+            assertTrue(room.done)
+        }
+    }
+
+    @Test
+    fun marksAndQuestionsAddedOnBothDevicesAreAllKept() = inEitherOrder(
+        edit = { syncId ->
+            now += 10
+            a.repo.addMark(a.id(syncId), atMs = 200, note = "from A")
+            a.repo.addMessage(a.id(syncId), MessageKind.QA, MessageRole.USER, "asked on A")
+            a.repo.renameSession(a.id(syncId), "Touched")
+            now += 100
+            b.repo.addMark(b.id(syncId), atMs = 300, note = "from B")
+            b.repo.addMessage(b.id(syncId), MessageKind.QA, MessageRole.USER, "asked on B")
+            b.repo.renameSpeaker(b.id(syncId), 0, "Anna")
+        },
+        check = { device, syncId ->
+            assertEquals(
+                listOf("decision", "from A", "from B"),
+                device.repo.getMarks(device.id(syncId)).map { it.note }
+            )
+            assertEquals(
+                setOf("asked on A", "asked on B"),
+                device.db.chatMessageDao().getForSession(device.id(syncId))
+                    .filter { it.kind == MessageKind.QA }.map { it.content }.toSet()
+            )
+        }
+    )
+
+    @Test
+    fun aContinuedRecordingWinsWholeAndArrivesWithTheOthersEdits() = inEitherOrder(
+        edit = { syncId ->
+            val row = a.session(syncId)!!
+            File(row.audioPath).writeBytes(LONGER)
+            a.repo.addSegment(row.id, startMs = 500, endMs = 900, text = "continued")
+            a.repo.setDuration(row.id, 5_000)
+            now += 100
+            b.repo.renameSession(b.id(syncId), "Renamed on B")
+            b.repo.setSessionTags(b.id(syncId), listOf("work", "from-b"))
+            b.repo.editLineText(b.lines(syncId).single().id, "lost")
+        },
+        check = { device, syncId ->
+            val row = device.session(syncId)!!
+            assertEquals(5_000L, row.durationMs)
+            assertEquals(LONGER.toList(), File(row.audioPath).readBytes().toList())
+            assertEquals(listOf("hello", "continued"), device.lines(syncId).map { it.text })
+            assertEquals("Renamed on B", row.title)
+            assertEquals(listOf("from-b", "work"), device.tags(syncId).sorted())
+        }
+    )
+
+    @Test
+    fun aSplitsLinesWinAndAnEditToAnotherLineCarriesOver() = runTest {
+        val syncId = fullSession(a)
+        a.repo.addSegment(a.id(syncId), startMs = 500, endMs = 900, text = "split this line")
+        a.sync()
+        b.sync()
+        assertNotNull(a.repo.splitLine(a.lines(syncId)[1].id, 6))
+        now += 100
+        b.repo.editLineText(b.lines(syncId)[0].id, "edited on B")
+
+        b.sync()
+        a.sync()
+        settle(syncId)
+
+        for (device in listOf(a, b)) {
+            assertEquals(listOf("edited on B", "split", "this line"), device.lines(syncId).map { it.text })
+        }
+    }
+
+    @Test
+    fun anEditToALineSplitElsewhereGivesWayAndTheRestStillMerges() = runTest {
+        val syncId = fullSession(a)
+        a.repo.addSegment(a.id(syncId), startMs = 500, endMs = 900, text = "split this line")
+        a.sync()
+        b.sync()
+        assertNotNull(a.repo.splitLine(a.lines(syncId)[1].id, 6))
+        now += 100
+        b.repo.editLineText(b.lines(syncId)[1].id, "edited on B")
+        b.repo.renameSession(b.id(syncId), "Renamed on B")
+
+        a.sync()
+        assertEquals(SyncOutcome.DONE, b.sync())
+        settle(syncId)
+
+        assertEquals(listOf("hello", "split", "this line"), b.lines(syncId).map { it.text })
+        assertEquals("Renamed on B", a.session(syncId)!!.title)
+    }
+
+    @Test
+    fun anotherChangeGettingInDuringAMergeIsMergedToo() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        a.repo.renameSpeaker(a.id(syncId), 0, "Anna")
+        now += 100
+        fake.serverWrite(syncId, webEdited(syncId), now)
+        var writes = 0
+        // The push of the merge finds yet another change on the server.
+        fake.intercept = { request ->
+            if (request.method == "PUT" && request.path!!.contains("documents/session") && writes++ == 1) {
+                val current = Json.parseToJsonElement(fake.documents.getValue(syncId).manifest!!).jsonObject
+                val tagged = current + ("tags" to JsonArray(listOf(JsonPrimitive("late"))))
+                fake.serverWrite(syncId, JsonObject(tagged).toString(), now)
+            }
+            null
+        }
+
+        assertEquals(SyncOutcome.DONE, a.sync())
+        fake.intercept = { null }
+        b.sync()
+        settle(syncId)
+
+        assertEquals(listOf("late"), a.tags(syncId))
+        assertEquals("Renamed on the web", a.session(syncId)!!.title)
+        assertEquals("Anna", b.repo.getSpeakers(b.id(syncId)).single().label)
+    }
+
+    @Test
+    fun aSessionThatKeepsChangingWaitsForTheNextRun() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        a.repo.renameSpeaker(a.id(syncId), 0, "Anna")
+        var writes = 0
+        fake.intercept = { request ->
+            if (request.method == "PUT" && request.path!!.contains("documents/session")) {
+                val current = Json.parseToJsonElement(fake.documents.getValue(syncId).manifest!!).jsonObject
+                val title = "title" to JsonPrimitive("Web ${writes++}")
+                fake.serverWrite(syncId, JsonObject(current + title).toString(), now)
+            }
+            null
+        }
+
+        a.sync()
+        // The first push and each merge's.
+        assertEquals(4, writes)
+        fake.intercept = { null }
+        a.sync()
+        b.sync()
+        settle(syncId)
+
+        assertEquals("Anna", b.repo.getSpeakers(b.id(syncId)).single().label)
+    }
+
+    @Test
+    fun withoutABaseTheLaterChangeWinsAndAdditionsCombine() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        b.sync()
+        File(a.dir, "sync-base").deleteRecursively()
+        a.repo.renameSession(a.id(syncId), "Earlier on A")
+        a.repo.addMark(a.id(syncId), atMs = 200, note = "from A")
+        now += 100
+        b.repo.renameSession(b.id(syncId), "Later on B")
+        b.repo.addMark(b.id(syncId), atMs = 300, note = "from B")
+
+        b.sync()
+        a.sync()
+        settle(syncId)
+
+        assertEquals("Later on B", a.session(syncId)!!.title)
+        assertEquals(3, a.repo.getMarks(a.id(syncId)).size)
+    }
+
+    @Test
+    fun aSessionFromANewerAppIsLeftAloneUntilThisOneIsUpdated() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        a.repo.renameSession(a.id(syncId), "Renamed on A")
+        val manifest = Json.parseToJsonElement(fake.documents.getValue(syncId).manifest!!).jsonObject
+        val newer = JsonObject(manifest + ("schema" to JsonPrimitive(SessionManifests.SCHEMA + 1)))
+        fake.serverWrite(syncId, newer.toString(), now)
+
+        assertEquals(SyncOutcome.RETRY, a.sync())
+
+        assertEquals("Renamed on A", a.session(syncId)!!.title)
+        assertEquals(newer.toString(), fake.documents.getValue(syncId).manifest)
+        assertNotNull(a.db.syncDao().state(SyncKinds.SESSION, syncId)!!.lastError)
+    }
+
+    @Test
+    fun onlySessionPushesAskToMerge() = runTest {
+        val seen = mutableListOf<Pair<String, String?>>()
+        fake.intercept = { request ->
+            if (request.method == "PUT" && request.path!!.contains("/documents/")) {
+                seen += request.path!!.substringAfter("/documents/").substringBefore('/') to
+                    request.getHeader("Sync-Merge")
+            }
+            null
+        }
+        a.db.presetDao().insert(
+            PresetEntity(
+                name = "Preset",
+                titlePattern = "",
+                language = "en",
+                numSpeakers = 0,
+                participants = null,
+                tagIds = "",
+                summaryTemplate = "",
+                cleanAudio = false,
+                createdAt = 1
+            )
+        )
+        fullSession(a)
+
+        a.sync()
+
+        assertTrue(("session" to "1") in seen)
+        assertTrue(seen.filter { it.first != "session" }.isNotEmpty())
+        assertTrue(seen.filter { it.first != "session" }.all { it.second == null })
+    }
+
+    @Test
+    fun aServerThatKnowsNoMergingKeepsItsWholeSessionRule() = runTest {
+        fake.honoursMerge = false
+        val syncId = fullSession(a)
+        a.sync()
+        b.sync()
+        a.repo.renameSession(a.id(syncId), "On A")
+        a.sync()
+        now += 100
+        b.repo.setDuration(b.id(syncId), 9_000)
+
+        // A stale push the server's rule lets through replaces the version on it.
+        b.sync()
+        a.sync()
+        settle(syncId)
+
+        assertEquals(9_000L, a.session(syncId)!!.durationMs)
+        assertEquals("Standup", a.session(syncId)!!.title)
+    }
+
+    @Test
+    fun aLosingPushOnAServerThatKnowsNoMergingStillMerges() = runTest {
+        fake.honoursMerge = false
+        val syncId = fullSession(a)
+        a.sync()
+        b.sync()
+        b.repo.renameSession(b.id(syncId), "Earlier on B")
+        now += 100
+        a.repo.renameSpeaker(a.id(syncId), 0, "Anna")
+        a.sync()
+
+        b.sync()
+        settle(syncId)
+
+        assertEquals("Earlier on B", a.session(syncId)!!.title)
+        assertEquals("Anna", a.repo.getSpeakers(a.id(syncId)).single().label)
+    }
+
     private companion object {
         val AUDIO = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10)
         val CLEAN = byteArrayOf(11, 12, 13, 14, 15, 16, 17, 18, 19, 20)
+        val LONGER = byteArrayOf(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 21, 22, 23, 24, 25)
     }
 }

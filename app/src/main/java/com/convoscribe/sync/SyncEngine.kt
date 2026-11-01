@@ -8,6 +8,7 @@ import com.convoscribe.data.LibraryManifests
 import com.convoscribe.data.SessionEntity
 import com.convoscribe.data.SessionManifest
 import com.convoscribe.data.SessionManifests
+import com.convoscribe.data.SessionMerge
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionSnapshot
 import com.convoscribe.data.SessionStatus
@@ -56,8 +57,12 @@ enum class SyncOutcome {
  *    than what the server last accepted, recordings before the
  *    manifest that names them;
  * 4. downloads the sessions the server has a newer revision of, when
- *    the local copy is unchanged or lost the conflict rule, which the
- *    server applies to a push or delete from a stale revision;
+ *    the local copy is unchanged or lost to a delete. A session changed
+ *    both here and on the server is merged instead ([SessionMerge], #90)
+ *    against the base copy of what last synced ([SyncBase]) and pushed
+ *    from the current revision. The server still applies its conflict
+ *    rule to a stale delete, a push against a delete, and pushes from an
+ *    app that doesn't merge;
  * 5. syncs the library (#70), one document per summary template,
  *    preset and known-voice sample ([LibraryKind]): downloads what the
  *    server has newer, then pushes what changed here, with no recording
@@ -315,8 +320,12 @@ class SyncEngine(
             return offline
         }
 
-        /** Upload [row] if it changed; true when the server is up to date with it. */
-        private suspend fun push(row: SessionEntity): Boolean {
+        /**
+         * Upload [row] if it changed; true when the server is up to date
+         * with it. A stale push is merged and pushed again, [merges] more
+         * times, then left for the next run.
+         */
+        private suspend fun push(row: SessionEntity, merges: Int = MERGE_ATTEMPTS): Boolean {
             val state = dao.state(SyncKinds.SESSION, row.syncId) ?: SyncStateEntity(SyncKinds.SESSION, row.syncId)
             // Lost the conflict rule: the server's version replaces this one.
             if (state.conflict) return false
@@ -351,27 +360,20 @@ class SyncEngine(
                     manifestHash = hash,
                     baseRevision = state.baseRevision,
                     durationMs = manifest.durationMs,
-                    changedAt = snapshot.updatedAt
+                    changedAt = snapshot.updatedAt,
+                    merge = true
                 )
-                return when (result) {
+                when (result) {
                     is PushResult.Accepted -> {
                         accepted(pending, result.meta.revision, hash, manifest)
-                        true
+                        return true
                     }
                     is PushResult.Conflict -> {
                         val current = result.current
-                        dao.upsertState(
-                            pending.copy(
-                                conflict = true,
-                                remoteRevision = maxOf(
-                                    pending.remoteRevision,
-                                    current?.revision ?: (pending.baseRevision + 1)
-                                ),
-                                remoteDeleted = current?.deleted ?: pending.remoteDeleted,
-                                lastError = null
-                            )
-                        )
-                        false
+                        if (current?.deleted == true) {
+                            lostToDelete(pending, current.revision)
+                            return false
+                        }
                     }
                     is PushResult.MissingBlobs -> throw SyncException(
                         "The sync server is missing ${result.missing.size} recording(s) of \"${manifest.title}\"",
@@ -383,7 +385,96 @@ class SyncEngine(
                 dao.upsertState(pending.copy(lastError = e.message))
                 throw e
             }
+            // Outside the try: a push further down leaves its own state, not this one's.
+            return merge(pending, merges)
         }
+
+        /** The server deleted the session and the push did not beat that: it goes at the next download. */
+        private suspend fun lostToDelete(state: SyncStateEntity, revision: Long) {
+            dao.upsertState(
+                state.copy(
+                    conflict = true,
+                    remoteRevision = maxOf(state.remoteRevision, revision),
+                    remoteDeleted = true,
+                    lastError = null
+                )
+            )
+        }
+
+        /**
+         * The server has a version this device never saw: merge it into
+         * the session here, with the server's as the new base, and push
+         * again if the result differs from it. If the process dies before
+         * that push, the session is simply changed since its base, so the
+         * next run pushes it. True when the server is up to date.
+         */
+        private suspend fun merge(state: SyncStateEntity, merges: Int): Boolean {
+            if (merges == 0) return false
+            try {
+                when (val fetched = client.getDocument(SyncKinds.SESSION, state.syncId)) {
+                    is Fetched.Deleted -> {
+                        lostToDelete(state, fetched.revision)
+                        return false
+                    }
+                    // The server lost it: nothing competes with the copy here.
+                    Fetched.Missing -> dao.upsertState(
+                        state.copy(remoteRevision = 0, baseRevision = 0, baseHash = null, lastError = null)
+                    )
+                    is Fetched.Found -> if (!mergeWith(state, fetched)) return false
+                }
+            } catch (e: SyncException) {
+                dao.state(state.kind, state.syncId)?.let { dao.upsertState(it.copy(lastError = e.message)) }
+                throw e
+            }
+            val row = db.sessionDao().getBySyncId(state.syncId) ?: return true
+            return push(row, merges - 1)
+        }
+
+        /** Merge [fetched] into the session here; false when it has to wait for a later run. */
+        private suspend fun mergeWith(state: SyncStateEntity, fetched: Fetched.Found): Boolean {
+            val remote = decodeSession(state.syncId, fetched)
+            val row = db.sessionDao().getBySyncId(state.syncId) ?: return false
+            if (isRecording() || row.status == SessionStatus.RECORDING || row.status == SessionStatus.DIARIZING) {
+                return false
+            }
+            // Read again: the session may have changed since the push.
+            val local = snapshot(row, state) ?: return false
+            val base = state.baseHash?.let { bases.read(state.syncId, it) }
+            if (base == null) Log.i(TAG, "sync: no base for ${state.syncId}, merging without one")
+            val merged = SessionMerge.merge(base, local.manifest, remote, local.updatedAt, fetched.changedAt)
+            if (merged.dropped.isNotEmpty()) {
+                Log.w(TAG, "sync: ${state.syncId} merged, edits lost to the other side: ${merged.dropped}")
+            }
+            val templateKeys = templateKeys()
+            if (merged.manifest == remote) {
+                apply(state, row, fetched, templateKeys)
+                return true
+            }
+            val hash = SessionManifests.hash(remote)
+            bases.write(state.syncId, hash, remote)
+            db.withTransaction {
+                val (_, applied) = store(
+                    state,
+                    row,
+                    merged.manifest,
+                    maxOf(local.updatedAt, fetched.changedAt),
+                    templateKeys
+                )
+                dao.upsertState(
+                    applied.copy(
+                        baseRevision = fetched.revision,
+                        baseHash = hash,
+                        remoteRevision = maxOf(state.remoteRevision, fetched.revision)
+                    )
+                )
+            }
+            bases.keepOnly(state.syncId, hash)
+            return true
+        }
+
+        /** User templates' portable names to their keys here. */
+        private suspend fun templateKeys(): Map<String, String> =
+            db.summaryTemplateDao().getAll().associate { it.name to SummaryTemplates.userKey(it.id) }
 
         /**
          * Store what the server accepted. A session deleted while it was
@@ -425,7 +516,7 @@ class SyncEngine(
          */
         private suspend fun downloadSessions() {
             val tombstoned = dao.tombstones().map { it.syncId }.toSet()
-            val templateKeys = db.summaryTemplateDao().getAll().associate { it.name to SummaryTemplates.userKey(it.id) }
+            val templateKeys = templateKeys()
             for (state in dao.behind(SyncKinds.SESSION)) {
                 if (isRecording()) {
                     deferred = true
@@ -472,15 +563,46 @@ class SyncEngine(
             fetched: Fetched.Found,
             templateKeys: Map<String, String>
         ) {
+            val manifest = decodeSession(state.syncId, fetched)
+            val (id, stored) = store(state, row, manifest, fetched.changedAt, templateKeys)
+            val applied = stored.copy(
+                baseRevision = fetched.revision,
+                remoteRevision = maxOf(state.remoteRevision, fetched.revision)
+            )
+            // The hash of the session as stored here, so a difference in
+            // how this install encodes it never counts as a change.
+            val local = db.sessionDao().get(id) ?: return
+            val snapshot = snapshot(local, applied)?.manifest
+            val hash = snapshot?.let(SessionManifests::hash)
+            if (snapshot != null && hash != null) bases.write(state.syncId, hash, snapshot)
+            dao.upsertState(applied.copy(baseHash = hash))
+            if (hash != null) bases.keepOnly(state.syncId, hash)
+        }
+
+        private fun decodeSession(syncId: String, fetched: Fetched.Found): SessionManifest {
             val manifest = try {
                 SessionManifests.decode(fetched.manifest.toString(Charsets.UTF_8))
             } catch (e: SerializationException) {
-                throw SyncException("Unreadable session ${state.syncId} from the sync server", code = 422, cause = e)
+                throw SyncException("Unreadable session $syncId from the sync server", code = 422, cause = e)
             }
             if (manifest.schema > SessionManifests.SCHEMA) {
                 throw SyncException("\"${manifest.title}\" needs a newer version of ConvoScribe", code = 422)
             }
-            // Recordings this device already holds stay where they are.
+            return manifest
+        }
+
+        /**
+         * Put [manifest] in the database in place of [row]; its id, and
+         * [state] with the recordings it still has to download. Recordings
+         * this device already holds stay where they are.
+         */
+        private suspend fun store(
+            state: SyncStateEntity,
+            row: SessionEntity?,
+            manifest: SessionManifest,
+            updatedAt: Long,
+            templateKeys: Map<String, String>
+        ): Pair<Long, SyncStateEntity> {
             val inPlace = buildSet {
                 val audio = row?.audioPath?.takeIf { it.isNotBlank() }?.let(::File) ?: return@buildSet
                 hashes.ref(audio)?.sha256?.takeIf { it == manifest.audio?.sha256 }?.let(::add)
@@ -488,16 +610,14 @@ class SyncEngine(
             }
             val id = repository.applyManifest(
                 manifest,
-                updatedAt = fetched.changedAt,
+                updatedAt = updatedAt,
                 files = emptyMap(),
                 inPlace = inPlace,
                 allowMissing = true
             ) { ref -> ref.key ?: ref.user?.let(templateKeys::get) }
             val audio = manifest.audio?.takeIf { it.sha256 !in inPlace }
             val clean = manifest.cleanAudio?.takeIf { it.sha256 !in inPlace }
-            val applied = state.copy(
-                baseRevision = fetched.revision,
-                remoteRevision = maxOf(state.remoteRevision, fetched.revision),
+            return id to state.copy(
                 remoteDeleted = false,
                 conflict = false,
                 excluded = false,
@@ -509,14 +629,6 @@ class SyncEngine(
                 cleanSha = clean?.sha256,
                 cleanSize = clean?.size
             )
-            // The hash of the session as stored here, so a difference in
-            // how this install encodes it never counts as a change.
-            val local = db.sessionDao().get(id) ?: return
-            val stored = snapshot(local, applied)?.manifest
-            val hash = stored?.let(SessionManifests::hash)
-            if (stored != null && hash != null) bases.write(state.syncId, hash, stored)
-            dao.upsertState(applied.copy(baseHash = hash))
-            if (hash != null) bases.keepOnly(state.syncId, hash)
         }
 
         /**
@@ -866,5 +978,8 @@ class SyncEngine(
     private companion object {
         /** Change feed entries read per request. */
         const val FEED_PAGE = 200
+
+        /** Merges of one session in a run, each after another change got in first. */
+        const val MERGE_ATTEMPTS = 3
     }
 }
