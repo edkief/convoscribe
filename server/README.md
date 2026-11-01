@@ -92,9 +92,10 @@ newer app than the server knows is shown but can't be edited.
 
 An edit is made from the revision the page shows. If the session changed since,
 on a device or in another tab, nothing is overwritten and the page asks you to
-reload. The other direction is the usual conflict rule: a device with unsynced
-changes to the same session can still replace a web edit, because the longer
-recording, then the later change, wins for the whole session.
+reload. In the other direction, a device with unsynced changes merges them with
+the web edit (#90, see *Conflict rule*), so both survive. An app older than that
+can still replace a web edit, because the longer recording, then the later change,
+wins for the whole session.
 
 ### Admin pages
 
@@ -163,7 +164,7 @@ all be stored first.
 
 | Endpoint | Request | Response |
 |---|---|---|
-| `PUT /api/sync/v1/documents/<kind>/<syncId>` | Manifest body, optionally `Content-Encoding: gzip`. Headers `Sync-Base-Revision` (0 for new), `Sync-Manifest-Hash` (SHA-256 of the uncompressed body), `Sync-Duration-Ms`, `Sync-Changed-At` (ms since epoch) | `200` with the new index entry. From a stale base revision the push is still accepted, as the next revision, if it wins the conflict rule; otherwise `409 conflict` with `current`. Repeating the current manifest is `200` with no new revision. `422 missing_blobs` with `missing`, `400 hash_mismatch` |
+| `PUT /api/sync/v1/documents/<kind>/<syncId>` | Manifest body, optionally `Content-Encoding: gzip`. Headers `Sync-Base-Revision` (0 for new), `Sync-Manifest-Hash` (SHA-256 of the uncompressed body), `Sync-Duration-Ms`, `Sync-Changed-At` (ms since epoch) | `200` with the new index entry. From a stale base revision the push is still accepted, as the next revision, if it wins the conflict rule; otherwise `409 conflict` with `current`. With `Sync-Merge: 1` (sessions, #90) a stale push against a live version is always `409`, for the app to merge. Repeating the current manifest is `200` with no new revision. `422 missing_blobs` with `missing`, `400 hash_mismatch` |
 | `GET /api/sync/v1/documents/<kind>/<syncId>` | | The manifest, with `Sync-Revision`, `Sync-Seq`, `Sync-Duration-Ms`, `Sync-Changed-At` and `Sync-Manifest-Hash` headers. `410` with `current` if deleted, `404` if unknown |
 | `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision`; `Sync-Duration-Ms`, the length of the deleted version (optional) | `200`, leaving a tombstone (`deleted: true`, a new revision); a session goes to the trash for 30 days. Deleting again is `200`. From a stale base revision the delete wins unless the current recording is longer than `Sync-Duration-Ms`, else `409` with `current`; without the header a stale delete is `409`. `404` if unknown |
 | `GET /api/sync/v1/changes?since=<seq>&limit=<n>` | `limit` 1 to 500, default 100 | `{"changes":[…], "next", "more"}`: index entries written after `since`, oldest first. Pass `next` as `since` while `more` is true |
@@ -204,6 +205,17 @@ a tombstone, which keeps the length of the version it deleted, a push wins
 only with a longer recording. A stale delete wins unless the current version
 is longer than the one the device deleted (`deleteWins`). The loser gets
 `409` with the current version and downloads it.
+
+An app from #90 on doesn't leave a session to this rule. It sends
+`Sync-Merge: 1` with a session push, so a stale push against a live version
+always gets `409`; the app downloads the current version, merges it with its
+own changes against the base copy it kept of what last synced
+(`SessionMerge`), and pushes the result from the current revision. The merge is
+on the device because the app knows the manifest schema and the server
+deliberately doesn't, and the base is there because the server keeps no history
+(clean-up removes old manifests). Tombstones and stale deletes still follow the
+rule above, and apps without the header keep it for everything. Other kinds
+don't merge.
 
 A web edit doesn't use this rule: it is refused (`409`) from any revision but
 the current one, so it never overwrites a change it didn't see.
