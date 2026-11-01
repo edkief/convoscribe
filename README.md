@@ -251,7 +251,9 @@ brings them to your other devices.
   devices arrive with their transcript first, and their recording
   follows on Wi-Fi (or on mobile data with *Download recordings on
   mobile data*); until then the session says *Audio downloading*.
-  Edits made on any device reach the others. When the same session
+  Edits made on any device, or in the server's web app (title, tags,
+  speaker names, line text, action items; #84), reach the others. When
+  the same session
   changed on two devices, the **longer recording wins**, then the
   **most recently changed**, and every device ends on that version; a
   delete wins over an edit unless the edited version has a longer
