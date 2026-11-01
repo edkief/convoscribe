@@ -46,7 +46,12 @@ class TokenAlignerCasesTest {
             assertEquals(
                 case.str("name"),
                 tokens(case.getValue("expected")),
-                TokenAligner.align(tokens(case.getValue("oldTokens")), case.str("newText"), case.ms("startMs"), case.ms("endMs"))
+                TokenAligner.align(
+                    tokens(case.getValue("oldTokens")),
+                    case.str("newText"),
+                    case.ms("startMs"),
+                    case.ms("endMs")
+                )
             )
         }
     }
