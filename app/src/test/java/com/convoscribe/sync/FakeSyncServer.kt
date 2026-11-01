@@ -130,6 +130,21 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         )
     }
 
+    /**
+     * A new revision written by the server itself, as the web app's edit
+     * (#84) or restore (#81) does: [manifest] replaces the session, tombstone
+     * or not, and the feed shows it.
+     */
+    fun serverWrite(syncId: String, manifest: String, changedAt: Long) = synchronized(this) {
+        documents.getValue(syncId).apply {
+            revision++
+            this.manifest = manifest
+            hash = sha256(manifest.toByteArray())
+            this.changedAt = changedAt
+            seq = ++this@FakeSyncServer.seq
+        }
+    }
+
     /** The documents of [kind]. */
     fun docs(kind: String): MutableMap<String, Document> =
         if (kind == "session") documents else library.getOrPut(kind) { mutableMapOf() }
