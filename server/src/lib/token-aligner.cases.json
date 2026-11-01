@@ -1,0 +1,700 @@
+{
+  "align": [
+    {
+      "name": "unchanged words keep their times",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "the budget for march",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " budget"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ]
+    },
+    {
+      "name": "capital and comma still match",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "The budget, for March.",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " The"
+        },
+        {
+          "ms": 1200,
+          "text": " budget,"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " March."
+        }
+      ]
+    },
+    {
+      "name": "deleted words drop out",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "the march",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ]
+    },
+    {
+      "name": "new first words start at the line start",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "so um the budget",
+      "startMs": 900,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 900,
+          "text": " so"
+        },
+        {
+          "ms": 950,
+          "text": " um"
+        },
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " budget"
+        }
+      ]
+    },
+    {
+      "name": "wholly new text spreads over the line",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "completely different words",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " completely"
+        },
+        {
+          "ms": 1400,
+          "text": " different"
+        },
+        {
+          "ms": 1800,
+          "text": " words"
+        }
+      ]
+    },
+    {
+      "name": "integer division rounds down",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "the a b march",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1266,
+          "text": " a"
+        },
+        {
+          "ms": 1533,
+          "text": " b"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ]
+    },
+    {
+      "name": "reordered words never go backwards",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "march the for budget extra the",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " march"
+        },
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1675,
+          "text": " budget"
+        },
+        {
+          "ms": 1850,
+          "text": " extra"
+        },
+        {
+          "ms": 2025,
+          "text": " the"
+        }
+      ]
+    },
+    {
+      "name": "punctuation-only word keeps its characters",
+      "oldTokens": [
+        {
+          "ms": 10,
+          "text": " -"
+        },
+        {
+          "ms": 20,
+          "text": " ok"
+        }
+      ],
+      "newText": "- ok",
+      "startMs": 0,
+      "endMs": 100,
+      "expected": [
+        {
+          "ms": 10,
+          "text": " -"
+        },
+        {
+          "ms": 20,
+          "text": " ok"
+        }
+      ]
+    },
+    {
+      "name": "accents and sentencepiece markers",
+      "oldTokens": [
+        {
+          "ms": 0,
+          "text": "▁réunion"
+        },
+        {
+          "ms": 400,
+          "text": "▁de"
+        },
+        {
+          "ms": 700,
+          "text": "▁lundi"
+        }
+      ],
+      "newText": "Réunion de mardi",
+      "startMs": 0,
+      "endMs": 1000,
+      "expected": [
+        {
+          "ms": 0,
+          "text": " Réunion"
+        },
+        {
+          "ms": 400,
+          "text": " de"
+        },
+        {
+          "ms": 700,
+          "text": " mardi"
+        }
+      ]
+    },
+    {
+      "name": "a first token without a word start",
+      "oldTokens": [
+        {
+          "ms": 5,
+          "text": "he"
+        },
+        {
+          "ms": 6,
+          "text": "llo"
+        },
+        {
+          "ms": 9,
+          "text": " you"
+        }
+      ],
+      "newText": "hello you",
+      "startMs": 0,
+      "endMs": 20,
+      "expected": [
+        {
+          "ms": 5,
+          "text": " hello"
+        },
+        {
+          "ms": 9,
+          "text": " you"
+        }
+      ]
+    },
+    {
+      "name": "emoji is not a letter",
+      "oldTokens": [
+        {
+          "ms": 5,
+          "text": " 😀"
+        },
+        {
+          "ms": 9,
+          "text": " fine"
+        }
+      ],
+      "newText": "😀 fine 😀",
+      "startMs": 0,
+      "endMs": 20,
+      "expected": [
+        {
+          "ms": 5,
+          "text": " 😀"
+        },
+        {
+          "ms": 9,
+          "text": " fine"
+        },
+        {
+          "ms": 14,
+          "text": " 😀"
+        }
+      ]
+    },
+    {
+      "name": "end before start",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "new words",
+      "startMs": 2000,
+      "endMs": 1000,
+      "expected": [
+        {
+          "ms": 2000,
+          "text": " new"
+        },
+        {
+          "ms": 2000,
+          "text": " words"
+        }
+      ]
+    },
+    {
+      "name": "no timings give no tokens",
+      "oldTokens": [],
+      "newText": "hello there",
+      "startMs": 0,
+      "endMs": 1000,
+      "expected": []
+    },
+    {
+      "name": "nbsp does not split a word",
+      "oldTokens": [
+        {
+          "ms": 1000,
+          "text": " the"
+        },
+        {
+          "ms": 1200,
+          "text": " bud"
+        },
+        {
+          "ms": 1300,
+          "text": "get"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        },
+        {
+          "ms": 1800,
+          "text": " march"
+        }
+      ],
+      "newText": "the budget for",
+      "startMs": 1000,
+      "endMs": 2200,
+      "expected": [
+        {
+          "ms": 1000,
+          "text": " the budget"
+        },
+        {
+          "ms": 1500,
+          "text": " for"
+        }
+      ]
+    }
+  ],
+  "clean": [
+    {
+      "input": "  hello   there  ",
+      "expected": "hello there"
+    },
+    {
+      "input": "tabs\tand\nnewlines\r\nhere",
+      "expected": "tabs and newlines here"
+    },
+    {
+      "input": " edge nbsp ",
+      "expected": "edge nbsp"
+    },
+    {
+      "input": "inner nbsp  stays",
+      "expected": "inner nbsp stays"
+    },
+    {
+      "input": "﻿byte order mark",
+      "expected": "﻿byte order mark"
+    },
+    {
+      "input": "\u001cfile separator\u001f",
+      "expected": "file separator"
+    },
+    {
+      "input": " em space ",
+      "expected": "em space"
+    },
+    {
+      "input": "inner em   space",
+      "expected": "inner em space"
+    },
+    {
+      "input": "   ",
+      "expected": ""
+    },
+    {
+      "input": "",
+      "expected": ""
+    }
+  ],
+  "editText": [
+    {
+      "name": "a changed line is re-timed",
+      "line": {
+        "startMs": 1000,
+        "endMs": 2200,
+        "text": "the budget for march",
+        "tokens": [
+          {
+            "ms": 1000,
+            "text": " the"
+          },
+          {
+            "ms": 1200,
+            "text": " bud"
+          },
+          {
+            "ms": 1300,
+            "text": "get"
+          },
+          {
+            "ms": 1500,
+            "text": " for"
+          },
+          {
+            "ms": 1800,
+            "text": " march"
+          }
+        ]
+      },
+      "text": "  The budget   for April ",
+      "expected": {
+        "text": "The budget for April",
+        "tokens": [
+          {
+            "ms": 1000,
+            "text": " The"
+          },
+          {
+            "ms": 1200,
+            "text": " budget"
+          },
+          {
+            "ms": 1500,
+            "text": " for"
+          },
+          {
+            "ms": 1850,
+            "text": " April"
+          }
+        ]
+      }
+    },
+    {
+      "name": "blank changes nothing",
+      "line": {
+        "startMs": 1000,
+        "endMs": 2200,
+        "text": "the budget for march",
+        "tokens": [
+          {
+            "ms": 1000,
+            "text": " the"
+          },
+          {
+            "ms": 1200,
+            "text": " bud"
+          },
+          {
+            "ms": 1300,
+            "text": "get"
+          },
+          {
+            "ms": 1500,
+            "text": " for"
+          },
+          {
+            "ms": 1800,
+            "text": " march"
+          }
+        ]
+      },
+      "text": " \n ",
+      "expected": null
+    },
+    {
+      "name": "same after cleaning changes nothing",
+      "line": {
+        "startMs": 1000,
+        "endMs": 2200,
+        "text": "the budget for march",
+        "tokens": [
+          {
+            "ms": 1000,
+            "text": " the"
+          },
+          {
+            "ms": 1200,
+            "text": " bud"
+          },
+          {
+            "ms": 1300,
+            "text": "get"
+          },
+          {
+            "ms": 1500,
+            "text": " for"
+          },
+          {
+            "ms": 1800,
+            "text": " march"
+          }
+        ]
+      },
+      "text": " the budget  for march ",
+      "expected": null
+    },
+    {
+      "name": "a line without timings stays without",
+      "line": {
+        "startMs": 1000,
+        "endMs": 2200,
+        "text": "the budget for march",
+        "tokens": []
+      },
+      "text": "something else",
+      "expected": {
+        "text": "something else",
+        "tokens": []
+      }
+    }
+  ]
+}
