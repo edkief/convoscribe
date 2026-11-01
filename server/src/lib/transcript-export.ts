@@ -200,7 +200,8 @@ const clock = (ms: number, separator: ',' | '.') => {
   return `${pad(Math.floor(t / 3_600_000))}:${pad(Math.floor((t % 3_600_000) / 60_000))}:${pad(Math.floor((t % 60_000) / 1000))}${separator}${pad(t % 1000, 3)}`;
 };
 
-const spoken = (view: SessionView) => view.lines.filter((l) => l.text.trim() !== '');
+/** The lines with anything said, as the session page numbers them. */
+export const spoken = (view: Pick<SessionView, 'lines'>) => view.lines.filter((l) => l.text.trim() !== '');
 
 /** A session's transcript as SubRip subtitles, one cue per line, `Speaker: text`. */
 export function toSrt(view: SessionView): string {

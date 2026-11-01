@@ -1,6 +1,8 @@
 import { and, desc, eq, gte, lt, sql } from 'drizzle-orm';
 import { blobs, documents, sessionIndex } from '@/db/schema';
 import { db, type Db } from './db';
+import { plainText } from './search-text';
+import { writeSessionText } from './session-search';
 
 /** A session as the library lists it (#80). */
 export type SessionListItem = {
@@ -35,23 +37,6 @@ const fileRef = (value: unknown): FileRef | null => {
     ? { sha256: ref.sha256, size: ref.size as number }
     : null;
 };
-
-/** Markdown as one line of plain text: headings, tables and code dropped, markers removed. */
-function plainText(markdown: string): string {
-  return markdown
-    .split('\n')
-    .filter((line) => !/^\s*(#{1,6}\s|```|\|?\s*:?-{3,}|[-*_]{3,}\s*$)/.test(line))
-    .map((line) =>
-      line
-        .replace(/^\s*(?:[-*+]|\d+[.)]|>)\s+/, '')
-        .replace(/\|/g, ' ')
-        .replace(/[*_`]+/g, '')
-        .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1'),
-    )
-    .join(' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 const PREVIEW_CHARS = 280;
 
@@ -122,16 +107,21 @@ export function indexValues(manifest: unknown, fallbackCreatedAt: number) {
   };
 }
 
-/** Write a session's index row from its manifest; runs inside the push's transaction. */
+/**
+ * Write a session's index row and search text (#83) from its manifest; runs
+ * inside the push's transaction. A null manifest (one that could not be read)
+ * leaves no search text, and the backfill tries again.
+ */
 export async function upsertSessionIndex(
-  tx: Pick<Db, 'insert'>,
+  tx: Pick<Db, 'insert' | 'transaction'>,
   owner: string,
   syncId: string,
   manifestHash: string,
   manifest: unknown,
   fallbackCreatedAt: number,
 ) {
-  const values = { ...indexValues(manifest, fallbackCreatedAt), manifestHash, indexedAt: new Date() };
+  const textVersion = manifest === null ? 0 : await writeSessionText(tx, owner, syncId, manifest);
+  const values = { ...indexValues(manifest, fallbackCreatedAt), manifestHash, textVersion, indexedAt: new Date() };
   await tx
     .insert(sessionIndex)
     .values({ owner, syncId, ...values })

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { IconActivity, IconLibrary, IconTag, IconTrash, IconUsers } from './Icons';
+import { IconActivity, IconLibrary, IconSearch, IconTag, IconTrash, IconUsers } from './Icons';
 
 type Props = { total: number; tags: { tag: string; count: number }[]; trash: number; isAdmin: boolean };
 
@@ -11,8 +11,14 @@ export function SidebarNav({ total, tags, trash, isAdmin }: Props) {
   const path = usePathname();
   const current = useSearchParams().get('tag');
   const onLibrary = path === '/';
+  const query = useSearchParams().get('q') ?? '';
   return (
     <nav className="side-nav" aria-label="Library">
+      {/* Remounted per query, so its text follows the page's. */}
+      <form key={query} className="side-search" method="get" action="/search" role="search">
+        <IconSearch size={16} />
+        <input type="search" name="q" defaultValue={path === '/search' ? query : ''} placeholder="Search" aria-label="Search your sessions" maxLength={200} />
+      </form>
       <Link href="/" className="side-link" aria-current={onLibrary && !current ? 'page' : undefined}>
         <IconLibrary />
         <span>All sessions</span>

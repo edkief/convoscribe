@@ -9,8 +9,8 @@ Devices upload sessions to it (#68), and download the sessions of other
 devices from it (#69). It decides conflicts between devices (see *Conflict
 rule* below), so every device settles on the same version. It also serves a
 web app (#80, see *Web app* below) where you sign in from a browser to
-read, play and download your sessions, delete them, and restore them from
-the trash (#81, see *Trash and clean-up* below). Admins also see who uses
+read, search, play and download your sessions (#83), delete them, and restore
+them from the trash (#81, see *Trash and clean-up* below). Admins also see who uses
 the server and how much they store, whether its storage can be reached, and
 run clean-up and set quotas (#82, see *Admin pages* below).
 
@@ -32,11 +32,11 @@ Signing in depends on `AUTH_MODE`:
 You see only your own sessions. The one change the web app makes is
 deleting a session, which moves it to the trash (#81).
 
-On a laptop or a tablet in landscape, a sidebar lists your sessions, your
-tags with how many sessions carry each, the trash, the size of the
-recordings you store (trash included) and who is signed in; below 1200 px
-wide it folds into a top bar, with a trash button beside *Sign out*, and for
-admins a button to the admin pages.
+On a laptop or a tablet in landscape, a sidebar holds a search field and lists
+your sessions, your tags with how many sessions carry each, the trash, the
+size of the recordings you store (trash included) and who is signed in; below
+1200 px wide it folds into a top bar, with search and trash buttons beside
+*Sign out*, and for admins a button to the admin pages.
 
 - **Library** (`/`): your sessions, newest first and grouped by day (in
   the browser's time zone), 50 to a page. Each row shows the title, the
@@ -56,6 +56,18 @@ admins a button to the admin pages.
   sentence, a mark or an action item's time to play from there. The
   sentence being played is highlighted and kept in view; scroll away and
   *Back to current line* returns to it.
+- **Search** (`/search?q=`): finds words in your transcripts, summaries,
+  session titles and speaker names, by the same rules as the app's search:
+  case and accents don't matter (`reunion` finds *Réunion*), the start of a
+  word is enough, and every word has to be in the same line, summary, title
+  or speaker name. Results are grouped per session, newest first, 20 sessions
+  to a page, with the matched words marked. A session lists up to 50 matching
+  lines, and says how many more there are. A line opens the session scrolled
+  to it and highlighted, with the player there but not playing (`?line=`). A
+  summary opens the *Summary* tab (`?tab=summary`, with `&earlier=1` to unfold
+  older summaries). Search reads Postgres only, and never finds another
+  user's sessions or anything in the trash. Tag and date filters, and meaning
+  rather than words, are for the app.
 - **Trash** (`/trash`): sessions deleted in the last 30 days, here or on a
   device, the most recently deleted first, each with when it was deleted
   and when it goes for good. *Restore* brings one back; *Empty trash*
@@ -185,7 +197,22 @@ reads it. When the server starts it indexes, in the background and one
 manifest at a time, every session whose row is missing or out of date,
 such as those pushed before #80; the log says how many. The manifests stay
 the source of truth, so deleting `session_index` rows is harmless: the
-next start rebuilds them. S3 holds every byte, under one prefix per
+next start rebuilds them.
+
+`session_text` is what search looks in (#83): one row per transcript line,
+summary, speaker and title of a live session, with the text as shown and a
+`tsvector` of its words. The server splits and folds the words itself, so
+matching follows the app's rules whatever the language, and no Postgres
+extension is needed. A text over 4000 characters takes several rows, so a very
+long transcript stays fully searchable, though words either side of a cut
+count as different places. Rows are written in the same transaction as each
+push and restore, and removed when a session goes to the trash; a failure to
+write them is logged and never fails the push. A two-hour session takes about
+1.2 MB. After an upgrade, the same background indexing fills in sessions pushed
+earlier, and until it is done they are missing from results. To rebuild the
+rows, set `session_index.text_version` to 0 and restart.
+
+S3 holds every byte, under one prefix per
 owner:
 
 - `users/<owner>/blobs/<sha256>`: a verified recording.

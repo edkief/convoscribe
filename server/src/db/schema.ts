@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import {
   bigint,
   boolean,
+  customType,
   index,
   integer,
   jsonb,
@@ -141,12 +142,55 @@ export const sessionIndex = pgTable(
     audioSize: bigint('audio_size', { mode: 'number' }),
     cleanAudioSha256: text('clean_audio_sha256'),
     cleanAudioSize: bigint('clean_audio_size', { mode: 'number' }),
+    /** The `SEARCH_TEXT_VERSION` of this session's `session_text` rows; 0 until they are written (#83). */
+    textVersion: integer('text_version').notNull().default(0),
     indexedAt: timestamp('indexed_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     primaryKey({ columns: [t.owner, t.syncId] }),
     index('session_index_owner_created').on(t.owner, t.createdAt.desc(), t.syncId.desc()),
     index('session_index_tags').using('gin', t.tags),
+  ],
+);
+
+/**
+ * A `tsvector` column, written as words joined by spaces. It takes them as
+ * they are, without Postgres's parser, and is only ever matched against.
+ */
+const tsvector = customType<{ data: string; driverData: string }>({
+  dataType: () => 'tsvector',
+  toDriver: (value) => sql`array_to_tsvector(string_to_array(${value}, ' '))`,
+});
+
+/**
+ * What search looks in (#83): one row per transcript line, summary, speaker
+ * and title of a live session, so a match is the place it was found. A long
+ * text takes several rows (`chunk`), which keeps each far under the 1 MB a
+ * `tsvector` can hold. Like `session_index` it can be rebuilt from the
+ * manifests. A session's rows go when it goes to the trash, and a restore
+ * writes them again.
+ */
+export const sessionText = pgTable(
+  'session_text',
+  {
+    owner: text('owner').notNull(),
+    syncId: text('sync_id').notNull(),
+    /** `title`, `speaker`, `summary` or `line`. */
+    source: text('source').notNull(),
+    /** A line's index on the session page; a summary's, counting back from the latest. */
+    position: integer('position').notNull(),
+    chunk: integer('chunk').notNull(),
+    /** Where a line starts (ms). */
+    startMs: bigint('start_ms', { mode: 'number' }),
+    /** Who said a line. */
+    speaker: text('speaker'),
+    text: text('text').notNull(),
+    /** The folded words of `text`, without positions: see `search-text.ts`. */
+    words: tsvector('words').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.owner, t.syncId, t.source, t.position, t.chunk] }),
+    index('session_text_words').using('gin', t.words),
   ],
 );
 
