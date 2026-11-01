@@ -241,7 +241,11 @@ class SyncEngineTest {
         var starts = 0
         fake.intercept = {
             val start = it.method == "POST" && it.path!!.endsWith("/uploads")
-            if (start && starts++ == 0) MockResponse().setResponseCode(507).setBody("{\"error\":\"quota_exceeded\"}") else null
+            if (start && starts++ == 0) {
+                MockResponse().setResponseCode(507).setBody("{\"error\":\"quota_exceeded\"}")
+            } else {
+                null
+            }
         }
 
         assertEquals(SyncOutcome.RETRY, engine.run())

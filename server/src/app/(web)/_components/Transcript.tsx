@@ -3,8 +3,9 @@
 import { memo, useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
 import type { Mark, TranscriptLine } from '@/lib/transcript-export';
 import { Avatar } from './Avatar';
-import { IconFlag, IconLocate } from './Icons';
+import { IconFlag, IconLocate, IconPencil } from './Icons';
 import { usePlayer } from './Player';
+import { useSessionEditor } from './SessionEditor';
 
 type Line = TranscriptLine & { stamp: string };
 type StampedMark = Mark & { stamp: string };
@@ -49,6 +50,8 @@ function lineAt(lines: { startMs: number }[], ms: number): number {
   return found;
 }
 
+const NOTHING_SAVED: Record<number, string> = {};
+
 const lineElement = (index: number) => document.querySelector<HTMLElement>(`[data-line="${index}"]`);
 
 const MarkRow = ({ mark }: { mark: StampedMark }) => {
@@ -68,12 +71,65 @@ const MarkRow = ({ mark }: { mark: StampedMark }) => {
   );
 };
 
+/** A line's text as a field (#84): Ctrl/Cmd+Enter saves, Esc cancels. */
+function LineEditor({ text, onSave, onClose }: { text: string; onSave: (text: string) => Promise<string | null>; onClose: () => void }) {
+  const [draft, setDraft] = useState(text);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    if (!draft.trim()) return;
+    setBusy(true);
+    const message = await onSave(draft);
+    setBusy(false);
+    setError(message);
+    if (!message) onClose();
+  };
+  return (
+    <span className="line-edit">
+      <textarea
+        className="edit-input"
+        aria-label="Line text"
+        autoFocus
+        rows={Math.min(8, Math.ceil(text.length / 70) + 1)}
+        value={draft}
+        disabled={busy}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') onClose();
+          else if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+            event.preventDefault();
+            void save();
+          }
+        }}
+      />
+      <span className="line-edit-buttons">
+        <button type="button" className="button primary" disabled={busy || !draft.trim()} onClick={() => void save()}>
+          Save
+        </button>
+        <button type="button" className="button ghost" disabled={busy} onClick={onClose}>
+          Cancel
+        </button>
+        {error && (
+          <span className="inline-error" role="alert">
+            {error}
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
 const TurnView = memo(function TurnView({
   turn,
   lines,
   active,
   target,
   onSeek,
+  saved,
+  open,
+  onOpen,
+  onClose,
+  onSave,
 }: {
   turn: Turn;
   lines: Line[];
@@ -82,12 +138,21 @@ const TurnView = memo(function TurnView({
   /** The line opened from search, when it is in this turn; else -1. */
   target: number;
   onSeek?: (index: number) => void;
+  /** Text just saved, by line, until the page refreshes. */
+  saved: Record<number, string>;
+  /** The line being edited, when it is in this turn; else -1. */
+  open: number;
+  /** In edit mode: tapping a line opens it for editing instead of seeking. */
+  onOpen?: (index: number) => void;
+  onClose: () => void;
+  onSave: (index: number, text: string) => Promise<string | null>;
 }) {
   const own = lines.slice(turn.first, turn.last + 1);
+  const tap = onOpen ?? onSeek;
   const key = (index: number) => (event: KeyboardEvent) => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      onSeek?.(index);
+      tap?.(index);
     }
   };
   return (
@@ -106,22 +171,26 @@ const TurnView = memo(function TurnView({
           {own.map((line, j) => {
             const index = turn.first + j;
             const className = ['seg', index === active && 'active', index === target && 'target'].filter(Boolean).join(' ');
-            return onSeek ? (
+            const text = saved[index] ?? line.text;
+            if (index === open) {
+              return <LineEditor key={index} text={text} onSave={(next) => onSave(index, next)} onClose={onClose} />;
+            }
+            return tap ? (
               <span
                 key={index}
                 data-line={index}
                 className={className}
                 role="button"
                 tabIndex={0}
-                title={`Play from ${line.stamp}`}
-                onClick={() => onSeek(index)}
+                title={onOpen ? 'Edit this line' : `Play from ${line.stamp}`}
+                onClick={() => tap(index)}
                 onKeyDown={key(index)}
               >
-                {line.text}{' '}
+                {text}{' '}
               </span>
             ) : (
               <span key={index} data-line={index} className={className}>
-                {line.text}{' '}
+                {text}{' '}
               </span>
             );
           })}
@@ -137,11 +206,18 @@ const TurnView = memo(function TurnView({
  * being played is highlighted and kept in view until the reader scrolls
  * away, when a button brings it back. Opened from a search result (#83), it
  * starts at that line, marked, with the player there but not playing.
+ * *Edit text* (#84) makes tapping a line open it for editing instead, and
+ * stops the transcript following playback meanwhile.
  */
 export function Transcript({ lines, marks, tones, target }: Props) {
   const player = usePlayer();
+  const editor = useSessionEditor();
   const [active, setActive] = useState(-1);
   const [follow, setFollow] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [open, setOpen] = useState(-1);
+  const [savedText, setSavedText] = useState<{ base: Line[]; text: Record<number, string> }>({ base: lines, text: {} });
+  const saved = savedText.base === lines ? savedText.text : NOTHING_SAVED;
   const list = useMemo(() => items(lines, marks, tones), [lines, marks, tones]);
 
   useEffect(() => {
@@ -153,8 +229,8 @@ export function Transcript({ lines, marks, tones, target }: Props) {
   }, [player, lines]);
 
   useEffect(() => {
-    if (follow && active >= 0) lineElement(active)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-  }, [active, follow]);
+    if (follow && !editing && active >= 0) lineElement(active)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [active, follow, editing]);
 
   useEffect(() => {
     if (target === undefined) return;
@@ -182,6 +258,18 @@ export function Transcript({ lines, marks, tones, target }: Props) {
     [player, lines],
   );
   const onSeek = player ? seekLine : undefined;
+  const closeLine = useCallback(() => setOpen(-1), []);
+  const saveLine = useCallback(
+    async (index: number, text: string) => {
+      const message = await editor!.save({ kind: 'line', at: lines[index].at, text });
+      if (!message) {
+        const shown = text.trim().replace(/\s+/g, ' ');
+        setSavedText((current) => ({ base: lines, text: { ...(current.base === lines ? current.text : {}), [index]: shown } }));
+      }
+      return message;
+    },
+    [editor, lines],
+  );
 
   if (lines.length === 0) {
     return (
@@ -195,6 +283,22 @@ export function Transcript({ lines, marks, tones, target }: Props) {
   }
   return (
     <div className="transcript">
+      {editor && (
+        <div className="transcript-tools">
+          <button
+            type="button"
+            className={editing ? 'button primary' : 'button'}
+            aria-pressed={editing}
+            onClick={() => {
+              setEditing(!editing);
+              setOpen(-1);
+            }}
+          >
+            <IconPencil size={15} /> {editing ? 'Done editing' : 'Edit text'}
+          </button>
+          {editing && <span className="muted">Tap a line to edit it.</span>}
+        </div>
+      )}
       {list.map((item, i) =>
         item.kind === 'mark' ? (
           <MarkRow key={i} mark={item.mark} />
@@ -206,10 +310,15 @@ export function Transcript({ lines, marks, tones, target }: Props) {
             active={active >= item.first && active <= item.last ? active : -1}
             target={target !== undefined && target >= item.first && target <= item.last ? target : -1}
             onSeek={onSeek}
+            saved={saved}
+            open={open >= item.first && open <= item.last ? open : -1}
+            onOpen={editing ? setOpen : undefined}
+            onClose={closeLine}
+            onSave={saveLine}
           />
         ),
       )}
-      {!follow && active >= 0 && (
+      {!follow && !editing && active >= 0 && (
         <button
           type="button"
           className="follow-button"

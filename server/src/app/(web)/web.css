@@ -1688,6 +1688,161 @@ button.t-mark-time:hover {
   margin-top: 1.4rem;
 }
 
+/* Editing a session (#84) */
+
+.edit-input {
+  width: 100%;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.inline-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.inline-edit .edit-input {
+  width: 11rem;
+}
+
+.inline-edit.wide {
+  flex: 1;
+}
+
+.inline-edit.wide .edit-input {
+  flex: 1;
+  width: auto;
+  min-width: 12rem;
+}
+
+.title-edit {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.speakers li:has(.inline-edit) {
+  height: auto;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.tag-edit {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 22px;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+}
+
+.tag-remove:hover {
+  color: var(--danger);
+}
+
+.tag-input {
+  width: 7rem;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+}
+
+.edit-stale {
+  position: sticky;
+  z-index: 20;
+  top: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border-strong);
+  background: var(--highlight);
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.transcript-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+
+.line-edit {
+  display: block;
+  margin: 0.35rem 0;
+}
+
+.line-edit textarea {
+  display: block;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.line-edit-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.action-toggle {
+  align-self: flex-start;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.action-toggle:hover {
+  color: var(--accent);
+}
+
+.action-tools {
+  display: flex;
+  flex: none;
+  gap: 0.1rem;
+}
+
+.action-form {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.action-form .inline-error {
+  margin: 0;
+}
+
+.action-form-buttons {
+  display: flex;
+  gap: 0.4rem;
+}
+
 /* Admin pages (#82) */
 
 .admin-tabs {

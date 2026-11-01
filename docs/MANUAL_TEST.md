@@ -2020,6 +2020,57 @@ profile, and for step 8 the longest session you have.
 - Step 12: three lines per session, *Show N more lines* for up to 50 in all, and
   a count of any beyond that.
 
+## 48. Editing a session in the server web app (issue #84)
+
+Use a sync server from this release and two devices signed in to it, A and B,
+both synced, with a session that has a recording, two named speakers, a mark
+with a written full note, a tag and two action items. Open it in a browser. For
+step 9 you need a session pushed by a newer app, or one with `schema` raised in
+a test manifest.
+
+**Steps**
+
+1. Rename the session with spaces around the new title, and with a title over
+   100 characters.
+2. Add a tag twice in different case, add one with two spaces inside, remove one.
+3. Rename a speaker. Open the *Marks* tab.
+4. Choose *Edit text*, tap a line whose words you can hear, change one word and
+   add spaces at both ends, and press Ctrl/Cmd+Enter. Choose *Done editing*.
+5. In the *Actions* tab tick both items quickly, one after the other. Edit one's
+   text, clear its owner and set a due date. Delete the other.
+6. Sync A and B, then open the session on each. Play the edited line.
+7. Sync A and B again, and check the server's change feed or the session's
+   revision.
+8. Open the session in two browser tabs. Rename it in the first, then try to
+   rename it in the second. Do the same with a rename on A, synced, in place of
+   the first tab. Choose *Reload*.
+9. Open the session from a newer app.
+10. Rename the session on A without syncing, edit it on the web, then sync A.
+11. Delete a session straight after editing it, then restore it.
+
+**Pass**
+
+- Step 1: the title is trimmed, and a long one stops at 100 characters.
+- Step 2: the repeat isn't added, the inner spaces collapse to one, and the
+  library's tag filter follows.
+- Step 3: every line of that speaker shows the new name, and the full note says
+  it was written before the transcript changed.
+- Step 4: the line shows the cleaned text, with nothing lost around it.
+- Step 5: both ticks stay, with no prompt to reload. The deleted item goes, and
+  the tab's count follows.
+- Step 6: both devices show every edit; the line is marked *edited*, and playback
+  still highlights the unchanged words at the right time. The deleted item doesn't
+  come back after a new summary.
+- Step 7: the revision didn't change: no device pushed the edit back.
+- Step 8: the second edit is refused, a banner asks you to reload, and what you
+  typed is still in the field. After reloading the page shows the other change,
+  which wasn't overwritten.
+- Step 9: the session shows, says it can't be edited here, and has no edit controls.
+- Step 10: the conflict rule applies to the whole session: with equal recordings
+  the later change wins, and every device and the web end on the same version.
+- Step 11: *Delete* works without a prompt to reload, and the restored session
+  has the edits.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

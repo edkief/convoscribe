@@ -29,8 +29,8 @@ Signing in depends on `AUTH_MODE`:
   verifies against the proxy's JWKS. *Sign out* goes to
   `WEB_SIGN_OUT_URL`, and is hidden when that is not set.
 
-You see only your own sessions. The one change the web app makes is
-deleting a session, which moves it to the trash (#81).
+You see only your own sessions. From the web app you can edit a session
+(*Editing a session*, below) and delete it, which moves it to the trash (#81).
 
 On a laptop or a tablet in landscape, a sidebar holds a search field and lists
 your sessions, your tags with how many sessions carry each, the trash, the
@@ -75,6 +75,26 @@ size of the recordings you store (trash included) and who is signed in; below
 
 A manifest from a newer app version is shown as far as the server
 understands it, with a note.
+
+### Editing a session
+
+On a session's page you can rename it, add and remove tags, rename a speaker,
+correct a line (*Edit text*, then tap the line; Ctrl/Cmd+Enter saves), and tick,
+edit or delete an action item. Splitting, merging or deleting lines and changing
+a line's speaker are for the app.
+
+An edit is one more device's change: a new revision of the manifest, which
+devices download when they next sync and don't push back. It follows the app's
+rules, so a corrected line gets the same text and word timings as in the app
+(`src/lib/token-aligner.ts`, tested with the same cases as the app's
+`TokenAligner`), and fields this server doesn't know are kept. A session from a
+newer app than the server knows is shown but can't be edited.
+
+An edit is made from the revision the page shows. If the session changed since,
+on a device or in another tab, nothing is overwritten and the page asks you to
+reload. The other direction is the usual conflict rule: a device with unsynced
+changes to the same session can still replace a web edit, because the longer
+recording, then the later change, wins for the whole session.
 
 ### Admin pages
 
@@ -160,6 +180,7 @@ else `Host`) with `403 cross_site`. Another owner's session is `404`.
 | `GET /api/web/v1/sessions/<syncId>/audio` | `?clean=1` for the cleaned recording, `?download=1` to download it; `Range: bytes=a-b` | `audio/wav`, streamed from S3 (`206` for a range), so a recording of any size never sits in memory |
 | `GET /api/web/v1/sessions/<syncId>/transcript/<format>` | `format` is `md`, `srt` or `vtt` | The transcript as a download named after the session; `404` for another format |
 | `DELETE /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n}`, the revision the page shows | `200 {"syncId","revision"}`, the session in the trash and its semantic vectors deleted. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
+| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`; `at` is an index in the manifest's array | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
 | `POST /api/web/v1/sessions/<syncId>/restore` | | `200 {"syncId","revision"}`: the session is live again as a new revision. `404 not_in_trash` once purged, after 30 days, or for a session deleted before the trash existed |
 | `DELETE /api/web/v1/trash` | | `200 {"purged"}`: every session in the trash removed for good |
 | `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","firstSeenAt","lastSeenAt"}]}` |
@@ -183,6 +204,9 @@ a tombstone, which keeps the length of the version it deleted, a push wins
 only with a longer recording. A stale delete wins unless the current version
 is longer than the one the device deleted (`deleteWins`). The loser gets
 `409` with the current version and downloads it.
+
+A web edit doesn't use this rule: it is refused (`409`) from any revision but
+the current one, so it never overwrites a change it didn't see.
 
 ### Storage
 

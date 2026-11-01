@@ -15,6 +15,12 @@ import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.SocketPolicy
@@ -356,6 +362,92 @@ class TwoWaySyncTest {
         b.settings.update { it.copy(syncAudioOnMobileData = true) }
         assertEquals(SyncOutcome.DONE, b.sync())
         assertEquals(AUDIO.toList(), File(row.audioPath).readBytes().toList())
+    }
+
+    /**
+     * The manifest of [syncId] as the web app would rewrite it (#84): keys in
+     * another order, a field this app doesn't know, a new title and line text.
+     */
+    private fun webEdited(syncId: String): String {
+        val manifest = Json.parseToJsonElement(fake.documents.getValue(syncId).manifest!!).jsonObject
+        val line = manifest.getValue("lines").jsonArray[0].jsonObject
+        val edited = line + mapOf(
+            "text" to JsonPrimitive("Hello there"),
+            "tokens" to JsonArray(emptyList()),
+            "textEdited" to JsonPrimitive(true),
+            "lineFuture" to JsonPrimitive("kept")
+        )
+        val changed = manifest + mapOf(
+            "title" to JsonPrimitive("Renamed on the web"),
+            "titleSource" to JsonPrimitive("user"),
+            "transcriptEdited" to JsonPrimitive(true),
+            "lines" to JsonArray(listOf(JsonObject(edited))),
+            "futureField" to JsonPrimitive("from a newer app")
+        )
+        return JsonObject(changed.entries.reversed().associate { it.key to it.value }).toString()
+    }
+
+    @Test
+    fun aWebEditReachesDevicesAndIsNotPushedBack() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        b.sync()
+        fake.serverWrite(syncId, webEdited(syncId), now)
+        val revision = fake.documents.getValue(syncId).revision
+        fake.requests.clear()
+
+        assertEquals(SyncOutcome.DONE, a.sync())
+        assertEquals(SyncOutcome.DONE, b.sync())
+        a.sync()
+        b.sync()
+
+        for (device in listOf(a, b)) {
+            val row = device.session(syncId)!!
+            assertEquals("Renamed on the web", row.title)
+            assertTrue(row.transcriptEdited)
+            val line = device.repo.getSegments(row.id).single()
+            assertEquals("Hello there", line.text)
+            assertTrue(line.textEdited)
+        }
+        assertEquals(a.hash(syncId), b.hash(syncId))
+        // No device answers with a push, and the recordings weren't fetched again.
+        assertEquals(emptyList<String>(), fake.requests.filter { it.startsWith("PUT documents") })
+        assertFalse(fake.requests.any { it.startsWith("GET blobs/") })
+        assertEquals(revision, fake.documents.getValue(syncId).revision)
+
+        // A later edit on a device goes on from the web's revision.
+        b.repo.renameSession(b.session(syncId)!!.id, "Renamed on B")
+        b.sync()
+        a.sync()
+        assertEquals(revision + 1, fake.documents.getValue(syncId).revision)
+        assertEquals("Renamed on B", a.session(syncId)!!.title)
+    }
+
+    @Test
+    fun aRestoreFromTheWebBringsADeletedSessionBackEverywhere() = runTest {
+        val syncId = fullSession(a)
+        a.sync()
+        b.sync()
+        val kept = fake.documents.getValue(syncId).manifest!!
+        a.repo.deleteSession(a.session(syncId)!!.id)
+        a.sync()
+        b.sync()
+        assertNull(a.session(syncId))
+        assertNull(b.session(syncId))
+
+        fake.serverWrite(syncId, kept, now)
+        fake.requests.clear()
+        assertEquals(SyncOutcome.DONE, a.sync())
+        assertEquals(SyncOutcome.DONE, b.sync())
+        a.sync()
+        b.sync()
+
+        for (device in listOf(a, b)) {
+            val row = device.session(syncId)!!
+            assertEquals("Standup", row.title)
+            assertEquals(AUDIO.toList(), File(row.audioPath).readBytes().toList())
+        }
+        assertEquals(emptyList<String>(), fake.requests.filter { it.startsWith("PUT documents") })
     }
 
     @Test

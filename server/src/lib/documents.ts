@@ -45,7 +45,7 @@ const meta = (row: typeof documents.$inferSelect): DocumentMeta => ({
 export const TRASH_DAYS = 30;
 export const TRASH_MS = TRASH_DAYS * 24 * 60 * 60 * 1000;
 
-const conflict = (current: DocumentMeta | null) => new HttpError(409, 'conflict', { current });
+export const conflict = (current: DocumentMeta | null) => new HttpError(409, 'conflict', { current });
 
 /**
  * The conflict rule (#67, decision 5; #69), for a push whose base revision is
@@ -108,8 +108,18 @@ export const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: str
  * The recordings it refers to are checked, and the manifest stored, under
  * the owner's lock, which clean-up also takes before removing anything
  * (#81): neither can disappear between the check and the commit.
+ *
+ * `strict` is for a web edit (#84), made from what the page showed: any other
+ * current revision is a 409, whatever the conflict rule says, so a newer edit
+ * from a device is never overwritten unseen. A deleted session is a 404.
  */
-export async function putDocument(owner: string, kind: Kind, syncId: string, push: Push): Promise<DocumentMeta> {
+export async function putDocument(
+  owner: string,
+  kind: Kind,
+  syncId: string,
+  push: Push,
+  { strict = false }: { strict?: boolean } = {},
+): Promise<DocumentMeta> {
   const actual = createHash('sha256').update(push.manifest).digest('hex');
   if (actual !== push.manifestHash) throw new HttpError(400, 'hash_mismatch', { actual });
   let parsed: unknown;
@@ -127,6 +137,10 @@ export async function putDocument(owner: string, kind: Kind, syncId: string, pus
     if (missing.length > 0) throw new HttpError(422, 'missing_blobs', { missing });
     const where = and(eq(documents.owner, owner), eq(documents.kind, kind), eq(documents.syncId, syncId));
     const [current] = await tx.select().from(documents).where(where);
+    if (strict) {
+      if (!current || current.deleted) throw new HttpError(404, 'not_found');
+      if (current.revision !== push.baseRevision) throw conflict(meta(current));
+    }
     if (current && !current.deleted && current.manifestHash === push.manifestHash) return meta(current);
     // Content-addressed, so concurrent pushes never overwrite each other's bytes.
     await blobStore().put(blobKeys.manifest(owner, kind, syncId, push.manifestHash), gzipped);
