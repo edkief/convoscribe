@@ -8,6 +8,8 @@
 export type FileRef = { sha256: string; size: number };
 
 export type TranscriptLine = {
+  /** Its index in the manifest's `lines`, which is how an edit names it (#84). */
+  at: number;
   startMs: number;
   endMs: number;
   text: string;
@@ -19,7 +21,7 @@ export type TranscriptLine = {
 
 export type Mark = { atMs: number; note: string | null; expandedNote: string | null; expandedStale: boolean };
 
-export type ActionItem = { text: string; owner: string | null; dueDate: string | null; atMs: number | null; done: boolean };
+export type ActionItem = { at: number; text: string; owner: string | null; dueDate: string | null; atMs: number | null; done: boolean };
 
 export type Message = { role: string; content: string; createdAt: number | null; templateName: string | null };
 
@@ -72,11 +74,13 @@ export function sessionView(manifest: unknown): SessionView {
     .map((s) => ({ index: s.index as number, label: str(s.label) ?? `Speaker ${(s.index as number) + 1}` }));
   const labels = new Map(speakers.map((s) => [s.index, s.label]));
   const lines = list(m.lines)
-    .filter((l) => typeof l.text === 'string')
-    .map((l) => {
+    .map((l, at) => ({ l, at }))
+    .filter(({ l }) => typeof l.text === 'string')
+    .map(({ l, at }) => {
       const speakerIndex = num(l.speakerIndex);
       const startMs = num(l.startMs) ?? 0;
       return {
+        at,
         startMs,
         endMs: num(l.endMs) ?? startMs,
         text: l.text as string,
@@ -111,8 +115,10 @@ export function sessionView(manifest: unknown): SessionView {
       }))
       .sort((a, b) => a.atMs - b.atMs),
     actionItems: list(m.actionItems)
-      .filter((x) => x.deleted !== true && typeof x.text === 'string')
-      .map((x) => ({
+      .map((x, at) => ({ x, at }))
+      .filter(({ x }) => x.deleted !== true && typeof x.text === 'string')
+      .map(({ x, at }) => ({
+        at,
         text: x.text as string,
         owner: str(x.owner),
         dueDate: str(x.dueDate),

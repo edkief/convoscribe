@@ -22,7 +22,7 @@ describe('sessionView', () => {
     expect(v.summaries.map((m) => m.content)).toEqual(['## Summary']);
     expect(v.questions.map((m) => m.role)).toEqual(['USER', 'ASSISTANT']);
     expect(v.marks).toEqual([{ atMs: 5000, note: 'Key point', expandedNote: null, expandedStale: false }]);
-    expect(v.actionItems).toEqual([{ text: 'Send notes', owner: 'Alice', dueDate: '2026-11-02', atMs: 4500, done: true }]);
+    expect(v.actionItems).toEqual([{ at: 0, text: 'Send notes', owner: 'Alice', dueDate: '2026-11-02', atMs: 4500, done: true }]);
   });
 
   it('leaves a line unlabelled when its speaker is unknown, and survives garbage', () => {
