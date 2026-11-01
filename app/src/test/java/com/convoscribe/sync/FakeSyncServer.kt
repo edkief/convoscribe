@@ -13,7 +13,7 @@ import okio.Buffer
  * The sync server's API (issues #68, #69) kept in memory behind a
  * [MockWebServer], close enough to `server/` for [SyncEngine] tests:
  * blobs with resumable parts, a hash check and Range downloads,
- * documents with compare-and-swap and the conflict rule
+ * documents with compare-and-swap, `Sync-Merge` and the conflict rule
  * (`server/src/lib/documents.ts`), tombstones and the change feed.
  * [intercept] answers a request instead, to stage failures.
  *
@@ -39,6 +39,9 @@ class FakeSyncServer(val apiKey: String = "test-key") {
     val uploads = mutableMapOf<String, MutableMap<Int, ByteArray>>()
     val requests = mutableListOf<String>()
     var intercept: (RecordedRequest) -> MockResponse? = { null }
+
+    /** Off, this is a server older than #90, which ignores `Sync-Merge`. */
+    var honoursMerge = true
 
     val server = MockWebServer().apply {
         dispatcher = object : Dispatcher() {
@@ -165,6 +168,10 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         else -> hash > (current.hash ?: "")
     }
 
+    /** A merging app (#90) settles a stale push itself, except against a tombstone. */
+    private fun merging(request: RecordedRequest, current: Document): Boolean =
+        honoursMerge && request.getHeader("Sync-Merge") == "1" && current.manifest != null
+
     private fun document(request: RecordedRequest, kind: String, syncId: String): MockResponse {
         val documents = docs(kind)
         val base = request.getHeader("Sync-Base-Revision")!!.toLong()
@@ -204,14 +211,16 @@ class FakeSyncServer(val apiKey: String = "test-key") {
         val doc = when {
             current == null -> Document(1, text, hash, changedAt, durationMs, ++seq).also { documents[syncId] = it }
             current.manifest != null && current.hash == hash -> current
-            current.revision == base || pushWins(durationMs, changedAt, hash, current) -> current.apply {
-                revision++
-                manifest = text
-                this.hash = hash
-                this.changedAt = changedAt
-                this.durationMs = durationMs
-                this.seq = ++this@FakeSyncServer.seq
-            }
+            current.revision == base ||
+                (!merging(request, current) && pushWins(durationMs, changedAt, hash, current)) ->
+                current.apply {
+                    revision++
+                    manifest = text
+                    this.hash = hash
+                    this.changedAt = changedAt
+                    this.durationMs = durationMs
+                    this.seq = ++this@FakeSyncServer.seq
+                }
             else -> return conflict(syncId, current, kind)
         }
         return json(200, meta(syncId, doc, kind))

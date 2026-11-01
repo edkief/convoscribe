@@ -1647,10 +1647,10 @@ a mark and a tag. B starts with no sessions of its own, or a few.
    open that session, then turn on *Download recordings on mobile data*.
 4. On B rename the session, edit a line, rename a speaker and write a new
    summary. Sync B, then A.
-5. Conflict, longer wins: on both devices go offline. On A continue a
+5. Merge, longer recording wins: on both devices go offline. On A continue a
    synced session's recording for a minute; on B rename the same
    session. Bring B online and sync, then A, then B again.
-6. Conflict, most recent wins: offline on both, rename the same session
+6. Merge, most recent wins: offline on both, rename the same session
    on B, then a minute later differently on A. Sync A, then B.
 7. On B delete a session. Sync B, then A.
 8. Delete against a longer recording: offline on both; on A continue a
@@ -1673,8 +1673,8 @@ a mark and a tag. B starts with no sessions of its own, or a few.
   disabled, and Settings counts it as waiting to download. Once mobile
   data is allowed, the recording arrives and the player appears.
 - Step 4: A shows every change from B.
-- Step 5: both devices end with A's longer recording, under its old
-  title; B's rename is gone.
+- Step 5: both devices end with A's longer recording and its transcript,
+  under B's new title.
 - Step 6: both devices show A's later title.
 - Step 7: the session disappears from A.
 - Step 8: the session stays on both devices with A's longer recording.
@@ -2066,10 +2066,55 @@ a test manifest.
   typed is still in the field. After reloading the page shows the other change,
   which wasn't overwritten.
 - Step 9: the session shows, says it can't be edited here, and has no edit controls.
-- Step 10: the conflict rule applies to the whole session: with equal recordings
-  the later change wins, and every device and the web end on the same version.
+- Step 10: both changes survive when they touch different parts of the session
+  (#90), and every device and the web end on the same version. With an app older
+  than that, the conflict rule applies to the whole session: with equal recordings
+  the later change wins.
 - Step 11: *Delete* works without a prompt to reload, and the restored session
   has the edits.
+
+## 49. Merging a session changed in two places (issue #90)
+
+Two devices A and B on one sync server, both with the same synced session, with
+a recording, several lines of more than one word, a tag and a summary with action
+items. Go offline on the device being edited unless a step says otherwise.
+
+**Steps**
+
+1. On A rename the session. On the web correct a line. Sync A.
+2. Offline on both: on A rename the session and add a tag; on B correct a line,
+   remove the other tag and rename a speaker. Sync A, then B, then A. Repeat with
+   other edits, syncing B first.
+3. Offline on both: on A tick one action item and delete another; on B edit both.
+   Sync both twice.
+4. Offline on both: add a mark and ask a question on each. Sync both twice.
+5. Offline on both: rename the session on B, then a minute later differently on A.
+   Sync B, then A, then B.
+6. Offline on both: on A split a line; on B correct a different line, and correct
+   the line A split. Sync both twice, with `adb logcat -s ConvoScribe` running on B.
+7. Offline on both: on A re-transcribe the session or continue its recording; on
+   B rename it, add a tag and correct a line. Sync both twice.
+8. Offline on both: write a new summary on each. Sync both twice.
+9. Leave B offline for more than 7 days while A edits the session and the server's
+   clean-up runs, with B holding its own edit to a different part. Bring B online.
+10. Offline on both: on A delete the session; on B rename it. Sync A, then B.
+11. Install an app older than #90 on B. Rename the session on A and sync, correct a
+    line on B without syncing, then sync B.
+
+**Pass**
+
+- Steps 1 to 4: every change is on both devices and on the web, with nothing
+  duplicated, and the deleted item stays deleted.
+- Step 5: both show A's later title.
+- Step 6: both have A's split lines and B's correction to the other line. B's
+  correction to the split line is gone, and the log says `edits lost` with its times.
+- Step 7: both have A's recording and transcript, with B's title and tag. B's
+  corrected line is gone, and the log says so.
+- Step 8: each device shows one summary, the later one, and no action item twice.
+- Step 9: B's edit and A's edits are all there.
+- Step 10: the session is gone from both. A delete still beats an edit.
+- Step 11: the session syncs, by the old rule: with equal recordings, the later
+  change replaces the whole session.
 
 ## Troubleshooting
 

@@ -131,7 +131,12 @@ class SyncClient(
         if (response.code != 200) throw unexpected(response)
     }
 
-    /** Push [manifest] as the revision after [baseRevision] (0 for a new document), gzipped. */
+    /**
+     * Push [manifest] as the revision after [baseRevision] (0 for a new
+     * document), gzipped. With [merge] (#90) a stale push against a live
+     * version comes back as [PushResult.Conflict] for the app to merge,
+     * whatever the server's conflict rule would say.
+     */
     suspend fun putDocument(
         kind: String,
         syncId: String,
@@ -139,7 +144,8 @@ class SyncClient(
         manifestHash: String,
         baseRevision: Long,
         durationMs: Long,
-        changedAt: Long
+        changedAt: Long,
+        merge: Boolean = false
     ): PushResult {
         val body = gzip(manifest).toRequestBody(JSON_TYPE)
         val response = call(
@@ -149,6 +155,7 @@ class SyncClient(
                 .header("Sync-Manifest-Hash", manifestHash)
                 .header("Sync-Duration-Ms", durationMs.coerceAtLeast(0).toString())
                 .header("Sync-Changed-At", changedAt.coerceAtLeast(0).toString())
+                .apply { if (merge) header("Sync-Merge", "1") }
         )
         return when (response.code) {
             200 -> PushResult.Accepted(json.decodeFromString(DocumentMeta.serializer(), response.text))

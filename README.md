@@ -254,8 +254,15 @@ brings them to your other devices.
   Edits made on any device, or in the server's web app (title, tags,
   speaker names, line text, action items; #84), reach the others. When
   the same session
-  changed on two devices, the **longer recording wins**, then the
-  **most recently changed**, and every device ends on that version; a
+  changed in two places, **changes to different parts all survive**
+  (#90): a title renamed on a phone and a line corrected on the web both
+  stay, tags, action items, marks and questions combine, and when both
+  changed the same value the **most recently changed** wins. A recording
+  continued or re-transcribed on one side wins with its transcript, the
+  **longer recording** if both did, and everything else still merges. If
+  a line was split or merged on one side, edits to that line on the other
+  are lost (they're logged), and edits to other lines carry over. Every
+  device ends on the same version. A
   delete wins over an edit unless the edited version has a longer
   recording. **Delete** removes a session from every device; the sync
   server keeps it in its trash for 30 days, where you can restore it
@@ -688,11 +695,17 @@ one package per concern:
   the change feed into `sync_state`, pushes tombstones, then every
   session whose manifest hash differs from `sync_state` (recordings
   before the manifest), then downloads each session the server has
-  newer when the local copy is unchanged or lost the conflict rule
+  newer when the local copy is unchanged or lost to a delete
   (applied with `applyManifest` before its recordings), and finally
   the recordings, through `ResumableFetch`, hash-checked before
-  `attachRecording` puts them in place. The conflict rule itself lives
-  on the server. It is run by `service/SyncJobService` (job 1104, any
+  `attachRecording` puts them in place. A session changed both here and
+  on the server is merged (#90): session pushes send `Sync-Merge: 1`, so
+  a stale one gets `409`, and `data/SessionMerge` (pure, three-way)
+  combines the two against `SyncBase`, the gzipped manifest of what last
+  synced in `files/sync-base/`, named by `baseHash`. The result is
+  applied with the server's version as the new base, so the normal push
+  sends it. The conflict rule for deletes, and for apps without the
+  header, lives on the server. It is run by `service/SyncJobService` (job 1104, any
   network; unmetered when only recordings wait), scheduled by
   `service/SyncScheduler` on a debounced Room invalidation of the
   session tables, so no write path is missed, and when the app opens.
@@ -828,10 +841,14 @@ To sync a phone (#68): deploy the server, then in Settings → *Sync* enter
 its address (`https://sync.example.com`, without `/api/…`) and the API key
 (`SYNC_API_KEY`, or your `sk_authz_…` key behind authz-proxy), and turn on
 *Sync sessions*. Do the same on every device. Each uploads its finished
-sessions and downloads the others' (#69); a session that changed on two
-devices is settled by the server: the longer recording wins, then the
-most recent change, then (for a perfect tie) the higher manifest hash,
-and a delete wins unless the other version has a longer recording. The
+sessions and downloads the others' (#69); a session that changed in two
+places is merged on the device, so changes to different parts all survive
+(#90). When both changed one value the most recent change wins, then (for
+a perfect tie) the higher manifest hash; a continued or re-transcribed
+recording wins with its transcript, the longer if both were; and a delete
+wins unless the other version has a longer recording. Until every device
+is updated, an older app can still replace a whole session, by the longer
+recording, then the most recent change. The
 reverse proxy must accept request bodies of at least 8 MB. Syncing known
 voices, presets, templates and semantic vectors (#70) needs a server
 from `server-v0.4.0`; an older one keeps syncing sessions and the app

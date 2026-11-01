@@ -112,13 +112,18 @@ export const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: str
  * `strict` is for a web edit (#84), made from what the page showed: any other
  * current revision is a 409, whatever the conflict rule says, so a newer edit
  * from a device is never overwritten unseen. A deleted session is a 404.
+ *
+ * `merge` is for an app that merges on the device (#90, `Sync-Merge: 1`): a
+ * stale push against a live version is a 409 whatever the conflict rule says,
+ * and the device merges and pushes again. There is nothing to merge against a
+ * tombstone, so the conflict rule still settles that.
  */
 export async function putDocument(
   owner: string,
   kind: Kind,
   syncId: string,
   push: Push,
-  { strict = false }: { strict?: boolean } = {},
+  { strict = false, merge = false }: { strict?: boolean; merge?: boolean } = {},
 ): Promise<DocumentMeta> {
   const actual = createHash('sha256').update(push.manifest).digest('hex');
   if (actual !== push.manifestHash) throw new HttpError(400, 'hash_mismatch', { actual });
@@ -163,7 +168,7 @@ export async function putDocument(
         .insert(documents)
         .values({ owner, kind, syncId, revision: 1, ...values })
         .returning();
-    } else if (current.revision === push.baseRevision || pushWins(push, meta(current))) {
+    } else if (current.revision === push.baseRevision || (!(merge && !current.deleted) && pushWins(push, meta(current)))) {
       [row] = await tx
         .update(documents)
         .set({ revision: current.revision + 1, ...values })
