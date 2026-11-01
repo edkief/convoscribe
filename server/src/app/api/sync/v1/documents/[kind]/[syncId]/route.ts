@@ -38,7 +38,9 @@ export async function GET(req: Request, ctx: Ctx) {
 /**
  * A new revision. The body is the manifest (optionally `Content-Encoding:
  * gzip`); headers carry Sync-Base-Revision (0 for a new document),
- * Sync-Manifest-Hash, Sync-Duration-Ms and Sync-Changed-At.
+ * Sync-Manifest-Hash, Sync-Duration-Ms and Sync-Changed-At. Sync-Merge: 1 says
+ * the app merges a stale push itself (#90), so it gets a 409 instead of the
+ * conflict rule.
  */
 export async function PUT(req: Request, ctx: Ctx) {
   return authed(req, async (owner) => {
@@ -57,7 +59,7 @@ export async function PUT(req: Request, ctx: Ctx) {
         throw new HttpError(400, 'invalid_gzip');
       }
     }
-    const meta = await putDocument(owner, kind, syncId, { ...push, manifest });
+    const meta = await putDocument(owner, kind, syncId, { ...push, manifest }, { merge: req.headers.get('sync-merge') === '1' });
     return Response.json(meta, { headers: metaHeaders(meta) });
   });
 }
