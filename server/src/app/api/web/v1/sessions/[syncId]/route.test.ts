@@ -5,7 +5,7 @@ import { ctx, request, setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest } from '@/test/sessions';
 import { DELETE as emptyTrash } from '../../trash/route';
 import { POST as restore } from './restore/route';
-import { DELETE } from './route';
+import { DELETE, PATCH } from './route';
 
 setupSyncServer();
 
@@ -81,5 +81,67 @@ describe('the web app’s trash routes (#81)', () => {
     expect((await empty(elsewhere)).status).toBe(403);
     expect((await del('s1', { baseRevision: pushed.revision }, { ...ORIGIN, authorization: '' })).status).toBe(401);
     expect(await getDocumentMeta(OWNER, 'session', 's1')).toMatchObject({ deleted: false });
+  });
+});
+
+describe('the web app’s edit route (#84)', () => {
+  const patch = (syncId: string, body: unknown, headers: Record<string, string> = ORIGIN) =>
+    PATCH(
+      request(`/api/web/v1/sessions/${syncId}`, { method: 'PATCH', body: JSON.stringify(body), headers }),
+      ctx({ syncId }),
+    );
+  const title = { kind: 'title', title: 'Renamed' };
+
+  it('edits a session and answers the new revision', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1'));
+    const res = await patch('s1', { baseRevision: pushed.revision, edit: title });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ syncId: 's1', revision: pushed.revision + 1 });
+  });
+
+  it('answers the current revision for an edit that changes nothing', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1'));
+    const res = await patch('s1', { baseRevision: pushed.revision, edit: { kind: 'title', title: ' ' } });
+    expect(await res.json()).toEqual({ syncId: 's1', revision: pushed.revision });
+  });
+
+  it('refuses another site', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1'));
+    const res = await patch('s1', { baseRevision: pushed.revision, edit: title }, { origin: 'http://evil.example', 'content-type': 'application/json' });
+    expect(res.status).toBe(403);
+    expect(await getDocumentMeta(OWNER, 'session', 's1')).toMatchObject({ revision: pushed.revision });
+  });
+
+  it('refuses a page older than the session', async () => {
+    const first = await pushManifest(OWNER, sessionManifest('s1'));
+    await pushManifest(OWNER, sessionManifest('s1', { title: 'Device' }), first.revision);
+    const res = await patch('s1', { baseRevision: first.revision, edit: title });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toBe('conflict');
+  });
+
+  it('refuses a session from a newer app', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { schema: 99 }));
+    const res = await patch('s1', { baseRevision: pushed.revision, edit: title });
+    expect(res.status).toBe(422);
+    expect((await res.json()).error).toBe('newer_schema');
+  });
+
+  it('refuses a bad body', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1'));
+    expect((await patch('s1', { edit: title })).status).toBe(400);
+    expect((await patch('s1', { baseRevision: pushed.revision })).status).toBe(400);
+    expect((await patch('s1', { baseRevision: pushed.revision, edit: { kind: 'nope' } })).status).toBe(400);
+    expect((await patch('s1', null)).status).toBe(400);
+  });
+
+  it('refuses a body over the limit', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1'));
+    const res = await patch('s1', { baseRevision: pushed.revision, edit: { kind: 'title', title: 'x'.repeat(70_000) } });
+    expect(res.status).toBe(413);
+  });
+
+  it('answers 404 for an unknown session', async () => {
+    expect((await patch('nope', { baseRevision: 1, edit: title })).status).toBe(404);
   });
 });
