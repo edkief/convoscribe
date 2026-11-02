@@ -689,6 +689,11 @@ one package per concern:
   which backups now carry, and `sync_state.contentKey`, the text hash of
   the vectors the server holds for a session. `LibraryManifest` and
   `VectorsManifest` are their portable forms.
+- `sync/ServerConfigClient`, `ServerOfferRefresher` — what the sync
+  server provides (#94), kept in `AppSettings.serverOffer`;
+  `AppSettings.llmBaseUrlInUse` / `asrServerUrlInUse` and
+  `SettingsRepository.llmConfig()` / `asrConfig()` pick the server's or
+  the user's own per service, without writing to the user's fields.
 - `sync/` — two-way sync with the sync server (issues #68, #69):
   `SyncClient` (the `/api/sync/v1` routes, Bearer key), `BlobUploader`
   (resumable 8 MB parts), `FileHashCache`, and `SyncEngine`. A run reads
@@ -765,7 +770,11 @@ container.
 
 ## LLM endpoint
 
-The LLM endpoint is configured in **Settings → Language model**:
+The LLM endpoint is configured in **Settings → Language model**. With
+*Use this server's services* on, the section first offers *Sync server's*
+or *Specify my own* (see [Using the server's language model and
+transcription](#using-the-servers-language-model-and-transcription));
+the fields below are *Specify my own*:
 
 - **Base URL** — the OpenAI-compatible base URL. Must end with
   `/v1`. Examples:
@@ -793,7 +802,10 @@ sees the `delta.content` field.
 
 Settings → **Transcription server** (issue #58) sends stored
 recordings to a self-hosted server for a more accurate transcript than
-the efficiency-focused on-device models:
+the efficiency-focused on-device models. As for the language model, the
+sync server's can be used instead of typing one in (see [Using the
+server's language model and
+transcription](#using-the-servers-language-model-and-transcription)):
 
 - **Base URL** — the OpenAI-compatible base URL, ending in `/v1`, e.g.
   `https://asr.example.com/v1` or, inside a trusted network,
@@ -869,6 +881,46 @@ or when you empty the trash, it is gone for good. Once a day the server
 also removes storage nothing uses any more (old versions of sessions,
 abandoned uploads), so deleting finally frees space. See the
 [server README](server/README.md#web-app) and its *Trash and clean-up*.
+
+### Using the server's language model and transcription
+
+A sync server whose operator set its upstream variables (#93, see the
+[server README](server/README.md)) also provides a language model and a
+transcription server to its users. A device uses them with nothing else
+typed in (#94):
+
+1. In Settings → *Sync server*, enter the address and API key as for sync.
+2. Turn on **Use this server's services**. The app asks the server what
+   it provides (`GET /api/sync/v1/config`), then shows one confirmation
+   naming the server, its language model and its transcription, and
+   what goes to each: transcripts to the language model (summaries,
+   questions, names and mark notes, also automatically), and recordings
+   to transcription only when you transcribe again on the server.
+   Nothing is sent to either before you accept.
+3. *Language model* and *Transcription server* now each offer **Sync
+   server's** or **Specify my own**. A service you hadn't set up starts
+   on the server's; one you had keeps your own until you switch.
+   *Improve recordings on the server* stays off until you turn it on.
+
+This is separate from *Sync sessions*: either works without the other,
+and turning one off leaves the other as it is. The app reaches the
+services at `/api/ai/v1/llm` and `/api/ai/v1/asr` on the sync server with
+the sync key; the upstream addresses and keys stay on the server, and
+your own keys are never sent there.
+
+- What you typed into your own fields is never changed. It is hidden
+  while the server's is in use, and used again when you switch back or
+  turn the services off.
+- A service the server doesn't provide shows as not available. A server
+  without the endpoint (`server-v0.9.0` or older) provides nothing, so
+  the switch stays off and the app behaves as before.
+- The app keeps the last answer and asks again when it comes to the
+  foreground (at most hourly) and when you save a new key. A refused key
+  or no network keeps the last answer, so the services keep working.
+- Saving a different server address turns the services off, since you
+  accepted them for the old server; *Sync sessions* is left as it is.
+- Backups hold none of this: no server-provided address, and restoring
+  settings doesn't change which source each service uses.
 
 ## Model licences
 
