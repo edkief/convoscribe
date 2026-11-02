@@ -48,10 +48,7 @@ internal fun DataSection(
     onCancel: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.backup_section)
-    ) {
+    SectionCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)) {
         SupportingText(text = stringResource(R.string.backup_section_summary))
         when (state) {
             is BackupState.Running -> {

@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import com.convoscribe.R
+import com.convoscribe.ui.components.Disclosure
 import com.convoscribe.ui.components.InlineProgress
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.SectionCard
@@ -58,10 +59,7 @@ internal fun AboutSection(
     onCheckAutoChange: (Boolean) -> Unit,
     onIncludePrereleasesChange: (Boolean) -> Unit
 ) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_about)
-    ) {
+    SectionCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)) {
         Text(
             text = stringResource(R.string.settings_about_version, installedVersion, installedVersionCode),
             style = MaterialTheme.typography.bodyLarge
@@ -100,43 +98,46 @@ internal fun AboutSection(
             checked = includePrereleases,
             onCheckedChange = onIncludePrereleasesChange
         )
-        Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_nemotron_name),
-                licence = stringResource(R.string.settings_about_nemotron_licence),
-                url = "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_kroko_name),
-                licence = stringResource(R.string.settings_about_kroko_licence),
-                url = "https://huggingface.co/Banafo/Kroko-ASR"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_pyannote_name),
-                licence = stringResource(R.string.settings_about_pyannote_licence),
-                url = "https://github.com/pyannote/pyannote-segmentation"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_wespeaker_name),
-                licence = stringResource(R.string.settings_about_wespeaker_licence),
-                url = "https://github.com/wenet-e2e/wespeaker"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_gtcrn_name),
-                licence = stringResource(R.string.settings_about_gtcrn_licence),
-                url = "https://github.com/Xiaobin-Rong/gtcrn"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_sherpa_name),
-                licence = stringResource(R.string.settings_about_sherpa_licence),
-                url = "https://github.com/k2-fsa/sherpa-onnx"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_qnn_name),
-                licence = stringResource(R.string.settings_about_qnn_licence),
-                url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
-            )
-        }
+    }
+    Disclosure(
+        title = stringResource(R.string.settings_about_licences),
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+    ) {
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_nemotron_name),
+            licence = stringResource(R.string.settings_about_nemotron_licence),
+            url = "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_kroko_name),
+            licence = stringResource(R.string.settings_about_kroko_licence),
+            url = "https://huggingface.co/Banafo/Kroko-ASR"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_pyannote_name),
+            licence = stringResource(R.string.settings_about_pyannote_licence),
+            url = "https://github.com/pyannote/pyannote-segmentation"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_wespeaker_name),
+            licence = stringResource(R.string.settings_about_wespeaker_licence),
+            url = "https://github.com/wenet-e2e/wespeaker"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_gtcrn_name),
+            licence = stringResource(R.string.settings_about_gtcrn_licence),
+            url = "https://github.com/Xiaobin-Rong/gtcrn"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_sherpa_name),
+            licence = stringResource(R.string.settings_about_sherpa_licence),
+            url = "https://github.com/k2-fsa/sherpa-onnx"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_qnn_name),
+            licence = stringResource(R.string.settings_about_qnn_licence),
+            url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
+        )
     }
 }
 

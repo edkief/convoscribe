@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,9 +33,11 @@ import com.convoscribe.settings.FloatingShape
 import com.convoscribe.settings.ServiceSource
 import com.convoscribe.settings.isUnencryptedUrl
 import com.convoscribe.ui.components.ChoiceGroup
+import com.convoscribe.ui.components.Disclosure
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.components.NavRow
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
@@ -93,30 +94,20 @@ private val FLOATING_SHAPES = listOf(
 )
 
 /**
- * "Transcription" section: ASR engine segmented button (saves
- * immediately on click) with the "French uses the CPU engine."
- * hint when Français is selected, a Language
- * `SingleChoiceSegmentedButtonRow` ("English" / "Français")
- * bound to `AppSettings.asrLanguage`, the model status caption
- * under it ("Model installed" / "Model not downloaded (N MB) –
- * it will be downloaded before your next recording") and a
- * "Delete French model" text button when French is selected but
- * not installed (or simply installed while English is active).
- * Then the "Engine check" navigation row and a CPU threads
- * 1..8 slider.
+ * "Language and engine": the default language with its model status
+ * (and *Delete French model* whenever that bundle is on disk, in use or
+ * not, as it is worth ≈71 MB), the speech engine, and Engine check. All
+ * written immediately.
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun TranscriptionSection(
     engine: String,
     language: String,
-    threads: Int,
     frenchModelInstalled: Boolean,
     selectedLanguageModelInstalled: Boolean,
     selectedLanguageModelMissingBytes: Long,
     onEngineChange: (String) -> Unit,
     onLanguageChange: (String) -> Unit,
-    onThreadsChange: (Int) -> Unit,
     onEngineCheck: () -> Unit,
     onDeleteFrenchModel: () -> Unit
 ) {
@@ -124,22 +115,6 @@ internal fun TranscriptionSection(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_transcription)
     ) {
-        FieldLabel(text = stringResource(R.string.settings_transcription_engine))
-        ChoiceGroup(
-            options = listOf(
-                "npu" to stringResource(R.string.settings_transcription_engine_npu),
-                "cpu" to stringResource(R.string.settings_transcription_engine_cpu)
-            ),
-            selected = if (engine == "npu") "npu" else "cpu",
-            onSelect = onEngineChange
-        )
-        SupportingText(text = stringResource(R.string.settings_transcription_engine_help))
-        if (language == "fr") {
-            // French is only supported on the CPU engine today;
-            // explain that the engine selector is unchanged but
-            // does not apply to a French recording.
-            SupportingText(text = stringResource(R.string.settings_transcription_french_uses_cpu))
-        }
         FieldLabel(text = stringResource(R.string.settings_transcription_language_label))
         SupportingText(text = stringResource(R.string.settings_defaults_help))
         ChoiceGroup(
@@ -153,38 +128,47 @@ internal fun TranscriptionSection(
         if (selectedLanguageModelInstalled) {
             SupportingText(text = stringResource(R.string.settings_transcription_language_model_installed))
         } else {
-            Text(
+            SupportingText(
                 text = stringResource(
                     R.string.settings_transcription_language_model_missing,
                     (selectedLanguageModelMissingBytes / 1_000_000L).toInt()
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             )
         }
-        // The "Delete French model" action is only useful when the
-        // French bundle is actually on disk. Show it whenever it's
-        // installed, regardless of the active language: a user with
-        // English selected and French sitting unused on disk probably
-        // wants the ≈71 MB back.
         if (frenchModelInstalled) {
             TextButton(onClick = onDeleteFrenchModel) {
                 Text(text = stringResource(R.string.settings_transcription_language_delete_fr))
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.settings_transcription_engine_check),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedButton(onClick = onEngineCheck) {
-                Text(text = stringResource(R.string.settings_transcription_engine_check))
-            }
+        FieldLabel(text = stringResource(R.string.settings_transcription_engine))
+        ChoiceGroup(
+            options = listOf(
+                "npu" to stringResource(R.string.settings_transcription_engine_npu),
+                "cpu" to stringResource(R.string.settings_transcription_engine_cpu)
+            ),
+            selected = if (engine == "npu") "npu" else "cpu",
+            onSelect = onEngineChange
+        )
+        SupportingText(text = stringResource(R.string.settings_transcription_engine_help))
+        if (language == "fr") {
+            // French only runs on the CPU engine; the selector keeps its value for English.
+            SupportingText(text = stringResource(R.string.settings_transcription_french_uses_cpu))
         }
+        NavRow(
+            label = stringResource(R.string.settings_transcription_engine_check),
+            onClick = onEngineCheck
+        )
+    }
+}
+
+/** The page's expert setting: CPU threads. */
+@Composable
+internal fun RecordingAdvanced(threads: Int, onThreadsChange: (Int) -> Unit) {
+    Disclosure(
+        title = stringResource(R.string.settings_advanced),
+        summary = stringResource(R.string.settings_recording_advanced_summary, threads),
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+    ) {
         FieldLabel(text = stringResource(R.string.settings_transcription_threads_label))
         Slider(
             value = threads.toFloat(),
@@ -193,10 +177,7 @@ internal fun TranscriptionSection(
             steps = 6,
             modifier = Modifier.fillMaxWidth()
         )
-        Text(
-            text = threads.toString(),
-            style = MaterialTheme.typography.bodySmall
-        )
+        Text(text = threads.toString(), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -295,89 +276,100 @@ internal fun TranscriptionServerSection(state: SettingsUiState, actions: Setting
         }
         // The user's own server, kept while the sync server's is used (issue #94).
         if (!state.serverServicesEnabled || state.asrSource == ServiceSource.OWN) {
-            OutlinedTextField(
-                value = form.serverUrl,
-                onValueChange = { onFormChange(form.copy(serverUrl = it)) },
-                label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
-                placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
-                singleLine = true,
-                supportingText = if (isUnencryptedUrl(form.serverUrl)) {
-                    { Text(text = stringResource(R.string.settings_server_url_cleartext)) }
-                } else {
-                    null
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = form.serverKey,
-                onValueChange = { onFormChange(form.copy(serverKey = it)) },
-                label = { Text(text = stringResource(R.string.settings_server_key_label)) },
-                singleLine = true,
-                visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { keyVisible = !keyVisible }) {
-                        Text(
-                            text = stringResource(
-                                if (keyVisible) {
-                                    R.string.settings_llm_api_key_hide
-                                } else {
-                                    R.string.settings_llm_api_key_show
-                                }
-                            ),
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = form.serverModel,
-                onValueChange = { onFormChange(form.copy(serverModel = it)) },
-                label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
-                placeholder = { Text(text = stringResource(R.string.settings_server_model_placeholder)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+            Disclosure(
+                title = stringResource(R.string.settings_server_own),
+                summary = form.serverUrl.takeIf { it.isNotBlank() }?.let { serverHost(it) }
+                    ?: stringResource(R.string.settings_server_own_none),
+                outlined = false
             ) {
-                OutlinedButton(
-                    onClick = actions.onTestServer,
-                    enabled = !state.serverTesting && form.serverUrl.isNotBlank(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = stringResource(R.string.settings_llm_test))
-                }
-                if (state.serverTesting) InlineProgress()
-            }
-            when (val result = state.serverTestResult) {
-                is ConnectionTestResult.Connected -> NoticeText(
-                    text = pluralStringResource(
-                        R.plurals.settings_test_connected,
-                        result.count,
-                        result.count,
-                        result.models.joinToString(", ")
-                    )
+                OutlinedTextField(
+                    value = form.serverUrl,
+                    onValueChange = { onFormChange(form.copy(serverUrl = it)) },
+                    label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
+                    placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
+                    singleLine = true,
+                    supportingText = if (isUnencryptedUrl(form.serverUrl)) {
+                        { Text(text = stringResource(R.string.settings_server_url_cleartext)) }
+                    } else {
+                        null
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    modifier = Modifier.fillMaxWidth()
                 )
-                is ConnectionTestResult.Failed -> ErrorBanner(
-                    message = stringResource(R.string.settings_test_failed, result.message)
+                OutlinedTextField(
+                    value = form.serverKey,
+                    onValueChange = { onFormChange(form.copy(serverKey = it)) },
+                    label = { Text(text = stringResource(R.string.settings_server_key_label)) },
+                    singleLine = true,
+                    visualTransformation = if (keyVisible) {
+                        VisualTransformation.None
+                    } else {
+                        PasswordVisualTransformation()
+                    },
+                    trailingIcon = {
+                        IconButton(onClick = { keyVisible = !keyVisible }) {
+                            Text(
+                                text = stringResource(
+                                    if (keyVisible) {
+                                        R.string.settings_llm_api_key_hide
+                                    } else {
+                                        R.string.settings_llm_api_key_show
+                                    }
+                                ),
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 )
-                null -> Unit
-            }
-            if (state.serverModels.isNotEmpty()) {
-                androidx.compose.foundation.layout.FlowRow(
+                OutlinedTextField(
+                    value = form.serverModel,
+                    onValueChange = { onFormChange(form.copy(serverModel = it)) },
+                    label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
+                    placeholder = { Text(text = stringResource(R.string.settings_server_model_placeholder)) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
                 ) {
-                    state.serverModels.forEach { id ->
-                        SuggestionChip(
-                            onClick = { onFormChange(form.copy(serverModel = id)) },
-                            label = { Text(text = id) }
+                    OutlinedButton(
+                        onClick = actions.onTestServer,
+                        enabled = !state.serverTesting && form.serverUrl.isNotBlank(),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = stringResource(R.string.settings_llm_test))
+                    }
+                    if (state.serverTesting) InlineProgress()
+                }
+                when (val result = state.serverTestResult) {
+                    is ConnectionTestResult.Connected -> NoticeText(
+                        text = pluralStringResource(
+                            R.plurals.settings_test_connected,
+                            result.count,
+                            result.count,
+                            result.models.joinToString(", ")
                         )
+                    )
+                    is ConnectionTestResult.Failed -> ErrorBanner(
+                        message = stringResource(R.string.settings_test_failed, result.message)
+                    )
+                    null -> Unit
+                }
+                if (state.serverModels.isNotEmpty()) {
+                    androidx.compose.foundation.layout.FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
+                        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+                    ) {
+                        state.serverModels.forEach { id ->
+                            SuggestionChip(
+                                onClick = { onFormChange(form.copy(serverModel = id)) },
+                                label = { Text(text = id) }
+                            )
+                        }
                     }
                 }
             }

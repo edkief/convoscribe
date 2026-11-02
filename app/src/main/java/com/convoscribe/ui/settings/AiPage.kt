@@ -29,8 +29,10 @@ import com.convoscribe.R
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.settings.OfferedService
 import com.convoscribe.settings.ServiceSource
+import com.convoscribe.ui.components.Disclosure
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.components.NavRow
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
@@ -88,14 +90,6 @@ internal fun LanguageModelSection(
                 onFormChange = onFormChange
             )
         }
-        OutlinedTextField(
-            value = form.maxChars,
-            onValueChange = { onFormChange(form.copy(maxChars = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_max_chars_label)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
-        )
         if (own) {
             LanguageModelTest(
                 form = form,
@@ -239,19 +233,10 @@ internal fun SummariesSection(
             onSelect = onDefaultChange
         )
         SupportingText(text = stringResource(R.string.settings_summaries_default_help))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.settings_summaries_templates_row),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedButton(onClick = onOpenTemplates) {
-                Text(text = stringResource(R.string.settings_summaries_templates_button))
-            }
-        }
+        NavRow(
+            label = stringResource(R.string.settings_summaries_templates_row),
+            onClick = onOpenTemplates
+        )
         SwitchRow(
             label = stringResource(R.string.settings_auto_mark_notes_label),
             help = stringResource(R.string.settings_auto_mark_notes_help),
@@ -263,6 +248,25 @@ internal fun SummariesSection(
             help = stringResource(R.string.settings_auto_title_help),
             checked = autoTitle,
             onCheckedChange = onAutoTitleChange
+        )
+    }
+}
+
+/** The language model's expert setting: how much of a transcript is sent. */
+@Composable
+internal fun AiAdvanced(form: SettingsForm, onFormChange: (SettingsForm) -> Unit) {
+    Disclosure(
+        title = stringResource(R.string.settings_advanced),
+        summary = stringResource(R.string.settings_ai_advanced_summary, form.maxChars),
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+    ) {
+        OutlinedTextField(
+            value = form.maxChars,
+            onValueChange = { onFormChange(form.copy(maxChars = it)) },
+            label = { Text(text = stringResource(R.string.settings_llm_max_chars_label)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
         )
     }
 }

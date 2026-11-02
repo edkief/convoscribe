@@ -60,8 +60,12 @@ internal enum class SettingsPage(val key: String, @StringRes val title: Int, @Dr
     }
 }
 
-/** The state a page's overview row shows: [parts] joined in one line, [problem] when it needs attention. */
-internal data class OverviewStatus(val parts: List<UiText>, val problem: Boolean = false)
+/**
+ * The state a page's overview row shows: [parts] joined in one line.
+ * [problem] when something is wrong, [notice] when something good waits
+ * for the user, such as an update ready to install.
+ */
+internal data class OverviewStatus(val parts: List<UiText>, val problem: Boolean = false, val notice: Boolean = false)
 
 /** What the overview rows read, apart from [SettingsUiState]. */
 internal data class OverviewInputs(
@@ -208,10 +212,11 @@ private fun displayLabel(mode: String): Int = when (mode) {
 private fun aboutStatus(inputs: OverviewInputs): OverviewStatus = when (val update = inputs.update) {
     is UpdateState.ReadyToInstall -> OverviewStatus(
         listOf(UiText.res(R.string.settings_overview_update_ready, update.offer.versionName)),
-        problem = true
+        notice = true
     )
     is UpdateState.Available -> OverviewStatus(
-        listOf(UiText.res(R.string.settings_overview_update_available, update.offer.versionName))
+        listOf(UiText.res(R.string.settings_overview_update_available, update.offer.versionName)),
+        notice = true
     )
     is UpdateState.Downloading -> OverviewStatus(listOf(UiText.res(R.string.settings_overview_update_downloading)))
     is UpdateState.Failed -> OverviewStatus(
@@ -338,12 +343,13 @@ private fun OverviewRow(
     }
 }
 
-/** The row's state; a problem also gets a warning icon and heavier text, so it never rests on colour. */
+/** The row's state; a problem also gets a warning icon and heavier text, a notice heavier text, so neither rests on colour. */
 @Composable
 private fun StatusLine(status: OverviewStatus, tinted: Boolean) {
     val parts = status.parts.map { it.asString() }
     val color = when {
         status.problem && !tinted -> MaterialTheme.colorScheme.error
+        status.notice && !tinted -> MaterialTheme.colorScheme.primary
         tinted -> LocalContentColor.current
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
@@ -363,7 +369,7 @@ private fun StatusLine(status: OverviewStatus, tinted: Boolean) {
             text = parts.joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = color,
-            fontWeight = if (status.problem) FontWeight.Medium else null
+            fontWeight = if (status.problem || status.notice) FontWeight.Medium else null
         )
     }
 }

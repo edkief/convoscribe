@@ -28,10 +28,7 @@ internal fun AppearanceSection(
     onDisplayModeChange: (String) -> Unit,
     onDynamicColorChange: (Boolean) -> Unit
 ) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_appearance)
-    ) {
+    SectionCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)) {
         FieldLabel(text = stringResource(R.string.settings_display_mode_label))
         ChoiceGroup(
             options = DISPLAY_MODES.map { (mode, label) -> mode.key to stringResource(label) },

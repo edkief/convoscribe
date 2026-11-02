@@ -2,11 +2,8 @@ package com.convoscribe.ui.settings
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,6 +18,7 @@ import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.components.NavRow
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
@@ -104,33 +102,15 @@ internal fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit) 
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_organise)
     ) {
-        ManageRow(
+        NavRow(
             label = stringResource(R.string.settings_organise_tags_row),
             help = stringResource(R.string.settings_organise_tags_help),
             onClick = onOpenTags
         )
-        ManageRow(
+        NavRow(
             label = stringResource(R.string.settings_organise_presets_row),
             help = stringResource(R.string.settings_organise_presets_help),
             onClick = onOpenPresets
         )
-    }
-}
-
-/** A setting kept on its own screen: [label], [help] below it, and Manage. */
-@Composable
-private fun ManageRow(label: String, help: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, style = MaterialTheme.typography.bodyLarge)
-            SupportingText(text = help)
-        }
-        OutlinedButton(onClick = onClick) {
-            Text(text = stringResource(R.string.settings_summaries_templates_button))
-        }
     }
 }

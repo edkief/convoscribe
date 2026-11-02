@@ -500,15 +500,11 @@ private fun SettingsPageContent(
             TranscriptionSection(
                 engine = state.asrEngine,
                 language = state.asrLanguage,
-                threads = state.form.numThreads,
                 frenchModelInstalled = state.frenchModelInstalled,
                 selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
                 selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
                 onEngineChange = actions.onEngineChange,
                 onLanguageChange = actions.onLanguageChange,
-                onThreadsChange = { threads ->
-                    actions.onFormChange(state.form.copy(numThreads = threads))
-                },
                 onEngineCheck = actions.onEngineCheck,
                 onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
@@ -530,6 +526,10 @@ private fun SettingsPageContent(
                 onCleanByDefaultChange = actions.onCleanAudioDefaultChange
             )
             TranscriptionServerSection(state = state, actions = actions)
+            RecordingAdvanced(
+                threads = state.form.numThreads,
+                onThreadsChange = { threads -> actions.onFormChange(state.form.copy(numThreads = threads)) }
+            )
         }
         SettingsPage.SPEAKERS -> SpeakersSection(
             speakerIdMode = state.speakerIdMode,
@@ -582,6 +582,7 @@ private fun SettingsPageContent(
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
             )
+            AiAdvanced(form = state.form, onFormChange = actions.onFormChange)
         }
         SettingsPage.SEARCH -> {
             SemanticSearchSection(

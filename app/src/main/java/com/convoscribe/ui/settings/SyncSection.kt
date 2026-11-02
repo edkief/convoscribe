@@ -37,7 +37,8 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * "Sync" section (issue #68): the sync server's address and key (saved
+ * The Server & sync page (issues #68, #98): the *Connection* card with
+ * the sync server's address and key (saved
  * by Save, like the transcription server's), *Sync sessions* (written
  * immediately, after a confirmation that sessions leave the device),
  * *Sync now*, and the status: last synced, sessions waiting and the
@@ -48,8 +49,8 @@ import java.util.Date
  * ([audioOnMobileData]) and how many sessions or recordings are still
  * downloading.
  *
- * *Use this server's services* ([services], issue #94) sits between the
- * key and *Sync sessions*: either can be on without the other.
+ * *Use this server's services* ([services], issue #94) has its own card
+ * between them: either can be on without the other.
  */
 @Composable
 internal fun SyncSection(
@@ -69,11 +70,11 @@ internal fun SyncSection(
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var confirming by rememberSaveable { mutableStateOf(false) }
     val active = enabled && configured
+    // Connection first and on its own: browser sign-in (#95) replaces the key here.
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.sync_section)
     ) {
-        SupportingText(text = stringResource(R.string.sync_help))
         OutlinedTextField(
             value = url,
             onValueChange = onUrlChange,
@@ -106,7 +107,19 @@ internal fun SyncSection(
             },
             modifier = Modifier.fillMaxWidth()
         )
+    }
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_services)
+    ) {
         ServerServicesBlock(ui = services, configured = configured, serverUrl = url)
+        SupportingText(text = stringResource(R.string.settings_services_where))
+    }
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_sync)
+    ) {
+        SupportingText(text = stringResource(R.string.sync_help))
         SwitchRow(
             label = stringResource(R.string.sync_enabled_label),
             help = stringResource(R.string.sync_enabled_help),

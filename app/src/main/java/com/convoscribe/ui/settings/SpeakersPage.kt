@@ -27,8 +27,10 @@ import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DIARIZATION_STEPS_SECONDS
 import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.ui.components.ChoiceGroup
+import com.convoscribe.ui.components.Disclosure
 import com.convoscribe.ui.components.FieldLabel
 import com.convoscribe.ui.components.InlineProgress
+import com.convoscribe.ui.components.NavRow
 import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.SectionCard
@@ -135,10 +137,7 @@ internal fun SpeakersSection(
     voiceModel: VoiceModelUi = VoiceModelUi()
 ) {
     var speakersExpanded by remember { mutableStateOf(false) }
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_speakers)
-    ) {
+    SectionCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)) {
         FieldLabel(text = stringResource(R.string.settings_speakers_id_mode_label))
         ChoiceGroup(
             options = SPEAKER_ID_MODES.map { (mode, label) -> mode.key to stringResource(label) },
@@ -146,6 +145,11 @@ internal fun SpeakersSection(
             onSelect = onSpeakerIdModeChange
         )
         SupportingText(text = stringResource(R.string.settings_speakers_id_mode_help))
+    }
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_new_conversations)
+    ) {
         val speakersLabel = if (numSpeakers <= 0) {
             stringResource(R.string.settings_speakers_automatic)
         } else {
@@ -178,6 +182,47 @@ internal fun SpeakersSection(
                 }
             }
         }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.settings_speakers_default_participants,
+                    defaultParticipants?.joinToString(", ")
+                        ?: stringResource(R.string.settings_speakers_default_participants_anyone)
+                ),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            if (defaultParticipants != null) {
+                TextButton(onClick = onResetDefaultParticipants) {
+                    Text(text = stringResource(R.string.settings_speakers_default_participants_reset))
+                }
+            }
+        }
+    }
+    SectionCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)) {
+        // Enrolled voices feed the diarization pipeline too: their cosine
+        // match labels each cluster's centroid with a real name.
+        NavRow(
+            label = stringResource(R.string.settings_speakers_known_row),
+            help = stringResource(R.string.settings_speakers_known_help),
+            onClick = onOpenKnownSpeakers
+        )
+    }
+    Disclosure(
+        title = stringResource(R.string.settings_advanced),
+        summary = stringResource(
+            R.string.settings_speakers_advanced_summary,
+            threshold,
+            matchThreshold,
+            voiceModelName(voiceModel.selected),
+            stepLabel(voiceModel.stepSeconds)
+        ),
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+    ) {
         FieldLabel(text = stringResource(R.string.settings_speakers_threshold_label))
         Slider(
             value = threshold.coerceIn(0.4f, 0.95f),
@@ -203,45 +248,5 @@ internal fun SpeakersSection(
         )
         SupportingText(text = stringResource(R.string.settings_speakers_match_threshold_help))
         VoiceModelFields(voiceModel)
-        // "Known speakers" row: navigates to the SpeakersScreen where
-        // the user records a 15-second voice sample and labels
-        // diarization clusters with the speaker's real name. Lives
-        // inside the Speakers section because both controls feed the
-        // diarization pipeline (number-of-speakers / threshold for the
-        // clustering algorithm; the enrollment list for the cosine
-        // match against each cluster's centroid).
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.settings_speakers_known_row),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedButton(onClick = onOpenKnownSpeakers) {
-                Text(text = stringResource(R.string.settings_speakers_known_button))
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.settings_speakers_default_participants,
-                    defaultParticipants?.joinToString(", ")
-                        ?: stringResource(R.string.settings_speakers_default_participants_anyone)
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            if (defaultParticipants != null) {
-                TextButton(onClick = onResetDefaultParticipants) {
-                    Text(text = stringResource(R.string.settings_speakers_default_participants_reset))
-                }
-            }
-        }
     }
 }

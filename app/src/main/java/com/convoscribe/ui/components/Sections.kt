@@ -1,25 +1,39 @@
 package com.convoscribe.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.unit.dp
+import com.convoscribe.R
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -157,5 +171,100 @@ fun SwitchRow(
             SupportingText(text = help)
         }
         Switch(checked = checked, onCheckedChange = null, enabled = enabled)
+    }
+}
+
+/**
+ * A row that opens another screen: [label], optional [help] below it,
+ * and an arrow. The whole row is the target.
+ */
+@Composable
+fun NavRow(label: String, onClick: () -> Unit, modifier: Modifier = Modifier, help: String? = null) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = AppTheme.sizes.touchTarget)
+            .clickable(role = Role.Button, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            if (help != null) SupportingText(text = help)
+        }
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/**
+ * Controls kept out of the way until asked for: a [title] row with what
+ * they are set to now ([summary]) that opens them in place. Closed at
+ * first; there is no animation, so it behaves the same on e-ink.
+ * [outlined] makes it a card of its own, for use between sections.
+ */
+@Composable
+fun Disclosure(
+    title: String,
+    modifier: Modifier = Modifier,
+    summary: String? = null,
+    outlined: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val state = stringResource(if (expanded) R.string.disclosure_expanded else R.string.disclosure_collapsed)
+    val body: @Composable ColumnScope.() -> Unit = {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .heightIn(min = AppTheme.sizes.touchTarget)
+                .clickable(role = Role.Button) { expanded = !expanded }
+                .semantics { stateDescription = state }
+                .padding(horizontal = if (outlined) AppTheme.spacing.l else AppTheme.spacing.xxs),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+        ) {
+            Column(modifier = Modifier.weight(1f).padding(vertical = AppTheme.spacing.s)) {
+                Text(text = title, style = MaterialTheme.typography.bodyLarge)
+                if (summary != null && !expanded) SupportingText(text = summary)
+            }
+            Icon(
+                painter = painterResource(if (expanded) R.drawable.ic_expand_less else R.drawable.ic_expand_more),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded) {
+            Column(
+                modifier = Modifier.padding(
+                    start = if (outlined) AppTheme.spacing.l else 0.dp,
+                    end = if (outlined) AppTheme.spacing.l else 0.dp,
+                    bottom = if (outlined) AppTheme.spacing.l else 0.dp
+                ),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m),
+                content = content
+            )
+        }
+    }
+    if (outlined) {
+        OutlinedCard(
+            modifier = modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.medium,
+            border = BorderStroke(
+                AppTheme.sizes.outline,
+                if (AppTheme.isEink) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.outlineVariant
+            ),
+            colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.surface),
+            content = body
+        )
+    } else {
+        Column(
+            modifier = modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m),
+            content = body
+        )
     }
 }
