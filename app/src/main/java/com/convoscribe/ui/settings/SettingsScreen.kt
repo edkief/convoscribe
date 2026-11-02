@@ -874,7 +874,7 @@ private fun OwnLanguageModelFields(
  * "Test connection" for the user's own language model, its result line
  * and the model id chips that fill the Model field on tap.
  */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun LanguageModelTest(
     form: SettingsForm,
