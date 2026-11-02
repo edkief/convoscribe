@@ -1,7 +1,9 @@
 package com.convoscribe.settings
 
 import android.content.SharedPreferences
+import com.convoscribe.asr.server.ServerAsrConfig
 import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.models.ModelCatalog
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -46,7 +48,10 @@ class SettingsRepository(
      *  - `llmBaseUrl` trimmed and trailing `/` removed
      *  - `asrServerUrl` trimmed and trailing `/` removed;
      *    `asrServerModel` trimmed
-     *  - `syncServerUrl` trimmed and trailing `/` removed
+     *  - `syncServerUrl` trimmed and trailing `/` removed; a different
+     *    address turns *Use this server's services* off and forgets the
+     *    offer, since the user accepted them for the old server
+     *    (issue #94). *Sync sessions* is left as it is
      *  - `defaultParticipants` trimmed and de-duplicated; empty
      *    becomes `null` (anyone)
      *  - `asrLanguage` must be "en" or "fr"; anything else keeps
@@ -88,6 +93,14 @@ class SettingsRepository(
             putString(KEY_SYNC_SERVER_URL, next.syncServerUrl)
             putBoolean(KEY_SYNC_ENABLED, next.syncEnabled)
             putBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, next.syncAudioOnMobileData)
+            putBoolean(KEY_SERVER_SERVICES_ENABLED, next.serverServicesEnabled)
+            putOrRemove(KEY_LLM_SOURCE, next.llmSource?.key)
+            putOrRemove(KEY_ASR_SOURCE, next.asrSource?.key)
+            val offer = next.serverOffer
+            putBoolean(KEY_SERVER_OFFER, offer != null)
+            putOrRemove(KEY_SERVER_OFFER_LLM_MODEL, offer?.llm?.model)
+            putOrRemove(KEY_SERVER_OFFER_ASR_MODEL, offer?.transcription?.model)
+            putLong(KEY_SERVER_OFFER_FETCHED_AT, offer?.fetchedAt ?: 0L)
             putInt(KEY_NUM_SPEAKERS, next.numSpeakers)
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
@@ -157,6 +170,44 @@ class SettingsRepository(
         secrets.setSyncKey(value)
     }
 
+    /**
+     * The language model in use (issue #94): the sync server's, with the
+     * sync key, or the user's own with theirs. Never mixes the two, so
+     * the user's key is not sent to the server, nor the sync key to
+     * their endpoint.
+     */
+    fun llmConfig(): LlmConfig {
+        val s = _settings.value
+        return LlmConfig(
+            baseUrl = s.llmBaseUrlInUse,
+            apiKey = if (s.llmFromServer) syncKey() else apiKey(),
+            model = s.llmModelInUse
+        )
+    }
+
+    /** The transcription server in use (issue #94), like [llmConfig]. */
+    fun asrConfig(): ServerAsrConfig {
+        val s = _settings.value
+        return ServerAsrConfig(
+            baseUrl = s.asrServerUrlInUse,
+            apiKey = if (s.asrFromServer) syncKey() else asrServerKey(),
+            model = s.asrServerModelInUse
+        )
+    }
+
+    private fun SharedPreferences.Editor.putOrRemove(key: String, value: String?) {
+        if (value == null) remove(key) else putString(key, value)
+    }
+
+    private fun loadOffer(): ServerOffer? {
+        if (!prefs.getBoolean(KEY_SERVER_OFFER, false)) return null
+        return ServerOffer(
+            llm = prefs.getString(KEY_SERVER_OFFER_LLM_MODEL, null)?.let(::OfferedService),
+            transcription = prefs.getString(KEY_SERVER_OFFER_ASR_MODEL, null)?.let(::OfferedService),
+            fetchedAt = prefs.getLong(KEY_SERVER_OFFER_FETCHED_AT, 0L)
+        )
+    }
+
     private fun load(): AppSettings {
         val rawLang = prefs.getString(KEY_ASR_LANGUAGE, null) ?: "en"
         val raw = AppSettings(
@@ -172,6 +223,10 @@ class SettingsRepository(
             syncServerUrl = (prefs.getString(KEY_SYNC_SERVER_URL, "") ?: "").trim().trimEnd('/'),
             syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
             syncAudioOnMobileData = prefs.getBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, false),
+            serverServicesEnabled = prefs.getBoolean(KEY_SERVER_SERVICES_ENABLED, false),
+            serverOffer = loadOffer(),
+            llmSource = ServiceSource.fromKey(prefs.getString(KEY_LLM_SOURCE, null)),
+            asrSource = ServiceSource.fromKey(prefs.getString(KEY_ASR_SOURCE, null)),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
@@ -254,6 +309,13 @@ class SettingsRepository(
         const val KEY_SYNC_SERVER_URL = "syncServerUrl"
         const val KEY_SYNC_ENABLED = "syncEnabled"
         const val KEY_SYNC_AUDIO_ON_MOBILE_DATA = "syncAudioOnMobileData"
+        const val KEY_SERVER_SERVICES_ENABLED = "serverServicesEnabled"
+        const val KEY_LLM_SOURCE = "llmSource"
+        const val KEY_ASR_SOURCE = "asrSource"
+        const val KEY_SERVER_OFFER = "serverOffer"
+        const val KEY_SERVER_OFFER_LLM_MODEL = "serverOfferLlmModel"
+        const val KEY_SERVER_OFFER_ASR_MODEL = "serverOfferAsrModel"
+        const val KEY_SERVER_OFFER_FETCHED_AT = "serverOfferFetchedAt"
         const val KEY_NUM_SPEAKERS = "numSpeakers"
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
@@ -286,7 +348,8 @@ class SettingsRepository(
  * previous value when they are not a [DisplayMode.key] /
  * [SpeakerIdMode.key]; `diarizationEmbedding` keeps it when it is not a
  * voice model key; `floatingShape` keeps the previous value when
- * it is neither `null` nor a [FloatingShape.key].
+ * it is neither `null` nor a [FloatingShape.key]. A different
+ * `syncServerUrl` turns the server's services off and forgets its offer.
  */
 private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     val lang = if (asrLanguage == "en" || asrLanguage == "fr") asrLanguage else previous.asrLanguage
@@ -302,10 +365,14 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
         ?: previous.diarizationEmbedding
     val shapeValid = floatingShape == null || FloatingShape.fromKey(floatingShape) != null
     val shape = if (shapeValid) floatingShape else previous.floatingShape
+    val syncUrl = syncServerUrl.trim().trimEnd('/')
+    val sameServer = syncUrl == previous.syncServerUrl
     return this.normaliseNumeric().copy(
         asrServerUrl = asrServerUrl.trim().trimEnd('/'),
         asrServerModel = asrServerModel.trim(),
-        syncServerUrl = syncServerUrl.trim().trimEnd('/'),
+        syncServerUrl = syncUrl,
+        serverServicesEnabled = serverServicesEnabled && sameServer && syncUrl.isNotBlank(),
+        serverOffer = serverOffer.takeIf { sameServer },
         displayMode = mode,
         speakerIdMode = idMode,
         semanticIndexMode = indexMode,
