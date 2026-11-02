@@ -2,6 +2,11 @@ import { z } from 'zod';
 
 const blankToUndefined = (value: unknown) => (value === '' ? undefined : value);
 
+// An http(s) base URL, kept without a trailing slash so paths append cleanly.
+const httpUrl = z
+  .url({ protocol: /^https?$/ })
+  .transform((value) => value.replace(/\/+$/, ''));
+
 const schema = z
   .object({
     DATABASE_URL: z.url(),
@@ -30,6 +35,14 @@ const schema = z
     WEB_SIGN_OUT_URL: z.preprocess(blankToUndefined, z.url().optional()),
     // The daily storage clean-up (#81): `dry-run` records what it would remove and removes nothing.
     CLEANUP: z.preprocess(blankToUndefined, z.enum(['on', 'dry-run', 'off']).default('on')),
+    // Upstreams the server offers its users through /api/ai/v1 (#93): an
+    // OpenAI-compatible base URL each, with an optional key and model.
+    LLM_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
+    LLM_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
+    LLM_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
+    ASR_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
+    ASR_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
+    ASR_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === 'api-key' && !env.SYNC_API_KEY) {
@@ -37,6 +50,14 @@ const schema = z
     }
     if (env.AUTH_MODE === 'authz-proxy' && !env.AUTHZ_PROXY_URL) {
       ctx.addIssue({ code: 'custom', path: ['AUTHZ_PROXY_URL'], message: 'required when AUTH_MODE=authz-proxy' });
+    }
+    for (const service of ['LLM', 'ASR'] as const) {
+      if (env[`${service}_UPSTREAM_URL`]) continue;
+      for (const name of [`${service}_UPSTREAM_KEY`, `${service}_MODEL`] as const) {
+        if (env[name] !== undefined) {
+          ctx.addIssue({ code: 'custom', path: [name], message: `needs ${service}_UPSTREAM_URL` });
+        }
+      }
     }
   });
 

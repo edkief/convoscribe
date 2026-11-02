@@ -57,4 +57,37 @@ describe('loadEnv', () => {
     expect(cleanup('off')).toBe('off');
     expect(() => cleanup('maybe')).toThrow(/CLEANUP/);
   });
+
+  describe('upstreams (#93)', () => {
+    const load = (extra: Record<string, string>) => loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, ...extra });
+
+    it('starts with none configured', () => {
+      const env = load({ LLM_UPSTREAM_URL: '', ASR_UPSTREAM_URL: '' });
+      expect(env.LLM_UPSTREAM_URL).toBeUndefined();
+      expect(env.ASR_UPSTREAM_URL).toBeUndefined();
+    });
+
+    it('accepts an upstream with a key and model, dropping trailing slashes', () => {
+      const env = load({ ASR_UPSTREAM_URL: 'http://parakeet-asr.asr:8000/v1/', ASR_UPSTREAM_KEY: 'k', ASR_MODEL: 'parakeet' });
+      expect(env.ASR_UPSTREAM_URL).toBe('http://parakeet-asr.asr:8000/v1');
+      expect(env.ASR_UPSTREAM_KEY).toBe('k');
+      expect(env.ASR_MODEL).toBe('parakeet');
+    });
+
+    it('accepts an upstream without a key or model', () => {
+      const env = load({ LLM_UPSTREAM_URL: 'https://llm.example.com/v1' });
+      expect(env.LLM_UPSTREAM_KEY).toBeUndefined();
+      expect(env.LLM_MODEL).toBeUndefined();
+    });
+
+    it('rejects a key or model without its URL', () => {
+      expect(() => load({ LLM_UPSTREAM_KEY: 'k' })).toThrow(/LLM_UPSTREAM_KEY/);
+      expect(() => load({ ASR_MODEL: 'm' })).toThrow(/ASR_MODEL/);
+    });
+
+    it('rejects a URL that is not http(s)', () => {
+      expect(() => load({ LLM_UPSTREAM_URL: 'ftp://llm' })).toThrow(/LLM_UPSTREAM_URL/);
+      expect(() => load({ ASR_UPSTREAM_URL: 'not a url' })).toThrow(/ASR_UPSTREAM_URL/);
+    });
+  });
 });
