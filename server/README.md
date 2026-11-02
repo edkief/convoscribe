@@ -14,6 +14,10 @@ them from the trash (#81, see *Trash and clean-up* below). Admins also see who u
 the server and how much they store, whether its storage can be reached, and
 run clean-up and set quotas (#82, see *Admin pages* below).
 
+It can also offer its users a language model and a transcription server
+(#93, see *Language model and transcription* below), so devices reach them
+with their sync key and never hold the upstream address or key.
+
 ## Web app
 
 Open the server's address in a browser (`https://sync.example.com/`).
@@ -168,6 +172,40 @@ all be stored first.
 | `GET /api/sync/v1/documents/<kind>/<syncId>` | | The manifest, with `Sync-Revision`, `Sync-Seq`, `Sync-Duration-Ms`, `Sync-Changed-At` and `Sync-Manifest-Hash` headers. `410` with `current` if deleted, `404` if unknown |
 | `DELETE /api/sync/v1/documents/<kind>/<syncId>` | `Sync-Base-Revision`; `Sync-Duration-Ms`, the length of the deleted version (optional) | `200`, leaving a tombstone (`deleted: true`, a new revision); a session goes to the trash for 30 days. Deleting again is `200`. From a stale base revision the delete wins unless the current recording is longer than `Sync-Duration-Ms`, else `409` with `current`; without the header a stale delete is `409`. `404` if unknown |
 | `GET /api/sync/v1/changes?since=<seq>&limit=<n>` | `limit` 1 to 500, default 100 | `{"changes":[…], "next", "more"}`: index entries written after `since`, oldest first. Pass `next` as `since` while `more` is true |
+
+**Language model and transcription** (#93) are offered when the operator
+sets `LLM_UPSTREAM_URL` or `ASR_UPSTREAM_URL` (see *Configuration*). The
+server passes a fixed set of OpenAI-compatible routes to each upstream;
+nothing a caller sends picks the upstream or the path. Point the app's
+language model or transcription server address at
+`https://<sync server>/api/ai/v1/llm` or `…/api/ai/v1/asr`, with the sync
+key as the API key.
+
+| Endpoint | Passed to the upstream as |
+|---|---|
+| `GET /api/sync/v1/config` | Not passed on. `200 {"llm": {"model"} \| null, "transcription": {"model"} \| null}`: what this server offers, `model` being `LLM_MODEL` or `ASR_MODEL` (null when not set). It never names an upstream address or key. An older server answers `404`, meaning it offers nothing |
+| `GET /api/ai/v1/llm/models` | `GET <LLM_UPSTREAM_URL>/models` |
+| `POST /api/ai/v1/llm/chat/completions` | `POST <LLM_UPSTREAM_URL>/chat/completions` |
+| `GET /api/ai/v1/asr/models` | `GET <ASR_UPSTREAM_URL>/models` |
+| `POST /api/ai/v1/asr/audio/transcriptions` | `POST <ASR_UPSTREAM_URL>/audio/transcriptions` |
+
+- The caller's `Authorization` is replaced by `Bearer <*_UPSTREAM_KEY>`, or
+  dropped when no key is set (an upstream inside the cluster may need
+  none). Only `Content-Type`, `Content-Length` and `Accept` are passed
+  on, and only `Content-Type` comes back.
+- Both bodies stream: answers arrive token by token
+  (`Cache-Control: no-transform`), and a recording passes through without
+  being held in memory. A caller going away, or *Stop generating*, cancels
+  the upstream call. The server waits up to 15 minutes for the upstream to
+  answer or to send more, as the app does.
+- A service with no upstream answers `404 not_offered`.
+- An upstream `400`, `404`, `413`, `422` or `429` is passed back as it is:
+  the request was at fault. Anything else answers `502` with
+  `upstream_rejected` (the upstream refused its key: `401` or `403`),
+  `upstream_error` (another failure, or a redirect) or
+  `upstream_unreachable` (no connection, or no answer in time). A `502` is
+  never a bad sync key, which stays `401`. The detail is only in the server
+  log, as a line starting `ai proxy:`.
 
 **Web** routes are what the web app's pages call. They take the browser's
 sign-in (a Bearer key works too), answer `401` without it, and refuse a
@@ -375,6 +413,10 @@ exits with the list of problems if any is missing or invalid.
 | `AUTHZ_PROXY_URL` | `authz-proxy` mode | Base URL of authz-proxy, reachable from the server. |
 | `ADMIN_ROLES` | no | `authz-proxy` mode: comma-separated roles that make a user an admin. Default `role-authz-admin`. In `api-key` mode the one user is the admin. See *Admin pages*. |
 | `WEB_SIGN_OUT_URL` | no | `authz-proxy` mode: where the web app's *Sign out* goes, e.g. the proxy's sign-out page. Without it the web app shows no *Sign out*. |
+| `LLM_UPSTREAM_URL` | no | An OpenAI-compatible language model the server offers its users (#93), e.g. `http://llm.llm:8080/v1`: the base its `/chat/completions` hangs off. Blank offers none. |
+| `LLM_UPSTREAM_KEY` | no | The key sent to it, never to a device. Leave blank for an upstream that needs none. |
+| `LLM_MODEL` | no | The model devices should use, reported by `GET /api/sync/v1/config`. |
+| `ASR_UPSTREAM_URL`, `ASR_UPSTREAM_KEY`, `ASR_MODEL` | no | The same for an OpenAI-compatible transcription server, e.g. `http://parakeet-asr.asr:8000/v1`. A key or model without its URL is refused at startup. |
 | `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. An admin's *Run clean-up* is not affected. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |
 
@@ -416,6 +458,37 @@ curl -o /dev/null -w '%{http_code}\n' -X POST --data-binary @/tmp/9mb \
 
 A `413` from the second command is the proxy refusing the size. The server
 itself answers `405`, because health only takes `GET`.
+
+With a transcription upstream set, a whole recording is one request to
+`/api/ai/v1/asr/audio/transcriptions`: about 115 MB per hour of audio, and a
+silent wait while the upstream transcribes. On that path, the reverse proxy
+must allow bodies of the longest recording you transcribe (about 230 MB
+for two hours), must not buffer or time out a slow upload, and must wait at least
+15 minutes for the answer. Traefik streams bodies and has no size limit
+unless a `buffering` middleware sets one; check its entry point
+`respondingTimeouts` (`readTimeout` is 60 seconds by default in recent
+versions). For the
+language model, the proxy must not buffer the streamed answer. The
+upstream itself must accept the same upload size and time.
+
+The server's image lifts Node's 5-minute limit on receiving a request,
+through `http-timeouts.mjs` (loaded by `NODE_OPTIONS`); a connection is
+instead closed after 15 minutes with nothing sent either way. Running the
+server outside the image, start it with
+`NODE_OPTIONS=--import=./http-timeouts.mjs` for the same.
+
+To check, with a recording of the length you need, as the app sends it
+(`Expect:` stops curl asking `100-continue`, which the app never does and
+which gets past some of these limits; `--limit-rate` mimics a slow link):
+
+```bash
+curl -w '\n%{http_code} in %{time_total}s\n' -H 'Expect:' --limit-rate 200k \
+  -H "Authorization: Bearer <key>" -F model=<model> -F file=@long.wav \
+  https://sync.example.com/api/ai/v1/asr/audio/transcriptions
+```
+
+A `413`, or an HTML error page, comes from the reverse proxy; the server
+itself answers JSON.
 
 Behind authz-proxy, the web app needs the proxy to pass the signed
 `X-Auth-Request-JWT` header on browser requests (its ForwardAuth response

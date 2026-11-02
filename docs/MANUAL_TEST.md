@@ -2116,6 +2116,47 @@ items. Go offline on the device being edited unless a step says otherwise.
 - Step 11: the session syncs, by the old rule: with equal recordings, the later
   change replaces the whole session.
 
+## 50. Language model and transcription through the sync server (issue #93)
+
+A sync server from this release, reachable from outside the cluster, with
+`LLM_UPSTREAM_URL`, `LLM_MODEL`, `ASR_UPSTREAM_URL` and `ASR_MODEL` set (keys too
+if the upstreams need them), and the device's sync key. A recording of at least
+2 hours, and a session with a transcript. Give the device mobile data or a
+network outside the cluster, so it can't reach the upstreams directly.
+
+**Steps**
+
+1. `curl -H "Authorization: Bearer <key>" https://<sync server>/api/sync/v1/config`,
+   then the same without the header.
+2. Settings → *Language model*: base URL `https://<sync server>/api/ai/v1/llm`, the
+   sync key as the API key, the server's model. Tap *Test connection*.
+3. In the session, Summary tab → *Summarise*. While it streams, tap *Stop
+   generating*, then summarise again to the end.
+4. Settings → *Transcription server*: address `https://<sync server>/api/ai/v1/asr`,
+   the sync key, the server's model. Tap *Test connection*.
+5. Open the 2-hour recording → menu → *Re-transcribe…* → *On the transcription
+   server*. Watch the server's memory while it runs (`kubectl top pod`).
+6. In both Settings sections, change the key to a wrong one and tap *Test
+   connection*. Put the right key back.
+7. Set `LLM_UPSTREAM_KEY` on the server to a wrong key (or stop the language
+   model upstream), restart the server, and summarise again.
+8. Remove `ASR_UPSTREAM_URL` from the server, restart it, repeat step 1 and tap
+   *Test connection* in *Transcription server*.
+
+**Pass**
+
+- Step 1: `{"llm":{"model":"…"},"transcription":{"model":"…"}}`, with no upstream
+  address or key anywhere; `401` without the header.
+- Steps 2 and 4: `Connected – N models: …`, listing the upstream's models.
+- Step 3: the summary streams token by token, not all at once at the end. After
+  *Stop generating* the upstream's log shows the request ended early.
+- Step 5: the transcript is replaced, as in section 36. The server's memory stays
+  flat while the recording uploads.
+- Step 6: `Failed: HTTP 401`, as for a wrong sync key.
+- Step 7: the summary fails with `HTTP 502`, not `401`; the server's log has an
+  `ai proxy:` line saying why, and the device shows nothing about the upstream.
+- Step 8: `"transcription":null`, and the test fails with `HTTP 404`.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
