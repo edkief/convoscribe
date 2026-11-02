@@ -18,11 +18,14 @@ FROM ${NODE_IMAGE}
 WORKDIR /app
 ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0 \
-    PORT=3000
+    PORT=3000 \
+    NODE_OPTIONS=--import=/app/http-timeouts.mjs
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 # Applied on startup by src/instrumentation.ts.
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
+# Lets long recordings upload to /api/ai/v1/asr (#93); see the file.
+COPY --from=build --chown=node:node /app/http-timeouts.mjs ./
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://127.0.0.1:3000/api/health || exit 1

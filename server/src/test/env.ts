@@ -14,6 +14,12 @@ export function stubServerEnv(overrides: Record<string, string> = {}) {
     AUTH_MODE: 'api-key',
     SYNC_API_KEY: TEST_API_KEY,
     AUTHZ_PROXY_URL: '',
+    LLM_UPSTREAM_URL: '',
+    LLM_UPSTREAM_KEY: '',
+    LLM_MODEL: '',
+    ASR_UPSTREAM_URL: '',
+    ASR_UPSTREAM_KEY: '',
+    ASR_MODEL: '',
     ...overrides,
   };
   for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);
