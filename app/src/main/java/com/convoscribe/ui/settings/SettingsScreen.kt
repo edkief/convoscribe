@@ -6,18 +6,16 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -25,6 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -58,53 +57,30 @@ import com.convoscribe.ui.theme.AppTheme
 import com.convoscribe.ui.update.UpdateActions
 import com.convoscribe.ui.update.rememberUpdateActions
 import com.convoscribe.update.UpdateState
+import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
- * Settings screen. Replaces the placeholder route from TASK-21.
+ * Settings (issue #98): an overview of the pages, each opening in place
+ * ([SettingsPage]), all in this one destination so they share one
+ * [SettingsViewModel], the file pickers and the snackbar.
  *
- * Layout (top to bottom, single scrollable column):
- *  1. **Language model** section — Base URL (with `Uri` keyboard
- *     and the documented `192.168.1.10:8000/v1` placeholder), API
- *     key (with show / hide toggle), Model name, Max transcript
- *     characters (number keyboard, the `save()` validator keeps
- *     the previous value when the field is empty), the "Test
- *     connection" button (greys out while running) and the
- *     formatted `testResult` line. When the most recent test
- *     returned model ids they appear below as `SuggestionChip`s
- *     that fill the Model field when tapped.
- *  2. **Transcription** section — ASR engine as a
- *     `SingleChoiceSegmentedButtonRow` bound to
- *     `AppSettings.asrEngine` and saved immediately, an Engine
- *     check row that navigates to `engine-check`, a 1..8 thread
- *     slider (6 steps so each step is 1 thread on the
- *     min/max range: 1, 2, 4, 6, 8 is 5 stops; we use 7 steps:
- *     1..8 inclusive which matches the repository's clamping
- *     rule), a disabled "English" language row.
- *  3. **Speakers** section — number-of-speakers dropdown
- *     ("Automatic", 2..6), clustering threshold slider
- *     (0.3..0.8) with the value to two decimals and the
- *     "Lower = more speakers" help text.
+ * Save behaviour: choices and switches are written immediately; text
+ * fields and sliders when their page is left, and when the screen
+ * leaves composition, whichever way that happens. There is no Save
+ * action.
  *
- * Save behaviour:
- *  - the "Save" action in the top bar calls [SettingsViewModel.save]
- *    immediately and pops the back stack;
- *  - the segmented button writes the engine through
- *    [SettingsViewModel.setEngine] (no Save round-trip needed);
- *  - the screen-level [BackHandler] + [DisposableEffect] also
- *    call `save()` when the screen leaves the back stack, so the
- *    implicit "OK" gesture is honoured even when the user just
- *    hits the system back without tapping Save.
- *
- * @param navController app-level controller, used for the back
- *   affordance and to push the Engine check destination.
+ * @param navController app-level controller, used to leave and to push
+ *   the screens opened from Settings (Engine check, Known speakers…).
+ * @param initialPage [SettingsPage.key] of the page to open first,
+ *   `null` for the overview.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(navController: NavHostController) {
+fun SettingsScreen(navController: NavHostController, initialPage: String? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
     val vm: SettingsViewModel = viewModel(
@@ -128,19 +104,12 @@ fun SettingsScreen(navController: NavHostController) {
     val state by vm.state.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
 
-    // Save the form when the screen leaves composition (back,
-    // pop, system back). DisposableEffect's onDispose runs once
-    // the composable is removed from the tree, regardless of the
-    // path that caused the removal — paired with a BackHandler so
-    // the back press navigates to the previous screen while the
-    // onDispose persists the in-flight form.
+    // Save the form when the screen leaves composition, whatever caused it.
     DisposableEffect(Unit) {
         onDispose { vm.save() }
     }
-    BackHandler(enabled = true) {
-        vm.save()
-        navController.popBackStack()
-    }
+    // Survives rotation and the screens and pickers opened from a page.
+    var pageKey by rememberSaveable { mutableStateOf(initialPage) }
 
     val onSavedAck: () -> Unit = { vm.acknowledgeSaved() }
     LaunchedEffect(state.saved) {
@@ -246,6 +215,11 @@ fun SettingsScreen(navController: NavHostController) {
     )
     SettingsBody(
         state = state,
+        page = SettingsPage.of(pageKey),
+        onPageChange = { next ->
+            vm.save()
+            pageKey = next?.key
+        },
         cleanupDownloading = cleanupDownloading,
         semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
@@ -259,7 +233,6 @@ fun SettingsScreen(navController: NavHostController) {
         snackbarHostState = snackbarHostState,
         actions = SettingsActions(
             onBack = leave,
-            onSave = leave,
             onFormChange = vm::update,
             onTestConnection = { coroutineScope.launch { vm.testConnection() } },
             onTestServer = vm::testServer,
@@ -338,7 +311,6 @@ private const val BACKUP_MIME = "application/zip"
 /** What the Settings screen can do; filled from [SettingsViewModel] and the nav controller. */
 internal class SettingsActions(
     val onBack: () -> Unit = {},
-    val onSave: () -> Unit = {},
     val onFormChange: (SettingsForm) -> Unit = {},
     val onTestConnection: () -> Unit = {},
     val onEngineChange: (String) -> Unit = {},
@@ -388,8 +360,25 @@ internal class SettingsActions(
     val onDismissBackup: () -> Unit = {}
 )
 
+/** What the pages show apart from [SettingsUiState]. */
+private class PageExtras(
+    val cleanupDownloading: Boolean,
+    val semanticDownloading: Boolean,
+    val voiceModelDownloading: Boolean,
+    val liveCleanupVerdict: LiveCleanupVerdict?,
+    val overlayGranted: Boolean,
+    val update: UpdateState,
+    val installedVersion: String,
+    val installedVersionCode: Long,
+    val updateActions: UpdateActions,
+    val backup: BackupState
+)
+
 /**
- * Render-only body of [SettingsScreen] for previews and screenshot tests.
+ * Render-only body of [SettingsScreen] for previews and screenshot tests:
+ * the overview when [page] is `null`, otherwise that page. Back goes from
+ * a page to the overview through [onPageChange], and from the overview out
+ * of Settings through [SettingsActions.onBack].
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
  * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
@@ -398,11 +387,12 @@ internal class SettingsActions(
  * with the selected engine, `null` when it was not checked. [backup] is
  * the running or last backup or restore (issue #25).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsBody(
     state: SettingsUiState,
     actions: SettingsActions,
+    page: SettingsPage? = null,
+    onPageChange: (SettingsPage?) -> Unit = {},
     cleanupDownloading: Boolean = false,
     semanticDownloading: Boolean = false,
     voiceModelDownloading: Boolean = false,
@@ -415,42 +405,161 @@ internal fun SettingsBody(
     backup: BackupState = BackupState.Idle,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
 ) {
+    val extras = PageExtras(
+        cleanupDownloading = cleanupDownloading,
+        semanticDownloading = semanticDownloading,
+        voiceModelDownloading = voiceModelDownloading,
+        liveCleanupVerdict = liveCleanupVerdict,
+        overlayGranted = overlayGranted,
+        update = update,
+        installedVersion = installedVersion,
+        installedVersionCode = installedVersionCode,
+        updateActions = updateActions,
+        backup = backup
+    )
+    val inputs = OverviewInputs(
+        overlayGranted = overlayGranted,
+        update = update,
+        installedVersion = installedVersion,
+        backup = backup,
+        formatTime = { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) }
+    )
+    val back: () -> Unit = { if (page != null) onPageChange(null) else actions.onBack() }
+    BackHandler(onBack = back)
     ScreenScaffold(
-        title = stringResource(R.string.settings_title),
-        onBack = actions.onBack,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        actions = {
-            IconButton(onClick = actions.onSave) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = stringResource(R.string.settings_save)
-                )
+        title = stringResource(page?.title ?: R.string.settings_title),
+        onBack = back,
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding: PaddingValues ->
+        // Each page keeps its own scroll position.
+        key(page) {
+            PaneColumn(modifier = Modifier.padding(innerPadding)) {
+                if (page == null) {
+                    SettingsOverview(
+                        state = state,
+                        inputs = inputs,
+                        onOpen = onPageChange,
+                        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+                    )
+                } else {
+                    SettingsPageContent(page = page, state = state, actions = actions, extras = extras)
+                }
             }
         }
-    ) { innerPadding: PaddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.s),
-            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.l),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            AppearanceSection(
-                displayMode = state.displayMode,
-                dynamicColor = state.dynamicColor,
-                onDisplayModeChange = actions.onDisplayModeChange,
-                onDynamicColorChange = actions.onDynamicColorChange
+    }
+}
+
+/** A scrolling column with the screen's margins, its content centred up to the reading width. */
+@Composable
+private fun PaneColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.s),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.l),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        content()
+        Spacer(Modifier.height(AppTheme.spacing.xl))
+    }
+}
+
+/** The sections of [page]. */
+@Composable
+private fun SettingsPageContent(
+    page: SettingsPage,
+    state: SettingsUiState,
+    actions: SettingsActions,
+    extras: PageExtras
+) {
+    when (page) {
+        SettingsPage.SERVER -> SyncSection(
+            url = state.form.syncUrl,
+            key = state.form.syncKey,
+            onUrlChange = { actions.onFormChange(state.form.copy(syncUrl = it)) },
+            onKeyChange = { actions.onFormChange(state.form.copy(syncKey = it)) },
+            configured = state.form.syncUrl.isNotBlank(),
+            enabled = state.syncEnabled,
+            status = state.syncStatus,
+            onEnabledChange = actions.onSyncEnabledChange,
+            onSyncNow = actions.onSyncNow,
+            audioOnMobileData = state.syncAudioOnMobileData,
+            onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange,
+            services = ServerServicesUi(
+                enabled = state.serverServicesEnabled,
+                offer = state.serverOffer,
+                check = state.servicesCheck,
+                onRequest = actions.onRequestServerServices,
+                onAccept = actions.onAcceptServerServices,
+                onDismiss = actions.onDismissServerServices,
+                onTurnOff = actions.onTurnOffServerServices
+            )
+        )
+        SettingsPage.RECORDING -> {
+            TranscriptionSection(
+                engine = state.asrEngine,
+                language = state.asrLanguage,
+                threads = state.form.numThreads,
+                frenchModelInstalled = state.frenchModelInstalled,
+                selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
+                selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
+                onEngineChange = actions.onEngineChange,
+                onLanguageChange = actions.onLanguageChange,
+                onThreadsChange = { threads ->
+                    actions.onFormChange(state.form.copy(numThreads = threads))
+                },
+                onEngineCheck = actions.onEngineCheck,
+                onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
             RecordingSection(
                 floatingControl = state.floatingControl,
                 floatingShape = state.floatingShape,
-                overlayGranted = overlayGranted,
+                overlayGranted = extras.overlayGranted,
                 onFloatingControlChange = actions.onFloatingControlChange,
                 onFloatingShapeChange = actions.onFloatingShapeChange,
                 onAllowOverlay = actions.onAllowOverlay
             )
+            NoiseCleanupSection(
+                installed = state.cleanupInstalled,
+                downloading = extras.cleanupDownloading,
+                cleanByDefault = state.cleanAudioDefault,
+                liveVerdict = extras.liveCleanupVerdict,
+                onDownload = actions.onDownloadCleanup,
+                onDelete = actions.onDeleteCleanup,
+                onCleanByDefaultChange = actions.onCleanAudioDefaultChange
+            )
+            TranscriptionServerSection(state = state, actions = actions)
+        }
+        SettingsPage.SPEAKERS -> SpeakersSection(
+            speakerIdMode = state.speakerIdMode,
+            onSpeakerIdModeChange = actions.onSpeakerIdModeChange,
+            numSpeakers = state.form.numSpeakers,
+            defaultParticipants = state.defaultParticipants,
+            onResetDefaultParticipants = actions.onResetDefaultParticipants,
+            threshold = state.form.clusterThreshold,
+            matchThreshold = state.form.speakerMatchThreshold,
+            onNumSpeakersChange = { count ->
+                actions.onFormChange(state.form.copy(numSpeakers = count))
+            },
+            onThresholdChange = { value ->
+                actions.onFormChange(state.form.copy(clusterThreshold = value))
+            },
+            onMatchThresholdChange = { value ->
+                actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
+            },
+            onOpenKnownSpeakers = actions.onOpenKnownSpeakers,
+            voiceModel = VoiceModelUi(
+                selected = state.diarizationEmbedding,
+                installed = state.diarizationEmbeddingInstalled,
+                downloading = extras.voiceModelDownloading,
+                stepSeconds = state.diarizationStepSeconds,
+                onSelect = actions.onDiarizationEmbeddingChange,
+                onDownload = actions.onDownloadVoiceModel,
+                onStepChange = actions.onDiarizationStepChange
+            )
+        )
+        SettingsPage.AI -> {
             LanguageModelSection(
                 form = state.form,
                 testing = state.testing,
@@ -473,9 +582,11 @@ internal fun SettingsBody(
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
             )
+        }
+        SettingsPage.SEARCH -> {
             SemanticSearchSection(
                 installed = state.semanticInstalled,
-                downloading = semanticDownloading,
+                downloading = extras.semanticDownloading,
                 progress = state.semanticProgress,
                 onDownload = actions.onDownloadSemantic,
                 onDelete = actions.onDeleteSemantic,
@@ -484,99 +595,29 @@ internal fun SettingsBody(
                 onIndexNow = actions.onIndexSemanticNow
             )
             OrganiseSection(onOpenTags = actions.onOpenTags, onOpenPresets = actions.onOpenPresets)
-            TranscriptionSection(
-                engine = state.asrEngine,
-                language = state.asrLanguage,
-                threads = state.form.numThreads,
-                frenchModelInstalled = state.frenchModelInstalled,
-                selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
-                selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
-                onEngineChange = actions.onEngineChange,
-                onLanguageChange = actions.onLanguageChange,
-                onThreadsChange = { threads ->
-                    actions.onFormChange(state.form.copy(numThreads = threads))
-                },
-                onEngineCheck = actions.onEngineCheck,
-                onDeleteFrenchModel = actions.onDeleteFrenchModel
-            )
-            TranscriptionServerSection(state = state, actions = actions)
-            SyncSection(
-                url = state.form.syncUrl,
-                key = state.form.syncKey,
-                onUrlChange = { actions.onFormChange(state.form.copy(syncUrl = it)) },
-                onKeyChange = { actions.onFormChange(state.form.copy(syncKey = it)) },
-                configured = state.form.syncUrl.isNotBlank(),
-                enabled = state.syncEnabled,
-                status = state.syncStatus,
-                onEnabledChange = actions.onSyncEnabledChange,
-                onSyncNow = actions.onSyncNow,
-                audioOnMobileData = state.syncAudioOnMobileData,
-                onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange,
-                services = ServerServicesUi(
-                    enabled = state.serverServicesEnabled,
-                    offer = state.serverOffer,
-                    check = state.servicesCheck,
-                    onRequest = actions.onRequestServerServices,
-                    onAccept = actions.onAcceptServerServices,
-                    onDismiss = actions.onDismissServerServices,
-                    onTurnOff = actions.onTurnOffServerServices
-                )
-            )
-            NoiseCleanupSection(
-                installed = state.cleanupInstalled,
-                downloading = cleanupDownloading,
-                cleanByDefault = state.cleanAudioDefault,
-                liveVerdict = liveCleanupVerdict,
-                onDownload = actions.onDownloadCleanup,
-                onDelete = actions.onDeleteCleanup,
-                onCleanByDefaultChange = actions.onCleanAudioDefaultChange
-            )
-            SpeakersSection(
-                speakerIdMode = state.speakerIdMode,
-                onSpeakerIdModeChange = actions.onSpeakerIdModeChange,
-                numSpeakers = state.form.numSpeakers,
-                defaultParticipants = state.defaultParticipants,
-                onResetDefaultParticipants = actions.onResetDefaultParticipants,
-                threshold = state.form.clusterThreshold,
-                matchThreshold = state.form.speakerMatchThreshold,
-                onNumSpeakersChange = { count ->
-                    actions.onFormChange(state.form.copy(numSpeakers = count))
-                },
-                onThresholdChange = { value ->
-                    actions.onFormChange(state.form.copy(clusterThreshold = value))
-                },
-                onMatchThresholdChange = { value ->
-                    actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
-                },
-                onOpenKnownSpeakers = actions.onOpenKnownSpeakers,
-                voiceModel = VoiceModelUi(
-                    selected = state.diarizationEmbedding,
-                    installed = state.diarizationEmbeddingInstalled,
-                    downloading = voiceModelDownloading,
-                    stepSeconds = state.diarizationStepSeconds,
-                    onSelect = actions.onDiarizationEmbeddingChange,
-                    onDownload = actions.onDownloadVoiceModel,
-                    onStepChange = actions.onDiarizationStepChange
-                )
-            )
-            DataSection(
-                state = backup,
-                onBackup = actions.onBackup,
-                onRestore = actions.onRestore,
-                onCancel = actions.onCancelBackup,
-                onDismiss = actions.onDismissBackup
-            )
-            AboutSection(
-                installedVersion = installedVersion,
-                installedVersionCode = installedVersionCode,
-                update = update,
-                checkAuto = state.updateCheckAuto,
-                includePrereleases = state.updateIncludePrereleases,
-                updateActions = updateActions,
-                onCheckAutoChange = actions.onUpdateCheckAutoChange,
-                onIncludePrereleasesChange = actions.onUpdateIncludePrereleasesChange
-            )
-            Spacer(Modifier.height(AppTheme.spacing.xl))
         }
+        SettingsPage.BACKUP -> DataSection(
+            state = extras.backup,
+            onBackup = actions.onBackup,
+            onRestore = actions.onRestore,
+            onCancel = actions.onCancelBackup,
+            onDismiss = actions.onDismissBackup
+        )
+        SettingsPage.APPEARANCE -> AppearanceSection(
+            displayMode = state.displayMode,
+            dynamicColor = state.dynamicColor,
+            onDisplayModeChange = actions.onDisplayModeChange,
+            onDynamicColorChange = actions.onDynamicColorChange
+        )
+        SettingsPage.ABOUT -> AboutSection(
+            installedVersion = extras.installedVersion,
+            installedVersionCode = extras.installedVersionCode,
+            update = extras.update,
+            checkAuto = state.updateCheckAuto,
+            includePrereleases = state.updateIncludePrereleases,
+            updateActions = extras.updateActions,
+            onCheckAutoChange = actions.onUpdateCheckAutoChange,
+            onIncludePrereleasesChange = actions.onUpdateIncludePrereleasesChange
+        )
     }
 }
