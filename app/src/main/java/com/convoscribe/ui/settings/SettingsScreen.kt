@@ -162,7 +162,9 @@ fun SettingsScreen(navController: NavHostController) {
                     listServerModels = container.serverTranscriber::listModels,
                     semanticIndex = container.semanticIndexRunner,
                     onSemanticModelChanged = container.semanticIndexScheduler::sync,
-                    syncStatus = container.syncStatusStore.status
+                    syncStatus = container.syncStatusStore.status,
+                    fetchServerOffer = container.serverConfigClient::fetch,
+                    refreshServerOffer = { container.serverOfferRefresher.refresh() }
                 )
             }
         }
