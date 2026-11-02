@@ -26,11 +26,16 @@ class ConvoApp : Application() {
         if (Application.getProcessName()?.contains(':') == true) return
         // Whether any activity is visible, for the floating control.
         // Coming to the foreground also runs the update check when it
-        // is due (issue #41), not only a fresh start.
+        // is due (issue #41), not only a fresh start, and refreshes what
+        // the sync server provides (issue #94).
         ProcessLifecycleOwner.get().lifecycle.addObserver(
             LifecycleEventObserver { owner, event ->
                 container.appInForeground.value = owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-                if (event == Lifecycle.Event.ON_START) container.updateManager.checkIfDue()
+                if (event == Lifecycle.Event.ON_START) {
+                    container.updateManager.checkIfDue()
+                    // What the sync server provides may have changed (issue #94).
+                    container.applicationScope.launch { container.serverOfferRefresher.refreshIfDue() }
+                }
             }
         )
         container.updateCheckScheduler.sync()

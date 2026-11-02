@@ -60,6 +60,8 @@ import com.convoscribe.service.UpdateCheckScheduler
 import com.convoscribe.service.UpdateDownloadService
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.sync.ServerConfigClient
+import com.convoscribe.sync.ServerOfferRefresher
 import com.convoscribe.sync.SyncEngine
 import com.convoscribe.sync.SyncStatusStore
 import com.convoscribe.update.GitHubReleases
@@ -684,6 +686,16 @@ class AppContainer(val context: Context) {
         // The user's own endpoint or the sync server's (issue #94).
         settingsRepository.llmConfig()
     }
+
+    /** Asks the sync server what it provides (issue #94), for Settings and [serverOfferRefresher]. */
+    val serverConfigClient: ServerConfigClient = ServerConfigClient(httpClient)
+
+    /**
+     * Keeps the sync server's offer current while its services are on
+     * (issue #94): on coming to the foreground, at most hourly, and when
+     * Settings saves a new key.
+     */
+    val serverOfferRefresher: ServerOfferRefresher = ServerOfferRefresher(settingsRepository, serverConfigClient)
 
     /** One background LLM call at a time: the endpoint is often a single small server. */
     private val llmCalls: Mutex = Mutex()
