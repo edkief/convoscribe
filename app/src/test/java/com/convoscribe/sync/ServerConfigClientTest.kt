@@ -131,6 +131,24 @@ class ServerConfigClientTest {
     }
 
     @Test
+    fun refresher_keepsTheLastModelWhenTheModelListFails() = runBlocking {
+        val stored = ServerOffer(OfferedService("llama"), null, fetchedAt = 1L)
+        repo.update { it.copy(syncServerUrl = base) }
+        repo.update { it.copy(serverOffer = stored).withServerServicesOn() }
+        val refresher = ServerOfferRefresher(repo, client)
+
+        server.enqueue(json("""{"llm":{"model":null},"transcription":null}"""))
+        server.enqueue(MockResponse().setResponseCode(502))
+        assertTrue(refresher.refresh() is ServerConfigResult.Failed)
+        assertEquals(stored, repo.settings.value.serverOffer)
+
+        server.enqueue(json("""{"llm":{"model":null},"transcription":null}"""))
+        server.enqueue(json("<html>sign in</html>"))
+        assertTrue(refresher.refresh() is ServerConfigResult.Failed)
+        assertEquals(stored, repo.settings.value.serverOffer)
+    }
+
+    @Test
     fun refresher_doesNothingWhileTheServicesAreOff() = runBlocking {
         repo.update { it.copy(syncServerUrl = base, syncEnabled = true) }
 

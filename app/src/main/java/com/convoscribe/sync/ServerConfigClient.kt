@@ -64,26 +64,35 @@ class ServerConfigClient(
         } catch (e: IllegalArgumentException) {
             return@withContext ServerConfigResult.Failed("Unexpected answer from the sync server")
         }
-        val llm = body.llm?.let { OfferedService(it.model ?: firstLlmModel(base, apiKey)) }
+        val llm = body.llm?.let { service ->
+            val model = service.model
+                ?: firstLlmModel(base, apiKey)
+                ?: return@withContext ServerConfigResult.Failed("Couldn't list the sync server's language models")
+            OfferedService(model)
+        }
         val transcription = body.transcription?.let { OfferedService(it.model.orEmpty()) }
         ServerConfigResult.Offered(ServerOffer(llm = llm, transcription = transcription, fetchedAt = now()))
     }
 
-    /** The server's first language model, or blank when it lists none or the list fails. */
-    private fun firstLlmModel(base: String, apiKey: String): String = try {
+    /**
+     * The server's first language model, blank when it lists none, or
+     * `null` when the list fails: that fetch has no usable answer, and
+     * must not replace a stored model with a blank one.
+     */
+    private fun firstLlmModel(base: String, apiKey: String): String? = try {
         val answer = get("$base$SERVER_LLM_PATH/models", apiKey)
         if (answer.code != 200) {
-            ""
+            null
         } else {
             Json.parseToJsonElement(answer.text).jsonObject["data"]?.jsonArray
                 ?.firstNotNullOfOrNull { it.jsonObject["id"]?.jsonPrimitive?.contentOrNull }
                 .orEmpty()
         }
     } catch (e: IOException) {
-        ""
+        null
     } catch (e: IllegalArgumentException) {
         // Not JSON, or not an OpenAI-style model list.
-        ""
+        null
     }
 
     private class Answer(val code: Int, val text: String)
