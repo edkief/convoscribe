@@ -129,6 +129,9 @@ data class AppSettings(
     val updateCheckAuto: Boolean = true,
     val updateIncludePrereleases: Boolean = false
 ) {
+    /** A language model endpoint is set up: summaries, questions and titles can run. */
+    val llmConfigured: Boolean get() = llmBaseUrl.isNotBlank() && llmModel.isNotBlank()
+
     /** A transcription server is set up (issue #58). */
     val asrServerConfigured: Boolean get() = asrServerUrl.isNotBlank()
 

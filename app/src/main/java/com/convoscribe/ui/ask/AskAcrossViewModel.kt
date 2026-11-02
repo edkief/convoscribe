@@ -146,8 +146,7 @@ class AskAcrossViewModel(
     }
 
     private fun configured(): Boolean {
-        val s = settings.settings.value
-        return s.llmBaseUrl.isNotBlank() && s.llmModel.isNotBlank()
+        return settings.settings.value.llmConfigured
     }
 
     fun setLanguage(language: String?) = _state.update { it.copy(filters = it.filters.copy(language = language)) }

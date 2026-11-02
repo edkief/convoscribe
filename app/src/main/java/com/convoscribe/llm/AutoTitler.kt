@@ -45,7 +45,7 @@ class AutoTitler(
     /** [summary] was saved for [sessionId]: title the session if it still has its default title. */
     fun onSummarySaved(sessionId: Long, summary: String): Job? {
         val current = settings.settings.value
-        if (!current.autoTitle || current.llmBaseUrl.isBlank() || current.llmModel.isBlank()) return null
+        if (!current.autoTitle || !current.llmConfigured) return null
         if (summary.isBlank()) return null
         return scope.launch { title(sessionId, summary) }
     }
