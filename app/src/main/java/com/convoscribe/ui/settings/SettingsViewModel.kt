@@ -653,15 +653,17 @@ class SettingsViewModel(
     }
 
     /**
-     * The user accepted the confirmation: use the server's services.
-     * Each service whose source was never chosen uses the server's
+     * The user accepted the confirmation: use the server's services,
+     * unless it provides none. Each service whose source was never chosen uses the server's
      * unless the user has their own address for it. *Improve recordings
      * on the server* is left as it is.
      */
     fun acceptServerServices() {
         val check = _state.value.servicesCheck as? ServicesCheck.Confirm ?: return
-        repo.update { it.copy(serverOffer = check.offer).withServerServicesOn() }
         _state.update { it.copy(servicesCheck = null) }
+        // A server that provides nothing has nothing to accept; what it adds later is asked about then.
+        if (check.offer.llm == null && check.offer.transcription == null) return
+        repo.update { it.copy(serverOffer = check.offer).withServerServicesOn() }
     }
 
     /** Close the check or its confirmation without changing anything. */

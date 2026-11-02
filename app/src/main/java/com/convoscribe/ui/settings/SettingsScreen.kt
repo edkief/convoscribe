@@ -82,7 +82,9 @@ import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DIARIZATION_STEPS_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.FloatingShape
+import com.convoscribe.settings.OfferedService
 import com.convoscribe.settings.SemanticIndexMode
+import com.convoscribe.settings.ServiceSource
 import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.settings.isUnencryptedUrl
 import com.convoscribe.ui.components.ChoiceGroup
@@ -346,6 +348,12 @@ fun SettingsScreen(navController: NavHostController) {
             onSemanticIndexModeChange = vm::setSemanticIndexMode,
             onIndexSemanticNow = container.semanticIndexScheduler::indexNow,
             onSyncEnabledChange = vm::setSyncEnabled,
+            onRequestServerServices = vm::requestServerServices,
+            onAcceptServerServices = vm::acceptServerServices,
+            onDismissServerServices = vm::dismissServerServices,
+            onTurnOffServerServices = vm::turnOffServerServices,
+            onLlmSourceChange = vm::setLlmSource,
+            onAsrSourceChange = vm::setAsrSource,
             onSyncNow = container.syncScheduler::syncNow,
             onSyncAudioOnMobileDataChange = { on ->
                 vm.setSyncAudioOnMobileData(on)
@@ -414,6 +422,12 @@ internal class SettingsActions(
     val onSyncEnabledChange: (Boolean) -> Unit = {},
     val onSyncNow: () -> Unit = {},
     val onSyncAudioOnMobileDataChange: (Boolean) -> Unit = {},
+    val onRequestServerServices: () -> Unit = {},
+    val onAcceptServerServices: () -> Unit = {},
+    val onDismissServerServices: () -> Unit = {},
+    val onTurnOffServerServices: () -> Unit = {},
+    val onLlmSourceChange: (ServiceSource) -> Unit = {},
+    val onAsrSourceChange: (ServiceSource) -> Unit = {},
     val onBackup: () -> Unit = {},
     val onRestore: () -> Unit = {},
     val onCancelBackup: () -> Unit = {},
@@ -489,7 +503,11 @@ internal fun SettingsBody(
                 testResult = state.testResult,
                 availableModels = state.availableModels,
                 onFormChange = actions.onFormChange,
-                onTestConnection = actions.onTestConnection
+                onTestConnection = actions.onTestConnection,
+                serverServices = state.serverServicesEnabled,
+                source = state.llmSource,
+                offered = state.serverOffer?.llm,
+                onSourceChange = actions.onLlmSourceChange
             )
             SummariesSection(
                 templates = state.summaryTemplates,
@@ -539,7 +557,16 @@ internal fun SettingsBody(
                 onEnabledChange = actions.onSyncEnabledChange,
                 onSyncNow = actions.onSyncNow,
                 audioOnMobileData = state.syncAudioOnMobileData,
-                onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange
+                onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange,
+                services = ServerServicesUi(
+                    enabled = state.serverServicesEnabled,
+                    offer = state.serverOffer,
+                    check = state.servicesCheck,
+                    onRequest = actions.onRequestServerServices,
+                    onAccept = actions.onAcceptServerServices,
+                    onDismiss = actions.onDismissServerServices,
+                    onTurnOff = actions.onTurnOffServerServices
+                )
             )
             NoiseCleanupSection(
                 installed = state.cleanupInstalled,
@@ -733,7 +760,10 @@ private val DISPLAY_MODES = listOf(
  * toggle), model name, max transcript characters, the "Test
  * connection" button and the formatted result line. Model id
  * chips appear below the result when the last `listModels` call
- * returned at least one id.
+ * returned at least one id. While the sync server's services are on
+ * ([serverServices], issue #94) it starts with the choice between the
+ * server's language model and the user's own; the user's own fields
+ * and test show only when it is chosen.
  */
 @OptIn(
     ExperimentalMaterial3Api::class,
@@ -746,55 +776,35 @@ private fun LanguageModelSection(
     testResult: ConnectionTestResult?,
     availableModels: List<String>,
     onFormChange: (SettingsForm) -> Unit,
-    onTestConnection: () -> Unit
+    onTestConnection: () -> Unit,
+    serverServices: Boolean = false,
+    source: ServiceSource = ServiceSource.OWN,
+    offered: OfferedService? = null,
+    onSourceChange: (ServiceSource) -> Unit = {}
 ) {
     var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_llm)
     ) {
-        OutlinedTextField(
-            value = form.baseUrl,
-            onValueChange = { onFormChange(form.copy(baseUrl = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
-            placeholder = { Text(text = stringResource(R.string.settings_llm_base_url_placeholder)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = form.apiKey,
-            onValueChange = { onFormChange(form.copy(apiKey = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_api_key_label)) },
-            singleLine = true,
-            visualTransformation = if (apiKeyVisible) {
-                VisualTransformation.None
-            } else {
-                PasswordVisualTransformation()
-            },
-            trailingIcon = {
-                IconButton(onClick = { apiKeyVisible = !apiKeyVisible }) {
-                    Text(
-                        text = stringResource(
-                            if (apiKeyVisible) {
-                                R.string.settings_llm_api_key_hide
-                            } else {
-                                R.string.settings_llm_api_key_show
-                            }
-                        ),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = form.model,
-            onValueChange = { onFormChange(form.copy(model = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (serverServices) {
+            ServiceSourceChoice(
+                source = source,
+                offered = offered,
+                unavailableText = stringResource(R.string.service_source_llm_unavailable),
+                onSourceChange = onSourceChange
+            )
+        }
+        // The user's own endpoint, kept while the server's is used (issue #94).
+        val own = !serverServices || source == ServiceSource.OWN
+        if (own) {
+            OwnLanguageModelFields(
+                form = form,
+                apiKeyVisible = apiKeyVisible,
+                onApiKeyVisibleChange = { apiKeyVisible = it },
+                onFormChange = onFormChange
+            )
+        }
         OutlinedTextField(
             value = form.maxChars,
             onValueChange = { onFormChange(form.copy(maxChars = it)) },
@@ -803,46 +813,116 @@ private fun LanguageModelSection(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth()
         )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            OutlinedButton(
-                onClick = onTestConnection,
-                enabled = !testing,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(text = stringResource(R.string.settings_llm_test))
-            }
-            if (testing) InlineProgress()
+        if (own) {
+            LanguageModelTest(
+                form = form,
+                testing = testing,
+                testResult = testResult,
+                availableModels = availableModels,
+                onFormChange = onFormChange,
+                onTestConnection = onTestConnection
+            )
         }
-        when (testResult) {
-            is ConnectionTestResult.Connected -> NoticeText(
-                text = pluralStringResource(
-                    R.plurals.settings_test_connected,
-                    testResult.count,
-                    testResult.count,
-                    testResult.models.joinToString(", ")
+    }
+}
+
+/** The user's own language model: base URL, API key (with show/hide) and model. */
+@Composable
+private fun OwnLanguageModelFields(
+    form: SettingsForm,
+    apiKeyVisible: Boolean,
+    onApiKeyVisibleChange: (Boolean) -> Unit,
+    onFormChange: (SettingsForm) -> Unit
+) {
+    OutlinedTextField(
+        value = form.baseUrl,
+        onValueChange = { onFormChange(form.copy(baseUrl = it)) },
+        label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
+        placeholder = { Text(text = stringResource(R.string.settings_llm_base_url_placeholder)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedTextField(
+        value = form.apiKey,
+        onValueChange = { onFormChange(form.copy(apiKey = it)) },
+        label = { Text(text = stringResource(R.string.settings_llm_api_key_label)) },
+        singleLine = true,
+        visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+        trailingIcon = {
+            IconButton(onClick = { onApiKeyVisibleChange(!apiKeyVisible) }) {
+                Text(
+                    text = stringResource(
+                        if (apiKeyVisible) R.string.settings_llm_api_key_hide else R.string.settings_llm_api_key_show
+                    ),
+                    style = MaterialTheme.typography.labelLarge
                 )
-            )
-            is ConnectionTestResult.Failed -> ErrorBanner(
-                message = stringResource(R.string.settings_test_failed, testResult.message)
-            )
-            null -> SupportingText(text = stringResource(R.string.settings_llm_test_idle))
+            }
+        },
+        modifier = Modifier.fillMaxWidth()
+    )
+    OutlinedTextField(
+        value = form.model,
+        onValueChange = { onFormChange(form.copy(model = it)) },
+        label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
+        singleLine = true,
+        modifier = Modifier.fillMaxWidth()
+    )
+}
+
+/**
+ * "Test connection" for the user's own language model, its result line
+ * and the model id chips that fill the Model field on tap.
+ */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun LanguageModelTest(
+    form: SettingsForm,
+    testing: Boolean,
+    testResult: ConnectionTestResult?,
+    availableModels: List<String>,
+    onFormChange: (SettingsForm) -> Unit,
+    onTestConnection: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+    ) {
+        OutlinedButton(
+            onClick = onTestConnection,
+            enabled = !testing,
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(text = stringResource(R.string.settings_llm_test))
         }
-        if (availableModels.isNotEmpty()) {
-            androidx.compose.foundation.layout.FlowRow(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
-                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
-            ) {
-                availableModels.forEach { id ->
-                    SuggestionChip(
-                        onClick = { onFormChange(form.copy(model = id)) },
-                        label = { Text(text = id) }
-                    )
-                }
+        if (testing) InlineProgress()
+    }
+    when (testResult) {
+        is ConnectionTestResult.Connected -> NoticeText(
+            text = pluralStringResource(
+                R.plurals.settings_test_connected,
+                testResult.count,
+                testResult.count,
+                testResult.models.joinToString(", ")
+            )
+        )
+        is ConnectionTestResult.Failed -> ErrorBanner(
+            message = stringResource(R.string.settings_test_failed, testResult.message)
+        )
+        null -> SupportingText(text = stringResource(R.string.settings_llm_test_idle))
+    }
+    if (availableModels.isNotEmpty()) {
+        androidx.compose.foundation.layout.FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+        ) {
+            availableModels.forEach { id ->
+                SuggestionChip(
+                    onClick = { onFormChange(form.copy(model = id)) },
+                    label = { Text(text = id) }
+                )
             }
         }
     }
@@ -853,7 +933,10 @@ private fun LanguageModelSection(
  * warning under a plain `http://` one), API key and
  * model, saved by Save like the LLM's, a Test that lists the server's
  * models, and *Improve recordings on the server* (written immediately,
- * enabled once a URL is saved).
+ * enabled once a server is set up). While the sync server's services
+ * are on (issue #94) it starts with the choice between the sync
+ * server's transcription and the user's own, whose fields show only
+ * when it is chosen.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -866,85 +949,100 @@ private fun TranscriptionServerSection(state: SettingsUiState, actions: Settings
         title = stringResource(R.string.settings_section_server)
     ) {
         SupportingText(text = stringResource(R.string.settings_server_help))
-        OutlinedTextField(
-            value = form.serverUrl,
-            onValueChange = { onFormChange(form.copy(serverUrl = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
-            placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
-            singleLine = true,
-            supportingText = if (isUnencryptedUrl(form.serverUrl)) {
-                { Text(text = stringResource(R.string.settings_server_url_cleartext)) }
-            } else {
-                null
-            },
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = form.serverKey,
-            onValueChange = { onFormChange(form.copy(serverKey = it)) },
-            label = { Text(text = stringResource(R.string.settings_server_key_label)) },
-            singleLine = true,
-            visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { keyVisible = !keyVisible }) {
-                    Text(
-                        text = stringResource(
-                            if (keyVisible) R.string.settings_llm_api_key_hide else R.string.settings_llm_api_key_show
-                        ),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
-        OutlinedTextField(
-            value = form.serverModel,
-            onValueChange = { onFormChange(form.copy(serverModel = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
-            placeholder = { Text(text = stringResource(R.string.settings_server_model_placeholder)) },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            OutlinedButton(
-                onClick = actions.onTestServer,
-                enabled = !state.serverTesting && form.serverUrl.isNotBlank(),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(text = stringResource(R.string.settings_llm_test))
-            }
-            if (state.serverTesting) InlineProgress()
-        }
-        when (val result = state.serverTestResult) {
-            is ConnectionTestResult.Connected -> NoticeText(
-                text = pluralStringResource(
-                    R.plurals.settings_test_connected,
-                    result.count,
-                    result.count,
-                    result.models.joinToString(", ")
-                )
+        if (state.serverServicesEnabled) {
+            ServiceSourceChoice(
+                source = state.asrSource,
+                offered = state.serverOffer?.transcription,
+                unavailableText = stringResource(R.string.service_source_asr_unavailable),
+                onSourceChange = actions.onAsrSourceChange
             )
-            is ConnectionTestResult.Failed -> ErrorBanner(
-                message = stringResource(R.string.settings_test_failed, result.message)
-            )
-            null -> Unit
         }
-        if (state.serverModels.isNotEmpty()) {
-            androidx.compose.foundation.layout.FlowRow(
+        // The user's own server, kept while the sync server's is used (issue #94).
+        if (!state.serverServicesEnabled || state.asrSource == ServiceSource.OWN) {
+            OutlinedTextField(
+                value = form.serverUrl,
+                onValueChange = { onFormChange(form.copy(serverUrl = it)) },
+                label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
+                placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
+                singleLine = true,
+                supportingText = if (isUnencryptedUrl(form.serverUrl)) {
+                    { Text(text = stringResource(R.string.settings_server_url_cleartext)) }
+                } else {
+                    null
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = form.serverKey,
+                onValueChange = { onFormChange(form.copy(serverKey = it)) },
+                label = { Text(text = stringResource(R.string.settings_server_key_label)) },
+                singleLine = true,
+                visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { keyVisible = !keyVisible }) {
+                        Text(
+                            text = stringResource(
+                                if (keyVisible) {
+                                    R.string.settings_llm_api_key_hide
+                                } else {
+                                    R.string.settings_llm_api_key_show
+                                }
+                            ),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = form.serverModel,
+                onValueChange = { onFormChange(form.copy(serverModel = it)) },
+                label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
+                placeholder = { Text(text = stringResource(R.string.settings_server_model_placeholder)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
-                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
             ) {
-                state.serverModels.forEach { id ->
-                    SuggestionChip(
-                        onClick = { onFormChange(form.copy(serverModel = id)) },
-                        label = { Text(text = id) }
+                OutlinedButton(
+                    onClick = actions.onTestServer,
+                    enabled = !state.serverTesting && form.serverUrl.isNotBlank(),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(text = stringResource(R.string.settings_llm_test))
+                }
+                if (state.serverTesting) InlineProgress()
+            }
+            when (val result = state.serverTestResult) {
+                is ConnectionTestResult.Connected -> NoticeText(
+                    text = pluralStringResource(
+                        R.plurals.settings_test_connected,
+                        result.count,
+                        result.count,
+                        result.models.joinToString(", ")
                     )
+                )
+                is ConnectionTestResult.Failed -> ErrorBanner(
+                    message = stringResource(R.string.settings_test_failed, result.message)
+                )
+                null -> Unit
+            }
+            if (state.serverModels.isNotEmpty()) {
+                androidx.compose.foundation.layout.FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+                ) {
+                    state.serverModels.forEach { id ->
+                        SuggestionChip(
+                            onClick = { onFormChange(form.copy(serverModel = id)) },
+                            label = { Text(text = id) }
+                        )
+                    }
                 }
             }
         }

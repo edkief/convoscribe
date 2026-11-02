@@ -151,6 +151,20 @@ class ServerServicesViewModelTest {
     }
 
     @Test
+    fun aServerProvidingNothing_isNotTurnedOn() = runTest(dispatcher) {
+        answer = ServerConfigResult.Offered(ServerOffer(fetchedAt = 5L))
+        val vm = newVm()
+        vm.typeServer()
+        vm.requestServerServices()
+        advanceUntilIdle()
+
+        vm.acceptServerServices()
+
+        assertNull(vm.state.value.servicesCheck)
+        assertFalse(repo.settings.value.serverServicesEnabled)
+    }
+
+    @Test
     fun ownEndpoints_areKeptAfterAccepting_andAfterTurningOff() = runTest(dispatcher) {
         repo.update { it.copy(llmBaseUrl = "https://llm.example/v1", llmModel = "m") }
         val vm = newVm()

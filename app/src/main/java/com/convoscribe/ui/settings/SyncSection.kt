@@ -50,6 +50,9 @@ import java.util.Date
  * Two-way sync (issue #69) adds *Download recordings on mobile data*
  * ([audioOnMobileData]) and how many sessions or recordings are still
  * downloading.
+ *
+ * *Use this server's services* ([services], issue #94) sits between the
+ * key and *Sync sessions*: either can be on without the other.
  */
 @Composable
 internal fun SyncSection(
@@ -63,7 +66,8 @@ internal fun SyncSection(
     onEnabledChange: (Boolean) -> Unit,
     onSyncNow: () -> Unit,
     audioOnMobileData: Boolean = false,
-    onAudioOnMobileDataChange: (Boolean) -> Unit = {}
+    onAudioOnMobileDataChange: (Boolean) -> Unit = {},
+    services: ServerServicesUi = ServerServicesUi()
 ) {
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var confirming by rememberSaveable { mutableStateOf(false) }
@@ -105,6 +109,7 @@ internal fun SyncSection(
             },
             modifier = Modifier.fillMaxWidth()
         )
+        ServerServicesBlock(ui = services, configured = configured, serverUrl = url)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
