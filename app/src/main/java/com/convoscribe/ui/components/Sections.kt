@@ -7,14 +7,17 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import com.convoscribe.ui.theme.AppTheme
@@ -129,5 +132,30 @@ fun InfoRow(label: String, value: String, modifier: Modifier = Modifier) {
             color = MaterialTheme.colorScheme.onSurface,
             modifier = Modifier.weight(1f, fill = false)
         )
+    }
+}
+
+/** A labelled switch with help text; the whole row toggles it. */
+@Composable
+fun SwitchRow(
+    label: String,
+    help: String,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .toggleable(value = checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.bodyLarge)
+            SupportingText(text = help)
+        }
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
