@@ -90,6 +90,8 @@ import com.convoscribe.ui.home.formatDuration
 import com.convoscribe.ui.home.formatSessionDate
 import com.convoscribe.ui.home.languageTag
 import com.convoscribe.ui.record.ParticipantsDialog
+import com.convoscribe.ui.settings.SettingsPage
+import com.convoscribe.ui.settingsRoute
 import com.convoscribe.ui.theme.AppTheme
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.collectLatest
@@ -467,7 +469,8 @@ fun SessionScreen(
         onRetryAsk = { askVm.retryLast() },
         onCancelAsk = { askVm.cancel() },
         onClearQuestions = { askVm.clearHistory() },
-        onOpenSettings = { navController.navigate("settings") },
+        onOpenSettings = { navController.navigate(settingsRoute(SettingsPage.AI)) },
+        onOpenCleanupSettings = { navController.navigate(settingsRoute(SettingsPage.RECORDING)) },
         initialTab = initialTab,
         targetLineId = targetLineId,
         hasEdits = state.hasEdits,
@@ -534,6 +537,7 @@ internal fun SessionBody(
     onCancelAsk: () -> Unit,
     onClearQuestions: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenCleanupSettings: () -> Unit = {},
     details: SessionDetails = SessionDetails(),
     enrolledNames: List<String> = emptyList(),
     onSetParticipants: (List<String>?) -> Unit = {},
@@ -1004,7 +1008,7 @@ internal fun SessionBody(
                 dismissLabel = stringResource(R.string.conversation_cancel),
                 onConfirm = {
                     cleanupOpen = false
-                    onOpenSettings()
+                    onOpenCleanupSettings()
                 },
                 onDismiss = { cleanupOpen = false }
             )

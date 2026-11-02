@@ -14,7 +14,7 @@
     <string name="overlay_listening">Listening…</string>
     <string name="tile_label">ConvoScribe</string>
     <string name="preset_picker_title">Start recording with</string>
-    <string name="preset_picker_empty">Save presets on the Record screen or in Settings → Presets to start them from here.</string>
+    <string name="preset_picker_empty">Save presets on the Record screen or in Settings → Search &amp; organise to start them from here.</string>
     <string name="tile_subtitle_idle">Record</string>
     <string name="tile_description_idle">Start a recording</string>
     <string name="tile_description_recording">Recording. Tap to pause.</string>
@@ -503,7 +503,7 @@
     <string name="session_cleanup_title">Clean up audio</string>
     <string name="session_cleanup_message">Reduce background noise in this recording, then transcribe it again from the cleaned audio. The original recording is kept, and you can switch between them in the player. Speakers are identified again; names you gave are kept where they match.</string>
     <string name="session_cleanup_confirm">Clean up</string>
-    <string name="session_cleanup_missing">Noise cleanup needs a small model (about 0.5 MB). Download it in Settings › Noise cleanup, then try again.</string>
+    <string name="session_cleanup_missing">Noise cleanup needs a small model (about 0.5 MB). Download it in Settings › Recording &amp; transcription, then try again.</string>
     <string name="session_cleanup_open_settings">Open Settings</string>
     <string name="session_cleanup_progress">Cleaning up audio… %1$d%%</string>
     <string name="session_remove_cleanup_title">Remove cleaning?</string>
