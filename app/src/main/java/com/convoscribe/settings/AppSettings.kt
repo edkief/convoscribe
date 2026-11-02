@@ -190,12 +190,19 @@ data class AppSettings(
      * *Use this server's services* turned on (issue #94). A service
      * whose source was never chosen uses the server's unless the user
      * has an address of their own for it; a chosen source is kept.
+     * *Improve recordings on the server* left on from an own server since
+     * removed is turned off when transcription first moves to the sync
+     * server, so recordings don't start going there unasked.
      */
-    fun withServerServicesOn(): AppSettings = copy(
-        serverServicesEnabled = true,
-        llmSource = llmSource ?: if (llmBaseUrl.isBlank()) ServiceSource.SERVER else ServiceSource.OWN,
-        asrSource = asrSource ?: if (asrServerUrl.isBlank()) ServiceSource.SERVER else ServiceSource.OWN
-    )
+    fun withServerServicesOn(): AppSettings {
+        val firstOnServer = asrSource == null && asrServerUrl.isBlank()
+        return copy(
+            serverServicesEnabled = true,
+            llmSource = llmSource ?: if (llmBaseUrl.isBlank()) ServiceSource.SERVER else ServiceSource.OWN,
+            asrSource = asrSource ?: if (firstOnServer) ServiceSource.SERVER else ServiceSource.OWN,
+            asrServerAuto = asrServerAuto && !firstOnServer
+        )
+    }
 }
 
 /**

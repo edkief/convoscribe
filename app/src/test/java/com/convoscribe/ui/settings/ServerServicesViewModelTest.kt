@@ -121,6 +121,37 @@ class ServerServicesViewModelTest {
     }
 
     @Test
+    fun improveRecordings_leftOnFromARemovedServer_doesNotCarryOverToTheSyncServer() = runTest(dispatcher) {
+        repo.update { it.copy(asrServerUrl = "https://asr.example", asrServerAuto = true) }
+        repo.update { it.copy(asrServerUrl = "") }
+        val vm = newVm()
+        vm.typeServer()
+        vm.requestServerServices()
+        advanceUntilIdle()
+
+        vm.acceptServerServices()
+
+        assertEquals(ServiceSource.SERVER, repo.settings.value.asrSource)
+        assertFalse(repo.settings.value.asrServerAuto)
+        assertFalse(repo.settings.value.asrServerAutoActive)
+    }
+
+    @Test
+    fun improveRecordings_staysOn_forAUserKeepingTheirOwnServer() = runTest(dispatcher) {
+        repo.update { it.copy(asrServerUrl = "https://asr.example", asrServerAuto = true) }
+        val vm = newVm()
+        vm.typeServer()
+        vm.requestServerServices()
+        advanceUntilIdle()
+
+        vm.acceptServerServices()
+
+        assertEquals(ServiceSource.OWN, repo.settings.value.asrSource)
+        assertTrue(repo.settings.value.asrServerAutoActive)
+        assertEquals("https://asr.example", repo.asrConfig().baseUrl)
+    }
+
+    @Test
     fun cancelling_changesNothing() = runTest(dispatcher) {
         val vm = newVm()
         vm.typeServer()
