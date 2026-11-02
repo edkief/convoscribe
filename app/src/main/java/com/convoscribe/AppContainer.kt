@@ -9,7 +9,6 @@ import androidx.core.content.getSystemService
 import androidx.room.InvalidationTracker
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
-import com.convoscribe.asr.server.ServerAsrConfig
 import com.convoscribe.asr.server.ServerTranscriber
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioExporter
@@ -39,7 +38,6 @@ import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.enginecheck.NpuAvailability
 import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
-import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
 import com.convoscribe.llm.embedding.EmbeddingGemmaFactory
@@ -373,12 +371,11 @@ class AppContainer(val context: Context) {
 
     /**
      * Transcribes stored recordings on the user's self-hosted server
-     * (issue #58), configured in Settings → Transcription server and
-     * read on every call.
+     * (issue #58) or the sync server's (issue #94), whichever Settings →
+     * Transcription server uses, read on every call.
      */
     val serverTranscriber: ServerTranscriber = ServerTranscriber(asrServerHttpClient) {
-        val s = settingsRepository.settings.value
-        ServerAsrConfig(baseUrl = s.asrServerUrl, apiKey = settingsRepository.asrServerKey(), model = s.asrServerModel)
+        settingsRepository.asrConfig()
     }
 
     /**
@@ -684,12 +681,8 @@ class AppContainer(val context: Context) {
      * instance for the lifetime of the app.
      */
     val chatClient: ChatClient = OpenAiChatClient(llmHttpClient) {
-        val s = settingsRepository.settings.value
-        LlmConfig(
-            baseUrl = s.llmBaseUrl,
-            apiKey = settingsRepository.apiKey(),
-            model = s.llmModel
-        )
+        // The user's own endpoint or the sync server's (issue #94).
+        settingsRepository.llmConfig()
     }
 
     /** One background LLM call at a time: the endpoint is often a single small server. */
