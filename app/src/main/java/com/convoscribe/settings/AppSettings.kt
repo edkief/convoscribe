@@ -91,6 +91,16 @@ import com.convoscribe.llm.SummaryTemplates
  * devices on a metered network too (issue #69); otherwise they wait
  * for Wi-Fi.
  *
+ * [serverServicesEnabled] is *Use this server's services* (issue #94):
+ * the user accepted sending transcripts and recordings to the language
+ * model and transcription the sync server provides. It is apart from
+ * [syncEnabled]: either can be on without the other. [serverOffer] is
+ * what the server last said it provides. [llmSource] and [asrSource]
+ * pick, per service, the server's or the user's own (`null` until the
+ * services are first turned on, see [withServerServicesOn]). The
+ * user's own address, key and model are never changed by any of this.
+ * None of these four is backed up.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -109,6 +119,10 @@ data class AppSettings(
     val syncServerUrl: String = "",
     val syncEnabled: Boolean = false,
     val syncAudioOnMobileData: Boolean = false,
+    val serverServicesEnabled: Boolean = false,
+    val serverOffer: ServerOffer? = null,
+    val llmSource: ServiceSource? = null,
+    val asrSource: ServiceSource? = null,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
@@ -129,14 +143,66 @@ data class AppSettings(
     val updateCheckAuto: Boolean = true,
     val updateIncludePrereleases: Boolean = false
 ) {
-    /** A transcription server is set up (issue #58). */
-    val asrServerConfigured: Boolean get() = asrServerUrl.isNotBlank()
+    /** The language model in use is the sync server's (issue #94), whether or not it provides one. */
+    val llmFromServer: Boolean
+        get() = serverServicesEnabled && llmSource == ServiceSource.SERVER && syncServerUrl.isNotBlank()
+
+    /** Transcription in use is the sync server's (issue #94), whether or not it provides it. */
+    val asrFromServer: Boolean
+        get() = serverServicesEnabled && asrSource == ServiceSource.SERVER && syncServerUrl.isNotBlank()
+
+    /** Base URL of the language model in use; blank when there is none. */
+    val llmBaseUrlInUse: String
+        get() = when {
+            !llmFromServer -> llmBaseUrl
+            serverOffer?.llm != null -> syncServerUrl + SERVER_LLM_PATH
+            else -> ""
+        }
+
+    /** Model asked of the language model in use. */
+    val llmModelInUse: String get() = if (llmFromServer) serverOffer?.llm?.model.orEmpty() else llmModel
+
+    /** A language model is set up: summaries, questions and titles can run. */
+    val llmConfigured: Boolean get() = llmBaseUrlInUse.isNotBlank() && llmModelInUse.isNotBlank()
+
+    /** Base URL of the transcription server in use; blank when there is none. */
+    val asrServerUrlInUse: String
+        get() = when {
+            !asrFromServer -> asrServerUrl
+            serverOffer?.transcription != null -> syncServerUrl + SERVER_ASR_PATH
+            else -> ""
+        }
+
+    /** Model asked of the transcription server in use (blank: its first one). */
+    val asrServerModelInUse: String
+        get() = if (asrFromServer) serverOffer?.transcription?.model.orEmpty() else asrServerModel
+
+    /** A transcription server is set up (issue #58), the user's own or the sync server's. */
+    val asrServerConfigured: Boolean get() = asrServerUrlInUse.isNotBlank()
 
     /** Stopped recordings and imports go to the server. */
     val asrServerAutoActive: Boolean get() = asrServerAuto && asrServerConfigured
 
     /** Sessions are uploaded to a sync server (issue #68). */
     val syncActive: Boolean get() = syncEnabled && syncServerUrl.isNotBlank()
+
+    /**
+     * *Use this server's services* turned on (issue #94). A service
+     * whose source was never chosen uses the server's unless the user
+     * has an address of their own for it; a chosen source is kept.
+     * *Improve recordings on the server* left on from an own server since
+     * removed is turned off when transcription first moves to the sync
+     * server, so recordings don't start going there unasked.
+     */
+    fun withServerServicesOn(): AppSettings {
+        val firstOnServer = asrSource == null && asrServerUrl.isBlank()
+        return copy(
+            serverServicesEnabled = true,
+            llmSource = llmSource ?: if (llmBaseUrl.isBlank()) ServiceSource.SERVER else ServiceSource.OWN,
+            asrSource = asrSource ?: if (firstOnServer) ServiceSource.SERVER else ServiceSource.OWN,
+            asrServerAuto = asrServerAuto && !firstOnServer
+        )
+    }
 }
 
 /**

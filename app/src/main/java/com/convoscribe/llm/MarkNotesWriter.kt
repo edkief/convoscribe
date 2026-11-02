@@ -63,7 +63,7 @@ class MarkNotesWriter(
     private val jobs = mutableMapOf<Long, Job>()
 
     /** Whether an LLM endpoint is set up. */
-    fun configured(): Boolean = settings.settings.value.let { it.llmBaseUrl.isNotBlank() && it.llmModel.isNotBlank() }
+    fun configured(): Boolean = settings.settings.value.llmConfigured
 
     /**
      * Write the notes of [sessionId]'s marks, all of them or with

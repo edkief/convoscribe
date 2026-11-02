@@ -203,7 +203,7 @@ class SummaryViewModel(
         viewModelScope.launch {
             settings.settings.collect { s ->
                 _state.value = _state.value.copy(
-                    configured = s.llmBaseUrl.isNotBlank() && s.llmModel.isNotBlank()
+                    configured = s.llmConfigured
                 )
             }
         }
@@ -212,7 +212,7 @@ class SummaryViewModel(
     private fun initialState(): SummaryUiState {
         val s = settings.settings.value
         return SummaryUiState(
-            configured = s.llmBaseUrl.isNotBlank() && s.llmModel.isNotBlank()
+            configured = s.llmConfigured
         )
     }
 

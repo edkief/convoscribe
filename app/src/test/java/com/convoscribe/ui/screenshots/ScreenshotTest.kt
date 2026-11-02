@@ -62,6 +62,9 @@ import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.settings.FloatingShape
+import com.convoscribe.settings.OfferedService
+import com.convoscribe.settings.ServerOffer
+import com.convoscribe.settings.ServiceSource
 import com.convoscribe.sync.SyncStatus
 import com.convoscribe.ui.actions.ActionsBody
 import com.convoscribe.ui.actions.ActionsGrouping
@@ -99,6 +102,7 @@ import com.convoscribe.ui.session.TagsUi
 import com.convoscribe.ui.settings.DataSection
 import com.convoscribe.ui.settings.RestoreConfirmDialog
 import com.convoscribe.ui.settings.SemanticSearchSection
+import com.convoscribe.ui.settings.ServerServicesUi
 import com.convoscribe.ui.settings.SettingsActions
 import com.convoscribe.ui.settings.SettingsBody
 import com.convoscribe.ui.settings.SettingsForm
@@ -591,6 +595,26 @@ class ScreenshotTest(private val variant: Variant) {
         )
     }
 
+    /** The sync server's services on, sync off (issue #94). */
+    @Test
+    fun settingsServerServices() = capture("settings_server_services") {
+        SyncSection(
+            url = "https://sync.example.com",
+            key = "secret",
+            onUrlChange = {},
+            onKeyChange = {},
+            configured = true,
+            enabled = false,
+            status = SyncStatus(),
+            onEnabledChange = {},
+            onSyncNow = {},
+            services = ServerServicesUi(
+                enabled = true,
+                offer = ServerOffer(llm = OfferedService("qwen3"), transcription = null)
+            )
+        )
+    }
+
     /** Sync on, with sessions waiting after a failed run (issue #68). */
     @Test
     fun settingsSync() = capture("settings_sync") {
@@ -1053,6 +1077,24 @@ class ScreenshotTest(private val variant: Variant) {
     fun sessionAskWaiting() = capture("session_ask_waiting") {
         val question = CHAT.first().copy(id = 3, content = "Who is shipping the e-ink build?")
         session(tab = 2, ask = AskUiState(messages = CHAT + question, running = true))
+    }
+
+    /** Settings with the sync server's language model in use and its transcription missing (issue #94). */
+    @Test
+    fun settingsServerSources() = capture("settings_server_sources") {
+        SettingsBody(
+            state = SettingsUiState(
+                form = SettingsForm(baseUrl = "http://192.168.1.10:8000/v1", model = "llama-3.1-8b"),
+                asrEngine = "cpu",
+                asrLanguage = "en",
+                serverServicesEnabled = true,
+                serverOffer = ServerOffer(llm = OfferedService("qwen3"), transcription = null),
+                llmSource = ServiceSource.SERVER,
+                asrSource = ServiceSource.SERVER
+            ),
+            actions = SettingsActions(),
+            installedVersion = "0.2.1"
+        )
     }
 
     @Test

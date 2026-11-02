@@ -2157,6 +2157,62 @@ network outside the cluster, so it can't reach the upstreams directly.
   `ai proxy:` line saying why, and the device shows nothing about the upstream.
 - Step 8: `"transcription":null`, and the test fails with `HTTP 404`.
 
+## 51. Using what the sync server offers (issue #94)
+
+The sync server from section 50, with both upstreams set, and a device that
+already syncs with it (section 40). A second sync server, or the same one
+restarted with no upstream variables, for step 9. A session with a transcript.
+On the device, a language model of your own in *Language model* and no
+*Transcription server* address.
+
+**Steps**
+
+1. Install this build over the previous one. Open Settings → *Sync server*, tap
+   *Sync now*, and open a session that exists only on the server.
+2. Turn on *Use this server's services*. Read the confirmation, then tap
+   *Cancel*.
+3. Summarise a session, and check the server's log.
+4. Turn it on again and tap *Use*.
+5. Look at *Language model* and *Transcription server*.
+6. Summarise a session, ask a question about it, and re-transcribe it *On the
+   transcription server*.
+7. In *Language model*, choose *Sync server's*, summarise again, then choose
+   *Specify my own*.
+8. Turn *Sync sessions* off, summarise again, then turn it back on. Turn *Use
+   this server's services* off.
+9. With *Use this server's services* on, point the device at the server without
+   upstreams: change the address, save, and turn the services on.
+10. Put the real address back and turn the services on. Turn on aeroplane mode,
+    leave the app and come back.
+11. Settings → *Data* → back up, then restore that backup with its settings.
+
+**Pass**
+
+- Step 1: sync works as before: *Last synced* updates and the session opens with
+  its recording. Nothing in *Language model* or *Transcription server* changed.
+- Step 2: the confirmation names the server, its language model and its
+  transcription with their models, and says transcripts and recordings go there.
+- Step 3: no request reaches the server's `/api/ai/v1` routes; the summary uses
+  your own language model.
+- Step 4: the section lists `Language model: <model>` and `Transcription:
+  <model>`. *Improve recordings on the server* is still off.
+- Step 5: *Language model* is on *Specify my own*, with your fields as they were.
+  *Transcription server* is on *Sync server's*, saying `Provided by the sync
+  server: <model>`, with no address fields.
+- Step 6: the summary and answer come from your own model; the re-transcription
+  goes through the sync server (`/api/ai/v1/asr` in its log).
+- Step 7: the summary goes through `/api/ai/v1/llm`; back on *Specify my own*,
+  your base URL, key and model are still there and used again.
+- Step 8: the services keep working with *Sync sessions* off; turning the
+  services off leaves *Sync sessions* on and both sections show your own fields.
+- Step 9: changing the address turns the services off. Turning them on says the
+  server provides neither, and the switch stays off.
+- Step 10: the services are on again without retyping anything, and with no
+  network the section still lists what the server provides.
+- Step 11: the backup has no sync server address or `/api/ai` address
+  (`unzip -p <backup> backup.json`); after the restore the services and the
+  choice in each section are as they were.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

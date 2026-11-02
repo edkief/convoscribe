@@ -20,6 +20,9 @@ import com.convoscribe.data.cleanAudioPathFor
 import com.convoscribe.llm.ExtractedActionItem
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.InMemorySecretStore
+import com.convoscribe.settings.OfferedService
+import com.convoscribe.settings.ServerOffer
+import com.convoscribe.settings.ServiceSource
 import com.convoscribe.settings.SettingsRepository
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -285,6 +288,48 @@ class BackupRoundTripTest {
         }
     }
 
+    /** Issue #94: nothing about the sync server's services leaves the device in a backup. */
+    @Test
+    fun backup_holdsNoServerProvidedAddressOrSource() = runTest {
+        val phone = phone()
+        phone.settings.update { it.copy(syncServerUrl = "https://sync.example") }
+        phone.settings.update {
+            it.copy(serverOffer = OFFER).withServerServicesOn().copy(llmSource = ServiceSource.SERVER)
+        }
+        assertEquals("https://sync.example/api/ai/v1/llm", phone.settings.llmConfig().baseUrl)
+        val archive = archiveOf(phone)
+        val entries = ZipInputStream(ByteArrayInputStream(archive)).use { zip ->
+            generateSequence { zip.nextEntry }.map { it.name to zip.readBytes() }.toList()
+        }
+        for ((_, bytes) in entries) {
+            val text = String(bytes, Charsets.ISO_8859_1)
+            assertFalse(text.contains("/api/ai/"))
+            assertFalse(text.contains("sync.example"))
+            assertFalse(text.contains("qwen3"))
+        }
+    }
+
+    /** Issue #94: restoring settings keeps which language model and transcription the device uses. */
+    @Test
+    fun restore_keepsWhichSourceIsUsed() = runTest {
+        val archive = archiveOf(phone())
+        val tablet = Device("tablet")
+        tablet.settings.update { it.copy(syncServerUrl = "https://sync.example") }
+        tablet.settings.update {
+            it.copy(serverOffer = OFFER).withServerServicesOn().copy(asrSource = ServiceSource.OWN)
+        }
+
+        tablet.restoreFrom(archive)
+
+        val s = tablet.settings.settings.value
+        assertEquals("http://llm", s.llmBaseUrl)
+        assertTrue(s.serverServicesEnabled)
+        assertEquals(ServiceSource.SERVER, s.llmSource)
+        assertEquals(ServiceSource.OWN, s.asrSource)
+        assertEquals(OFFER, s.serverOffer)
+        assertEquals("https://sync.example/api/ai/v1/llm", tablet.settings.llmConfig().baseUrl)
+    }
+
     @Test
     fun restore_refusesANewerBackupBeforeChangingAnything() = runTest {
         val header = BackupHeader(format = BackupFormat.FORMAT, version = BackupFormat.VERSION + 1, createdAt = 1)
@@ -409,3 +454,10 @@ class BackupRoundTripTest {
         return out.toByteArray()
     }
 }
+
+/** What the sync server provides in the issue #94 tests. */
+private val OFFER = ServerOffer(
+    llm = OfferedService("qwen3"),
+    transcription = OfferedService("parakeet"),
+    fetchedAt = 7L
+)

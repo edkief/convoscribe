@@ -19,8 +19,11 @@ import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
 import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DisplayMode
 import com.convoscribe.settings.SemanticIndexMode
+import com.convoscribe.settings.ServerOffer
+import com.convoscribe.settings.ServiceSource
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
+import com.convoscribe.sync.ServerConfigResult
 import com.convoscribe.sync.SyncStatus
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -96,6 +99,24 @@ sealed interface ConnectionTestResult {
     data class Connected(val count: Int, val models: List<String>) : ConnectionTestResult
 
     data class Failed(val message: String) : ConnectionTestResult
+}
+
+/**
+ * Turning on *Use this server's services* (issue #94): asking the
+ * server what it provides, then one confirmation naming it.
+ */
+sealed interface ServicesCheck {
+    /** Asking the server. */
+    data object Checking : ServicesCheck
+
+    /** The user is asked to accept [offer]; nothing is used before they do. */
+    data class Confirm(val offer: ServerOffer) : ServicesCheck
+
+    /** The server refused the sync key. */
+    data object Refused : ServicesCheck
+
+    /** The server was not reached or answered something unexpected. */
+    data class Failed(val message: String) : ServicesCheck
 }
 
 /**
@@ -200,7 +221,17 @@ data class SettingsUiState(
     /** Download recordings from other devices on mobile data too (issue #69). */
     val syncAudioOnMobileData: Boolean = false,
     /** Last synced, sessions waiting and the last error (issue #68). */
-    val syncStatus: SyncStatus = SyncStatus()
+    val syncStatus: SyncStatus = SyncStatus(),
+    /** *Use this server's services* is on (issue #94); apart from [syncEnabled]. */
+    val serverServicesEnabled: Boolean = false,
+    /** What the sync server last said it provides. */
+    val serverOffer: ServerOffer? = null,
+    /** Whether the language model in use is the server's or the user's own. */
+    val llmSource: ServiceSource = ServiceSource.OWN,
+    /** Whether the transcription server in use is the server's or the user's own. */
+    val asrSource: ServiceSource = ServiceSource.OWN,
+    /** Turning the server's services on, while it is under way. */
+    val servicesCheck: ServicesCheck? = null
 )
 
 /**
@@ -241,6 +272,10 @@ data class SettingsUiState(
  * @param modelStore on-disk model store, used to check
  *   installation and to free space when the user deletes the
  *   French bundle.
+ * @param fetchServerOffer asks the sync server what it provides, for
+ *   [requestServerServices] (issue #94).
+ * @param refreshServerOffer refreshes the stored offer, after a new
+ *   sync key is saved.
  */
 class SettingsViewModel(
     private val repo: SettingsRepository,
@@ -250,7 +285,10 @@ class SettingsViewModel(
     private val listServerModels: suspend () -> List<String> = { emptyList() },
     private val semanticIndex: SemanticIndexRunner? = null,
     private val onSemanticModelChanged: () -> Unit = {},
-    syncStatus: StateFlow<SyncStatus>? = null
+    syncStatus: StateFlow<SyncStatus>? = null,
+    private val fetchServerOffer: suspend (url: String, key: String) -> ServerConfigResult =
+        { _, _ -> ServerConfigResult.Failed("not available") },
+    private val refreshServerOffer: suspend () -> Unit = {}
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SettingsUiState>
@@ -317,6 +355,7 @@ class SettingsViewModel(
         val current = repo.settings.value
         val parsedChars = form.maxChars.toIntOrNull() ?: current.maxTranscriptChars
 
+        val keyChanged = form.syncKey != repo.syncKey()
         // Before the address, whose change schedules a sync run that reads the key.
         repo.setSyncKey(form.syncKey)
         repo.update { previous ->
@@ -341,6 +380,9 @@ class SettingsViewModel(
         }
         repo.setApiKey(form.apiKey)
         repo.setAsrServerKey(form.serverKey)
+        if (keyChanged && repo.settings.value.serverServicesEnabled) {
+            viewModelScope.launch { refreshServerOffer() }
+        }
 
         // Re-seed the form from the freshly persisted settings so
         // the screen shows canonical values (e.g. trailing-slash
@@ -585,6 +627,65 @@ class SettingsViewModel(
         _state.update { it.copy(syncEnabled = enabled) }
     }
 
+    /**
+     * Turn on *Use this server's services* (issue #94): save the address
+     * and key typed so far, as *Sync sessions* does, ask the server what
+     * it provides, and ask the user to accept it
+     * ([ServicesCheck.Confirm]). Nothing is used until
+     * [acceptServerServices].
+     */
+    fun requestServerServices() {
+        val form = _state.value.form
+        repo.setSyncKey(form.syncKey)
+        repo.update { it.copy(syncServerUrl = form.syncUrl) }
+        val url = repo.settings.value.syncServerUrl
+        if (url.isBlank()) return
+        _state.update { it.copy(servicesCheck = ServicesCheck.Checking) }
+        viewModelScope.launch {
+            val check = when (val result = fetchServerOffer(url, repo.syncKey())) {
+                is ServerConfigResult.Offered -> ServicesCheck.Confirm(result.offer)
+                is ServerConfigResult.Refused -> ServicesCheck.Refused
+                is ServerConfigResult.Failed -> ServicesCheck.Failed(result.message)
+            }
+            // Dropped if the user dismissed the check meanwhile.
+            _state.update { if (it.servicesCheck == ServicesCheck.Checking) it.copy(servicesCheck = check) else it }
+        }
+    }
+
+    /**
+     * The user accepted the confirmation: use the server's services,
+     * unless it provides none. Each service whose source was never chosen uses the server's
+     * unless the user has their own address for it. *Improve recordings
+     * on the server* is left as it is.
+     */
+    fun acceptServerServices() {
+        val check = _state.value.servicesCheck as? ServicesCheck.Confirm ?: return
+        _state.update { it.copy(servicesCheck = null) }
+        // A server that provides nothing has nothing to accept; what it adds later is asked about then.
+        if (check.offer.llm == null && check.offer.transcription == null) return
+        repo.update { it.copy(serverOffer = check.offer).withServerServicesOn() }
+    }
+
+    /** Close the check or its confirmation without changing anything. */
+    fun dismissServerServices() {
+        _state.update { it.copy(servicesCheck = null) }
+    }
+
+    /** Turn *Use this server's services* off; the user's own values are untouched. */
+    fun turnOffServerServices() {
+        repo.update { it.copy(serverServicesEnabled = false) }
+    }
+
+    /** Use the server's language model or the user's own (issue #94), written immediately. */
+    fun setLlmSource(source: ServiceSource) {
+        repo.update { it.copy(llmSource = source) }
+    }
+
+    /** Use the server's transcription or the user's own (issue #94), written immediately. */
+    fun setAsrSource(source: ServiceSource) {
+        repo.update { it.copy(asrSource = source) }
+    }
+
     /** Persist *Download recordings on mobile data* immediately (issue #69). */
     fun setSyncAudioOnMobileData(enabled: Boolean) {
         repo.update { it.copy(syncAudioOnMobileData = enabled) }
@@ -717,6 +818,10 @@ class SettingsViewModel(
             serverAuto = current.asrServerAuto,
             syncEnabled = current.syncEnabled,
             syncAudioOnMobileData = current.syncAudioOnMobileData,
+            serverServicesEnabled = current.serverServicesEnabled,
+            serverOffer = current.serverOffer,
+            llmSource = current.llmSource ?: ServiceSource.OWN,
+            asrSource = current.asrSource ?: ServiceSource.OWN,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )
