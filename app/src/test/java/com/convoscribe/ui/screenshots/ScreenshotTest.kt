@@ -43,6 +43,8 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.Tag
 import com.convoscribe.data.TagUsage
+import com.convoscribe.data.TalkingPointEntity
+import com.convoscribe.data.TalkingPointList
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
 import com.convoscribe.enginecheck.CleanupCheckResult
@@ -83,6 +85,8 @@ import com.convoscribe.ui.home.TagFilter
 import com.convoscribe.ui.organise.PresetDraft
 import com.convoscribe.ui.organise.PresetsBody
 import com.convoscribe.ui.organise.TagsBody
+import com.convoscribe.ui.organise.TalkingPointListDraft
+import com.convoscribe.ui.organise.TalkingPointListsBody
 import com.convoscribe.ui.record.CleanupOption
 import com.convoscribe.ui.record.RecordBody
 import com.convoscribe.ui.search.DateRange
@@ -360,6 +364,58 @@ class ScreenshotTest(private val variant: Variant) {
             draftOf = { PresetDraft(it.id, it.name, ConversationOptions(language = it.language)) },
             onSave = {},
             onDelete = {}
+        )
+    }
+
+    @Test
+    fun talkingPointLists() = capture("talking_point_lists") {
+        TalkingPointListsBody(lists = TALKING_POINT_LISTS, onBack = {}, onSave = {}, onDelete = {})
+    }
+
+    @Test
+    fun talkingPointListEditor() = capture("talking_point_list_editor") {
+        TalkingPointListsBody(
+            lists = TALKING_POINT_LISTS,
+            onBack = {},
+            onSave = {},
+            onDelete = {},
+            initialDraft = TalkingPointListDraft.of(TALKING_POINT_LISTS.first())
+        )
+    }
+
+    @Test
+    fun recordIdleTalkingPoints() = capture("record_idle_talking_points") {
+        RecordBody(
+            phase = RecordingPhase.IDLE,
+            preparingNpu = false,
+            elapsedMs = 0L,
+            finalLines = emptyList(),
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            options = ConversationOptions(language = "en", talkingPoints = TALKING_POINT_LISTS.first().points),
+            talkingPointLists = TALKING_POINT_LISTS,
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    @Test
+    fun recordLiveTalkingPoints() = capture("record_live_talking_points") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "and then we can ship it on",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.55f,
+            livePoints = SESSION_POINTS,
+            onBack = {},
+            onStart = {},
+            onStop = {}
         )
     }
 
@@ -993,6 +1049,19 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     /** Issue #31: the summary's action items as a checklist, one ticked off. */
+    @Test
+    fun sessionSummaryTalkingPoints() = capture("session_summary_talking_points") {
+        session(
+            tab = 1,
+            summary = SummaryUiState(saved = SUMMARY, savedTemplateName = "Meeting", points = SESSION_POINTS)
+        )
+    }
+
+    @Test
+    fun sessionSummaryTalkingPointsWithoutModel() = capture("session_summary_talking_points_no_llm") {
+        session(tab = 1, summary = SummaryUiState(configured = false, points = SESSION_POINTS))
+    }
+
     @Test
     fun sessionSummaryActions() = capture("session_summary_actions") {
         val brief = "- Release moves a week.\n- QA tests the Boox build for another week."
@@ -1758,6 +1827,29 @@ class ScreenshotTest(private val variant: Variant) {
             position = id.toInt(),
             createdAt = T0
         )
+
+        private val TALKING_POINT_LISTS = listOf(
+            TalkingPointList(
+                1,
+                "Acme weekly",
+                listOf("Budget for Q3", "Hiring plan", "E-ink build status", "Office move")
+            ),
+            TalkingPointList(2, "1:1 with Élodie", listOf("Goals", "Feedback"))
+        )
+
+        private val SESSION_POINTS = TALKING_POINT_LISTS.first().points.mapIndexed { index, text ->
+            TalkingPointEntity(
+                id = index + 1L,
+                sessionId = 1,
+                pointId = "p$index",
+                text = text,
+                position = index,
+                covered = index < 2,
+                coveredAtMs = if (index < 2) 64_000L * (index + 1) else null,
+                byUser = index == 1,
+                createdAt = T0
+            )
+        }
 
         private val ACTION_ITEMS = listOf(
             actionItem(1, "Ship the e-ink build", owner = "Bob", atMs = 64_000L),
