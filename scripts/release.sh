@@ -173,7 +173,9 @@ APP_PATHS=(-- . ':(exclude)server')
 
 SERVER_PACKAGE=server/package.json
 SERVER_TAG_GLOB='server-v[0-9]*.[0-9]*.[0-9]*'
-SERVER_PATHS=(-- server)
+# .k8s-build.yaml also defines how the server image is built, so a change
+# there is worth a server release too (it stays in APP_PATHS as well).
+SERVER_PATHS=(-- server .k8s-build.yaml)
 
 # Version strings as read from the Gradle file.
 read_versions() {
