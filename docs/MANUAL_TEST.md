@@ -2338,6 +2338,47 @@ answer (for example `http://10.255.255.1:8000/v1`).
   and a point moves down once ticked. The next recording starts with the chip still
   on.
 
+## 55. Talking points in the server web app (issue #104)
+
+Use a sync server from this release and two devices signed in to it, A and B,
+both synced, with a list *Weekly* made on A (*Budget*, *Hiring*, *Office*) and a
+recorded session with those points, *Budget* ticked automatically. Open the web
+app in a browser.
+
+**Steps**
+
+1. Open *Talking points* in the sidebar. *New list*: name it *Board*, type
+   *Revenue*, press Enter, type *Churn*, move *Churn* up, add an empty point, and
+   *Create list*.
+2. Edit *Weekly*: rename it *Weekly 1:1*, add a point with spaces around it, remove
+   *Office*, and save. Sync A and B and open their lists.
+3. On A, edit *Board* and sync. In the browser, without reloading, edit *Board* and
+   save, then try to delete it. Choose *Reload*.
+4. Delete *Board* in the browser. Sync A and B.
+5. Open the session's *Talking points* tab. Tap *Budget*'s time. Untick *Budget*,
+   tick *Hiring*, edit *Office*, add *Parking*, remove *Hiring*.
+6. Sync A and B and open the session on each. On A, record a continuation with
+   *Budget* talked about.
+7. Edit a point on A without syncing, tick a different one on the web, then sync A.
+8. Sign in as another user (authz-proxy) and open *Talking points*.
+
+**Pass**
+
+- Step 1: *Board* lists *Churn*, then *Revenue*; the empty point is gone.
+- Step 2: both devices show *Weekly 1:1* with the cleaned new point and without
+  *Office*, after one sync each.
+- Step 3: the save and the delete are refused, a banner asks you to reload, and
+  after reloading the page shows A's edit.
+- Step 4: *Board* is gone from both devices. The session that used *Weekly* still
+  has its own points.
+- Step 5: the player jumps to *Budget*'s time. Every change shows at once, and each
+  point says *Covered* or *Not covered* beside its circle.
+- Step 6: both devices show every change. *Budget*, unticked by hand, is not ticked
+  again automatically.
+- Step 7: both changes survive (#90), and every device and the web end on the
+  same version.
+- Step 8: only that user's lists show.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
