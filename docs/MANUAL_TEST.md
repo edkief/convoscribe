@@ -235,7 +235,7 @@ formatted transcript (one line per segment, speaker label included).
 **Steps**
 
 1. From Home, open **Settings**.
-2. Scroll to **Language model**.
+2. Open **AI & summaries**.
 3. Pick an OpenAI-compatible endpoint you have running (vLLM,
    llama.cpp server, Ollama with `http://<host>:11434/v1`, …). The
    base URL must end with `/v1`.
@@ -284,7 +284,7 @@ Stop while the dots show removes them.
 **Steps**
 
 1. Tap **New recording**, pick **Français** under **Language** (the
-   default comes from **Settings** → **Transcription**).
+   default comes from **Settings** → **Recording & transcription**).
 2. Tap Start; if the French bundle (~71 MB) is missing, setup opens,
    downloads it and returns to the Record screen. Tap Start again.
 3. Speak French for ~30 s.
@@ -343,8 +343,8 @@ saturate the CPU.
 
 1. With the **NPU** engine selected, run a fresh recording, speak
    English for ~30 s, stop.
-2. Open **Settings** → switch to **CPU**, save (or just tap the
-   other segment), start a recording, speak English for ~30 s,
+2. Open **Settings** → **Recording & transcription**, tap **CPU**,
+   start a recording, speak English for ~30 s,
    stop.
 3. Switch back to **NPU**, start a recording, speak English for
    ~30 s, stop.
@@ -535,14 +535,14 @@ adb shell appops set com.convoscribe SYSTEM_ALERT_WINDOW deny
    while speaking; tap **Resume** and speak another ~20 s. Stop.
 3. Start another recording, switch to another app and use the
    notification: **Pause**, wait, **Resume**, **Stop**.
-4. Grant the permission: Settings → Recording → **Allow display over
+4. Grant the permission: Settings → Recording & transcription → **Allow display over
    other apps** (or `adb shell appops set com.convoscribe
    SYSTEM_ALERT_WINDOW allow`). Start a recording and switch to
    another app.
 5. On the floating control: **Pause**, wait 30 s, **Resume**; drag it
    to the other side and to the bottom, release; tap its time to open
    the Record screen; leave again; **Stop** from the control.
-6. Turn Settings → Recording → *Floating control over other apps* off,
+6. Turn Settings → Recording & transcription → *Floating control over other apps* off,
    start a recording, switch to another app. Turn it back on.
 7. Force-stop ConvoScribe (`adb shell am force-stop com.convoscribe`)
    or swipe it from Recents. Open another app, pull down Quick
@@ -641,12 +641,12 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
 1. Start ConvoScribe (old build). Within a few seconds Home shows
    *ConvoScribe X.Y.Z is available*. Tap **View notes**: the release
    notes appear; close them.
-2. Tap **Not now**: the banner goes. Settings → About shows
+2. Tap **Not now**: the banner goes. Settings → About & updates shows
    *Version 0.0.1 (1)* and the same offer. Force-stop and reopen: the
    banner is back (the offer is remembered) but logcat shows no new
    `update check:` line (checked less than 30 minutes ago).
 3. Clear the throttle (above), reopen, tap **Skip this version**.
-   Clear the throttle again and reopen: no banner. Settings → About →
+   Clear the throttle again and reopen: no banner. Settings → About & updates →
    **Check for updates** still offers it (a manual check ignores the
    skip).
 4. Tap **Update**. A *Downloading ConvoScribe X.Y.Z* notification
@@ -666,7 +666,7 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
    **Cancel** on it: the banner shows **Install** again.
 8. **Install** → confirm. ConvoScribe closes; a notification says
    *ConvoScribe updated to X.Y.Z*. Tap it: the app opens on the new
-   version (Settings → About), every session is still there and plays.
+   version (Settings → About & updates), every session is still there and plays.
    `files/updates` is empty.
 9. Signature mismatch: build the old version with a different key
    (move `app/debug.keystore` aside for the build so the per-machine
@@ -675,7 +675,7 @@ Filter logcat with `adb logcat -s ConvoScribe:I` (lines start with
    4: after the download the banner says the release is signed with a
    different key and offers **Open release page**; nothing is
    installed and `files/updates` is empty.
-10. Settings → About → turn *Check for updates automatically* off,
+10. Settings → About & updates → turn *Check for updates automatically* off,
     clear the throttle and reopen: logcat shows no `update check:`
     line. **Check for updates** still works. With *Include
     pre-releases* on, a pre-release newer than the installed version is
@@ -805,13 +805,13 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
 ## 26. Floating control shapes (issue #21)
 
 Run this on a phone and on the **Boox**, with *Display over other
-apps* allowed and Settings → Recording → *Floating control over other
+apps* allowed and Settings → Recording & transcription → *Floating control over other
 apps* on. On a fresh install (or *Clear data*), do not touch the
 *Shape* setting before step 1.
 
 **Steps**
 
-1. Open Settings → Recording and read *Shape*. Start a recording and
+1. Open Settings → Recording & transcription and read *Shape*. Start a recording and
    switch to another app.
 2. Tap the arrow (**˅**) at the end of the control three times,
    looking at the control after each tap. Drag it to the left edge
@@ -824,7 +824,7 @@ apps* on. On a fresh install (or *Clear data*), do not touch the
 5. In **Expanded**, speak a few sentences. On the phone, then on the
    Boox, watch the text.
 6. With TalkBack on, move through the control in each shape.
-7. Stop. Open Settings → Recording, choose another shape, start a
+7. Stop. Open Settings → Recording & transcription, choose another shape, start a
    recording and leave the app. Turn *Floating control over other
    apps* off and on.
 8. Set the system font size to the largest and repeat step 5 on the
@@ -839,7 +839,7 @@ apps* on. On a fresh install (or *Clear data*), do not touch the
   arrow points down (*Show more*) except on Expanded, where it points
   up (*Show less*). The control stays against the edge it rests on, at
   the same height, fully on screen, also after it grows. Settings →
-  Recording → *Shape* follows each change.
+  Recording & transcription → *Shape* follows each change.
 - Step 3: **no refresh flashes** on the Boox for the whole 30 s;
   Minimal shows no time and no text.
 - Step 4: the dot opens the Record screen. Pause/Resume works in every
@@ -969,14 +969,14 @@ using a session that already has a summary.
 **Steps**
 
 1. Open the session summarised before the upgrade, Summary tab.
-2. Settings → Summaries. Change *Default template* to *Brief*, then
+2. Settings → AI & summaries. Change *Default template* to *Brief*, then
    go back to Home and tap Record.
 3. On the Record screen, change *Summary template* to *Interview* and
    record a short two-person conversation. Open it, Summary tab →
    Summarise.
 4. On the same session, pick *Brief* in the Template picker and tap
    Regenerate. Leave the session and open it again.
-5. Settings → Summaries → Templates → *Duplicate* on *Meeting*. Edit
+5. Settings → AI & summaries → Templates → *Duplicate* on *Meeting*. Edit
    the copy: name `Standup`, instructions `Three bullet lists: done,
    next, blockers.` Save.
 6. On a session, pick `Standup` and Regenerate.
@@ -1062,9 +1062,9 @@ previous version without clearing data first.
 **Steps**
 
 1. Open a session recorded before the upgrade: *Session info*.
-2. Settings → *Noise cleanup*: look at the card, then *Download the
+2. Settings → Recording & transcription → *Noise cleanup*: look at the card, then *Download the
    cleanup model*.
-3. Settings → Transcription → *Engine check* → *Check noise cleanup*.
+3. Settings → Recording & transcription → *Engine check* → *Check noise cleanup*.
 4. Back in Settings, look at the *Noise cleanup* card again.
 5. Record screen: turn *Clean up noise* on, *Set as default*, Start.
    Speak for ~30 s over the noise, pause 10 s, resume, speak, Stop.
@@ -1075,7 +1075,7 @@ previous version without clearing data first.
    menu → *Clean up audio* → *Clean up*. Cancel once half-way, then run
    it again to the end.
 9. Menu → *Remove cleaning* → *Remove*.
-10. Settings → *Noise cleanup* → *Delete the cleanup model*. Open the
+10. Settings → Recording & transcription → *Noise cleanup* → *Delete the cleanup model*. Open the
     first session and play it; menu → *Clean up audio*.
 11. Delete both sessions.
 
@@ -1119,7 +1119,7 @@ recording for an hour.
 **Steps**
 
 1. Open the session, Ask tab: look at the old answers.
-2. Settings → Language model → *Max transcript characters* `2000`, Save.
+2. Settings → AI & summaries → Advanced → *Max transcript characters* `2000`, then go back.
 3. Summary tab → Regenerate. Watch the line next to Stop.
 4. Regenerate again and tap Stop while it says *Summarising part 2 of
    …*.
@@ -1170,9 +1170,9 @@ Install over the previous version without clearing data.
    Summary tab.
 9. Share the transcript.
 10. Turn the LLM server (or Wi-Fi) off, tap *Regenerate notes*.
-11. Settings → Summaries: turn *Write notes for marks automatically*
+11. Settings → AI & summaries: turn *Write notes for marks automatically*
     off. Record a short session with a mark, stop.
-12. Settings → *Identify speakers* **While charging**, unplugged:
+12. Settings → Speakers → *Identify speakers* **While charging**, unplugged:
     turn the automatic notes back on and record a short session with a
     mark. Plug in, close the app, wait for the charging job, reopen.
 13. On the Boox (e-ink): step 5 again, watching the screen.
@@ -1215,7 +1215,7 @@ recorded, one of them renamed by hand.
 3. Back on Home, tick the `Acme` chip, then also `Weekly`, then untick
    both. Tick `Weekly` and, from a conversation's menu, remove its tag.
 4. Search for a word from a tagged conversation and set the tag filter.
-5. Settings → Organise → Tags: rename `Weekly` to `ACME`; then delete
+5. Settings → Search & organise → Tags: rename `Weekly` to `ACME`; then delete
    `Acme`.
 6. Record about a minute about one topic with the title left empty,
    stop, Summary tab → Summarise, and wait.
@@ -1223,14 +1223,14 @@ recorded, one of them renamed by hand.
 8. Do step 6 again, leave the session as soon as the summary finishes,
    and come back. Menu → *Restore “Recording …”*.
 9. Summarise the conversation renamed by hand before the upgrade, and an
-   imported one. Then Settings → Summaries: turn *Name conversations
+   imported one. Then Settings → AI & summaries: turn *Name conversations
    automatically* off and do step 6 again.
 10. On the Record screen set French, 3 speakers, a participant, title
     `Weekly sync {date} {time}`, tag `Acme`, template *Interview*.
     *Save as preset…* → `Weekly`. Leave and come back to the Record
     screen; pick *Preset* → `Weekly`, change the speaker count, then
     pick `Weekly` again. Record and stop.
-11. Settings → Organise → Presets: edit `Weekly` (rename it, change the
+11. Settings → Search & organise → Presets: edit `Weekly` (rename it, change the
     tags), add a new preset, delete one.
 12. Long-press the Quick Settings tile; pick `Weekly`. Stop from the
     notification. Long-press it again while a recording is open.
@@ -1284,10 +1284,10 @@ with two or more people.
 **Steps**
 
 1. Open an older conversation → menu → *Session info*.
-2. Settings → Speakers. Check *Voice model* and *Analysis step*.
+2. Settings → Speakers → Advanced. Check *Voice model* and *Analysis step*.
 3. On that conversation, *Re-identify speakers…* → Automatic. Open
    *Session info*.
-4. Settings → Speakers → *Voice model* → CAM++. Re-identify the same
+4. Settings → Speakers → Advanced → *Voice model* → CAM++. Re-identify the same
    conversation before downloading it, then open *Session info*.
 5. Tap *Download CAM++*; wait for it to finish. Re-identify again and
    open *Session info*.
@@ -1329,7 +1329,8 @@ recorded English conversation of a few minutes with two people.
 
 **Steps**
 
-1. Settings → *Transcription server*. Leave the address blank: the
+1. Settings → Recording & transcription → *Transcription on a server*, open
+   *Your own server*. Leave the address blank: the
    *Improve recordings on the server* switch is greyed out.
 2. Enter `http://parakeet-asr.asr:8000/v1`, leave model blank, tap
    *Test connection*.
@@ -1445,11 +1446,11 @@ previous one without clearing data.
 
 1. Open Ask across sessions and ask *How much money can we spend?*
    Note the answer.
-2. Settings → Semantic search: download the model. Watch the section
+2. Settings → Search & organise: download the model. Watch the section
    while it downloads, and after.
 3. Engine check → *Check semantic search*. Note the numbers.
 4. Unplug, then plug in the charger with the screen off for ten
-   minutes. Open Settings → Semantic search.
+   minutes. Open Settings → Search & organise.
 5. Open Ask across sessions and ask the question from step 1 again.
    Then ask in English about the fact said in French.
 6. Edit a line of an indexed session (Transcript tab) so it states a
@@ -1459,7 +1460,7 @@ previous one without clearing data.
    charging.
 8. On battery, open that session's menu → *Index for semantic search*.
    Open the menu again while it runs, and once it is done.
-9. Record two more short sessions. Settings → Semantic search → **Index
+9. Record two more short sessions. Settings → Search & organise → **Index
    now**, on battery. Leave Settings and come back after a minute.
 10. *Index sessions* → **Any time**. Record a short session, close the
     app and wait a few minutes on battery
@@ -1472,7 +1473,7 @@ previous one without clearing data.
     another (e.g. *budget cap*). Then set the language filter to
     exclude the paraphrasing session and search again.
 12. Tap a result marked *Matched by meaning*.
-13. Settings → Semantic search → *Delete the semantic search model*,
+13. Settings → Search & organise → *Delete the semantic search model*,
     then ask the question from step 1 again and repeat the searches
     from step 11.
 
@@ -1533,14 +1534,14 @@ sessions must still be there (database v16).
 
 **Steps**
 
-1. Settings → Data → **Back up sessions…**, save to Downloads. Leave
+1. Settings → Backup & restore → **Back up sessions…**, save to Downloads. Leave
    the app while it runs (pull down the notification).
 2. Copy the file to a computer: `adb pull /sdcard/Download/convoscribe-backup-*.zip`.
    `unzip -l` it, and `unzip -p … backup.json | grep -i sk-` (use part
    of your API key).
 3. Start a backup again and tap **Cancel** in the notification.
 4. Uninstall the app, reinstall this build and go through setup.
-   Settings → Data → **Restore from backup…**, pick the file, leave
+   Settings → Backup & restore → **Restore from backup…**, pick the file, leave
    *Also restore settings* ticked, **Restore**.
 5. Open each restored session: play it, read the transcript and its
    speakers, the Summary and Ask tabs, the marks, the tags. Check
@@ -1551,7 +1552,7 @@ sessions must still be there (database v16).
    long sessions). Then restore again.
 8. Try to restore a file that is not a backup (any other zip or a
    photo).
-9. Start a recording, then open Settings → Data → **Back up sessions…**.
+9. Start a recording, then open Settings → Backup & restore → **Back up sessions…**.
 
 **Expected**
 
@@ -1588,7 +1589,7 @@ build over the previous one without clearing data (database v17).
 
 **Steps**
 
-1. Settings → *Sync*: enter the server address and API key, then turn
+1. Settings → *Server & sync*: enter the server address and API key, then turn
    on **Sync sessions**. Read the dialog, tap **Upload**.
 2. Wait, or tap **Sync now**. On the server:
    `curl -H "Authorization: Bearer $KEY" $URL/api/sync/v1/changes`.
@@ -1700,7 +1701,7 @@ Install the semantic search model on B too.
 **Steps**
 
 1. On A tap **Sync now**, then on B.
-2. On B look at Settings → Known voices, the summary templates and the
+2. On B look at Settings → Speakers → Known speakers, the summary templates and the
    presets. Start a recording from the preset and stop it.
 3. On B search semantically for something in one of A's sessions, before
    B's charging job has run.
@@ -1720,7 +1721,7 @@ Install the semantic search model on B too.
 - Step 2: B has A's voice samples, template and preset. The preset picks
   A's template, its tag and its options, and identifies the known voice
   in the recording.
-- Step 3: the search finds it straight away. Settings → semantic search
+- Step 3: the search finds it straight away. Settings → Search & organise
   counts A's sessions as indexed, and `adb logcat -s ConvoScribe` shows
   no `semantic index: session=…` lines for them.
 - Step 4: A shows the edits, and the voice is gone from A.
@@ -1940,7 +1941,7 @@ app as each, in separate browser profiles. Have one more finished session on
 5. Tap *Run clean-up* and confirm. While it goes, reload the page.
 6. On *Users*, set *U*'s quota to a value below what *U* stores, for example
    `0.001` GB, and *Save*.
-7. On *U*'s device, *Sync now* with the unsynced session. Open Settings → *Sync*.
+7. On *U*'s device, *Sync now* with the unsynced session. Open Settings → *Server & sync*.
 8. On the same device, rename a session already synced, delete another, and
    *Sync now*.
 9. On *Users*, empty *U*'s quota and *Save*. On the device, *Sync now*.
@@ -2128,11 +2129,12 @@ network outside the cluster, so it can't reach the upstreams directly.
 
 1. `curl -H "Authorization: Bearer <key>" https://<sync server>/api/sync/v1/config`,
    then the same without the header.
-2. Settings → *Language model*: base URL `https://<sync server>/api/ai/v1/llm`, the
+2. Settings → AI & summaries → *Language model*: base URL `https://<sync server>/api/ai/v1/llm`, the
    sync key as the API key, the server's model. Tap *Test connection*.
 3. In the session, Summary tab → *Summarise*. While it streams, tap *Stop
    generating*, then summarise again to the end.
-4. Settings → *Transcription server*: address `https://<sync server>/api/ai/v1/asr`,
+4. Settings → Recording & transcription → *Transcription on a server* → *Your own
+   server*: address `https://<sync server>/api/ai/v1/asr`,
    the sync key, the server's model. Tap *Test connection*.
 5. Open the 2-hour recording → menu → *Re-transcribe…* → *On the transcription
    server*. Watch the server's memory while it runs (`kubectl top pod`).
@@ -2167,7 +2169,7 @@ On the device, a language model of your own in *Language model* and no
 
 **Steps**
 
-1. Install this build over the previous one. Open Settings → *Sync server*, tap
+1. Install this build over the previous one. Open Settings → *Server & sync*, tap
    *Sync now*, and open a session that exists only on the server.
 2. Turn on *Use this server's services*. Read the confirmation, then tap
    *Cancel*.
@@ -2184,7 +2186,7 @@ On the device, a language model of your own in *Language model* and no
    upstreams: change the address, save, and turn the services on.
 10. Put the real address back and turn the services on. Turn on aeroplane mode,
     leave the app and come back.
-11. Settings → *Data* → back up, then restore that backup with its settings.
+11. Settings → Backup & restore* → back up, then restore that backup with its settings.
 
 **Pass**
 
@@ -2212,6 +2214,44 @@ On the device, a language model of your own in *Language model* and no
 - Step 11: the backup has no sync server address or `/api/ai` address
   (`unzip -p <backup> backup.json`); after the restore the services and the
   choice in each section are as they were.
+
+## 52. Finding your way around Settings (issue #98)
+
+Needs a phone, and if you have one a window at least 840 dp wide (a large
+tablet or an unfolded device). Run steps 1 to 7 on a Boox in e-ink mode too.
+
+**Steps**
+
+1. From Home, open **Settings**. Read each line of the overview without scrolling.
+2. Open **Speakers**. Note that *Advanced* is closed and shows its values. Open it.
+3. Go back with the arrow, then open **Server & sync**. Change the address, press
+   system back twice, then open Settings again.
+4. Open **Recording & transcription**, tap *Engine check*, come back. Rotate the
+   device.
+5. Open **Backup & restore**, tap *Back up sessions…*, cancel the file picker.
+6. With the floating control on and *Display over other apps* denied, read the
+   overview. Do the same with the sync server stopped and *Sync sessions* on, after
+   a *Sync now*.
+7. With TalkBack on, move through the overview and an *Advanced* row.
+8. In a session with no language model set up, Summary tab → **Open Settings**. In
+   a session with no cleanup model, menu → clean up → **Open Settings**.
+9. In the wide window, open Settings and pick pages from the list. Type in a text
+   field, pick another page, come back. Press back.
+
+**Expected**
+
+- Step 1: eight rows with their current state; Server & sync is on top and says
+  *Not connected* or the server's host. There is no Save button.
+- Step 2: *Clustering threshold*, *Voice match threshold*, *Voice model* and
+  *Analysis step* appear in place, with no animation on e-ink.
+- Step 3: the first back returns to the overview, the second leaves Settings, and
+  the new address is still there.
+- Steps 4 and 5: each time you are back on the same page.
+- Step 6: each problem is written on its row with a warning icon, including on e-ink.
+- Step 7: rows are read as buttons; *Advanced* is read as collapsed, then expanded.
+- Step 8: the first opens AI & summaries, the second Recording & transcription.
+- Step 9: list and page show side by side; what you typed is kept; back leaves
+  Settings.
 
 ## Troubleshooting
 

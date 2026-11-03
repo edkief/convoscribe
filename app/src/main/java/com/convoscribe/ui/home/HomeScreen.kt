@@ -84,6 +84,7 @@ import com.convoscribe.ui.components.StatusBadge
 import com.convoscribe.ui.components.SyncBadge
 import com.convoscribe.ui.components.TagChipRow
 import com.convoscribe.ui.components.statusLabel
+import com.convoscribe.ui.settingsRoute
 import com.convoscribe.ui.theme.AppTheme
 import com.convoscribe.ui.update.UpdateActions
 import com.convoscribe.ui.update.UpdateBanner
@@ -231,7 +232,7 @@ fun HomeScreen(navController: NavHostController) {
         onDelete = vm::delete,
         onRemoveFromDevice = vm::removeFromDevice,
         onDownloadAgain = vm::downloadAgain,
-        onSettings = { navController.navigate("settings") },
+        onSettings = { navController.navigate(settingsRoute()) },
         onEngineCheck = { navController.navigate("engine-check") },
         onSearch = { navController.navigate("search") },
         onAskAcross = { navController.navigate("ask") },

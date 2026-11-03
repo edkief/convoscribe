@@ -1,48 +1,34 @@
 package com.convoscribe.ui.settings
 
-import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SuggestionChip
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -51,12 +37,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -69,88 +51,42 @@ import com.convoscribe.R
 import com.convoscribe.backup.BackupKind
 import com.convoscribe.backup.BackupState
 import com.convoscribe.enginecheck.LiveCleanupVerdict
-import com.convoscribe.llm.SummaryTemplate
-import com.convoscribe.llm.embedding.IndexProgress
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelDownloadState
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.service.BackupService
 import com.convoscribe.service.ModelDownloadService
-import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
-import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
-import com.convoscribe.settings.DIARIZATION_STEPS_SECONDS
-import com.convoscribe.settings.DisplayMode
-import com.convoscribe.settings.FloatingShape
-import com.convoscribe.settings.OfferedService
-import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.settings.ServiceSource
-import com.convoscribe.settings.SpeakerIdMode
-import com.convoscribe.settings.isUnencryptedUrl
-import com.convoscribe.ui.components.ChoiceGroup
-import com.convoscribe.ui.components.ErrorBanner
-import com.convoscribe.ui.components.FieldLabel
-import com.convoscribe.ui.components.InlineProgress
-import com.convoscribe.ui.components.NoticeText
-import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.ScreenScaffold
-import com.convoscribe.ui.components.SectionCard
-import com.convoscribe.ui.components.SupportingText
-import com.convoscribe.ui.session.voiceModelName
-import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 import com.convoscribe.ui.update.UpdateActions
-import com.convoscribe.ui.update.UpdateBanner
-import com.convoscribe.ui.update.hasBanner
 import com.convoscribe.ui.update.rememberUpdateActions
 import com.convoscribe.update.UpdateState
+import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
 /**
- * Settings screen. Replaces the placeholder route from TASK-21.
+ * Settings (issue #98): an overview of the pages, each opening in place
+ * ([SettingsPage]), all in this one destination so they share one
+ * [SettingsViewModel], the file pickers and the snackbar.
  *
- * Layout (top to bottom, single scrollable column):
- *  1. **Language model** section — Base URL (with `Uri` keyboard
- *     and the documented `192.168.1.10:8000/v1` placeholder), API
- *     key (with show / hide toggle), Model name, Max transcript
- *     characters (number keyboard, the `save()` validator keeps
- *     the previous value when the field is empty), the "Test
- *     connection" button (greys out while running) and the
- *     formatted `testResult` line. When the most recent test
- *     returned model ids they appear below as `SuggestionChip`s
- *     that fill the Model field when tapped.
- *  2. **Transcription** section — ASR engine as a
- *     `SingleChoiceSegmentedButtonRow` bound to
- *     `AppSettings.asrEngine` and saved immediately, an Engine
- *     check row that navigates to `engine-check`, a 1..8 thread
- *     slider (6 steps so each step is 1 thread on the
- *     min/max range: 1, 2, 4, 6, 8 is 5 stops; we use 7 steps:
- *     1..8 inclusive which matches the repository's clamping
- *     rule), a disabled "English" language row.
- *  3. **Speakers** section — number-of-speakers dropdown
- *     ("Automatic", 2..6), clustering threshold slider
- *     (0.3..0.8) with the value to two decimals and the
- *     "Lower = more speakers" help text.
+ * Save behaviour: choices and switches are written immediately; text
+ * fields and sliders when their page is left, and when the screen
+ * leaves composition, whichever way that happens. There is no Save
+ * action.
  *
- * Save behaviour:
- *  - the "Save" action in the top bar calls [SettingsViewModel.save]
- *    immediately and pops the back stack;
- *  - the segmented button writes the engine through
- *    [SettingsViewModel.setEngine] (no Save round-trip needed);
- *  - the screen-level [BackHandler] + [DisposableEffect] also
- *    call `save()` when the screen leaves the back stack, so the
- *    implicit "OK" gesture is honoured even when the user just
- *    hits the system back without tapping Save.
- *
- * @param navController app-level controller, used for the back
- *   affordance and to push the Engine check destination.
+ * @param navController app-level controller, used to leave and to push
+ *   the screens opened from Settings (Engine check, Known speakers…).
+ * @param initialPage [SettingsPage.key] of the page to open first,
+ *   `null` for the overview.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(navController: NavHostController) {
+fun SettingsScreen(navController: NavHostController, initialPage: String? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
     val vm: SettingsViewModel = viewModel(
@@ -174,19 +110,12 @@ fun SettingsScreen(navController: NavHostController) {
     val state by vm.state.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
 
-    // Save the form when the screen leaves composition (back,
-    // pop, system back). DisposableEffect's onDispose runs once
-    // the composable is removed from the tree, regardless of the
-    // path that caused the removal — paired with a BackHandler so
-    // the back press navigates to the previous screen while the
-    // onDispose persists the in-flight form.
+    // Save the form when the screen leaves composition, whatever caused it.
     DisposableEffect(Unit) {
         onDispose { vm.save() }
     }
-    BackHandler(enabled = true) {
-        vm.save()
-        navController.popBackStack()
-    }
+    // Survives rotation and the screens and pickers opened from a page.
+    var pageKey by rememberSaveable { mutableStateOf(initialPage) }
 
     val onSavedAck: () -> Unit = { vm.acknowledgeSaved() }
     LaunchedEffect(state.saved) {
@@ -292,6 +221,11 @@ fun SettingsScreen(navController: NavHostController) {
     )
     SettingsBody(
         state = state,
+        page = SettingsPage.of(pageKey),
+        onPageChange = { next ->
+            vm.save()
+            pageKey = next?.key
+        },
         cleanupDownloading = cleanupDownloading,
         semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
@@ -305,7 +239,6 @@ fun SettingsScreen(navController: NavHostController) {
         snackbarHostState = snackbarHostState,
         actions = SettingsActions(
             onBack = leave,
-            onSave = leave,
             onFormChange = vm::update,
             onTestConnection = { coroutineScope.launch { vm.testConnection() } },
             onTestServer = vm::testServer,
@@ -384,7 +317,6 @@ private const val BACKUP_MIME = "application/zip"
 /** What the Settings screen can do; filled from [SettingsViewModel] and the nav controller. */
 internal class SettingsActions(
     val onBack: () -> Unit = {},
-    val onSave: () -> Unit = {},
     val onFormChange: (SettingsForm) -> Unit = {},
     val onTestConnection: () -> Unit = {},
     val onEngineChange: (String) -> Unit = {},
@@ -434,8 +366,27 @@ internal class SettingsActions(
     val onDismissBackup: () -> Unit = {}
 )
 
+/** What the pages show apart from [SettingsUiState]. */
+private class PageExtras(
+    val cleanupDownloading: Boolean,
+    val semanticDownloading: Boolean,
+    val voiceModelDownloading: Boolean,
+    val liveCleanupVerdict: LiveCleanupVerdict?,
+    val overlayGranted: Boolean,
+    val update: UpdateState,
+    val installedVersion: String,
+    val installedVersionCode: Long,
+    val updateActions: UpdateActions,
+    val backup: BackupState
+)
+
 /**
- * Render-only body of [SettingsScreen] for previews and screenshot tests.
+ * Render-only body of [SettingsScreen] for previews and screenshot tests:
+ * the overview when [page] is `null`, otherwise that page. Back goes from
+ * a page to the overview through [onPageChange], and from the overview out
+ * of Settings through [SettingsActions.onBack]. In a window of at least
+ * [TWO_PANES_MIN_WIDTH] the two show side by side (the first page while
+ * [page] is `null`) and back leaves Settings.
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
  * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
@@ -444,11 +395,12 @@ internal class SettingsActions(
  * with the selected engine, `null` when it was not checked. [backup] is
  * the running or last backup or restore (issue #25).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsBody(
     state: SettingsUiState,
     actions: SettingsActions,
+    page: SettingsPage? = null,
+    onPageChange: (SettingsPage?) -> Unit = {},
     cleanupDownloading: Boolean = false,
     semanticDownloading: Boolean = false,
     voiceModelDownloading: Boolean = false,
@@ -461,42 +413,190 @@ internal fun SettingsBody(
     backup: BackupState = BackupState.Idle,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
 ) {
-    ScreenScaffold(
-        title = stringResource(R.string.settings_title),
-        onBack = actions.onBack,
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        actions = {
-            IconButton(onClick = actions.onSave) {
-                Icon(
-                    imageVector = Icons.Filled.Check,
-                    contentDescription = stringResource(R.string.settings_save)
-                )
+    val extras = PageExtras(
+        cleanupDownloading = cleanupDownloading,
+        semanticDownloading = semanticDownloading,
+        voiceModelDownloading = voiceModelDownloading,
+        liveCleanupVerdict = liveCleanupVerdict,
+        overlayGranted = overlayGranted,
+        update = update,
+        installedVersion = installedVersion,
+        installedVersionCode = installedVersionCode,
+        updateActions = updateActions,
+        backup = backup
+    )
+    val inputs = OverviewInputs(
+        overlayGranted = overlayGranted,
+        update = update,
+        installedVersion = installedVersion,
+        backup = backup,
+        formatTime = { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) }
+    )
+    BoxWithConstraints {
+        val twoPanes = maxWidth >= TWO_PANES_MIN_WIDTH
+        val back: () -> Unit = { if (!twoPanes && page != null) onPageChange(null) else actions.onBack() }
+        BackHandler(onBack = back)
+        ScreenScaffold(
+            title = stringResource(if (twoPanes) R.string.settings_title else page?.title ?: R.string.settings_title),
+            onBack = back,
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { innerPadding: PaddingValues ->
+            if (twoPanes) {
+                // Side by side a page is always open; the list is there to change it.
+                val open = page ?: SettingsPage.SERVER
+                Row(modifier = Modifier.padding(innerPadding)) {
+                    PaneColumn(modifier = Modifier.width(OVERVIEW_PANE_WIDTH)) {
+                        SettingsOverview(
+                            state = state,
+                            inputs = inputs,
+                            onOpen = onPageChange,
+                            selected = open,
+                            showArrows = false
+                        )
+                    }
+                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    key(open) {
+                        PaneColumn(modifier = Modifier.weight(1f)) {
+                            SettingsPageContent(page = open, state = state, actions = actions, extras = extras)
+                        }
+                    }
+                }
+            } else {
+                // Each page starts at its top.
+                key(page) {
+                    PaneColumn(modifier = Modifier.padding(innerPadding)) {
+                        if (page == null) {
+                            SettingsOverview(
+                                state = state,
+                                inputs = inputs,
+                                onOpen = onPageChange,
+                                modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+                            )
+                        } else {
+                            SettingsPageContent(page = page, state = state, actions = actions, extras = extras)
+                        }
+                    }
+                }
             }
         }
-    ) { innerPadding: PaddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.s),
-            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.l),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            AppearanceSection(
-                displayMode = state.displayMode,
-                dynamicColor = state.dynamicColor,
-                onDisplayModeChange = actions.onDisplayModeChange,
-                onDynamicColorChange = actions.onDynamicColorChange
+    }
+}
+
+/** From this window width (Material's "expanded") the overview and the open page show side by side. */
+private val TWO_PANES_MIN_WIDTH = 840.dp
+private val OVERVIEW_PANE_WIDTH = 360.dp
+
+/** A scrolling column with the screen's margins, its content centred up to the reading width. */
+@Composable
+private fun PaneColumn(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Column(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.s),
+        verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.l),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        content()
+        Spacer(Modifier.height(AppTheme.spacing.xl))
+    }
+}
+
+/** The sections of [page]. */
+@Composable
+private fun SettingsPageContent(
+    page: SettingsPage,
+    state: SettingsUiState,
+    actions: SettingsActions,
+    extras: PageExtras
+) {
+    when (page) {
+        SettingsPage.SERVER -> SyncSection(
+            url = state.form.syncUrl,
+            key = state.form.syncKey,
+            onUrlChange = { actions.onFormChange(state.form.copy(syncUrl = it)) },
+            onKeyChange = { actions.onFormChange(state.form.copy(syncKey = it)) },
+            configured = state.form.syncUrl.isNotBlank(),
+            enabled = state.syncEnabled,
+            status = state.syncStatus,
+            onEnabledChange = actions.onSyncEnabledChange,
+            onSyncNow = actions.onSyncNow,
+            audioOnMobileData = state.syncAudioOnMobileData,
+            onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange,
+            services = ServerServicesUi(
+                enabled = state.serverServicesEnabled,
+                offer = state.serverOffer,
+                check = state.servicesCheck,
+                onRequest = actions.onRequestServerServices,
+                onAccept = actions.onAcceptServerServices,
+                onDismiss = actions.onDismissServerServices,
+                onTurnOff = actions.onTurnOffServerServices
+            )
+        )
+        SettingsPage.RECORDING -> {
+            TranscriptionSection(
+                engine = state.asrEngine,
+                language = state.asrLanguage,
+                frenchModelInstalled = state.frenchModelInstalled,
+                selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
+                selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
+                onEngineChange = actions.onEngineChange,
+                onLanguageChange = actions.onLanguageChange,
+                onEngineCheck = actions.onEngineCheck,
+                onDeleteFrenchModel = actions.onDeleteFrenchModel
             )
             RecordingSection(
                 floatingControl = state.floatingControl,
                 floatingShape = state.floatingShape,
-                overlayGranted = overlayGranted,
+                overlayGranted = extras.overlayGranted,
                 onFloatingControlChange = actions.onFloatingControlChange,
                 onFloatingShapeChange = actions.onFloatingShapeChange,
                 onAllowOverlay = actions.onAllowOverlay
             )
+            NoiseCleanupSection(
+                installed = state.cleanupInstalled,
+                downloading = extras.cleanupDownloading,
+                cleanByDefault = state.cleanAudioDefault,
+                liveVerdict = extras.liveCleanupVerdict,
+                onDownload = actions.onDownloadCleanup,
+                onDelete = actions.onDeleteCleanup,
+                onCleanByDefaultChange = actions.onCleanAudioDefaultChange
+            )
+            TranscriptionServerSection(state = state, actions = actions)
+            RecordingAdvanced(
+                threads = state.form.numThreads,
+                onThreadsChange = { threads -> actions.onFormChange(state.form.copy(numThreads = threads)) }
+            )
+        }
+        SettingsPage.SPEAKERS -> SpeakersSection(
+            speakerIdMode = state.speakerIdMode,
+            onSpeakerIdModeChange = actions.onSpeakerIdModeChange,
+            numSpeakers = state.form.numSpeakers,
+            defaultParticipants = state.defaultParticipants,
+            onResetDefaultParticipants = actions.onResetDefaultParticipants,
+            threshold = state.form.clusterThreshold,
+            matchThreshold = state.form.speakerMatchThreshold,
+            onNumSpeakersChange = { count ->
+                actions.onFormChange(state.form.copy(numSpeakers = count))
+            },
+            onThresholdChange = { value ->
+                actions.onFormChange(state.form.copy(clusterThreshold = value))
+            },
+            onMatchThresholdChange = { value ->
+                actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
+            },
+            onOpenKnownSpeakers = actions.onOpenKnownSpeakers,
+            voiceModel = VoiceModelUi(
+                selected = state.diarizationEmbedding,
+                installed = state.diarizationEmbeddingInstalled,
+                downloading = extras.voiceModelDownloading,
+                stepSeconds = state.diarizationStepSeconds,
+                onSelect = actions.onDiarizationEmbeddingChange,
+                onDownload = actions.onDownloadVoiceModel,
+                onStepChange = actions.onDiarizationStepChange
+            )
+        )
+        SettingsPage.AI -> {
             LanguageModelSection(
                 form = state.form,
                 testing = state.testing,
@@ -519,9 +619,12 @@ internal fun SettingsBody(
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
             )
+            AiAdvanced(form = state.form, onFormChange = actions.onFormChange)
+        }
+        SettingsPage.SEARCH -> {
             SemanticSearchSection(
                 installed = state.semanticInstalled,
-                downloading = semanticDownloading,
+                downloading = extras.semanticDownloading,
                 progress = state.semanticProgress,
                 onDownload = actions.onDownloadSemantic,
                 onDelete = actions.onDeleteSemantic,
@@ -530,1261 +633,29 @@ internal fun SettingsBody(
                 onIndexNow = actions.onIndexSemanticNow
             )
             OrganiseSection(onOpenTags = actions.onOpenTags, onOpenPresets = actions.onOpenPresets)
-            TranscriptionSection(
-                engine = state.asrEngine,
-                language = state.asrLanguage,
-                threads = state.form.numThreads,
-                frenchModelInstalled = state.frenchModelInstalled,
-                selectedLanguageModelInstalled = state.selectedLanguageModelInstalled,
-                selectedLanguageModelMissingBytes = state.selectedLanguageModelMissingBytes,
-                onEngineChange = actions.onEngineChange,
-                onLanguageChange = actions.onLanguageChange,
-                onThreadsChange = { threads ->
-                    actions.onFormChange(state.form.copy(numThreads = threads))
-                },
-                onEngineCheck = actions.onEngineCheck,
-                onDeleteFrenchModel = actions.onDeleteFrenchModel
-            )
-            TranscriptionServerSection(state = state, actions = actions)
-            SyncSection(
-                url = state.form.syncUrl,
-                key = state.form.syncKey,
-                onUrlChange = { actions.onFormChange(state.form.copy(syncUrl = it)) },
-                onKeyChange = { actions.onFormChange(state.form.copy(syncKey = it)) },
-                configured = state.form.syncUrl.isNotBlank(),
-                enabled = state.syncEnabled,
-                status = state.syncStatus,
-                onEnabledChange = actions.onSyncEnabledChange,
-                onSyncNow = actions.onSyncNow,
-                audioOnMobileData = state.syncAudioOnMobileData,
-                onAudioOnMobileDataChange = actions.onSyncAudioOnMobileDataChange,
-                services = ServerServicesUi(
-                    enabled = state.serverServicesEnabled,
-                    offer = state.serverOffer,
-                    check = state.servicesCheck,
-                    onRequest = actions.onRequestServerServices,
-                    onAccept = actions.onAcceptServerServices,
-                    onDismiss = actions.onDismissServerServices,
-                    onTurnOff = actions.onTurnOffServerServices
-                )
-            )
-            NoiseCleanupSection(
-                installed = state.cleanupInstalled,
-                downloading = cleanupDownloading,
-                cleanByDefault = state.cleanAudioDefault,
-                liveVerdict = liveCleanupVerdict,
-                onDownload = actions.onDownloadCleanup,
-                onDelete = actions.onDeleteCleanup,
-                onCleanByDefaultChange = actions.onCleanAudioDefaultChange
-            )
-            SpeakersSection(
-                speakerIdMode = state.speakerIdMode,
-                onSpeakerIdModeChange = actions.onSpeakerIdModeChange,
-                numSpeakers = state.form.numSpeakers,
-                defaultParticipants = state.defaultParticipants,
-                onResetDefaultParticipants = actions.onResetDefaultParticipants,
-                threshold = state.form.clusterThreshold,
-                matchThreshold = state.form.speakerMatchThreshold,
-                onNumSpeakersChange = { count ->
-                    actions.onFormChange(state.form.copy(numSpeakers = count))
-                },
-                onThresholdChange = { value ->
-                    actions.onFormChange(state.form.copy(clusterThreshold = value))
-                },
-                onMatchThresholdChange = { value ->
-                    actions.onFormChange(state.form.copy(speakerMatchThreshold = value))
-                },
-                onOpenKnownSpeakers = actions.onOpenKnownSpeakers,
-                voiceModel = VoiceModelUi(
-                    selected = state.diarizationEmbedding,
-                    installed = state.diarizationEmbeddingInstalled,
-                    downloading = voiceModelDownloading,
-                    stepSeconds = state.diarizationStepSeconds,
-                    onSelect = actions.onDiarizationEmbeddingChange,
-                    onDownload = actions.onDownloadVoiceModel,
-                    onStepChange = actions.onDiarizationStepChange
-                )
-            )
-            DataSection(
-                state = backup,
-                onBackup = actions.onBackup,
-                onRestore = actions.onRestore,
-                onCancel = actions.onCancelBackup,
-                onDismiss = actions.onDismissBackup
-            )
-            AboutSection(
-                installedVersion = installedVersion,
-                installedVersionCode = installedVersionCode,
-                update = update,
-                checkAuto = state.updateCheckAuto,
-                includePrereleases = state.updateIncludePrereleases,
-                updateActions = updateActions,
-                onCheckAutoChange = actions.onUpdateCheckAutoChange,
-                onIncludePrereleasesChange = actions.onUpdateIncludePrereleasesChange
-            )
-            Spacer(Modifier.height(AppTheme.spacing.xl))
         }
-    }
-}
-
-/**
- * "Appearance" section: the display mode (Auto / Standard / E-ink) and,
- * on Android 12+ outside e-ink mode, "Use device colours". Both are
- * written immediately and the app re-themes at once.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AppearanceSection(
-    displayMode: String,
-    dynamicColor: Boolean,
-    onDisplayModeChange: (String) -> Unit,
-    onDynamicColorChange: (Boolean) -> Unit
-) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_appearance)
-    ) {
-        FieldLabel(text = stringResource(R.string.settings_display_mode_label))
-        ChoiceGroup(
-            options = DISPLAY_MODES.map { (mode, label) -> mode.key to stringResource(label) },
-            selected = displayMode,
-            onSelect = onDisplayModeChange
+        SettingsPage.BACKUP -> DataSection(
+            state = extras.backup,
+            onBackup = actions.onBackup,
+            onRestore = actions.onRestore,
+            onCancel = actions.onCancelBackup,
+            onDismiss = actions.onDismissBackup
         )
-        SupportingText(text = stringResource(R.string.settings_display_mode_help))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !AppTheme.isEink) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .toggleable(value = dynamicColor, role = Role.Switch, onValueChange = onDynamicColorChange),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = stringResource(R.string.settings_dynamic_color_label),
-                        style = MaterialTheme.typography.bodyLarge
-                    )
-                    SupportingText(text = stringResource(R.string.settings_dynamic_color_help))
-                }
-                Switch(checked = dynamicColor, onCheckedChange = null)
-            }
-        }
-    }
-}
-
-/**
- * "Recording" section: the floating control over other apps (issue
- * #7) and, while it is on, its shape (issue #21; [floatingShape]
- * `null` shows the device default). While it is on but the permission
- * is missing, says so and offers to open the system page.
- */
-@Composable
-private fun RecordingSection(
-    floatingControl: Boolean,
-    floatingShape: String?,
-    overlayGranted: Boolean,
-    onFloatingControlChange: (Boolean) -> Unit,
-    onFloatingShapeChange: (String) -> Unit,
-    onAllowOverlay: () -> Unit
-) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_recording)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(value = floatingControl, role = Role.Switch, onValueChange = onFloatingControlChange),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_floating_control_label),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                SupportingText(text = stringResource(R.string.settings_floating_control_help))
-            }
-            Switch(checked = floatingControl, onCheckedChange = null)
-        }
-        if (floatingControl) {
-            FieldLabel(text = stringResource(R.string.settings_floating_shape_label))
-            ChoiceGroup(
-                options = FLOATING_SHAPES.map { (shape, label) -> shape.key to stringResource(label) },
-                selected = FloatingShape.resolve(floatingShape, AppTheme.isEink).key,
-                onSelect = onFloatingShapeChange
-            )
-            SupportingText(text = stringResource(R.string.settings_floating_shape_help))
-        }
-        if (floatingControl && !overlayGranted) {
-            NoticeText(text = stringResource(R.string.settings_floating_control_needs_permission))
-            TextButton(onClick = onAllowOverlay) {
-                Text(text = stringResource(R.string.settings_floating_control_allow))
-            }
-        }
-    }
-}
-
-private val FLOATING_SHAPES = listOf(
-    FloatingShape.MINIMAL to R.string.settings_floating_shape_minimal,
-    FloatingShape.STANDARD to R.string.settings_floating_shape_standard,
-    FloatingShape.EXPANDED to R.string.settings_floating_shape_expanded
-)
-
-private val SPEAKER_ID_MODES = listOf(
-    SpeakerIdMode.AUTO to R.string.settings_speakers_id_mode_auto,
-    SpeakerIdMode.CHARGING to R.string.settings_speakers_id_mode_charging,
-    SpeakerIdMode.MANUAL to R.string.settings_speakers_id_mode_manual
-)
-
-/** The sentence saying when sessions get indexed for semantic search under [mode] (issue #65). */
-@StringRes
-internal fun semanticIndexWhen(mode: String): Int = when (SemanticIndexMode.of(mode)) {
-    SemanticIndexMode.CHARGING -> R.string.semantic_index_when_charging
-    SemanticIndexMode.ANY_TIME -> R.string.semantic_index_when_any_time
-}
-
-private val SEMANTIC_INDEX_MODES = listOf(
-    SemanticIndexMode.CHARGING to R.string.settings_semantic_index_mode_charging,
-    SemanticIndexMode.ANY_TIME to R.string.settings_semantic_index_mode_any_time
-)
-
-private val DISPLAY_MODES = listOf(
-    DisplayMode.AUTO to R.string.settings_display_mode_auto,
-    DisplayMode.STANDARD to R.string.settings_display_mode_standard,
-    DisplayMode.EINK to R.string.settings_display_mode_eink
-)
-
-/**
- * "Language model" section: base URL, API key (with show/hide
- * toggle), model name, max transcript characters, the "Test
- * connection" button and the formatted result line. Model id
- * chips appear below the result when the last `listModels` call
- * returned at least one id. While the sync server's services are on
- * ([serverServices], issue #94) it starts with the choice between the
- * server's language model and the user's own; the user's own fields
- * and test show only when it is chosen.
- */
-@OptIn(
-    ExperimentalMaterial3Api::class,
-    androidx.compose.foundation.layout.ExperimentalLayoutApi::class
-)
-@Composable
-private fun LanguageModelSection(
-    form: SettingsForm,
-    testing: Boolean,
-    testResult: ConnectionTestResult?,
-    availableModels: List<String>,
-    onFormChange: (SettingsForm) -> Unit,
-    onTestConnection: () -> Unit,
-    serverServices: Boolean = false,
-    source: ServiceSource = ServiceSource.OWN,
-    offered: OfferedService? = null,
-    onSourceChange: (ServiceSource) -> Unit = {}
-) {
-    var apiKeyVisible by rememberSaveable { mutableStateOf(false) }
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_llm)
-    ) {
-        if (serverServices) {
-            ServiceSourceChoice(
-                source = source,
-                offered = offered,
-                unavailableText = stringResource(R.string.service_source_llm_unavailable),
-                onSourceChange = onSourceChange
-            )
-        }
-        // The user's own endpoint, kept while the server's is used (issue #94).
-        val own = !serverServices || source == ServiceSource.OWN
-        if (own) {
-            OwnLanguageModelFields(
-                form = form,
-                apiKeyVisible = apiKeyVisible,
-                onApiKeyVisibleChange = { apiKeyVisible = it },
-                onFormChange = onFormChange
-            )
-        }
-        OutlinedTextField(
-            value = form.maxChars,
-            onValueChange = { onFormChange(form.copy(maxChars = it)) },
-            label = { Text(text = stringResource(R.string.settings_llm_max_chars_label)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            modifier = Modifier.fillMaxWidth()
+        SettingsPage.APPEARANCE -> AppearanceSection(
+            displayMode = state.displayMode,
+            dynamicColor = state.dynamicColor,
+            onDisplayModeChange = actions.onDisplayModeChange,
+            onDynamicColorChange = actions.onDynamicColorChange
         )
-        if (own) {
-            LanguageModelTest(
-                form = form,
-                testing = testing,
-                testResult = testResult,
-                availableModels = availableModels,
-                onFormChange = onFormChange,
-                onTestConnection = onTestConnection
-            )
-        }
-    }
-}
-
-/** The user's own language model: base URL, API key (with show/hide) and model. */
-@Composable
-private fun OwnLanguageModelFields(
-    form: SettingsForm,
-    apiKeyVisible: Boolean,
-    onApiKeyVisibleChange: (Boolean) -> Unit,
-    onFormChange: (SettingsForm) -> Unit
-) {
-    OutlinedTextField(
-        value = form.baseUrl,
-        onValueChange = { onFormChange(form.copy(baseUrl = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
-        placeholder = { Text(text = stringResource(R.string.settings_llm_base_url_placeholder)) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-        modifier = Modifier.fillMaxWidth()
-    )
-    OutlinedTextField(
-        value = form.apiKey,
-        onValueChange = { onFormChange(form.copy(apiKey = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_api_key_label)) },
-        singleLine = true,
-        visualTransformation = if (apiKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-        trailingIcon = {
-            IconButton(onClick = { onApiKeyVisibleChange(!apiKeyVisible) }) {
-                Text(
-                    text = stringResource(
-                        if (apiKeyVisible) R.string.settings_llm_api_key_hide else R.string.settings_llm_api_key_show
-                    ),
-                    style = MaterialTheme.typography.labelLarge
-                )
-            }
-        },
-        modifier = Modifier.fillMaxWidth()
-    )
-    OutlinedTextField(
-        value = form.model,
-        onValueChange = { onFormChange(form.copy(model = it)) },
-        label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
-        singleLine = true,
-        modifier = Modifier.fillMaxWidth()
-    )
-}
-
-/**
- * "Test connection" for the user's own language model, its result line
- * and the model id chips that fill the Model field on tap.
- */
-@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun LanguageModelTest(
-    form: SettingsForm,
-    testing: Boolean,
-    testResult: ConnectionTestResult?,
-    availableModels: List<String>,
-    onFormChange: (SettingsForm) -> Unit,
-    onTestConnection: () -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-    ) {
-        OutlinedButton(
-            onClick = onTestConnection,
-            enabled = !testing,
-            modifier = Modifier.weight(1f)
-        ) {
-            Text(text = stringResource(R.string.settings_llm_test))
-        }
-        if (testing) InlineProgress()
-    }
-    when (testResult) {
-        is ConnectionTestResult.Connected -> NoticeText(
-            text = pluralStringResource(
-                R.plurals.settings_test_connected,
-                testResult.count,
-                testResult.count,
-                testResult.models.joinToString(", ")
-            )
+        SettingsPage.ABOUT -> AboutSection(
+            installedVersion = extras.installedVersion,
+            installedVersionCode = extras.installedVersionCode,
+            update = extras.update,
+            checkAuto = state.updateCheckAuto,
+            includePrereleases = state.updateIncludePrereleases,
+            updateActions = extras.updateActions,
+            onCheckAutoChange = actions.onUpdateCheckAutoChange,
+            onIncludePrereleasesChange = actions.onUpdateIncludePrereleasesChange
         )
-        is ConnectionTestResult.Failed -> ErrorBanner(
-            message = stringResource(R.string.settings_test_failed, testResult.message)
-        )
-        null -> SupportingText(text = stringResource(R.string.settings_llm_test_idle))
-    }
-    if (availableModels.isNotEmpty()) {
-        androidx.compose.foundation.layout.FlowRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
-            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
-        ) {
-            availableModels.forEach { id ->
-                SuggestionChip(
-                    onClick = { onFormChange(form.copy(model = id)) },
-                    label = { Text(text = id) }
-                )
-            }
-        }
-    }
-}
-
-/**
- * "Transcription server" section (issue #58): the base URL (with a
- * warning under a plain `http://` one), API key and
- * model, saved by Save like the LLM's, a Test that lists the server's
- * models, and *Improve recordings on the server* (written immediately,
- * enabled once a server is set up). While the sync server's services
- * are on (issue #94) it starts with the choice between the sync
- * server's transcription and the user's own, whose fields show only
- * when it is chosen.
- */
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
-@Composable
-private fun TranscriptionServerSection(state: SettingsUiState, actions: SettingsActions) {
-    val form = state.form
-    val onFormChange = actions.onFormChange
-    var keyVisible by rememberSaveable { mutableStateOf(false) }
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_server)
-    ) {
-        SupportingText(text = stringResource(R.string.settings_server_help))
-        if (state.serverServicesEnabled) {
-            ServiceSourceChoice(
-                source = state.asrSource,
-                offered = state.serverOffer?.transcription,
-                unavailableText = stringResource(R.string.service_source_asr_unavailable),
-                onSourceChange = actions.onAsrSourceChange
-            )
-        }
-        // The user's own server, kept while the sync server's is used (issue #94).
-        if (!state.serverServicesEnabled || state.asrSource == ServiceSource.OWN) {
-            OutlinedTextField(
-                value = form.serverUrl,
-                onValueChange = { onFormChange(form.copy(serverUrl = it)) },
-                label = { Text(text = stringResource(R.string.settings_llm_base_url_label)) },
-                placeholder = { Text(text = stringResource(R.string.settings_server_url_placeholder)) },
-                singleLine = true,
-                supportingText = if (isUnencryptedUrl(form.serverUrl)) {
-                    { Text(text = stringResource(R.string.settings_server_url_cleartext)) }
-                } else {
-                    null
-                },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = form.serverKey,
-                onValueChange = { onFormChange(form.copy(serverKey = it)) },
-                label = { Text(text = stringResource(R.string.settings_server_key_label)) },
-                singleLine = true,
-                visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                trailingIcon = {
-                    IconButton(onClick = { keyVisible = !keyVisible }) {
-                        Text(
-                            text = stringResource(
-                                if (keyVisible) {
-                                    R.string.settings_llm_api_key_hide
-                                } else {
-                                    R.string.settings_llm_api_key_show
-                                }
-                            ),
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = form.serverModel,
-                onValueChange = { onFormChange(form.copy(serverModel = it)) },
-                label = { Text(text = stringResource(R.string.settings_llm_model_label)) },
-                placeholder = { Text(text = stringResource(R.string.settings_server_model_placeholder)) },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-            ) {
-                OutlinedButton(
-                    onClick = actions.onTestServer,
-                    enabled = !state.serverTesting && form.serverUrl.isNotBlank(),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(text = stringResource(R.string.settings_llm_test))
-                }
-                if (state.serverTesting) InlineProgress()
-            }
-            when (val result = state.serverTestResult) {
-                is ConnectionTestResult.Connected -> NoticeText(
-                    text = pluralStringResource(
-                        R.plurals.settings_test_connected,
-                        result.count,
-                        result.count,
-                        result.models.joinToString(", ")
-                    )
-                )
-                is ConnectionTestResult.Failed -> ErrorBanner(
-                    message = stringResource(R.string.settings_test_failed, result.message)
-                )
-                null -> Unit
-            }
-            if (state.serverModels.isNotEmpty()) {
-                androidx.compose.foundation.layout.FlowRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
-                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
-                ) {
-                    state.serverModels.forEach { id ->
-                        SuggestionChip(
-                            onClick = { onFormChange(form.copy(serverModel = id)) },
-                            label = { Text(text = id) }
-                        )
-                    }
-                }
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(
-                    value = state.serverAuto && state.serverConfigured,
-                    enabled = state.serverConfigured,
-                    role = Role.Switch,
-                    onValueChange = actions.onServerAutoChange
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_server_auto_label),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                SupportingText(text = stringResource(R.string.settings_server_auto_help))
-            }
-            Switch(
-                checked = state.serverAuto && state.serverConfigured,
-                onCheckedChange = null,
-                enabled = state.serverConfigured
-            )
-        }
-    }
-}
-
-/**
- * "Transcription" section: ASR engine segmented button (saves
- * immediately on click) with the "French uses the CPU engine."
- * hint when Français is selected, a Language
- * `SingleChoiceSegmentedButtonRow` ("English" / "Français")
- * bound to `AppSettings.asrLanguage`, the model status caption
- * under it ("Model installed" / "Model not downloaded (N MB) –
- * it will be downloaded before your next recording") and a
- * "Delete French model" text button when French is selected but
- * not installed (or simply installed while English is active).
- * Then the "Engine check" navigation row and a CPU threads
- * 1..8 slider.
- */
-/**
- * "Summaries" section (issue #27): the template new conversations
- * start with (written immediately), Templates to add or edit them, and
- * whether the notes of marks are written once speakers are identified
- * (issue #48, written immediately).
- */
-@Composable
-private fun SummariesSection(
-    templates: List<SummaryTemplate>,
-    defaultKey: String,
-    onDefaultChange: (String) -> Unit,
-    onOpenTemplates: () -> Unit,
-    autoMarkNotes: Boolean,
-    onAutoMarkNotesChange: (Boolean) -> Unit,
-    autoTitle: Boolean,
-    onAutoTitleChange: (Boolean) -> Unit
-) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_summaries)
-    ) {
-        SummaryTemplatePicker(
-            label = stringResource(R.string.settings_summaries_default_label),
-            templates = templates,
-            selectedKey = defaultKey,
-            onSelect = onDefaultChange
-        )
-        SupportingText(text = stringResource(R.string.settings_summaries_default_help))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.settings_summaries_templates_row),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedButton(onClick = onOpenTemplates) {
-                Text(text = stringResource(R.string.settings_summaries_templates_button))
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(value = autoMarkNotes, role = Role.Switch, onValueChange = onAutoMarkNotesChange),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_auto_mark_notes_label),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                SupportingText(text = stringResource(R.string.settings_auto_mark_notes_help))
-            }
-            Switch(checked = autoMarkNotes, onCheckedChange = null)
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(value = autoTitle, role = Role.Switch, onValueChange = onAutoTitleChange),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_auto_title_label),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                SupportingText(text = stringResource(R.string.settings_auto_title_help))
-            }
-            Switch(checked = autoTitle, onCheckedChange = null)
-        }
-    }
-}
-
-/** Tags (and presets) of conversations (issue #32), each managed on its own screen. */
-@Composable
-private fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_organise)
-    ) {
-        ManageRow(
-            label = stringResource(R.string.settings_organise_tags_row),
-            help = stringResource(R.string.settings_organise_tags_help),
-            onClick = onOpenTags
-        )
-        ManageRow(
-            label = stringResource(R.string.settings_organise_presets_row),
-            help = stringResource(R.string.settings_organise_presets_help),
-            onClick = onOpenPresets
-        )
-    }
-}
-
-/** A setting kept on its own screen: [label], [help] below it, and Manage. */
-@Composable
-private fun ManageRow(label: String, help: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, style = MaterialTheme.typography.bodyLarge)
-            SupportingText(text = help)
-        }
-        OutlinedButton(onClick = onClick) {
-            Text(text = stringResource(R.string.settings_summaries_templates_button))
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun TranscriptionSection(
-    engine: String,
-    language: String,
-    threads: Int,
-    frenchModelInstalled: Boolean,
-    selectedLanguageModelInstalled: Boolean,
-    selectedLanguageModelMissingBytes: Long,
-    onEngineChange: (String) -> Unit,
-    onLanguageChange: (String) -> Unit,
-    onThreadsChange: (Int) -> Unit,
-    onEngineCheck: () -> Unit,
-    onDeleteFrenchModel: () -> Unit
-) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_transcription)
-    ) {
-        FieldLabel(text = stringResource(R.string.settings_transcription_engine))
-        ChoiceGroup(
-            options = listOf(
-                "npu" to stringResource(R.string.settings_transcription_engine_npu),
-                "cpu" to stringResource(R.string.settings_transcription_engine_cpu)
-            ),
-            selected = if (engine == "npu") "npu" else "cpu",
-            onSelect = onEngineChange
-        )
-        SupportingText(text = stringResource(R.string.settings_transcription_engine_help))
-        if (language == "fr") {
-            // French is only supported on the CPU engine today;
-            // explain that the engine selector is unchanged but
-            // does not apply to a French recording.
-            SupportingText(text = stringResource(R.string.settings_transcription_french_uses_cpu))
-        }
-        FieldLabel(text = stringResource(R.string.settings_transcription_language_label))
-        SupportingText(text = stringResource(R.string.settings_defaults_help))
-        ChoiceGroup(
-            options = listOf(
-                "en" to stringResource(R.string.settings_transcription_language_en),
-                "fr" to stringResource(R.string.settings_transcription_language_fr)
-            ),
-            selected = if (language == "en") "en" else "fr",
-            onSelect = onLanguageChange
-        )
-        if (selectedLanguageModelInstalled) {
-            SupportingText(text = stringResource(R.string.settings_transcription_language_model_installed))
-        } else {
-            Text(
-                text = stringResource(
-                    R.string.settings_transcription_language_model_missing,
-                    (selectedLanguageModelMissingBytes / 1_000_000L).toInt()
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        // The "Delete French model" action is only useful when the
-        // French bundle is actually on disk. Show it whenever it's
-        // installed, regardless of the active language: a user with
-        // English selected and French sitting unused on disk probably
-        // wants the ≈71 MB back.
-        if (frenchModelInstalled) {
-            TextButton(onClick = onDeleteFrenchModel) {
-                Text(text = stringResource(R.string.settings_transcription_language_delete_fr))
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.settings_transcription_engine_check),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedButton(onClick = onEngineCheck) {
-                Text(text = stringResource(R.string.settings_transcription_engine_check))
-            }
-        }
-        FieldLabel(text = stringResource(R.string.settings_transcription_threads_label))
-        Slider(
-            value = threads.toFloat(),
-            onValueChange = { onThreadsChange(it.toInt().coerceIn(1, 8)) },
-            valueRange = 1f..8f,
-            steps = 6,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            text = threads.toString(),
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
-
-/**
- * "Semantic search" section (issue #61): the optional EmbeddingGemma
- * model for *Ask across sessions*, downloaded or removed here, and how
- * many sessions the charging job has indexed so far.
- */
-@Composable
-internal fun SemanticSearchSection(
-    installed: Boolean,
-    downloading: Boolean,
-    progress: IndexProgress,
-    onDownload: () -> Unit,
-    onDelete: () -> Unit,
-    indexMode: String = SemanticIndexMode.CHARGING.key,
-    onIndexModeChange: (String) -> Unit = {},
-    onIndexNow: () -> Unit = {}
-) {
-    val megabytes = ModelCatalog.TEXT_EMBEDDING_GEMMA.totalBytes.toFloat() / 1_000_000f
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_semantic)
-    ) {
-        SupportingText(text = stringResource(R.string.settings_semantic_help, megabytes))
-        when {
-            downloading -> Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
-            ) {
-                InlineProgress()
-                NoticeText(text = stringResource(R.string.settings_semantic_downloading))
-            }
-            installed -> {
-                FieldLabel(text = stringResource(R.string.settings_semantic_index_mode_label))
-                ChoiceGroup(
-                    options = SEMANTIC_INDEX_MODES.map { (mode, label) -> mode.key to stringResource(label) },
-                    selected = SemanticIndexMode.of(indexMode).key,
-                    onSelect = onIndexModeChange
-                )
-                SupportingText(
-                    text = stringResource(R.string.settings_semantic_status, progress.indexed, progress.total) +
-                        " " + stringResource(semanticIndexWhen(indexMode))
-                )
-                // Index the waiting sessions without the charger (issue #65).
-                if (progress.indexed < progress.total) {
-                    OutlinedButton(onClick = onIndexNow) {
-                        Text(text = stringResource(R.string.settings_semantic_index_now))
-                    }
-                }
-                TextButton(onClick = onDelete) {
-                    Text(text = stringResource(R.string.settings_semantic_delete))
-                }
-            }
-            else -> OutlinedButton(onClick = onDownload) {
-                Text(text = stringResource(R.string.settings_semantic_download, megabytes))
-            }
-        }
-        SupportingText(text = stringResource(R.string.settings_semantic_licence))
-    }
-}
-
-/**
- * "Noise cleanup" section (issue #37): the optional cleanup model,
- * downloaded or removed here, and whether new conversations clean
- * their audio live ([cleanByDefault], written immediately; the Record
- * screen can change it per conversation). A finished session can be
- * cleaned afterwards from its menu either way.
- */
-@Composable
-private fun NoiseCleanupSection(
-    installed: Boolean,
-    downloading: Boolean,
-    cleanByDefault: Boolean,
-    liveVerdict: LiveCleanupVerdict?,
-    onDownload: () -> Unit,
-    onDelete: () -> Unit,
-    onCleanByDefaultChange: (Boolean) -> Unit
-) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_cleanup)
-    ) {
-        SupportingText(text = stringResource(R.string.settings_cleanup_help))
-        when {
-            downloading -> Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
-            ) {
-                InlineProgress()
-                NoticeText(text = stringResource(R.string.settings_cleanup_downloading))
-            }
-            installed -> {
-                SupportingText(text = stringResource(R.string.settings_cleanup_installed))
-                TextButton(onClick = onDelete) {
-                    Text(text = stringResource(R.string.settings_cleanup_delete))
-                }
-            }
-            else -> OutlinedButton(onClick = onDownload) {
-                Text(
-                    text = stringResource(
-                        R.string.settings_cleanup_download,
-                        ModelCatalog.CLEANUP.totalBytes.toFloat() / 1_000_000f
-                    )
-                )
-            }
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .toggleable(
-                    value = cleanByDefault,
-                    enabled = installed,
-                    role = Role.Switch,
-                    onValueChange = onCleanByDefaultChange
-                ),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = stringResource(R.string.settings_cleanup_default_label),
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                SupportingText(text = stringResource(R.string.settings_cleanup_default_help))
-            }
-            Switch(checked = cleanByDefault && installed, onCheckedChange = null, enabled = installed)
-        }
-        if (installed) {
-            when (liveVerdict) {
-                null -> SupportingText(text = stringResource(R.string.settings_cleanup_not_checked))
-                LiveCleanupVerdict.RECOMMENDED -> SupportingText(
-                    text = stringResource(R.string.enginecheck_cleanup_verdict_ok)
-                )
-                else -> NoticeText(text = stringResource(R.string.conversation_cleanup_slow), isError = true)
-            }
-        }
-    }
-}
-
-/**
- * Speaker identification's voice model ([selected], a key of
- * [ModelCatalog.diarizationEmbeddings]) and segmentation step
- * ([stepSeconds]), both written immediately, to compare speed and
- * accuracy. [installed] is whether the selected model is downloaded;
- * until it is, the default one is used.
- */
-internal data class VoiceModelUi(
-    val selected: String = DEFAULT_DIARIZATION_EMBEDDING,
-    val installed: Boolean = true,
-    val downloading: Boolean = false,
-    val stepSeconds: Float = DEFAULT_DIARIZATION_STEP_SECONDS,
-    val onSelect: (String) -> Unit = {},
-    val onDownload: () -> Unit = {},
-    val onStepChange: (Float) -> Unit = {}
-)
-
-/** The *Voice model* and *Analysis step* choices of the Speakers section, from [ui]. */
-@Composable
-private fun VoiceModelFields(ui: VoiceModelUi) {
-    FieldLabel(text = stringResource(R.string.settings_speakers_voice_model_label))
-    ChoiceGroup(
-        options = ModelCatalog.diarizationEmbeddings.keys.map { key -> key to voiceModelName(key) },
-        selected = ui.selected,
-        onSelect = ui.onSelect
-    )
-    SupportingText(text = stringResource(R.string.settings_speakers_voice_model_help))
-    val name = voiceModelName(ui.selected)
-    when {
-        ui.installed -> Unit
-        ui.downloading -> Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
-        ) {
-            InlineProgress()
-            NoticeText(text = stringResource(R.string.settings_speakers_voice_model_downloading, name))
-        }
-        else -> {
-            NoticeText(text = stringResource(R.string.settings_speakers_voice_model_missing))
-            OutlinedButton(onClick = ui.onDownload) {
-                Text(
-                    text = stringResource(
-                        R.string.settings_speakers_voice_model_download,
-                        name,
-                        ModelCatalog.embeddingFor(ui.selected).totalBytes.toFloat() / 1_000_000f
-                    )
-                )
-            }
-        }
-    }
-    FieldLabel(text = stringResource(R.string.settings_speakers_step_label))
-    // A step set outside the offered ones (none today) is still shown selected.
-    val steps = (DIARIZATION_STEPS_SECONDS + ui.stepSeconds).distinct().sorted()
-    ChoiceGroup(
-        options = steps.map { step ->
-            step to stringResource(R.string.settings_speakers_step_value, stepLabel(step))
-        },
-        selected = ui.stepSeconds,
-        onSelect = ui.onStepChange
-    )
-    SupportingText(text = stringResource(R.string.settings_speakers_step_help))
-}
-
-/** `2` for 2 s, `2.5` for 2.5 s. */
-private fun stepLabel(seconds: Float): String = String.format(Locale.ROOT, "%.1f", seconds).removeSuffix(".0")
-
-/**
- * "Speakers" section: when speakers are identified ([speakerIdMode],
- * issue #11, written immediately), number-of-speakers dropdown (Automatic,
- * 2..6 — `-1` is the "automatic" sentinel persisted by the
- * repository) and a clustering threshold slider with the value
- * to two decimals and the "Lower = more speakers" helper text.
- * The speaker count and [defaultParticipants] are only the defaults
- * of a new conversation, which the Record screen can change.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SpeakersSection(
-    speakerIdMode: String,
-    onSpeakerIdModeChange: (String) -> Unit,
-    numSpeakers: Int,
-    defaultParticipants: List<String>?,
-    onResetDefaultParticipants: () -> Unit,
-    threshold: Float,
-    matchThreshold: Float,
-    onNumSpeakersChange: (Int) -> Unit,
-    onThresholdChange: (Float) -> Unit,
-    onMatchThresholdChange: (Float) -> Unit,
-    onOpenKnownSpeakers: () -> Unit,
-    voiceModel: VoiceModelUi = VoiceModelUi()
-) {
-    var speakersExpanded by remember { mutableStateOf(false) }
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_speakers)
-    ) {
-        FieldLabel(text = stringResource(R.string.settings_speakers_id_mode_label))
-        ChoiceGroup(
-            options = SPEAKER_ID_MODES.map { (mode, label) -> mode.key to stringResource(label) },
-            selected = SpeakerIdMode.of(speakerIdMode).key,
-            onSelect = onSpeakerIdModeChange
-        )
-        SupportingText(text = stringResource(R.string.settings_speakers_id_mode_help))
-        val speakersLabel = if (numSpeakers <= 0) {
-            stringResource(R.string.settings_speakers_automatic)
-        } else {
-            stringResource(R.string.settings_speakers_count, numSpeakers)
-        }
-        PickerField(
-            label = stringResource(R.string.settings_speakers_number_label),
-            value = speakersLabel,
-            onClick = { speakersExpanded = true }
-        ) {
-            DropdownMenu(
-                expanded = speakersExpanded,
-                onDismissRequest = { speakersExpanded = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text(text = stringResource(R.string.settings_speakers_automatic)) },
-                    onClick = {
-                        onNumSpeakersChange(-1)
-                        speakersExpanded = false
-                    }
-                )
-                (2..6).forEach { count ->
-                    DropdownMenuItem(
-                        text = { Text(text = count.toString()) },
-                        onClick = {
-                            onNumSpeakersChange(count)
-                            speakersExpanded = false
-                        }
-                    )
-                }
-            }
-        }
-        FieldLabel(text = stringResource(R.string.settings_speakers_threshold_label))
-        Slider(
-            value = threshold.coerceIn(0.4f, 0.95f),
-            onValueChange = { onThresholdChange(it.coerceIn(0.4f, 0.95f)) },
-            valueRange = 0.4f..0.95f,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            text = stringResource(R.string.settings_speakers_threshold_value, threshold),
-            style = MaterialTheme.typography.bodySmall
-        )
-        SupportingText(text = stringResource(R.string.settings_speakers_threshold_help))
-        FieldLabel(text = stringResource(R.string.settings_speakers_match_threshold_label))
-        Slider(
-            value = matchThreshold.coerceIn(0.3f, 0.8f),
-            onValueChange = { onMatchThresholdChange(it.coerceIn(0.3f, 0.8f)) },
-            valueRange = 0.3f..0.8f,
-            modifier = Modifier.fillMaxWidth()
-        )
-        Text(
-            text = stringResource(R.string.settings_speakers_match_threshold_value, matchThreshold),
-            style = MaterialTheme.typography.bodySmall
-        )
-        SupportingText(text = stringResource(R.string.settings_speakers_match_threshold_help))
-        VoiceModelFields(voiceModel)
-        // "Known speakers" row: navigates to the SpeakersScreen where
-        // the user records a 15-second voice sample and labels
-        // diarization clusters with the speaker's real name. Lives
-        // inside the Speakers section because both controls feed the
-        // diarization pipeline (number-of-speakers / threshold for the
-        // clustering algorithm; the enrollment list for the cosine
-        // match against each cluster's centroid).
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(R.string.settings_speakers_known_row),
-                style = MaterialTheme.typography.bodyLarge
-            )
-            OutlinedButton(onClick = onOpenKnownSpeakers) {
-                Text(text = stringResource(R.string.settings_speakers_known_button))
-            }
-        }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = stringResource(
-                    R.string.settings_speakers_default_participants,
-                    defaultParticipants?.joinToString(", ")
-                        ?: stringResource(R.string.settings_speakers_default_participants_anyone)
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.weight(1f)
-            )
-            if (defaultParticipants != null) {
-                TextButton(onClick = onResetDefaultParticipants) {
-                    Text(text = stringResource(R.string.settings_speakers_default_participants_reset))
-                }
-            }
-        }
-    }
-}
-
-/**
- * "About" section: the installed version and updates (issue #15) —
- * *Check for updates* with its result (or the offer and its download,
- * as on the Home banner), *Check for updates automatically* and
- * *Include pre-releases* — then every model bundled by the on-device ASR and
- * diarization pipeline alongside its licence and a source link. Renders
- * after the three editable sections as a read-only credit roll so a
- * user who skipped the README can still see which upstream / licence
- * applies to a given model.
- *
- * Each [AboutModelRow] shows the model name, the licence in bodySmall,
- * and a tappable `Uri` link to the upstream source (`Intent.ACTION_VIEW`,
- * `chooser` skipped so a single browser is launched directly). The
- * Kroko rows in particular highlight the `CC-BY-SA 4.0` attribution
- * requirement (the LICENSE places copyleft on derivative works, so the
- * README mirrors this list with the same wording).
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AboutSection(
-    installedVersion: String,
-    installedVersionCode: Long,
-    update: UpdateState,
-    checkAuto: Boolean,
-    includePrereleases: Boolean,
-    updateActions: UpdateActions,
-    onCheckAutoChange: (Boolean) -> Unit,
-    onIncludePrereleasesChange: (Boolean) -> Unit
-) {
-    SectionCard(
-        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
-        title = stringResource(R.string.settings_section_about)
-    ) {
-        Text(
-            text = stringResource(R.string.settings_about_version, installedVersion, installedVersionCode),
-            style = MaterialTheme.typography.bodyLarge
-        )
-        val checking = update is UpdateState.Checking
-        val busy = checking || update is UpdateState.Downloading || update is UpdateState.Installing ||
-            update is UpdateState.ReadyToInstall
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-        ) {
-            OutlinedButton(onClick = updateActions.onCheck, enabled = !busy, modifier = Modifier.weight(1f)) {
-                Text(text = stringResource(R.string.settings_update_check))
-            }
-            if (checking) InlineProgress()
-        }
-        when {
-            checking -> SupportingText(text = stringResource(R.string.settings_update_checking))
-            update == UpdateState.UpToDate -> NoticeText(text = stringResource(R.string.settings_update_up_to_date))
-            update == UpdateState.CheckFailed -> NoticeText(
-                text = stringResource(R.string.settings_update_check_failed),
-                isError = true
-            )
-            update.hasBanner() -> UpdateBanner(state = update, actions = updateActions, dismissible = false)
-        }
-        SwitchRow(
-            label = stringResource(R.string.settings_update_auto_label),
-            help = stringResource(R.string.settings_update_auto_help),
-            checked = checkAuto,
-            onCheckedChange = onCheckAutoChange
-        )
-        SwitchRow(
-            label = stringResource(R.string.settings_update_prerelease_label),
-            help = stringResource(R.string.settings_update_prerelease_help),
-            checked = includePrereleases,
-            onCheckedChange = onIncludePrereleasesChange
-        )
-        Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)) {
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_nemotron_name),
-                licence = stringResource(R.string.settings_about_nemotron_licence),
-                url = "https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-open-model-license/"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_kroko_name),
-                licence = stringResource(R.string.settings_about_kroko_licence),
-                url = "https://huggingface.co/Banafo/Kroko-ASR"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_pyannote_name),
-                licence = stringResource(R.string.settings_about_pyannote_licence),
-                url = "https://github.com/pyannote/pyannote-segmentation"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_wespeaker_name),
-                licence = stringResource(R.string.settings_about_wespeaker_licence),
-                url = "https://github.com/wenet-e2e/wespeaker"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_gtcrn_name),
-                licence = stringResource(R.string.settings_about_gtcrn_licence),
-                url = "https://github.com/Xiaobin-Rong/gtcrn"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_sherpa_name),
-                licence = stringResource(R.string.settings_about_sherpa_licence),
-                url = "https://github.com/k2-fsa/sherpa-onnx"
-            )
-            AboutModelRow(
-                name = stringResource(R.string.settings_about_qnn_name),
-                licence = stringResource(R.string.settings_about_qnn_licence),
-                url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
-            )
-        }
-    }
-}
-
-/** A labelled switch with help text; the whole row toggles it. */
-@Composable
-private fun SwitchRow(label: String, help: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(value = checked, role = Role.Switch, onValueChange = onCheckedChange),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = label, style = MaterialTheme.typography.bodyLarge)
-            SupportingText(text = help)
-        }
-        Switch(checked = checked, onCheckedChange = null)
-    }
-}
-
-/**
- * One row in the [AboutSection]: the model name and licence, and a
- * "Source" button that opens the upstream URL via [Intent.ACTION_VIEW]. Using a plain `Text` clickable instead of a
- * link gives consistent focus / ripple behaviour inside the
- * scrollable settings column.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun AboutModelRow(name: String, licence: String, url: String) {
-    val context = LocalContext.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = name, style = MaterialTheme.typography.bodyLarge)
-            SupportingText(text = licence)
-        }
-        TextButton(onClick = {
-            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
-            runCatching { context.startActivity(intent) }
-        }) {
-            Text(text = stringResource(R.string.settings_about_source))
-        }
     }
 }

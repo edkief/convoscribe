@@ -1,18 +1,10 @@
 package com.convoscribe.ui.settings
 
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import com.convoscribe.R
 import com.convoscribe.settings.OfferedService
 import com.convoscribe.settings.ServerOffer
@@ -22,7 +14,7 @@ import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InlineProgress
 import com.convoscribe.ui.components.NoticeText
-import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.components.SwitchRow
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -48,24 +40,13 @@ data class ServerServicesUi(
 @Composable
 internal fun ServerServicesBlock(ui: ServerServicesUi, configured: Boolean, serverUrl: String) {
     val checking = ui.check == ServicesCheck.Checking
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = ui.enabled,
-                enabled = configured && !checking,
-                role = Role.Switch,
-                onValueChange = { on -> if (on) ui.onRequest() else ui.onTurnOff() }
-            ),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(text = stringResource(R.string.server_services_label), style = MaterialTheme.typography.bodyLarge)
-            SupportingText(text = stringResource(R.string.server_services_help))
-        }
-        Switch(checked = ui.enabled, onCheckedChange = null, enabled = configured && !checking)
-    }
+    SwitchRow(
+        label = stringResource(R.string.server_services_label),
+        help = stringResource(R.string.server_services_help),
+        checked = ui.enabled,
+        enabled = configured && !checking,
+        onCheckedChange = { on -> if (on) ui.onRequest() else ui.onTurnOff() }
+    )
     when (val check = ui.check) {
         ServicesCheck.Checking -> Row(
             verticalAlignment = Alignment.CenterVertically,

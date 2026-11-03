@@ -99,6 +99,8 @@ class EnrolledSpeakerRepositoryTest {
     fun onlyTheNewestSamplesPerPersonAreKept() = runTest {
         for (i in 1..MAX_SAMPLES_PER_PERSON + 2) {
             repo.save(name = "Alice", embedding = floatArrayOf(i.toFloat()))
+            // save() stamps the real clock; samples in the same millisecond would tie and sort by random syncId.
+            Thread.sleep(2)
         }
         repo.save(name = "Bob", embedding = floatArrayOf(-1f))
 

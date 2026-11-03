@@ -20,6 +20,7 @@ import com.convoscribe.ui.organise.TagsScreen
 import com.convoscribe.ui.record.RecordScreen
 import com.convoscribe.ui.search.SearchScreen
 import com.convoscribe.ui.session.SessionScreen
+import com.convoscribe.ui.settings.SettingsPage
 import com.convoscribe.ui.settings.SettingsScreen
 import com.convoscribe.ui.setup.ModelSetupScreen
 import com.convoscribe.ui.speakers.SpeakersScreen
@@ -32,7 +33,7 @@ private const val ROUTE_RECORD = "record"
 private const val ROUTE_RECORD_RESUME = "record/resume/{id}"
 private const val ROUTE_SESSION_DETAIL = "session/{id}?tab={tab}&line={line}&at={at}"
 private const val ROUTE_ENGINE_CHECK = "engine-check"
-private const val ROUTE_SETTINGS = "settings"
+private const val ROUTE_SETTINGS = "settings?page={page}"
 private const val ROUTE_SPEAKERS = "speakers"
 private const val ROUTE_SUMMARY_TEMPLATES = "summary-templates"
 private const val ROUTE_SEARCH = "search"
@@ -52,6 +53,10 @@ internal fun sessionRoute(id: Long, tab: Int = 0, lineId: Long? = null, atMs: Lo
     if (lineId != null) append("&line=").append(lineId)
     if (atMs != null) append("&at=").append(atMs)
 }
+
+/** Route to Settings, open on [page] (a page's settings, or a prompt to sign in again), or its overview. */
+internal fun settingsRoute(page: SettingsPage? = null): String =
+    if (page == null) "settings" else "settings?page=${page.key}"
 
 /**
  * Single navigation graph for the app. The first-run model download
@@ -74,9 +79,9 @@ internal fun sessionRoute(id: Long, tab: Int = 0, lineId: Long? = null, atMs: Lo
  *    returns to that session;
  *  - `engine-check` — diagnostics screen reached from the home
  *    overflow menu or the Settings screen;
- *  - `settings` — LLM endpoint, transcription engine, threads,
- *    speakers. Form saves on save/back; engine changes are
- *    written immediately by the segmented button.
+ *  - `settings` — the overview of Settings, or with `?page=` one of
+ *    its pages ([SettingsPage]). Text fields save when their page is
+ *    left; other controls are written immediately.
  *  - `speakers` — enroll a known speaker (record a 15-second
  *    voice sample so the diarizer can label the cluster with
  *    the speaker's real name), list the enrolled names, delete
@@ -176,8 +181,17 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         composable(ROUTE_ENGINE_CHECK) {
             EngineCheckScreen(navController = navController)
         }
-        composable(ROUTE_SETTINGS) {
-            SettingsScreen(navController = navController)
+        composable(
+            route = ROUTE_SETTINGS,
+            arguments = listOf(
+                navArgument("page") {
+                    type = NavType.StringType
+                    nullable = true
+                    defaultValue = null
+                }
+            )
+        ) { backStackEntry ->
+            SettingsScreen(navController = navController, initialPage = backStackEntry.arguments?.getString("page"))
         }
         composable(ROUTE_SPEAKERS) {
             SpeakersScreen(navController = navController)

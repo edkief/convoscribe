@@ -52,7 +52,9 @@ import com.convoscribe.ui.session.AskNotConfigured
 import com.convoscribe.ui.session.ChatBubble
 import com.convoscribe.ui.session.StreamPacer
 import com.convoscribe.ui.sessionRoute
+import com.convoscribe.ui.settings.SettingsPage
 import com.convoscribe.ui.settings.semanticIndexWhen
+import com.convoscribe.ui.settingsRoute
 import com.convoscribe.ui.theme.AppTheme
 
 /**
@@ -98,7 +100,7 @@ fun AskAcrossScreen(navController: NavHostController) {
                 sessionRoute(citation.sessionId, tab = 0, lineId = citation.segmentId, atMs = citation.atMs)
             )
         },
-        onOpenSettings = { navController.navigate("settings") },
+        onOpenSettings = { navController.navigate(settingsRoute(SettingsPage.AI)) },
         onBack = { navController.popBackStack() }
     )
 }

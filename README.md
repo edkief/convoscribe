@@ -50,7 +50,7 @@ brings them to your other devices.
   charging, nothing is identified automatically until the charger is
   unplugged and plugged in again; *Identify speakers now* still works.
 - **Speed up speaker identification** (to compare, issue #56).
-  Settings → Speakers → *Voice model*: **ResNet34** (default) or
+  Settings → Speakers → Advanced → *Voice model*: **ResNet34** (default) or
   **CAM++**, a lighter model (29 MB download, offered there). Known
   voices are always matched with ResNet34, so enrollments keep working.
   *Analysis step*: how far the 10 s analysis window moves each time,
@@ -78,7 +78,8 @@ brings them to your other devices.
   and Cancel, and speakers are re-identified. Cancelling or a failure
   keeps the previous transcript.
 - **Transcribe on your own server (optional).** Point Settings →
-  *Transcription server* at a self-hosted, OpenAI-compatible
+  Recording & transcription → *Transcription on a server* → *Your own server*
+  at a self-hosted, OpenAI-compatible
   transcription server, such as NVIDIA Parakeet TDT 0.6B v3 on a GPU
   (see [Transcription server](#transcription-server)). *Re-transcribe*
   then offers *On the transcription server*, and with *Improve
@@ -154,7 +155,7 @@ brings them to your other devices.
   re-transcribing marks a note *Outdated*; editing a mark's note removes
   its full note. The *Marks* list shows the start of each note and the
   shared transcript includes them. Turn the automatic notes off in
-  Settings → Summaries (*Write notes for marks automatically*). Nothing
+  Settings → AI & summaries (*Write notes for marks automatically*). Nothing
   is sent without an endpoint, and an unreachable one leaves the notes
   unwritten without an error.
 - **Record from anywhere.** While a session is open and you switch to
@@ -162,7 +163,7 @@ brings them to your other devices.
   *Paused*, the time, Mark, Pause / Resume and Stop; drag it anywhere (it
   rests against the nearest side edge and remembers where), tap it to
   open the Record screen. It comes in three shapes, chosen in
-  Settings → Recording or with the arrow on the control: **Minimal**
+  Settings → Recording & transcription or with the arrow on the control: **Minimal**
   (status dot, Mark, Pause / Resume, Stop; nothing on it changes by
   itself, and Mark answers with a vibration only, so an e-ink screen is
   never refreshed between taps), **Standard**
@@ -170,7 +171,7 @@ brings them to your other devices.
   on e-ink it updates once per sentence, not per word). Minimal is the
   default on e-ink, Standard elsewhere. It needs Android's *Display over other apps*
   permission, which the app explains once (the first time you start a
-  recording, or when you turn it on in Settings → Recording); without
+  recording, or when you turn it on in Settings → Recording & transcription); without
   it, the notification is the control. A **Quick Settings tile**
   (*ConvoScribe*) starts a new recording with the Settings defaults
   from anywhere, and pauses or resumes an open one; it shows whether a
@@ -212,14 +213,13 @@ brings them to your other devices.
   search is installed.
 - **Semantic search** — an optional on-device model (Google's
   EmbeddingGemma, about 202 MB, Gemma Terms of Use), downloaded from
-  Settings → Semantic search, lets *Ask across sessions* also find what
+  Settings → Search & organise, lets *Ask across sessions* also find what
   was said in other words or in the other language (*how much can we
   spend* finds *the budget is capped at 10k*, and English questions
   find French sessions). Each session is cut into passages of about
   1,200 characters, and the passages are turned into vectors in the
   background, even with the app closed: by default while the device is
-  charging, like *Identify speakers*, or, with Settings → Semantic
-  search → *Index sessions* → **Any time**, whenever the battery is not
+  charging, like *Identify speakers*, or, with Settings → Search & organise → *Index sessions* → **Any time**, whenever the battery is not
   low. **Index now** in that section indexes every waiting session
   straight away, and *Index for semantic search* in a session's menu
   indexes just that one. A session whose
@@ -242,7 +242,7 @@ brings them to your other devices.
   model and shows the app's memory use, to judge it on a CPU-only
   device.
 - **Sync to your own server** (optional, off by default) — Settings →
-  *Sync* keeps every finished session (recording, cleaned recording,
+  *Server & sync* keeps every finished session (recording, cleaned recording,
   transcript with word timings, speakers, summaries and questions,
   marks and tags) on the self-hosted [sync server](#sync-server) and
   on all your devices, in the background whenever a network is
@@ -307,7 +307,7 @@ brings them to your other devices.
   or *Brief* (3–5 bullets). Choose one for each conversation before
   recording (with *Set as default*), or switch on the Summary tab and
   Regenerate. Each summary shows which template wrote it. Settings →
-  Summaries → Templates adds, edits, duplicates and deletes your own
+  AI & summaries → Templates adds, edits, duplicates and deletes your own
   templates; built-ins can be duplicated, not edited. Every template
   keeps the same rules: write in the transcript's language, keep
   speaker names, and don't invent facts.
@@ -322,7 +322,7 @@ brings them to your other devices.
   timings) and the list follows along until you scroll by hand — tap
   *Follow* or seek to resume. Playback stops when you leave the screen.
 - **Noise cleanup (optional).** For recordings made in noisy places,
-  Settings → *Noise cleanup* downloads a small speech-enhancement model
+  Settings → Recording & transcription → *Noise cleanup* downloads a small speech-enhancement model
   (GTCRN, about 0.5 MB) and can clean new recordings by default; the
   Record screen has a *Clean up noise* switch per conversation. Live
   cleaning writes a cleaned copy (`<id>.clean.wav`) next to the
@@ -343,7 +343,7 @@ brings them to your other devices.
     case). Tags show on the session cards and under a conversation's
     header. Once conversations are tagged, a row of tag chips above the
     Home list narrows it to conversations with *any* ticked tag, and
-    Search has a tag filter. Settings → Organise → Tags renames tags
+    Search has a tag filter. Settings → Search & organise → Tags renames tags
     (onto another tag's name merges them) and deletes them; the
     conversations themselves are kept.
   - **Automatic titles.** After the first summary, a conversation that
@@ -352,13 +352,13 @@ brings them to your other devices.
     with *Undo* on the snackbar and *Restore “…”* in the menu
     afterwards. A title you typed, a preset's title, an imported file's
     name or a rename is never changed. Turn it off in Settings →
-    Summaries (*Name conversations automatically*).
+    AI & summaries (*Name conversations automatically*).
   - **Presets** keep the options of a recurring conversation: language,
     speakers, participants, a title, tags, the summary template and
     noise cleanup. The title can hold `{date}` and `{time}`, filled in
     when recording starts (*Weekly sync {date}*). Save one with *Save
     as preset…* on the Record screen, pick it in *Preset* above the
-    options, or manage them in Settings → Organise → Presets.
+    options, or manage them in Settings → Search & organise → Presets.
     Long-pressing the Quick Settings tile lists the presets and starts
     a recording with the one you pick (or opens the Record screen with
     it when the microphone permission or the models are missing).
@@ -389,10 +389,17 @@ brings them to your other devices.
   (resuming after a lost connection), is checked against the
   release's sha256 and against the installed app (same package,
   higher `versionCode`, same signing key), then goes to the system
-  installer, which you confirm. Settings → About shows the version,
+  installer, which you confirm. Settings → About & updates shows the version,
   *Check for updates*, and switches for the automatic check (on) and
   for pre-releases (off).
-- **Back up and restore** (issue #25). Settings → Data → *Back up
+- **Settings at a glance** (issue #98). Settings opens on an overview: *Server &
+  sync* on top, then *Recording & transcription*, *Speakers*, *AI & summaries*,
+  *Search & organise*, *Backup & restore*, *Appearance* and *About & updates*, each
+  with its current state or a problem in one line. Each opens a page, with expert
+  tuning under *Advanced*; in a window at least 840 dp wide, list and page show side
+  by side. Choices apply at once and text fields save when you leave the page, so
+  there is no Save button.
+- **Back up and restore** (issue #25). Settings → Backup & restore → *Back up
   sessions…* saves one file, `convoscribe-backup-YYYYMMDD.zip`, wherever
   the system file picker allows (Downloads, a USB stick, a cloud
   drive). It holds every session (recording and cleaned copy,
@@ -447,7 +454,7 @@ signed with the shared `app/debug.keystore` for now, so they install
 over a debug build. Once releases get their own key (#16), a copy
 signed with the old key cannot update in place: the app says so and
 links to the release page, and you uninstall and reinstall once.
-Uninstalling deletes the sessions, so first use Settings → Data →
+Uninstalling deletes the sessions, so first use Settings → Backup & restore →
 *Back up sessions…* and save the file outside the app (e.g.
 Downloads), then uninstall, install the new build and use *Restore
 from backup…* (Features → *Back up and restore*). The same steps move
@@ -758,7 +765,8 @@ one package per concern:
   storage), `EngineCheckRunner`, `Report`.
 - `ui/<screen>/` — one package per screen, Composable + ViewModel
   pair (`home`, `record`, `session`, `settings`, `setup`,
-  `enginecheck`, `organise` for Settings → Tags and Presets); `ui/update/` holds the update banner shared by Home
+  `enginecheck`, `organise` for Settings → Search & organise); `ui/settings/` has one
+  file per Settings page and the overview; `ui/update/` holds the update banner shared by Home
   and Settings; `ui/AppNavHost.kt` is the navigation graph;
   `ui/theme/` is the Material 3 theme.
 
@@ -770,7 +778,7 @@ container.
 
 ## LLM endpoint
 
-The LLM endpoint is configured in **Settings → Language model**. With
+The LLM endpoint is configured in **Settings → AI & summaries**. With
 *Use this server's services* on, the section first offers *Sync server's*
 or *Specify my own* (see [Using the server's language model and
 transcription](#using-the-servers-language-model-and-transcription));
@@ -800,7 +808,7 @@ sees the `delta.content` field.
 
 ## Transcription server
 
-Settings → **Transcription server** (issue #58) sends stored
+Settings → Recording & transcription → **Transcription on a server** (issue #58) sends stored
 recordings to a self-hosted server for a more accurate transcript than
 the efficiency-focused on-device models. As for the language model, the
 sync server's can be used instead of typing one in (see [Using the
@@ -849,7 +857,7 @@ Android project with its own gate (`bash scripts/server-gate.sh`), container
 image and `server-vX.Y.Z` releases. Its README covers the API,
 development, configuration and deployment.
 
-To sync a phone (#68): deploy the server, then in Settings → *Sync* enter
+To sync a phone (#68): deploy the server, then in Settings → *Server & sync* enter
 its address (`https://sync.example.com`, without `/api/…`) and the API key
 (`SYNC_API_KEY`, or your `sk_authz_…` key behind authz-proxy), and turn on
 *Sync sessions*. Do the same on every device. Each uploads its finished
@@ -889,7 +897,7 @@ A sync server whose operator set its upstream variables (#93, see the
 transcription server to its users. A device uses them with nothing else
 typed in (#94):
 
-1. In Settings → *Sync server*, enter the address and API key as for sync.
+1. In Settings → *Server & sync*, enter the address and API key as for sync.
 2. Turn on **Use this server's services**. The app asks the server what
    it provides (`GET /api/sync/v1/config`), then shows one confirmation
    naming the server, its language model and its transcription, and
@@ -925,7 +933,7 @@ your own keys are never sent there.
 ## Model licences
 
 Every model bundled by the on-device ASR / diarization pipeline
-is used under its upstream licence; Settings → About shows the
+is used under its upstream licence; Settings → About & updates shows the
 same list with each model name + licence + source URL.
 
 - **Nemotron Speech Streaming EN 0.6B** — NVIDIA Open Model
@@ -933,7 +941,7 @@ same list with each model name + licence + source URL.
 - **Kroko streaming EN / FR** — CC-BY-SA 4.0
   (Banafo Kroko ASR community models,
   https://huggingface.co/Banafo/Kroko-ASR). Attribution is shown
-  in this README and in Settings → About.
+  in this README and in Settings → About & updates.
 - **pyannote segmentation 3.0** — MIT.
 - **WeSpeaker ResNet34-LM** — Apache-2.0.
 - **GTCRN** (optional noise cleanup) — MIT, https://github.com/Xiaobin-Rong/gtcrn.

@@ -106,6 +106,7 @@ import com.convoscribe.ui.settings.ServerServicesUi
 import com.convoscribe.ui.settings.SettingsActions
 import com.convoscribe.ui.settings.SettingsBody
 import com.convoscribe.ui.settings.SettingsForm
+import com.convoscribe.ui.settings.SettingsPage
 import com.convoscribe.ui.settings.SettingsUiState
 import com.convoscribe.ui.settings.SyncSection
 import com.convoscribe.ui.setup.SetupBody
@@ -172,10 +173,11 @@ class ScreenshotTest(private val variant: Variant) {
 
     /** Applies the variant's configuration before the compose rule starts its activity. */
     @get:Rule(order = 0)
-    val configuration = TestRule { base, _ ->
+    val configuration = TestRule { base, description ->
         object : Statement() {
             override fun evaluate() {
-                RuntimeEnvironment.setQualifiers(variant.qualifiers)
+                val wide = description.getAnnotation(WideWindow::class.java) != null
+                RuntimeEnvironment.setQualifiers((if (wide) variant.copy(size = WIDE) else variant).qualifiers)
                 RuntimeEnvironment.setFontScale(variant.fontScale)
                 base.evaluate()
             }
@@ -1080,38 +1082,101 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     /** Settings with the sync server's language model in use and its transcription missing (issue #94). */
-    @Test
-    fun settingsServerSources() = capture("settings_server_sources") {
+    private val serverSourcesState = SettingsUiState(
+        form = SettingsForm(baseUrl = "http://192.168.1.10:8000/v1", model = "llama-3.1-8b"),
+        asrEngine = "cpu",
+        asrLanguage = "en",
+        serverServicesEnabled = true,
+        serverOffer = ServerOffer(llm = OfferedService("qwen3"), transcription = null),
+        llmSource = ServiceSource.SERVER,
+        asrSource = ServiceSource.SERVER
+    )
+
+    private val settingsState = SettingsUiState(
+        form = SettingsForm(
+            baseUrl = "http://192.168.1.10:8000/v1",
+            model = "llama-3.1-8b",
+            syncUrl = "https://sync.example.com",
+            syncKey = "secret"
+        ),
+        asrEngine = "npu",
+        asrLanguage = "en",
+        defaultParticipants = listOf("Alice"),
+        semanticInstalled = true,
+        semanticProgress = IndexProgress(42, 58),
+        syncEnabled = true,
+        syncStatus = SyncStatus(lastSyncedAt = 1_700_000_000_000L, waiting = 2)
+    )
+
+    private fun settingsPage(
+        screen: String,
+        page: SettingsPage?,
+        state: SettingsUiState = settingsState,
+        overlayGranted: Boolean = true,
+        update: UpdateState = UpdateState.ReadyToInstall(UPDATE, java.io.File("convoscribe-0.3.0.apk"))
+    ) = capture(screen) {
         SettingsBody(
-            state = SettingsUiState(
-                form = SettingsForm(baseUrl = "http://192.168.1.10:8000/v1", model = "llama-3.1-8b"),
-                asrEngine = "cpu",
-                asrLanguage = "en",
-                serverServicesEnabled = true,
-                serverOffer = ServerOffer(llm = OfferedService("qwen3"), transcription = null),
-                llmSource = ServiceSource.SERVER,
-                asrSource = ServiceSource.SERVER
-            ),
+            state = state,
             actions = SettingsActions(),
-            installedVersion = "0.2.1"
+            page = page,
+            overlayGranted = overlayGranted,
+            installedVersion = "0.2.1",
+            installedVersionCode = 3L,
+            update = update
         )
     }
 
     @Test
-    fun settings() = capture("settings") {
-        SettingsBody(
-            state = SettingsUiState(
-                form = SettingsForm(baseUrl = "http://192.168.1.10:8000/v1", model = "llama-3.1-8b"),
-                asrEngine = "cpu",
-                asrLanguage = "en",
-                defaultParticipants = listOf("Alice")
-            ),
-            actions = SettingsActions(),
-            installedVersion = "0.2.1",
-            installedVersionCode = 3L,
-            update = UpdateState.ReadyToInstall(UPDATE, java.io.File("convoscribe-0.3.0.apk"))
-        )
-    }
+    fun settings() = settingsPage("settings", null)
+
+    /** Problems on the overview are said in words (issue #98). */
+    @Test
+    fun settingsProblems() = settingsPage(
+        "settings_problems",
+        null,
+        state = settingsState.copy(syncStatus = SyncStatus(lastError = "HTTP 500")),
+        overlayGranted = false
+    )
+
+    @Test
+    fun settingsNotConnected() = settingsPage(
+        "settings_not_connected",
+        null,
+        state = SettingsUiState(),
+        update = UpdateState.Idle
+    )
+
+    /** Overview and page side by side in a wide window (issue #98). */
+    @Test
+    @WideWindow
+    fun settingsTwoPanes() = settingsPage("settings_two_panes", SettingsPage.AI)
+
+    @Test
+    fun settingsServer() = settingsPage("settings_server", SettingsPage.SERVER)
+
+    @Test
+    fun settingsRecording() = settingsPage("settings_recording", SettingsPage.RECORDING)
+
+    @Test
+    fun settingsSpeakers() = settingsPage("settings_speakers", SettingsPage.SPEAKERS)
+
+    @Test
+    fun settingsAi() = settingsPage("settings_ai", SettingsPage.AI)
+
+    @Test
+    fun settingsServerSources() = settingsPage("settings_server_sources", SettingsPage.AI, state = serverSourcesState)
+
+    @Test
+    fun settingsSearch() = settingsPage("settings_search", SettingsPage.SEARCH)
+
+    @Test
+    fun settingsBackup() = settingsPage("settings_backup", SettingsPage.BACKUP)
+
+    @Test
+    fun settingsAppearance() = settingsPage("settings_appearance", SettingsPage.APPEARANCE)
+
+    @Test
+    fun settingsAbout() = settingsPage("settings_about", SettingsPage.ABOUT)
 
     @Test
     fun summaryTemplates() = capture("summary_templates") {
@@ -1344,6 +1409,9 @@ class ScreenshotTest(private val variant: Variant) {
 
     companion object {
         private const val PHONE = "w411dp-h891dp"
+
+        /** A large tablet or unfolded window, for tests marked [WideWindow]. */
+        private const val WIDE = "w1180dp-h820dp"
 
         /** Boox Note Air 6C: 1240 x 1860 px, reported as xhdpi (620 x 930 dp). */
         private const val BOOX = "w620dp-h930dp"
@@ -1770,3 +1838,8 @@ class ScreenshotTest(private val variant: Variant) {
         )
     }
 }
+
+/** This test renders in a window wide enough for two panes, whatever the variant's size. */
+@Retention(AnnotationRetention.RUNTIME)
+@Target(AnnotationTarget.FUNCTION)
+annotation class WideWindow
