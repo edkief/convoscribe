@@ -9,7 +9,7 @@ import kotlinx.serialization.Serializable
  *
  *  1. [HEADER_ENTRY] first, a [BackupHeader]: the format and its
  *     version, then everything that is not a session (settings, known
- *     voices, summary templates, presets);
+ *     voices, summary templates, presets, talking-point lists);
  *  2. for each session, `sessions/<syncId>.json` (a [SessionEntry]),
  *     followed by its recordings, `recordings/<sha256>.wav`, stored
  *     uncompressed.
@@ -50,7 +50,8 @@ data class BackupHeader(
     val settings: PortableSettings? = null,
     val voices: List<Voice> = emptyList(),
     val templates: List<Template> = emptyList(),
-    val presets: List<PresetDoc> = emptyList()
+    val presets: List<PresetDoc> = emptyList(),
+    val talkingPointLists: List<TalkingPointList> = emptyList()
 ) {
     /**
      * A known voice sample: [embedding] is [com.convoscribe.data.EmbeddingCodec]'s
@@ -63,6 +64,15 @@ data class BackupHeader(
     /** A summary template the user wrote. */
     @Serializable
     data class Template(val name: String, val body: String, val createdAt: Long, val syncId: String? = null)
+
+    /** A talking-point list (issue #102), its points in order. */
+    @Serializable
+    data class TalkingPointList(
+        val name: String,
+        val points: List<String>,
+        val createdAt: Long,
+        val syncId: String? = null
+    )
 
     /** A preset, with its tags by name and its template by reference. */
     @Serializable

@@ -199,6 +199,21 @@ describe('documents', () => {
       ['template', 3],
     ]);
   });
+
+  it('stores a talking-point list (#102)', async () => {
+    const body = JSON.stringify({ schema: 1, syncId: ID, name: 'Weekly', points: ['Budget', 'Hiring'], createdAt: 1 });
+    const headers = {
+      'sync-base-revision': '0',
+      'sync-manifest-hash': sha256(body),
+      'sync-duration-ms': '0',
+      'sync-changed-at': '1',
+    };
+    const kind = 'talking-points';
+    expect((await PUT(request(`/documents/${kind}/${ID}`, { method: 'PUT', body, headers }), ctx({ kind, syncId: ID }))).status).toBe(200);
+    const got = await GET(request(`/documents/${kind}/${ID}`), ctx({ kind, syncId: ID }));
+    expect((await got.json()).points).toEqual(['Budget', 'Hiring']);
+    expect((await feed()).changes.map((c) => c.kind)).toEqual([kind]);
+  });
 });
 
 describe('change feed', () => {

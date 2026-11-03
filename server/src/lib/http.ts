@@ -35,9 +35,10 @@ export function sha256Param(value: string): string {
 
 /**
  * Document kinds the server accepts: sessions (#68), and known voices,
- * presets, summary templates and a session's semantic vectors (#70).
+ * presets, summary templates and a session's semantic vectors (#70), and
+ * talking-point lists (#102).
  */
-export const KINDS = ['session', 'voice', 'preset', 'template', 'vectors'] as const;
+export const KINDS = ['session', 'voice', 'preset', 'template', 'vectors', 'talking-points'] as const;
 export type Kind = (typeof KINDS)[number];
 
 export function kindParam(value: string): Kind {

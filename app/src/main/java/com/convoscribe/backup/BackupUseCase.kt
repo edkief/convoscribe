@@ -13,6 +13,8 @@ import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SummaryTemplateEntity
 import com.convoscribe.data.TagNames
+import com.convoscribe.data.TalkingPointListEntity
+import com.convoscribe.data.TalkingPoints
 import com.convoscribe.data.cleanAudioPathFor
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.SettingsRepository
@@ -255,6 +257,9 @@ class BackupUseCase(
                 BackupHeader.Voice(it.name, Base64.getEncoder().encodeToString(it.embedding), it.createdAt, it.syncId)
             },
             templates = templates.map { BackupHeader.Template(it.name, it.body, it.createdAt, it.syncId) },
+            talkingPointLists = db.talkingPointListDao().getAll().map {
+                BackupHeader.TalkingPointList(it.name, TalkingPoints.split(it.points), it.createdAt, it.syncId)
+            },
             presets = presets.observeAll().first().map { preset ->
                 BackupHeader.PresetDoc(
                     syncId = preset.syncId,
@@ -423,7 +428,7 @@ class BackupUseCase(
     private fun upgrade(header: BackupHeader): BackupHeader = header
 
     /**
-     * Add the header's voices, templates and presets that are not here
+     * Add the header's voices, templates, presets and talking-point lists that are not here
      * yet, keeping their sync ids (issue #70) unless one is taken here.
      * Returns how a template reference resolves on this install.
      */
@@ -472,6 +477,16 @@ class BackupUseCase(
             )
             if (preset !in here) {
                 presets.save(preset.copy(syncId = doc.syncId?.takeIf { presetDao.getBySyncId(it) == null }))
+            }
+        }
+        val listDao = db.talkingPointListDao()
+        val lists = listDao.getAll()
+        for (list in header.talkingPointLists) {
+            val points = TalkingPoints.join(list.points)
+            if (lists.none { it.name == list.name && it.points == points }) {
+                val row = TalkingPointListEntity(name = list.name, points = points, createdAt = list.createdAt)
+                val syncId = list.syncId?.takeIf { listDao.getBySyncId(it) == null }
+                listDao.insert(if (syncId != null) row.copy(syncId = syncId) else row)
             }
         }
         return templateKey

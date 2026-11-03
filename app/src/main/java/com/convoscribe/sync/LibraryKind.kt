@@ -10,6 +10,9 @@ import com.convoscribe.data.PresetEntity
 import com.convoscribe.data.PresetManifest
 import com.convoscribe.data.SummaryTemplateEntity
 import com.convoscribe.data.SyncKinds
+import com.convoscribe.data.TalkingPointListEntity
+import com.convoscribe.data.TalkingPointListManifest
+import com.convoscribe.data.TalkingPoints
 import com.convoscribe.data.TemplateManifest
 import com.convoscribe.data.VoiceManifest
 import com.convoscribe.data.ensure
@@ -19,7 +22,8 @@ import kotlinx.serialization.KSerializer
 
 /**
  * One kind of library item that syncs as a document per item (issue
- * #70): known-voice samples, presets and summary templates. [SyncEngine]
+ * #70): known-voice samples, presets, summary templates and (#102)
+ * talking-point lists. [SyncEngine]
  * does the pushing and downloading; this says how an item of [kind]
  * leaves and enters the database.
  */
@@ -56,7 +60,8 @@ abstract class LibraryKind<M>(val kind: String, val serializer: KSerializer<M>) 
 
     companion object {
         /** The kinds in the order a run syncs them: templates before the presets that name them. */
-        fun all(db: AppDatabase): List<LibraryKind<*>> = listOf(TemplateKind(db), PresetKind(db), VoiceKind(db))
+        fun all(db: AppDatabase): List<LibraryKind<*>> =
+            listOf(TemplateKind(db), PresetKind(db), VoiceKind(db), TalkingPointsKind(db))
     }
 }
 
@@ -97,6 +102,48 @@ private class TemplateKind(db: AppDatabase) :
     override fun same(a: TemplateManifest, b: TemplateManifest) = a.name == b.name && a.body == b.body
 
     override fun schemaOf(manifest: TemplateManifest) = manifest.schema
+}
+
+/** Talking-point lists (issue #102); the most recent edit wins. */
+private class TalkingPointsKind(db: AppDatabase) :
+    LibraryKind<TalkingPointListManifest>(SyncKinds.TALKING_POINTS, TalkingPointListManifest.serializer()) {
+    private val dao = db.talkingPointListDao()
+
+    override suspend fun local() = dao.getAll().associate {
+        it.syncId to Local(LibraryManifests.talkingPoints(it), it.updatedAt)
+    }
+
+    override suspend fun exists(syncId: String) = dao.getBySyncId(syncId) != null
+
+    override suspend fun apply(manifest: TalkingPointListManifest, changedAt: Long) {
+        val name = TalkingPoints.clean(manifest.name)
+        val points = TalkingPoints.join(manifest.points)
+        val existing = dao.getBySyncId(manifest.syncId)
+        if (existing != null) {
+            dao.update(existing.id, name, points, changedAt)
+        } else {
+            dao.insert(
+                TalkingPointListEntity(
+                    name = name,
+                    points = points,
+                    createdAt = manifest.createdAt,
+                    syncId = manifest.syncId,
+                    updatedAt = changedAt
+                )
+            )
+        }
+    }
+
+    override suspend fun delete(syncId: String) {
+        dao.getBySyncId(syncId)?.let { dao.delete(it.id) }
+    }
+
+    override suspend fun rekey(from: String, to: String) = dao.rekey(from, to)
+
+    override fun same(a: TalkingPointListManifest, b: TalkingPointListManifest) =
+        a.name == b.name && a.points == b.points
+
+    override fun schemaOf(manifest: TalkingPointListManifest) = manifest.schema
 }
 
 /**
