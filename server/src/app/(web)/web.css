@@ -1845,6 +1845,16 @@ button.t-mark-time:hover {
 
 /* Talking points (#104) */
 
+.action-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.edit-stale + .tp-cards,
+.edit-stale + .empty-state {
+  margin-top: 1rem;
+}
+
 .tp-cards {
   display: grid;
   gap: 1rem;

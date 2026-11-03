@@ -11,6 +11,7 @@ import { IconAlert, IconCalendar, IconChevronLeft, IconClock, IconGlobe } from '
 import { Markdown } from '../../../_components/Markdown';
 import { PlayerBar, PlayerProvider, SeekTime } from '../../../_components/Player';
 import { EditableSpeakers, EditableTags, EditableTitle, SessionEditor } from '../../../_components/SessionEditor';
+import { TalkingPointList } from '../../../_components/TalkingPointList';
 import { Tabs, type Tab } from '../../../_components/Tabs';
 import { DeleteSession } from '../../../_components/TrashActions';
 import { Transcript } from '../../../_components/Transcript';
@@ -28,8 +29,8 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
  * One session (#80): the transcript beside its summaries, action items,
  * marks and questions, with the recording in a player the transcript
  * follows. *Delete* moves it to the trash (#81). Its title, tags, speakers,
- * lines and action items can be edited (#84), unless it comes from a newer
- * app than this server knows.
+ * lines and action items (#84) and talking points (#104) can be edited,
+ * unless it comes from a newer app than this server knows.
  * A search result (#83) opens it on a line (`?line=`) or the summaries
  * (`?tab=summary`, with `&earlier=1` for an older one).
  */
@@ -60,8 +61,8 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
     { href: `${base}/transcript/srt`, label: 'Subtitles', detail: 'SRT' },
     { href: `${base}/transcript/vtt`, label: 'Subtitles', detail: 'WebVTT' },
   ];
-  const tabs = panels(view, when, tones, earlier === '1');
   const newer = (view.schema ?? 0) > KNOWN_SCHEMA;
+  const tabs = panels(view, when, tones, earlier === '1', !newer);
 
   return (
     <SessionEditor syncId={syncId} revision={meta.revision} editable={!newer}>
@@ -141,7 +142,13 @@ function languageName(code: string, locale: string): string {
   }
 }
 
-function panels(view: SessionView, when: (ms: number | null) => string | null, tones: Record<number, number>, openEarlier: boolean): Tab[] {
+function panels(
+  view: SessionView,
+  when: (ms: number | null) => string | null,
+  tones: Record<number, number>,
+  openEarlier: boolean,
+  editable: boolean,
+): Tab[] {
   const tabs: Tab[] = [];
   const summaries = [...view.summaries].reverse();
   if (summaries.length) {
@@ -218,6 +225,16 @@ function panels(view: SessionView, when: (ms: number | null) => string | null, t
           ))}
         </ul>
       ),
+    });
+  }
+  // Next to the summary. Without points too where they can be added, unless
+  // it would be the only tab, which would take the transcript's full width.
+  if (view.talkingPoints.length || (editable && tabs.length)) {
+    tabs.splice(summaries.length ? 1 : 0, 0, {
+      id: 'points',
+      label: 'Talking points',
+      count: view.talkingPoints.length ? view.talkingPoints.filter((p) => !p.covered).length : undefined,
+      content: <TalkingPointList points={view.talkingPoints} />,
     });
   }
   return tabs;
