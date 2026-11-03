@@ -440,6 +440,35 @@ class PromptBuilderTest {
     }
 
     @Test
+    fun talkingPoints_numbersTheOpenPointsThenSendsTheTranscript() {
+        val messages = PromptBuilder.talkingPoints(listOf("Budget", "Hiring"), "[00:20] We need more people.")
+
+        assertEquals(listOf(LlmMessage.ROLE_SYSTEM, LlmMessage.ROLE_USER), messages.map { it.role })
+        assertEquals(PromptBuilder.TALKING_POINTS_SYSTEM, messages[0].content)
+        assertEquals(
+            "Points not covered yet:\n1. Budget\n2. Hiring\n\nLatest transcript:\n\n[00:20] We need more people.",
+            messages[1].content
+        )
+    }
+
+    @Test
+    fun talkingPoints_stayWithinTheBudget() {
+        val points = listOf("Budget for next year", "Hiring plan", "Office move")
+        val maxChars = 6_000
+        val budget = PromptBuilder.talkingPointsTranscriptBudget(points, maxChars)
+        val messages = PromptBuilder.talkingPoints(points, "x".repeat(budget))
+
+        assertTrue(messages.sumOf { it.content.length } <= maxChars)
+        assertTrue(budget > 5_000)
+    }
+
+    @Test
+    fun talkingPoints_alwaysLeaveSomeTranscript() {
+        val points = List(100) { "A long point to raise number $it " + "y".repeat(50) }
+        assertEquals(1_000, PromptBuilder.talkingPointsTranscriptBudget(points, maxChars = 2_000))
+    }
+
+    @Test
     fun markNote_sendsTheNoteThenTheTranscriptAroundIt() {
         val window = listOf(
             TranscriptLine(startMs = 60_000L, speaker = "Dana", text = "Twelve euros a seat."),
