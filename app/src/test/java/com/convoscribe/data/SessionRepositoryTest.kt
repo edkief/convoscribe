@@ -758,4 +758,39 @@ class SessionRepositoryTest {
         assertFalse(repo.applyAutoTitle(renamed, "Budget planning"))
         assertFalse(repo.applyAutoTitle(renamed + 100, "Unknown"))
     }
+
+    @Test
+    fun talkingPoints_areTheSessionsOwnAndEveryChangeTouchesIt() = runTest {
+        var now = 1_000L
+        repo = SessionRepository(db, recordingsDir, clock = { now })
+        val id = repo.createSession(title = "T", language = "en", talkingPoints = listOf("Budget", "  ", "Hiring"))
+        val (budget, hiring) = repo.getTalkingPoints(id)
+        assertEquals(listOf("Budget", "Hiring"), repo.getTalkingPoints(id).map { it.text })
+
+        suspend fun touched(change: suspend () -> Unit): Boolean {
+            now += 10
+            change()
+            return repo.getSession(id)!!.updatedAt == now
+        }
+
+        assertTrue(touched { repo.setTalkingPointCovered(budget.id, true, atMs = 500) })
+        assertEquals(
+            TalkingPointEntity(budget.id, id, budget.pointId, "Budget", 0, true, 500, true, budget.createdAt),
+            repo.getTalkingPoints(id)[0]
+        )
+        assertTrue(touched { repo.setTalkingPointCovered(budget.id, false) })
+        assertNull(repo.getTalkingPoints(id)[0].coveredAtMs)
+        assertTrue(repo.getTalkingPoints(id)[0].byUser)
+        assertTrue(touched { repo.editTalkingPoint(hiring.id, " Hiring  plan ") })
+        assertEquals("Hiring plan", repo.getTalkingPoints(id)[1].text)
+        assertFalse(touched { repo.editTalkingPoint(hiring.id, "   ") })
+        assertTrue(touched { repo.addTalkingPoint(id, "Office") })
+        assertNull(repo.addTalkingPoint(id, " "))
+        assertTrue(touched { repo.moveTalkingPoint(hiring.id, -5) })
+        assertEquals(listOf("Hiring plan", "Budget", "Office"), repo.getTalkingPoints(id).map { it.text })
+        assertTrue(touched { repo.deleteTalkingPoint(budget.id) })
+        assertEquals(listOf("Hiring plan", "Office"), repo.getTalkingPoints(id).map { it.text })
+        repo.deleteSession(id)
+        assertEquals(emptyList<TalkingPointEntity>(), db.talkingPointDao().getForSession(id))
+    }
 }

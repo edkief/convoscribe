@@ -127,7 +127,8 @@ class RecordingControllerTest {
             summaryTemplate: String?,
             cleanedWith: String?,
             tags: List<String>,
-            titleSource: String
+            titleSource: String,
+            talkingPoints: List<String>
         ): Long {
             createCalls +=
                 Create(title, language, numSpeakers, participants, summaryTemplate, cleanedWith, tags, titleSource)

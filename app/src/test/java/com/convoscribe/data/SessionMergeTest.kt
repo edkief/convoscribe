@@ -6,6 +6,7 @@ import com.convoscribe.data.SessionManifest.Line
 import com.convoscribe.data.SessionManifest.Mark
 import com.convoscribe.data.SessionManifest.Message
 import com.convoscribe.data.SessionManifest.Speaker
+import com.convoscribe.data.SessionManifest.TalkingPoint
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -391,7 +392,7 @@ class SessionMergeTest {
                 "schema", "syncId", "title", "titleSource", "previousTitle", "createdAt", "durationMs", "language",
                 "status", "numSpeakers", "participants", "asrEngine", "asrModel", "transcriptEdited",
                 "summaryTemplate", "cleanedWith", "diarizedWith", "diarizationStepMs", "diarizationMs", "audio",
-                "cleanAudio", "lines", "speakers", "messages", "marks", "tags", "actionItems"
+                "cleanAudio", "lines", "speakers", "messages", "marks", "tags", "actionItems", "talkingPoints"
             ),
             (0 until descriptor.elementsCount).map(descriptor::getElementName).toSet()
         )
@@ -414,5 +415,58 @@ class SessionMergeTest {
         assertEquals("fr", result.language)
         assertTrue(result.transcriptEdited)
         assertFalse(merged(base.copy(tags = emptyList()), base.copy(title = "x")).manifest.transcriptEdited)
+    }
+
+    private val points = base.copy(
+        talkingPoints = listOf(
+            TalkingPoint("p1", "Budget", createdAt = 50),
+            TalkingPoint("p2", "Hiring", createdAt = 50),
+            TalkingPoint("p3", "Roadmap", createdAt = 50)
+        )
+    )
+
+    private fun SessionManifest.point(at: Int, change: (TalkingPoint) -> TalkingPoint) =
+        copy(talkingPoints = talkingPoints.toMutableList().also { it[at] = change(it[at]) })
+
+    @Test
+    fun talkingPointsMergeTextAndStateSeparately() {
+        val ticked = points.point(0) { it.copy(covered = true, coveredAtMs = 1_500, byUser = true) }
+        val edited = points.point(0) { it.copy(text = "Budget 2027") }
+        listOf(
+            SessionMerge.merge(points, ticked, edited, 100, 200).manifest,
+            SessionMerge.merge(points, edited, ticked, 200, 100).manifest
+        ).forEach { result ->
+            assertEquals(TalkingPoint("p1", "Budget 2027", true, 1_500, true, 50), result.talkingPoints[0])
+        }
+    }
+
+    @Test
+    fun talkingPointsAddedOnBothSidesAreKeptAndARemovalSticks() {
+        val a = points.copy(talkingPoints = points.talkingPoints.drop(1) + TalkingPoint("a", "Office", createdAt = 60))
+        val b = points.copy(talkingPoints = points.talkingPoints + TalkingPoint("b", "Holidays", createdAt = 61))
+        val result = SessionMerge.merge(points, a, b, 100, 200).manifest
+        assertEquals(setOf("p2", "p3", "a", "b"), result.talkingPoints.map { it.id }.toSet())
+    }
+
+    @Test
+    fun aTalkingPointRemovedOnOneSideStaysIfTheOtherTickedIt() {
+        val removed = points.copy(talkingPoints = points.talkingPoints.drop(1))
+        val ticked = points.point(0) { it.copy(covered = true, byUser = true) }
+        val result = SessionMerge.merge(points, removed, ticked, 100, 200).manifest
+        assertEquals(setOf("p1", "p2", "p3"), result.talkingPoints.map { it.id }.toSet())
+        assertTrue(result.talkingPoints.single { it.id == "p1" }.covered)
+    }
+
+    @Test
+    fun theOrderOfTheSideThatReorderedWins() {
+        val moved = points.copy(talkingPoints = points.talkingPoints.reversed())
+        val ticked = points.point(1) { it.copy(covered = true, byUser = true) }
+        listOf(
+            SessionMerge.merge(points, moved, ticked, 100, 200).manifest,
+            SessionMerge.merge(points, ticked, moved, 200, 100).manifest
+        ).forEach { result ->
+            assertEquals(listOf("p3", "p2", "p1"), result.talkingPoints.map { it.id })
+            assertTrue(result.talkingPoints[1].covered)
+        }
     }
 }

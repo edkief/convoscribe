@@ -295,7 +295,8 @@ class RecordViewModelTest {
             summaryTemplate: String?,
             cleanedWith: String?,
             tags: List<String>,
-            titleSource: String
+            titleSource: String,
+            talkingPoints: List<String>
         ): Long = error("not used")
         override suspend fun cleanedWith(sessionId: Long): String? = null
         override suspend fun recordEngine(sessionId: Long, engine: String, model: String, continued: Boolean) = Unit
