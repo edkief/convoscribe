@@ -26,6 +26,8 @@ import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionSearch
 import com.convoscribe.data.SummaryTemplateRepository
 import com.convoscribe.data.SummaryTemplateStore
+import com.convoscribe.data.TalkingPointListRepository
+import com.convoscribe.data.TalkingPointListStore
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
@@ -199,6 +201,9 @@ class AppContainer(val context: Context) {
 
     /** Saved conversation options (issue #32). */
     val presets: PresetStore = PresetRepository(database)
+
+    /** Talking-point lists (issue #102). */
+    val talkingPointLists: TalkingPointListStore = TalkingPointListRepository(database.talkingPointListDao())
 
     /**
      * Encodes a session's WAV to M4A for sharing and saving. Exports

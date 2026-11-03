@@ -17,6 +17,7 @@ import com.convoscribe.ui.enginecheck.EngineCheckScreen
 import com.convoscribe.ui.home.HomeScreen
 import com.convoscribe.ui.organise.PresetsScreen
 import com.convoscribe.ui.organise.TagsScreen
+import com.convoscribe.ui.organise.TalkingPointListsScreen
 import com.convoscribe.ui.record.RecordScreen
 import com.convoscribe.ui.search.SearchScreen
 import com.convoscribe.ui.session.SessionScreen
@@ -39,6 +40,7 @@ private const val ROUTE_SUMMARY_TEMPLATES = "summary-templates"
 private const val ROUTE_SEARCH = "search"
 private const val ROUTE_TAGS = "tags"
 private const val ROUTE_PRESETS = "presets"
+private const val ROUTE_TALKING_POINTS = "talking-points"
 private const val ROUTE_ASK_ACROSS = "ask"
 private const val ROUTE_ACTIONS = "actions"
 
@@ -213,6 +215,9 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
         composable(ROUTE_PRESETS) {
             PresetsScreen(navController = navController)
+        }
+        composable(ROUTE_TALKING_POINTS) {
+            TalkingPointListsScreen(navController = navController)
         }
         composable(
             route = ROUTE_SESSION_DETAIL,
