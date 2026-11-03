@@ -158,9 +158,9 @@ Every route below needs the same `Authorization: Bearer <key>` and answers
 | `POST /api/sync/v1/blobs/<sha>/uploads/<id>/complete` | `200 {"size"}` once the assembled bytes hash to `<sha>`; `400 hash_mismatch` discards them; `409 parts_missing` if a part number is skipped |
 
 **Documents** are synced items. Their `kind` is `session`, `voice` (one
-known-voice sample), `preset`, `template` (a summary template) or
+known-voice sample), `preset`, `template` (a summary template),
 `vectors` (a session's semantic vectors, under the session's sync id)
-(#70). Library items and vectors are sent with `Sync-Duration-Ms: 0`, so
+(#70) or `talking-points` (a talking-point list, #102). Library items and vectors are sent with `Sync-Duration-Ms: 0`, so
 the conflict rule comes down to the most recent change. The
 body of a document is the app's manifest (JSON). The server reads only the
 recordings it refers to (objects with a `sha256` and a `size`), which must
