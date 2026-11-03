@@ -1843,6 +1843,134 @@ button.t-mark-time:hover {
   gap: 0.4rem;
 }
 
+/* Talking points (#104) */
+
+.tp-cards {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tp-card {
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.tp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.tp-card-head h2 {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1.05rem;
+}
+
+.tp-count,
+.tp-none {
+  color: var(--text-3);
+  font-size: 0.85rem;
+}
+
+.tp-list {
+  margin: 0.6rem 0 0;
+  padding-left: 1.4rem;
+  color: var(--text-2);
+}
+
+.tp-list li + li {
+  margin-top: 0.2rem;
+}
+
+.tp-none {
+  margin: 0.5rem 0 0;
+}
+
+.tp-form {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.tp-points {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.tp-points legend {
+  margin-bottom: 0.3rem;
+  padding: 0;
+  color: var(--text-3);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.tp-points ol {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tp-points li {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.tp-number {
+  flex: none;
+  width: 1.8rem;
+  color: var(--text-3);
+  font-size: 0.85rem;
+  text-align: right;
+  padding-right: 0.3rem;
+}
+
+.tp-points .button {
+  justify-self: start;
+}
+
+.tp-points .icon-button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.point-state {
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.action.done .point-state {
+  color: var(--success);
+}
+
+.point-add {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.point-add .edit-input {
+  flex: 1;
+}
+
 /* Admin pages (#82) */
 
 .admin-tabs {

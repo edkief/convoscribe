@@ -232,3 +232,27 @@ export const IconActivity = (p: IconProps) => (
     <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
   </Icon>
 );
+
+export const IconChecklist = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 6.5l1.5 1.5L8.5 5M4 12.5l1.5 1.5 3-3M4 18.5l1.5 1.5 3-3M12 6.5h8M12 12.5h8M12 18.5h8" />
+  </Icon>
+);
+
+export const IconPlus = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </Icon>
+);
+
+export const IconArrowUp = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+);
+
+export const IconArrowDown = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+);

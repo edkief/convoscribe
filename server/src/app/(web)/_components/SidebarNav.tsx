@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { IconActivity, IconLibrary, IconSearch, IconTag, IconTrash, IconUsers } from './Icons';
+import { IconActivity, IconChecklist, IconLibrary, IconSearch, IconTag, IconTrash, IconUsers } from './Icons';
 
 type Props = { total: number; tags: { tag: string; count: number }[]; trash: number; isAdmin: boolean };
 
-/** The sidebar's links (#80), the trash (#81) and for admins their pages (#82), the current one highlighted. */
+/** The sidebar's links (#80), talking-point lists (#104), the trash (#81) and for admins their pages (#82), the current one highlighted. */
 export function SidebarNav({ total, tags, trash, isAdmin }: Props) {
   const path = usePathname();
   const current = useSearchParams().get('tag');
@@ -23,6 +23,10 @@ export function SidebarNav({ total, tags, trash, isAdmin }: Props) {
         <IconLibrary />
         <span>All sessions</span>
         <span className="count">{total}</span>
+      </Link>
+      <Link href="/talking-points" className="side-link" aria-current={path === '/talking-points' ? 'page' : undefined}>
+        <IconChecklist />
+        <span>Talking points</span>
       </Link>
       <Link href="/trash" className="side-link" aria-current={path === '/trash' ? 'page' : undefined}>
         <IconTrash />
