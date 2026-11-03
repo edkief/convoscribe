@@ -9,7 +9,9 @@ import com.convoscribe.data.EnrolledSpeakerEntity
 import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.FakePresetStore
 import com.convoscribe.data.FakeSummaryTemplateStore
+import com.convoscribe.data.FakeTalkingPointListStore
 import com.convoscribe.data.Preset
+import com.convoscribe.data.TalkingPointList
 import com.convoscribe.diarization.SpeakerMatcher
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
@@ -88,6 +90,10 @@ class RecordViewModelTest {
         )
     )
 
+    private val lists = FakeTalkingPointListStore(
+        listOf(TalkingPointList(1, "Weekly", listOf("Budget", "Hiring")))
+    )
+
     private fun newViewModel(missing: (String) -> Boolean = { false }) = RecordViewModel(
         controller = RecordingController(
             audioSource = object : AudioSource {
@@ -104,7 +110,8 @@ class RecordViewModelTest {
         missingModels = missing,
         saveMarkNote = { id, note -> savedNotes += id to note },
         tagNames = flowOf(listOf("Acme", "Weekly")),
-        presetStore = presetStore
+        presetStore = presetStore,
+        talkingPointLists = lists
     )
 
     @Test
@@ -129,6 +136,31 @@ class RecordViewModelTest {
 
         vm.applyPreset(null)
         assertEquals(ConversationOptions.fromSettings(settings.settings.value), vm.options.value)
+        job.cancel()
+    }
+
+    /** Issue #102: talking points are the conversation's: attached, added, kept across presets, never a preset's. */
+    @Test
+    fun talkingPoints_areAttachedWithoutRepeatsAndSurviveAPreset() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.activePreset.collect {} }
+        val weekly = vm.presets.first { it.isNotEmpty() }.first()
+        vm.addPoint(" budget ")
+        vm.attachList(vm.talkingPointLists.first { it.isNotEmpty() }.single())
+        vm.addPoint("  ")
+        assertEquals(listOf("budget", "Hiring"), vm.options.value.talkingPoints)
+
+        vm.applyPreset(weekly)
+        assertEquals(listOf("budget", "Hiring"), vm.options.value.talkingPoints)
+        assertEquals(weekly, vm.activePreset.value)
+
+        vm.removePoint(0)
+        assertEquals(listOf("Hiring"), vm.options.value.talkingPoints)
+        vm.saveAsPreset("With points")
+        advanceUntilIdle()
+        assertEquals("With points", presetStore.presets.value.last().name)
+        vm.applyPreset(null)
+        assertEquals(listOf("Hiring"), vm.options.value.talkingPoints)
         job.cancel()
     }
 

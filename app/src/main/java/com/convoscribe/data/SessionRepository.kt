@@ -36,7 +36,7 @@ class SessionRepository(
     private val db: AppDatabase,
     private val recordingsDir: File,
     private val clock: () -> Long = System::currentTimeMillis
-) : RecordingStore {
+) : RecordingStore, SessionTalkingPoints {
     private val sessionDao: SessionDao = db.sessionDao()
     private val segmentDao: SegmentDao = db.segmentDao()
     private val speakerDao: SpeakerDao = db.speakerDao()
@@ -280,7 +280,7 @@ class SessionRepository(
     }
 
     /** The session's talking points (issue #102), in order. */
-    fun observeTalkingPoints(sessionId: Long): Flow<List<TalkingPointEntity>> =
+    override fun observeTalkingPoints(sessionId: Long): Flow<List<TalkingPointEntity>> =
         talkingPointDao.observeForSession(sessionId)
 
     suspend fun getTalkingPoints(sessionId: Long): List<TalkingPointEntity> = talkingPointDao.getForSession(sessionId)
@@ -290,14 +290,14 @@ class SessionRepository(
      * on, so automatic checking leaves it alone. [atMs] is when it was
      * covered on the recording's clock, if known; unticking clears it.
      */
-    suspend fun setTalkingPointCovered(pointId: Long, covered: Boolean, atMs: Long? = null) {
+    override suspend fun setTalkingPointCovered(pointId: Long, covered: Boolean, atMs: Long?) {
         val point = talkingPointDao.get(pointId) ?: return
         talkingPointDao.setCovered(pointId, covered, if (covered) atMs ?: point.coveredAtMs else null, byUser = true)
         touch(point.sessionId)
     }
 
     /** Add a talking point at the end of the session's list; a blank [text] adds nothing. Returns its id. */
-    suspend fun addTalkingPoint(sessionId: Long, text: String): Long? {
+    override suspend fun addTalkingPoint(sessionId: Long, text: String): Long? {
         val cleaned = TalkingPoints.clean(text).takeIf { it.isNotEmpty() } ?: return null
         return db.withTransaction {
             val position = (talkingPointDao.getForSession(sessionId).maxOfOrNull { it.position } ?: -1) + 1

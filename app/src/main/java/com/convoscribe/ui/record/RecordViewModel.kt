@@ -6,7 +6,12 @@ import com.convoscribe.data.EnrolledSpeakerStore
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.Preset
 import com.convoscribe.data.PresetStore
+import com.convoscribe.data.SessionTalkingPoints
 import com.convoscribe.data.SummaryTemplateStore
+import com.convoscribe.data.TalkingPointEntity
+import com.convoscribe.data.TalkingPointList
+import com.convoscribe.data.TalkingPointListStore
+import com.convoscribe.data.TalkingPoints
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
@@ -24,6 +29,8 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -51,7 +58,11 @@ import kotlinx.coroutines.launch
  *    ([applyPreset], [saveAsPreset]), and [modelsMissing] tells the screen to
  *    send the user to setup before Start;
  *  - [mark] (issue #30), which reports each new mark on [marks] so
- *    the screen can offer a note, saved with [setMarkNote].
+ *    the screen can offer a note, saved with [setMarkNote];
+ *  - talking points (issue #102): before Start they are part of
+ *    [options] ([attachList], [addPoint], [removePoint]); once the
+ *    session is open, [livePoints] are its own, ticked with
+ *    [togglePoint] and added with [addLivePoint].
  * Constructed by
  * [com.convoscribe.ui.AppNavHost]'s `viewModelFactory` reading
  * `AppContainer.recordingController` so the singleton lives across
@@ -66,7 +77,9 @@ class RecordViewModel(
     private val missingModels: (language: String) -> Boolean = { false },
     private val saveMarkNote: suspend (markId: Long, note: String?) -> Unit = { _, _ -> },
     tagNames: Flow<List<String>> = flowOf(emptyList()),
-    private val presetStore: PresetStore? = null
+    private val presetStore: PresetStore? = null,
+    talkingPointLists: TalkingPointListStore? = null,
+    private val sessionPoints: SessionTalkingPoints? = null
 ) : ViewModel() {
 
     private val recordingController = controller
@@ -96,18 +109,67 @@ class RecordViewModel(
     val presets: StateFlow<List<Preset>> = (presetStore?.observeAll() ?: flowOf(emptyList()))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** The preset the current options match exactly, if any; editing an option clears it. */
+    /**
+     * The preset the current options match exactly, if any; editing an
+     * option clears it. Talking points are not part of a preset.
+     */
     val activePreset: StateFlow<Preset?> = combine(_options, presets, summaryTemplates) { options, presets, templates ->
-        presets.firstOrNull { presetOptions(it, templates) == options }
+        val withoutPoints = options.copy(talkingPoints = emptyList())
+        presets.firstOrNull { presetOptions(it, templates) == withoutPoints }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    /** Start from [preset]'s options, or from the Settings defaults for `null`. */
+    /** The user's talking-point lists (issue #102), to attach before Start. */
+    val talkingPointLists: StateFlow<List<TalkingPointList>> = (talkingPointLists?.observeAll() ?: flowOf(emptyList()))
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** The open session's talking points (issue #102); empty while idle. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val livePoints: StateFlow<List<TalkingPointEntity>> = controller.state
+        .map { it.sessionId }
+        .distinctUntilChanged()
+        .flatMapLatest { id ->
+            if (id == null || sessionPoints == null) flowOf(emptyList()) else sessionPoints.observeTalkingPoints(id)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Start from [preset]'s options, or from the Settings defaults for `null`; the talking points stay. */
     fun applyPreset(preset: Preset?) {
+        val points = _options.value.talkingPoints
         _options.value = if (preset == null) {
             ConversationOptions.fromSettings(settings.settings.value)
         } else {
             presetOptions(preset, summaryTemplates.value)
+        }.copy(talkingPoints = points)
+    }
+
+    /** Add [list]'s points to the new conversation's, leaving out those it already has. */
+    fun attachList(list: TalkingPointList) {
+        _options.update { it.copy(talkingPoints = TalkingPoints.append(it.talkingPoints, list.points)) }
+    }
+
+    /** Add a point to the new conversation; a blank or repeated one is left out. */
+    fun addPoint(text: String) {
+        _options.update { it.copy(talkingPoints = TalkingPoints.append(it.talkingPoints, listOf(text))) }
+    }
+
+    fun removePoint(index: Int) {
+        _options.update { options ->
+            options.copy(talkingPoints = options.talkingPoints.filterIndexed { i, _ -> i != index })
         }
+    }
+
+    /** Tick or untick [point] of the open session, ticked at the current recording time. */
+    fun togglePoint(point: TalkingPointEntity) {
+        val store = sessionPoints ?: return
+        val atMs = recordingController.state.value.elapsedMs
+        viewModelScope.launch { store.setTalkingPointCovered(point.id, !point.covered, atMs.takeIf { !point.covered }) }
+    }
+
+    /** Add a point to the open session. */
+    fun addLivePoint(text: String) {
+        val store = sessionPoints ?: return
+        val id = recordingController.state.value.sessionId ?: return
+        viewModelScope.launch { store.addTalkingPoint(id, text) }
     }
 
     /** Apply the preset with [id], when it still exists (the tile long-press opens it this way). */
@@ -116,7 +178,9 @@ class RecordViewModel(
         viewModelScope.launch {
             val preset = store.get(id) ?: return@launch
             // The template list may not be loaded yet: read it here.
+            val points = _options.value.talkingPoints
             _options.value = presetOptions(preset, SummaryTemplates.BUILT_IN + templates.getUserTemplates())
+                .copy(talkingPoints = points)
         }
     }
 

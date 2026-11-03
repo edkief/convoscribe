@@ -19,7 +19,10 @@ fun Preset.toOptions(templateKeys: Collection<String>, defaultTemplate: String):
         tags = tags
     )
 
-/** These options saved as a preset named [name]; [title] becomes its title pattern. */
+/**
+ * These options saved as a preset named [name]; [title] becomes its
+ * title pattern. Talking points are the conversation's, not the preset's.
+ */
 fun ConversationOptions.toPreset(name: String, id: Long = 0): Preset = Preset(
     id = id,
     name = name,

@@ -57,6 +57,8 @@ import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.data.Preset
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.TalkingPointEntity
+import com.convoscribe.data.TalkingPointList
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
@@ -132,7 +134,9 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                     },
                     saveMarkNote = container.sessionRepository::setMarkNote,
                     tagNames = container.sessionRepository.observeTags().map { tags -> tags.map { it.name } },
-                    presetStore = container.presets
+                    presetStore = container.presets,
+                    talkingPointLists = container.talkingPointLists,
+                    sessionPoints = container.sessionRepository
                 )
             }
         }
@@ -144,6 +148,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val allTags by vm.allTags.collectAsStateWithLifecycle()
     val presets by vm.presets.collectAsStateWithLifecycle()
     val activePreset by vm.activePreset.collectAsStateWithLifecycle()
+    val talkingPointLists by vm.talkingPointLists.collectAsStateWithLifecycle()
+    val livePoints by vm.livePoints.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
@@ -248,6 +254,15 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             onTagsChange = vm::setTags,
             onApplyPreset = vm::applyPreset,
             onSaveAsPreset = vm::saveAsPreset
+        ),
+        talkingPointLists = talkingPointLists,
+        livePoints = livePoints,
+        pointActions = TalkingPointActions(
+            onAttach = vm::attachList,
+            onAdd = vm::addPoint,
+            onRemove = vm::removePoint,
+            onToggleLive = vm::togglePoint,
+            onAddLive = vm::addLivePoint
         ),
         cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let {
             val engine = ModelCatalog.effectiveEngine(
@@ -356,6 +371,9 @@ internal fun RecordBody(
     presets: List<Preset> = emptyList(),
     activePreset: Preset? = null,
     optionActions: ConversationOptionActions = ConversationOptionActions(),
+    talkingPointLists: List<TalkingPointList> = emptyList(),
+    livePoints: List<TalkingPointEntity> = emptyList(),
+    pointActions: TalkingPointActions = TalkingPointActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
     inputLevel: Float = 0f,
@@ -421,8 +439,23 @@ internal fun RecordBody(
                                 onSaveAsPreset = optionActions.onSaveAsPreset
                             )
                         }
+                        TalkingPointsSetup(
+                            points = options.talkingPoints,
+                            lists = talkingPointLists,
+                            actions = pointActions
+                        )
                     }
                 } else {
+                    if (phase.active) {
+                        LiveTalkingPoints(
+                            points = livePoints,
+                            onToggle = pointActions.onToggleLive,
+                            onAdd = pointActions.onAddLive,
+                            modifier = Modifier
+                                .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                                .padding(top = spacing.s)
+                        )
+                    }
                     LiveTranscript(
                         phase = phase,
                         preparingNpu = preparingNpu,

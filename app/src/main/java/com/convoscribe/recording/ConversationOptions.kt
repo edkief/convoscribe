@@ -31,6 +31,8 @@ import java.util.Locale
  *   #37); ignored when the cleanup model is not installed.
  * @property tags tag names put on the session (issue #32), created
  *   when missing.
+ * @property talkingPoints the points the session starts with (issue
+ *   #102), its own copy. Not part of a preset or the defaults.
  */
 data class ConversationOptions(
     val language: String,
@@ -39,7 +41,8 @@ data class ConversationOptions(
     val title: String = "",
     val summaryTemplate: String = SummaryTemplates.MEETING_KEY,
     val cleanAudio: Boolean = false,
-    val tags: List<String> = emptyList()
+    val tags: List<String> = emptyList(),
+    val talkingPoints: List<String> = emptyList()
 ) {
     /**
      * Session title for these options: [title] with `{date}`

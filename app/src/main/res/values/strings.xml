@@ -303,6 +303,20 @@
     </plurals>
     <string name="talking_points_delete_title">Delete “%1$s”?</string>
     <string name="talking_points_delete_message">Conversations it was attached to keep their points.</string>
+    <string name="talking_point_covered">Covered</string>
+    <string name="talking_point_open">Not covered yet</string>
+    <string name="talking_point_edit">Edit</string>
+    <string name="talking_point_move_up">Move up</string>
+    <string name="talking_point_move_down">Move down</string>
+    <string name="talking_point_add_label">Add a talking point</string>
+    <string name="talking_point_add">Add</string>
+    <string name="record_talking_points_help">What you mean to raise. Tick each point as it comes up.</string>
+    <string name="record_talking_points_attach">Attach a list</string>
+    <string name="record_talking_point_remove">Remove “%1$s”</string>
+    <string name="record_talking_points_progress">Talking points: %1$d of %2$d covered</string>
+    <string name="record_talking_points_expanded">Expanded</string>
+    <string name="record_talking_points_collapsed">Collapsed</string>
+    <string name="record_talking_points_none">No talking points. Add one below.</string>
     <string name="presets_title">Presets</string>
     <string name="presets_explanation">A preset keeps the options of a recurring conversation: language, speakers, participants, a title, tags and the summary template. Pick it on the Record screen.</string>
     <string name="presets_new">New preset</string>
