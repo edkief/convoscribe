@@ -152,6 +152,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val talkingPointLists by vm.talkingPointLists.collectAsStateWithLifecycle()
     val livePoints by vm.livePoints.collectAsStateWithLifecycle()
     val pointChecksFailing by vm.pointChecksFailing.collectAsStateWithLifecycle()
+    val pointsOpenFirst by vm.pointsOpenFirst.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
@@ -260,12 +261,14 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         talkingPointLists = talkingPointLists,
         livePoints = livePoints,
         pointChecksFailing = pointChecksFailing,
+        pointsOpenFirst = pointsOpenFirst,
         pointActions = TalkingPointActions(
             onAttach = vm::attachList,
             onAdd = vm::addPoint,
             onRemove = vm::removePoint,
             onToggleLive = vm::togglePoint,
-            onAddLive = vm::addLivePoint
+            onAddLive = vm::addLivePoint,
+            onOpenFirstChange = vm::setPointsOpenFirst
         ),
         cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let {
             val engine = ModelCatalog.effectiveEngine(
@@ -377,6 +380,7 @@ internal fun RecordBody(
     talkingPointLists: List<TalkingPointList> = emptyList(),
     livePoints: List<TalkingPointEntity> = emptyList(),
     pointChecksFailing: Boolean = false,
+    pointsOpenFirst: Boolean = false,
     pointActions: TalkingPointActions = TalkingPointActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
@@ -454,6 +458,8 @@ internal fun RecordBody(
                         LiveTalkingPoints(
                             points = livePoints,
                             checksFailing = pointChecksFailing,
+                            openFirst = pointsOpenFirst,
+                            onOpenFirstChange = pointActions.onOpenFirstChange,
                             onToggle = pointActions.onToggleLive,
                             onAdd = pointActions.onAddLive,
                             modifier = Modifier

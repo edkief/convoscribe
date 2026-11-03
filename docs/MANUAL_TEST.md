@@ -2313,6 +2313,8 @@ answer (for example `http://10.255.255.1:8000/v1`).
 5. With the language model unreachable, record with points for two minutes while
    talking. Then make the model reachable again and go on talking about a point.
 6. Set the interval to 0 and record with points while talking about them.
+7. Record with a dozen points and tick a few by hand. Scroll the card, then turn on
+   *Not covered first*. Stop, and start another recording with points.
 
 **Expected**
 
@@ -2331,6 +2333,10 @@ answer (for example `http://10.255.255.1:8000/v1`).
   one per check. Ticking by hand works. Once the model answers again, within 5
   minutes, the note goes and the point ticks.
 - Step 6: nothing ticks itself; points tick by hand as before.
+- Step 7: the points scroll inside the card while the chip stays in view. With the
+  chip on (it shows a check mark), unticked points come first in their own order,
+  and a point moves down once ticked. The next recording starts with the chip still
+  on.
 
 ## Troubleshooting
 

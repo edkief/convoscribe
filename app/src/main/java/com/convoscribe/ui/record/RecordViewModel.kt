@@ -168,6 +168,16 @@ class RecordViewModel(
         }
     }
 
+    /** Whether the open session's card lists the points not covered yet first; remembered in the settings. */
+    val pointsOpenFirst: StateFlow<Boolean> = settings.settings.map { it.talkingPointsOpenFirst }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), settings.settings.value.talkingPointsOpenFirst)
+
+    /** List the points not covered yet first, or in their own order. */
+    fun setPointsOpenFirst(openFirst: Boolean) {
+        settings.update { it.copy(talkingPointsOpenFirst = openFirst) }
+    }
+
     /** Tick or untick [point] of the open session, ticked at the current recording time. */
     fun togglePoint(point: TalkingPointEntity) {
         val store = sessionPoints ?: return

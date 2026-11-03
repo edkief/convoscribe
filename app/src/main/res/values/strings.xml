@@ -319,6 +319,7 @@
     <string name="record_talking_points_expanded">Expanded</string>
     <string name="record_talking_points_collapsed">Collapsed</string>
     <string name="record_talking_points_none">No talking points. Add one below.</string>
+    <string name="record_talking_points_open_first">Not covered first</string>
     <string name="record_talking_points_check_failing">Can\'t check talking points automatically right now. Tick them by hand.</string>
     <string name="presets_title">Presets</string>
     <string name="presets_explanation">A preset keeps the options of a recurring conversation: language, speakers, participants, a title, tags and the summary template. Pick it on the Record screen.</string>

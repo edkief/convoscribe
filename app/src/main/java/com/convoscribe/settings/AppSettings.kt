@@ -136,6 +136,7 @@ data class AppSettings(
     val cleanAudioDefault: Boolean = false,
     val autoMarkNotes: Boolean = true,
     val autoTitle: Boolean = true,
+    val talkingPointsOpenFirst: Boolean = false,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,

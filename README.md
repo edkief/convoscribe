@@ -309,7 +309,10 @@ brings them to your other devices.
   or *Attach a list*. Keep reusable lists in Settings → Search & organise →
   Talking points, one point per line. While recording, a card above the
   live transcript shows *Talking points: n of m covered*. Tick each point
-  as it comes up (the recording time is noted), or add one. Afterwards the
+  as it comes up (the recording time is noted), or add one. A long list
+  scrolls inside the card. The *Not covered first* chip lists the points
+  still to raise at the top, keeping their order. The app remembers your
+  choice. Afterwards the
   points head the session's Summary tab, even without a language model.
   There you can tick, untick, edit, reorder, delete and add them, and tap a
   covered point's time to play from there. Each conversation keeps its own

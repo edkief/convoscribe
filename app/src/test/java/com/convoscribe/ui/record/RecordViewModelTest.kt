@@ -11,6 +11,7 @@ import com.convoscribe.data.FakePresetStore
 import com.convoscribe.data.FakeSummaryTemplateStore
 import com.convoscribe.data.FakeTalkingPointListStore
 import com.convoscribe.data.Preset
+import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.diarization.SpeakerMatcher
 import com.convoscribe.llm.SummaryTemplates
@@ -179,6 +180,28 @@ class RecordViewModelTest {
         assertFalse(checksFailing(recording, emptySet()))
         assertFalse(checksFailing(recording.copy(phase = RecordingPhase.STOPPING), setOf(4L)))
         assertFalse(checksFailing(RecordingState(), setOf(4L)))
+    }
+
+    @Test
+    fun pointsOpenFirst_isRememberedInTheSettings() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.pointsOpenFirst.collect {} }
+        assertFalse(vm.pointsOpenFirst.value)
+        vm.setPointsOpenFirst(true)
+        advanceUntilIdle()
+        assertTrue(vm.pointsOpenFirst.value)
+        assertTrue(settings.settings.value.talkingPointsOpenFirst)
+        assertTrue(newViewModel().pointsOpenFirst.value)
+        job.cancel()
+    }
+
+    @Test
+    fun livePointsOrder_putsPointsNotCoveredFirstKeepingTheirOrder() {
+        fun point(id: Long, covered: Boolean) =
+            TalkingPointEntity(id = id, sessionId = 1, text = "p$id", position = 0, covered = covered, createdAt = 0)
+        val points = listOf(point(1, true), point(2, false), point(3, true), point(4, false))
+        assertEquals(listOf(1L, 2L, 3L, 4L), livePointsOrder(points, openFirst = false).map { it.id })
+        assertEquals(listOf(2L, 4L, 1L, 3L), livePointsOrder(points, openFirst = true).map { it.id })
     }
 
     @Test
