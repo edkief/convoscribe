@@ -1,7 +1,8 @@
 // Runs once when the server starts: fail fast on bad configuration, bring
 // the database schema up to date, then index sessions pushed before the web
-// app (#80) or search (#83) existed and size manifests pushed before usage
-// was tracked (#82) in the background, and schedule the daily storage
+// app (#80) or search (#83) existed, talking-point lists pushed before the
+// web app listed them (#104), and size manifests pushed before usage was
+// tracked (#82) in the background, and schedule the daily storage
 // clean-up (#81).
 export async function register() {
   if (process.env.NEXT_RUNTIME !== 'nodejs') return;
@@ -15,7 +16,7 @@ export async function register() {
     console.error(err);
     process.exit(1);
   }
-  const { backfillManifestSizes, backfillSessionIndex } = await import('./lib/backfill');
+  const { backfillManifestSizes, backfillSessionIndex, backfillTalkingPointLists } = await import('./lib/backfill');
   backfillManifestSizes().then(
     ({ filled, skipped }) => {
       if (filled || skipped) console.log(`manifest sizes: filled ${filled}, skipped ${skipped}`);
@@ -27,6 +28,12 @@ export async function register() {
       if (indexed || skipped) console.log(`session index: indexed ${indexed} session(s), skipped ${skipped}`);
     },
     (err) => console.error('session index backfill failed', err),
+  );
+  backfillTalkingPointLists().then(
+    ({ indexed, skipped }) => {
+      if (indexed || skipped) console.log(`talking-point lists: indexed ${indexed} list(s), skipped ${skipped}`);
+    },
+    (err) => console.error('talking-point list backfill failed', err),
   );
   const { env } = await import('./lib/env');
   const mode = env().CLEANUP;

@@ -33,6 +33,16 @@ export function sessionManifest(syncId: string, over: Record<string, unknown> = 
   };
 }
 
+/** A talking-point list manifest as the app writes it (#102), with `over` on top. */
+export const listManifest = (syncId: string, name: string, points: string[], over: Record<string, unknown> = {}) => ({
+  schema: 1,
+  syncId,
+  name,
+  points,
+  createdAt: 1_760_000_000_000,
+  ...over,
+});
+
 /** Store `bytes` as a blob of `owner`, as a completed upload would. */
 export async function storeBlob(owner: string, bytes: Uint8Array | string) {
   const data = typeof bytes === 'string' ? Buffer.from(bytes) : bytes;

@@ -23,6 +23,9 @@ export type Mark = { atMs: number; note: string | null; expandedNote: string | n
 
 export type ActionItem = { at: number; text: string; owner: string | null; dueDate: string | null; atMs: number | null; done: boolean };
 
+/** A talking point of the session (#104): `byUser` when ticked or unticked by hand, `coveredAtMs` on the recording's clock. */
+export type TalkingPoint = { id: string; text: string; covered: boolean; coveredAtMs: number | null; byUser: boolean };
+
 export type Message = { role: string; content: string; createdAt: number | null; templateName: string | null };
 
 export type SessionView = {
@@ -41,6 +44,7 @@ export type SessionView = {
   questions: Message[];
   marks: Mark[];
   actionItems: ActionItem[];
+  talkingPoints: TalkingPoint[];
 };
 
 /** The manifest schema this server was written against; a newer one is shown read-only. */
@@ -124,6 +128,15 @@ export function sessionView(manifest: unknown): SessionView {
         dueDate: str(x.dueDate),
         atMs: num(x.atMs),
         done: x.done === true,
+      })),
+    talkingPoints: list(m.talkingPoints)
+      .filter((x) => typeof x.id === 'string' && typeof x.text === 'string')
+      .map((x) => ({
+        id: x.id as string,
+        text: x.text as string,
+        covered: x.covered === true,
+        coveredAtMs: x.covered === true ? num(x.coveredAtMs) : null,
+        byUser: x.byUser === true,
       })),
   };
 }

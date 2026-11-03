@@ -214,6 +214,66 @@ describe('editing a session from the web (#84)', () => {
     });
   });
 
+  describe('talking points (#104)', () => {
+    const point = (id: string, over: Record<string, unknown> = {}) => ({
+      id,
+      text: `Point ${id}`,
+      covered: false,
+      coveredAtMs: null,
+      byUser: false,
+      createdAt: 1,
+      ...over,
+    });
+    const talkingPoints = [point('p1', { covered: true, coveredAtMs: 61_000 }), point('p2')];
+
+    it('unticks one by hand, forgetting when it was covered', async () => {
+      const { manifest } = await edited({ kind: 'pointCovered', id: 'p1', covered: false }, { talkingPoints });
+      expect(manifest.talkingPoints[0]).toEqual(point('p1', { covered: false, coveredAtMs: null, byUser: true }));
+    });
+
+    it('ticks one by hand, and a tick it already had becomes the user’s', async () => {
+      const { manifest } = await edited({ kind: 'pointCovered', id: 'p2', covered: true }, { talkingPoints });
+      expect(manifest.talkingPoints[1]).toEqual(point('p2', { covered: true, coveredAtMs: null, byUser: true }));
+      const again = await editSession(OWNER, SYNC_ID, 2, { kind: 'pointCovered', id: 'p1', covered: true });
+      expect(again.revision).toBe(3);
+      expect((await stored()).talkingPoints[0]).toEqual(point('p1', { covered: true, coveredAtMs: 61_000, byUser: true }));
+      expect((await editSession(OWNER, SYNC_ID, 3, { kind: 'pointCovered', id: 'p1', covered: true })).revision).toBe(3);
+    });
+
+    it('edits the text as the app cleans it, ignoring a blank one', async () => {
+      const { manifest } = await edited({ kind: 'point', id: 'p2', text: '  Budget\n for Q3 ' }, { talkingPoints });
+      expect(manifest.talkingPoints[1]).toEqual(point('p2', { text: 'Budget for Q3' }));
+      expect((await editSession(OWNER, SYNC_ID, 2, { kind: 'point', id: 'p2', text: '  ' })).revision).toBe(2);
+    });
+
+    it('adds one at the end, even to a session without points', async () => {
+      const { manifest } = await edited({ kind: 'pointAdd', text: 'Hiring' });
+      expect(manifest.talkingPoints).toEqual([
+        { id: expect.stringMatching(/^[0-9a-f-]{36}$/), text: 'Hiring', covered: false, coveredAtMs: null, byUser: false, createdAt: expect.any(Number) },
+      ]);
+      expect(sessionView(manifest).talkingPoints).toMatchObject([{ text: 'Hiring', covered: false }]);
+      expect((await editSession(OWNER, SYNC_ID, 2, { kind: 'pointAdd', text: ' ' })).revision).toBe(2);
+    });
+
+    it('removes one, and the field with the last', async () => {
+      const { manifest } = await edited({ kind: 'pointDelete', id: 'p1' }, { talkingPoints });
+      expect(manifest.talkingPoints.map((p: { id: string }) => p.id)).toEqual(['p2']);
+      await editSession(OWNER, SYNC_ID, 2, { kind: 'pointDelete', id: 'p2' });
+      expect('talkingPoints' in (await stored())).toBe(false);
+    });
+
+    it('refuses a point that isn’t there', async () => {
+      const pushed = await pushManifest(OWNER, sessionManifest(SYNC_ID, { talkingPoints }));
+      await expect(editSession(OWNER, SYNC_ID, pushed.revision, { kind: 'point', id: 'nope', text: 'x' })).rejects.toMatchObject({ status: 400 });
+      await expect(editSession(OWNER, SYNC_ID, pushed.revision, { kind: 'pointCovered', id: 'nope', covered: true })).rejects.toMatchObject({ status: 400 });
+    });
+
+    it('keeps fields of a point this server doesn’t know', async () => {
+      const { manifest } = await edited({ kind: 'point', id: 'p1', text: 'New' }, { talkingPoints: [point('p1', { colour: 'teal' })] });
+      expect(manifest.talkingPoints[0]).toEqual(point('p1', { text: 'New', colour: 'teal' }));
+    });
+  });
+
   describe('what it leaves alone', () => {
     it('keeps fields this server doesn’t know, at every level', async () => {
       const over = {
@@ -317,6 +377,10 @@ describe('editing a session from the web (#84)', () => {
       [{ kind: 'actionDone', at: 0, done: 'yes' }],
       [{ kind: 'action', at: 0, text: 'x', owner: 1, dueDate: null }],
       [{ kind: 'actionDelete' }],
+      [{ kind: 'pointCovered', id: 'p1' }],
+      [{ kind: 'point', id: 1, text: 'x' }],
+      [{ kind: 'pointAdd' }],
+      [{ kind: 'pointDelete', at: 0 }],
     ])('refuses %j', (value) => {
       expect(() => parseEdit(value)).toThrow();
     });

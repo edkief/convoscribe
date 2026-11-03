@@ -1,10 +1,15 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { conflict, getDocumentMeta, putDocument, readManifest, type DocumentMeta } from './documents';
 import { HttpError } from './http';
+import { cleanPoint } from './talking-point-index';
 import { clean, editText, trim, type Token } from './token-aligner';
 import { KNOWN_SCHEMA } from './transcript-export';
 
-/** One change to a session from the web app (#84). `at` is an index in the manifest's array. */
+/**
+ * One change to a session from the web app (#84). `at` is an index in the
+ * manifest's array; a talking point (#104) is named by its `id`, which every
+ * device shares.
+ */
 export type SessionEdit =
   | { kind: 'title'; title: string }
   | { kind: 'tags'; tags: string[] }
@@ -12,7 +17,11 @@ export type SessionEdit =
   | { kind: 'line'; at: number; text: string }
   | { kind: 'actionDone'; at: number; done: boolean }
   | { kind: 'action'; at: number; text: string; owner: string | null; dueDate: string | null }
-  | { kind: 'actionDelete'; at: number };
+  | { kind: 'actionDelete'; at: number }
+  | { kind: 'pointCovered'; id: string; covered: boolean }
+  | { kind: 'point'; id: string; text: string }
+  | { kind: 'pointAdd'; text: string }
+  | { kind: 'pointDelete'; id: string };
 
 type Json = Record<string, unknown>;
 
@@ -34,7 +43,11 @@ export function parseEdit(value: unknown): SessionEdit {
     (e.kind === 'line' && isIndex(e.at) && isString(e.text)) ||
     (e.kind === 'actionDone' && isIndex(e.at) && typeof e.done === 'boolean') ||
     (e.kind === 'action' && isIndex(e.at) && isString(e.text) && isOptional(e.owner) && isOptional(e.dueDate)) ||
-    (e.kind === 'actionDelete' && isIndex(e.at));
+    (e.kind === 'actionDelete' && isIndex(e.at)) ||
+    (e.kind === 'pointCovered' && isString(e.id) && typeof e.covered === 'boolean') ||
+    (e.kind === 'point' && isString(e.id) && isString(e.text)) ||
+    (e.kind === 'pointAdd' && isString(e.text)) ||
+    (e.kind === 'pointDelete' && isString(e.id));
   if (!ok) throw new HttpError(400, 'invalid_body');
   return e as SessionEdit;
 }
@@ -75,6 +88,19 @@ function element(manifest: Json, name: string, at: number): Json {
   const item = Array.isArray(items) ? items[at] : undefined;
   if (!isRecord(item)) throw new HttpError(400, 'invalid_edit');
   return item;
+}
+
+/** The manifest's talking points (#104), made an array if it had none. */
+function pointsOf(manifest: Json): unknown[] {
+  if (!Array.isArray(manifest.talkingPoints)) manifest.talkingPoints = [];
+  return manifest.talkingPoints as unknown[];
+}
+
+/** The talking point with `id`; a 400 when there is none. */
+function point(manifest: Json, id: string): Json {
+  const found = pointsOf(manifest).find((p): p is Json => isRecord(p) && p.id === id);
+  if (!found) throw new HttpError(400, 'invalid_edit');
+  return found;
 }
 
 /**
@@ -145,6 +171,37 @@ export function applyEdit(manifest: Json, edit: SessionEdit): boolean {
       const item = element(manifest, 'actionItems', edit.at);
       if (item.deleted === true) return false;
       item.deleted = true;
+      return true;
+    }
+    case 'pointCovered': {
+      // As `SessionRepository.setTalkingPointCovered`: by hand, so automatic checks leave it alone.
+      const p = point(manifest, edit.id);
+      if ((p.covered === true) === edit.covered && p.byUser === true) return false;
+      p.covered = edit.covered;
+      p.coveredAtMs = edit.covered ? (p.coveredAtMs ?? null) : null;
+      p.byUser = true;
+      return true;
+    }
+    case 'point': {
+      const p = point(manifest, edit.id);
+      const text = cleanPoint(edit.text);
+      if (!text || p.text === text) return false;
+      p.text = text;
+      return true;
+    }
+    case 'pointAdd': {
+      const text = cleanPoint(edit.text);
+      if (!text) return false;
+      pointsOf(manifest).push({ id: randomUUID(), text, covered: false, coveredAtMs: null, byUser: false, createdAt: Date.now() });
+      return true;
+    }
+    case 'pointDelete': {
+      const points = pointsOf(manifest);
+      const at = points.findIndex((p) => isRecord(p) && p.id === edit.id);
+      if (at < 0) return false;
+      points.splice(at, 1);
+      // The app leaves the field out while empty.
+      if (points.length === 0) delete manifest.talkingPoints;
       return true;
     }
   }

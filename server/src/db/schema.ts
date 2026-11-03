@@ -154,6 +154,29 @@ export const sessionIndex = pgTable(
 );
 
 /**
+ * Talking-point lists (#104), copied from each list's current manifest when
+ * it is pushed, so the web app's *Talking points* page never reads S3. Like
+ * `session_index` it can be rebuilt from the manifests (see
+ * `backfillTalkingPointLists`); a delete removes the row.
+ */
+export const talkingPointLists = pgTable(
+  'talking_point_lists',
+  {
+    owner: text('owner').notNull(),
+    syncId: text('sync_id').notNull(),
+    /** The manifest this row was read from. */
+    manifestHash: text('manifest_hash').notNull(),
+    name: text('name').notNull(),
+    /** The points, in order. */
+    points: text('points').array().notNull().default(sql`'{}'::text[]`),
+    createdAt: bigint('created_at', { mode: 'number' }).notNull(),
+    /** When the list last changed (the push's `changedAt`), ms since epoch. */
+    changedAt: bigint('changed_at', { mode: 'number' }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.owner, t.syncId] })],
+);
+
+/**
  * A `tsvector` column, written as words joined by spaces. It takes them as
  * they are, without Postgres's parser, and is only ever matched against.
  */

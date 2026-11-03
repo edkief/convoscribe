@@ -74,6 +74,27 @@ export async function readBody(req: Request, limit: number): Promise<Uint8Array>
   return Buffer.concat(chunks);
 }
 
+/** A web request's JSON object body, or a 400 (or 413 over `limit` bytes). Anything but an object reads as `{}`. */
+export async function jsonBody(req: Request, limit: number): Promise<Record<string, unknown>> {
+  let body: unknown;
+  try {
+    body = JSON.parse(Buffer.from(await readBody(req, limit)).toString('utf8'));
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
+    throw new HttpError(400, 'invalid_body');
+  }
+  return body && typeof body === 'object' && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
+}
+
+/** The body's `baseRevision`, the revision a web page showed, or a 400. */
+export function baseRevisionOf(body: Record<string, unknown>): number {
+  const { baseRevision } = body;
+  if (typeof baseRevision !== 'number' || !Number.isSafeInteger(baseRevision) || baseRevision < 1) {
+    throw new HttpError(400, 'invalid_body');
+  }
+  return baseRevision;
+}
+
 /** Parse an HTTP `Range: bytes=a-b` header against an object of `size` bytes. */
 export function parseRange(header: string | null, size: number): { start: number; end: number } | undefined {
   if (!header) return undefined;

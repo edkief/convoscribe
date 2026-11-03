@@ -144,4 +144,17 @@ describe('the web app’s edit route (#84)', () => {
   it('answers 404 for an unknown session', async () => {
     expect((await patch('nope', { baseRevision: 1, edit: title })).status).toBe(404);
   });
+
+  it('ticks and adds talking points, and refuses a stale page (#104)', async () => {
+    const talkingPoints = [{ id: 'p1', text: 'Budget', covered: false, coveredAtMs: null, byUser: false, createdAt: 1 }];
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { talkingPoints }));
+    const ticked = await patch('s1', { baseRevision: pushed.revision, edit: { kind: 'pointCovered', id: 'p1', covered: true } });
+    expect(await ticked.json()).toEqual({ syncId: 's1', revision: pushed.revision + 1 });
+    const added = await patch('s1', { baseRevision: pushed.revision + 1, edit: { kind: 'pointAdd', text: 'Hiring' } });
+    expect(added.status).toBe(200);
+    const stale = await patch('s1', { baseRevision: pushed.revision, edit: { kind: 'pointDelete', id: 'p1' } });
+    expect(stale.status).toBe(409);
+    const unknown = await patch('s1', { baseRevision: pushed.revision + 2, edit: { kind: 'point', id: 'nope', text: 'x' } });
+    expect(unknown.status).toBe(400);
+  });
 });

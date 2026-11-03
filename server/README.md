@@ -33,11 +33,13 @@ Signing in depends on `AUTH_MODE`:
   verifies against the proxy's JWKS. *Sign out* goes to
   `WEB_SIGN_OUT_URL`, and is hidden when that is not set.
 
-You see only your own sessions. From the web app you can edit a session
-(*Editing a session*, below) and delete it, which moves it to the trash (#81).
+You see only your own sessions and talking-point lists. From the web app you
+can edit a session (*Editing a session*, below) and delete it, which moves it to
+the trash (#81), and write the talking-point lists your devices attach before
+Start (#104).
 
 On a laptop or a tablet in landscape, a sidebar holds a search field and lists
-your sessions, your tags with how many sessions carry each, the trash, the
+your sessions, your talking-point lists, your tags with how many sessions carry each, the trash, the
 size of the recordings you store (trash included) and who is signed in; below
 1200 px wide it folds into a top bar, with search and trash buttons beside
 *Sign out*, and for admins a button to the admin pages.
@@ -53,11 +55,12 @@ size of the recordings you store (trash included) and who is signed in; below
   recording when there is one, the transcript as Markdown, and subtitles
   as SRT or WebVTT). The transcript fills the page as speaker turns, each
   mark between them where it was made; beside it, a panel holds the
-  latest summary (earlier ones folded away), the action items, the marks
-  and the questions and answers, one tab each. A player stays at the
+  latest summary (earlier ones folded away), the talking points, the action
+  items, the marks and the questions and answers, one tab each. A player stays at the
   bottom: play, back 10 s, forward 30 s, a timeline showing the marks,
   speed and mute; space plays and pauses, the arrow keys step 5 s. Tap a
-  sentence, a mark or an action item's time to play from there. The
+  sentence, a mark, an action item's time or where a talking point was
+  covered to play from there. The
   sentence being played is highlighted and kept in view; scroll away and
   *Back to current line* returns to it.
 - **Search** (`/search?q=`): finds words in your transcripts, summaries,
@@ -72,6 +75,18 @@ size of the recordings you store (trash included) and who is signed in; below
   older summaries). Search reads Postgres only, and never finds another
   user's sessions or anything in the trash. Tag and date filters, and meaning
   rather than words, are for the app.
+- **Talking points** (`/talking-points`, #104): your talking-point lists, by
+  name, each with its points in order. *New list* and the pencil open the same
+  form: a name, and the points, one field each, with buttons to move one up or
+  down or remove it (Enter in a point adds one after it). *Save* sends the whole
+  list. Names and points are cleaned as in the app (spaces collapsed, at most
+  300 characters, blank points dropped). Deleting a list removes it from your
+  devices; conversations it was attached to keep their own copy of the points.
+  The page reads Postgres (`talking_point_lists`), never S3. A list is a library
+  item like a summary template: a web change is a new revision of its document,
+  which devices download at their next sync, and the most recent change wins. A
+  save or delete from a page older than the list is refused, and the page asks
+  you to reload.
 - **Trash** (`/trash`): sessions deleted in the last 30 days, here or on a
   device, the most recently deleted first, each with when it was deleted
   and when it goes for good. *Restore* brings one back; *Empty trash*
@@ -83,8 +98,12 @@ understands it, with a note.
 ### Editing a session
 
 On a session's page you can rename it, add and remove tags, rename a speaker,
-correct a line (*Edit text*, then tap the line; Ctrl/Cmd+Enter saves), and tick,
-edit or delete an action item. Splitting, merging or deleting lines and changing
+correct a line (*Edit text*, then tap the line; Ctrl/Cmd+Enter saves), tick,
+edit or delete an action item, and tick, untick, edit, remove or add a talking
+point (#104). A point ticked or unticked here counts as by hand, so the app's
+automatic checks (#103) leave it alone; unticking forgets when it was covered.
+The *Talking points* tab shows when the session has points, or, to add some,
+when the panel has other tabs. Reordering a session's points is for the app. Splitting, merging or deleting lines and changing
 a line's speaker are for the app.
 
 An edit is one more device's change: a new revision of the manifest, which
@@ -209,8 +228,8 @@ key as the API key.
 
 **Web** routes are what the web app's pages call. They take the browser's
 sign-in (a Bearer key works too), answer `401` without it, and refuse a
-`POST` or `DELETE` whose `Origin` is not this server (`X-Forwarded-Host`,
-else `Host`) with `403 cross_site`. Another owner's session is `404`.
+`POST`, `PUT`, `PATCH` or `DELETE` whose `Origin` is not this server (`X-Forwarded-Host`,
+else `Host`) with `403 cross_site`. Another owner's session or list is `404`.
 
 | Endpoint | Request | Response |
 |---|---|---|
@@ -219,7 +238,11 @@ else `Host`) with `403 cross_site`. Another owner's session is `404`.
 | `GET /api/web/v1/sessions/<syncId>/audio` | `?clean=1` for the cleaned recording, `?download=1` to download it; `Range: bytes=a-b` | `audio/wav`, streamed from S3 (`206` for a range), so a recording of any size never sits in memory |
 | `GET /api/web/v1/sessions/<syncId>/transcript/<format>` | `format` is `md`, `srt` or `vtt` | The transcript as a download named after the session; `404` for another format |
 | `DELETE /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n}`, the revision the page shows | `200 {"syncId","revision"}`, the session in the trash and its semantic vectors deleted. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
-| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`; `at` is an index in the manifest's array | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
+| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`, and for talking points (#104) `{"kind":"pointCovered","id","covered"}`, `{"kind":"point","id","text"}`, `{"kind":"pointAdd","text"}`, `{"kind":"pointDelete","id"}`; `at` is an index in the manifest's array, `id` a point's id | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
+| `GET /api/web/v1/talking-points` | | `200 {"lists":[{"syncId","revision","name","points","createdAt","changedAt"}]}`, by name, from Postgres |
+| `POST /api/web/v1/talking-points` | JSON `{"name", "points": [...]}` | `201 {"syncId","revision"}`: a new list, as a device would push it. `400 invalid_body` for a blank name or more than 200 points |
+| `PUT /api/web/v1/talking-points/<syncId>` | JSON `{"baseRevision": n, "name", "points": [...]}` | `200 {"syncId","revision"}`, the same revision if nothing changed. Fields this server doesn't know are kept. `409 conflict` if it changed since that revision, `422 newer_schema` for a list from a newer app, `404` if unknown or deleted |
+| `DELETE /api/web/v1/talking-points/<syncId>` | JSON `{"baseRevision": n}` | `200 {"syncId","revision"}`, leaving a tombstone devices delete it by. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
 | `POST /api/web/v1/sessions/<syncId>/restore` | | `200 {"syncId","revision"}`: the session is live again as a new revision. `404 not_in_trash` once purged, after 30 days, or for a session deleted before the trash existed |
 | `DELETE /api/web/v1/trash` | | `200 {"purged"}`: every session in the trash removed for good |
 | `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","firstSeenAt","lastSeenAt"}]}` |
@@ -285,6 +308,11 @@ write them is logged and never fails the push. A two-hour session takes about
 1.2 MB. After an upgrade, the same background indexing fills in sessions pushed
 earlier, and until it is done they are missing from results. To rebuild the
 rows, set `session_index.text_version` to 0 and restart.
+
+`talking_point_lists` is what the *Talking points* page lists (#104): each live
+list's name and points, copied from its manifest in the same transaction as each
+push and removed with a delete. Like `session_index` it is only for display, and
+the background indexing at startup fills in lists pushed before #104.
 
 S3 holds every byte, under one prefix per
 owner:

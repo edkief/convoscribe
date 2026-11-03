@@ -252,7 +252,8 @@ brings them to your other devices.
   follows on Wi-Fi (or on mobile data with *Download recordings on
   mobile data*); until then the session says *Audio downloading*.
   Edits made on any device, or in the server's web app (title, tags,
-  speaker names, line text, action items; #84), reach the others. When
+  speaker names, line text, action items; #84; talking points and
+  talking-point lists, #104), reach the others. When
   the same session
   changed in two places, **changes to different parts all survive**
   (#90): a title renamed on a phone and a line corrected on the web both
@@ -320,7 +321,9 @@ brings them to your other devices.
   past conversations. Presets don't carry talking points, and applying a
   preset keeps the ones you typed. Lists are backed up and sync like
   templates (the most recent edit wins). A session's points sync with it
-  and merge point by point. An app older than this one drops a session's
+  and merge point by point. Lists can also be written, and a session's
+  points ticked and edited, in the server's web app (issue #104), which is
+  handy for typing a list on a laptop before the meeting. An app older than this one drops a session's
   talking points if it edits that session.
   With a language model set up, the points also **tick themselves** while
   you record (issue #103). Every *Check talking points every* seconds
