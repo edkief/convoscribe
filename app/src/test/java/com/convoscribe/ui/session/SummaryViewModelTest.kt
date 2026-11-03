@@ -168,6 +168,27 @@ class SummaryViewModelTest {
         assertEquals(1_000L, items[0].atMs)
     }
 
+    /** Issue #102: the session's talking points are listed and edited from the tab. */
+    @Test
+    fun talkingPoints_areListedAndEdited() = runTest(dispatcher) {
+        val id = repo.createSession(title = "demo", language = "en", talkingPoints = listOf("Budget", "Hiring"))
+        val vm = SummaryViewModel(id, repo, ScriptedChatClient { _ -> flow { } }, newSettings(), templates)
+        val (budget, hiring) = vm.state.first { it.points.size == 2 }.points
+
+        vm.setPointCovered(budget.id, true)
+        vm.editPoint(hiring.id, "Hiring plan")
+        vm.movePoint(hiring.id, -1)
+        vm.addPoint("Office")
+        advanceUntilIdle()
+        val points = vm.state.first { it.points.size == 3 }.points
+        assertEquals(listOf("Hiring plan", "Budget", "Office"), points.map { it.text })
+        assertEquals(listOf(false, true, false), points.map { it.covered })
+
+        vm.deletePoint(budget.id)
+        advanceUntilIdle()
+        assertEquals(listOf("Hiring plan", "Office"), vm.state.first { it.points.size == 2 }.points.map { it.text })
+    }
+
     /** Issue #31: regenerating keeps what the user ticked, edited or deleted, and lists nothing twice. */
     @Test
     fun regenerate_keepsTheUsersActionItems() = runTest(dispatcher) {

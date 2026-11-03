@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -161,4 +162,30 @@ fun AddTalkingPointField(onAdd: (String) -> Unit, modifier: Modifier = Modifier)
             Text(text = stringResource(R.string.talking_point_add))
         }
     }
+}
+
+/** Editing a talking point's text (issue #102); Save stays off while it is blank. */
+@Composable
+fun TalkingPointDialog(initialText: String, onConfirm: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable(initialText) { mutableStateOf(initialText) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.talking_point_edit_title)) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.replace('\n', ' ').take(TalkingPoints.MAX_LEN) },
+                label = { Text(text = stringResource(R.string.talking_point_text_label)) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text) }) {
+                Text(text = stringResource(R.string.session_rename_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = stringResource(R.string.session_rename_cancel)) }
+        }
+    )
 }

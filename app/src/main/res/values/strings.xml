@@ -306,6 +306,8 @@
     <string name="talking_point_covered">Covered</string>
     <string name="talking_point_open">Not covered yet</string>
     <string name="talking_point_edit">Edit</string>
+    <string name="talking_point_edit_title">Edit talking point</string>
+    <string name="talking_point_text_label">Talking point</string>
     <string name="talking_point_move_up">Move up</string>
     <string name="talking_point_move_down">Move down</string>
     <string name="talking_point_add_label">Add a talking point</string>

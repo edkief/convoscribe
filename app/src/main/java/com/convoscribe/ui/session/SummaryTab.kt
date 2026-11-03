@@ -33,10 +33,13 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import com.convoscribe.R
 import com.convoscribe.data.ActionItemEntity
+import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptMark
 import com.convoscribe.llm.MarkNotesProgress
@@ -44,12 +47,17 @@ import com.convoscribe.llm.SummaryStep
 import com.convoscribe.ui.asString
 import com.convoscribe.ui.components.ActionItemDialog
 import com.convoscribe.ui.components.ActionItemRow
+import com.convoscribe.ui.components.AddTalkingPointField
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InlineProgress
 import com.convoscribe.ui.components.MarkdownText
+import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.components.TalkingPointDialog
+import com.convoscribe.ui.components.TalkingPointMenu
+import com.convoscribe.ui.components.TalkingPointRow
 import com.convoscribe.ui.templates.SummaryTemplatePicker
 import com.convoscribe.ui.theme.AppTheme
 
@@ -79,6 +87,10 @@ import com.convoscribe.ui.theme.AppTheme
  * The summary's action items (issue #31) are a checklist between the
  * summary and the notes; see [ActionItemsSection]. [onOpenItem] goes
  * to the moment one was agreed.
+ *
+ * The session's talking points (issue #102) come first, and show even
+ * without a language model, since they need none; see
+ * [TalkingPointsSection].
  */
 @Composable
 internal fun SummaryTab(
@@ -92,15 +104,36 @@ internal fun SummaryTab(
     onCancelNotes: () -> Unit = {},
     onOpenMark: (TranscriptMark) -> Unit = {},
     itemActions: ActionItemActions = ActionItemActions(),
-    onOpenItem: (ActionItemEntity) -> Unit = {}
+    onOpenItem: (ActionItemEntity) -> Unit = {},
+    pointActions: SessionPointActions = SessionPointActions(),
+    onOpenPoint: (TalkingPointEntity) -> Unit = {}
 ) {
     if (!state.configured) {
-        EmptyState(
-            icon = rememberVectorPainter(Icons.Filled.Settings),
-            title = stringResource(R.string.session_summary_not_configured),
-            actionLabel = stringResource(R.string.session_summary_open_settings),
-            onAction = onOpenSettings
-        )
+        if (state.points.isEmpty()) {
+            EmptyState(
+                icon = rememberVectorPainter(Icons.Filled.Settings),
+                title = stringResource(R.string.session_summary_not_configured),
+                actionLabel = stringResource(R.string.session_summary_open_settings),
+                onAction = onOpenSettings
+            )
+        } else {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+                Column(
+                    modifier = Modifier
+                        .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = AppTheme.spacing.screen, vertical = AppTheme.spacing.l),
+                    verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+                ) {
+                    TalkingPointsSection(points = state.points, actions = pointActions, onOpen = onOpenPoint)
+                    SupportingText(text = stringResource(R.string.session_summary_not_configured))
+                    OutlinedButton(onClick = onOpenSettings) {
+                        Text(text = stringResource(R.string.session_summary_open_settings))
+                    }
+                }
+            }
+        }
         return
     }
     val saved = state.saved
@@ -115,7 +148,8 @@ internal fun SummaryTab(
             enabled = !state.running
         )
     }
-    if (text.isBlank() && !state.running && state.error == null && marks.isEmpty() && state.items.isEmpty()) {
+    val nothing = text.isBlank() && !state.running && state.error == null && marks.isEmpty()
+    if (nothing && state.items.isEmpty() && state.points.isEmpty()) {
         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             Box(
                 modifier = Modifier
@@ -145,6 +179,9 @@ internal fun SummaryTab(
                 .padding(horizontal = spacing.screen, vertical = spacing.l),
             verticalArrangement = Arrangement.spacedBy(spacing.m)
         ) {
+            if (state.points.isNotEmpty()) {
+                TalkingPointsSection(points = state.points, actions = pointActions, onOpen = onOpenPoint)
+            }
             picker()
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -293,6 +330,65 @@ private fun ActionItemsSection(
             },
             onDismiss = { deleting = null },
             destructive = true
+        )
+    }
+}
+
+/** What can be done to a session's talking points (issue #102), by point id. */
+internal data class SessionPointActions(
+    val onCovered: (Long, Boolean) -> Unit = { _, _ -> },
+    val onAdd: (String) -> Unit = {},
+    val onEdit: (Long, String) -> Unit = { _, _ -> },
+    val onMove: (Long, Int) -> Unit = { _, _ -> },
+    val onDelete: (Long) -> Unit = {}
+)
+
+/**
+ * The session's talking points (issue #102): *n of m covered*, a row
+ * per point ([TalkingPointRow]) with Edit, Move up / down and Delete,
+ * and a field to add one. Tapping a covered point's time plays from it.
+ */
+@Composable
+private fun TalkingPointsSection(
+    points: List<TalkingPointEntity>,
+    actions: SessionPointActions,
+    onOpen: (TalkingPointEntity) -> Unit
+) {
+    val spacing = AppTheme.spacing
+    var editing by remember { mutableStateOf<TalkingPointEntity?>(null) }
+    Text(
+        text = stringResource(R.string.record_talking_points_progress, points.count { it.covered }, points.size),
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.semantics { heading() }
+    )
+    AppCard(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(vertical = spacing.s, horizontal = spacing.s)) {
+            points.forEachIndexed { index, point ->
+                TalkingPointRow(
+                    text = point.text,
+                    covered = point.covered,
+                    coveredAtMs = point.coveredAtMs,
+                    onCheckedChange = { actions.onCovered(point.id, it) },
+                    onOpenTime = point.coveredAtMs?.let { { onOpen(point) } },
+                    menu = TalkingPointMenu(
+                        onEdit = { editing = point },
+                        onMoveUp = if (index > 0) ({ actions.onMove(point.id, -1) }) else null,
+                        onMoveDown = if (index < points.lastIndex) ({ actions.onMove(point.id, 1) }) else null,
+                        onDelete = { actions.onDelete(point.id) }
+                    )
+                )
+            }
+            AddTalkingPointField(onAdd = actions.onAdd, modifier = Modifier.padding(horizontal = spacing.s))
+        }
+    }
+    editing?.let { point ->
+        TalkingPointDialog(
+            initialText = point.text,
+            onConfirm = {
+                actions.onEdit(point.id, it)
+                editing = null
+            },
+            onDismiss = { editing = null }
         )
     }
 }
