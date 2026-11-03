@@ -1060,6 +1060,7 @@ class RecordingService : Service() {
         private const val EXTRA_TAGS = "com.convoscribe.EXTRA_TAGS"
         private const val EXTRA_CLEAN_AUDIO = "com.convoscribe.EXTRA_CLEAN_AUDIO"
         private const val EXTRA_SUMMARY_TEMPLATE = "com.convoscribe.EXTRA_SUMMARY_TEMPLATE"
+        private const val EXTRA_TALKING_POINTS = "com.convoscribe.EXTRA_TALKING_POINTS"
 
         /** The [ConversationOptions] [startIntent] put on [intent], or `null` for the Settings defaults. */
         internal fun optionsFrom(intent: Intent): ConversationOptions? {
@@ -1071,7 +1072,8 @@ class RecordingService : Service() {
                 title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
                 summaryTemplate = intent.getStringExtra(EXTRA_SUMMARY_TEMPLATE) ?: SummaryTemplates.MEETING_KEY,
                 cleanAudio = intent.getBooleanExtra(EXTRA_CLEAN_AUDIO, false),
-                tags = intent.getStringArrayExtra(EXTRA_TAGS)?.toList().orEmpty()
+                tags = intent.getStringArrayExtra(EXTRA_TAGS)?.toList().orEmpty(),
+                talkingPoints = intent.getStringArrayExtra(EXTRA_TALKING_POINTS)?.toList().orEmpty()
             )
         }
 
@@ -1097,6 +1099,7 @@ class RecordingService : Service() {
                         putExtra(EXTRA_CLEAN_AUDIO, options.cleanAudio)
                         putExtra(EXTRA_SUMMARY_TEMPLATE, options.summaryTemplate)
                         putExtra(EXTRA_TAGS, options.tags.toTypedArray())
+                        putExtra(EXTRA_TALKING_POINTS, options.talkingPoints.toTypedArray())
                     }
                 }
 

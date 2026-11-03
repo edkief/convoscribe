@@ -30,6 +30,10 @@ import kotlinx.serialization.json.Json
  * hash, it had before they existed and is not pushed again for them.
  * Deleted items travel too, so another device's next summary does not
  * bring them back.
+ *
+ * [talkingPoints] (issue #102) is left out while empty for the same
+ * reason. Each point carries its own [TalkingPoint.id], so two devices'
+ * changes merge point by point.
  */
 @OptIn(ExperimentalSerializationApi::class)
 @Serializable
@@ -61,7 +65,9 @@ data class SessionManifest(
     val marks: List<Mark> = emptyList(),
     val tags: List<String> = emptyList(),
     @EncodeDefault(EncodeDefault.Mode.NEVER)
-    val actionItems: List<ActionItem> = emptyList()
+    val actionItems: List<ActionItem> = emptyList(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER)
+    val talkingPoints: List<TalkingPoint> = emptyList()
 ) {
     /** A recording, by the SHA-256 of its bytes (lower-case hex) and its size. */
     @Serializable
@@ -121,6 +127,17 @@ data class SessionManifest(
         val deleted: Boolean = false,
         val createdAt: Long
     )
+
+    /** A talking point of the conversation (issue #102), see [TalkingPointEntity]. */
+    @Serializable
+    data class TalkingPoint(
+        val id: String,
+        val text: String,
+        val covered: Boolean = false,
+        val coveredAtMs: Long? = null,
+        val byUser: Boolean = false,
+        val createdAt: Long
+    )
 }
 
 /**
@@ -150,7 +167,7 @@ object SessionManifests {
      * a user template's id to its name; [audio] and [cleanAudio]
      * describe the recordings, `null` when they are missing. The
      * [actionItems] are listed in their order; their position is
-     * where they come in the list.
+     * where they come in the list, as for [talkingPoints].
      */
     fun build(
         session: SessionEntity,
@@ -162,7 +179,8 @@ object SessionManifests {
         userTemplateNames: Map<Long, String>,
         audio: SessionManifest.FileRef?,
         cleanAudio: SessionManifest.FileRef?,
-        actionItems: List<ActionItemEntity> = emptyList()
+        actionItems: List<ActionItemEntity> = emptyList(),
+        talkingPoints: List<TalkingPointEntity> = emptyList()
     ): SessionManifest = SessionManifest(
         syncId = session.syncId,
         title = session.title,
@@ -229,6 +247,16 @@ object SessionManifests {
                 edited = item.edited,
                 deleted = item.deleted,
                 createdAt = item.createdAt
+            )
+        },
+        talkingPoints = talkingPoints.sortedWith(compareBy({ it.position }, { it.id })).map { point ->
+            SessionManifest.TalkingPoint(
+                id = point.pointId,
+                text = point.text,
+                covered = point.covered,
+                coveredAtMs = point.coveredAtMs,
+                byUser = point.byUser,
+                createdAt = point.createdAt
             )
         }
     )

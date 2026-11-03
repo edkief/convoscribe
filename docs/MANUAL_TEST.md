@@ -2253,6 +2253,47 @@ tablet or an unfolded device). Run steps 1 to 7 on a Boox in e-ink mode too.
 - Step 9: list and page show side by side; what you typed is kept; back leaves
   Settings.
 
+## 53. Talking points (issue #102)
+
+Needs two devices syncing to one server for steps 6 and 7. Run steps 1 to 4 on a
+Boox in e-ink mode too.
+
+**Steps**
+
+1. Settings → Search & organise → **Talking points** → *New list*. Name it
+   *Weekly*, type *Budget*, *Hiring* and *Office* on three lines, and save. Edit it,
+   rotate the device halfway through typing, and save.
+2. On the Record screen, under *Talking points*, type *budget* and add it, then
+   *Attach a list* → *Weekly*. Pick a preset, then *Settings defaults*.
+3. Start recording. Tick *Hiring*, add *Holidays* in the card, untick *Hiring*, tick
+   it again. Pause and resume. Fold the card away and open it again.
+4. Stop. On the Summary tab, tap *Hiring*'s time, edit *Office*, move it up, delete
+   *Holidays* and add *Parking*. Do the same with no language model set up.
+5. Continue the recording from the session screen.
+6. Sync both devices. On the second device, tick *Office* in that session; on the
+   first, edit *Budget*. Sync both twice.
+7. Edit *Weekly* on the second device, sync both. Delete it on the first, sync both.
+8. Back up, wipe the app's data, restore.
+9. With TalkBack on, move through the Record card and the Summary section.
+
+**Expected**
+
+- Step 1: the list shows *3 points* and the first ones; the edit survives rotation.
+- Step 2: *budget* is listed once (the list's *Budget* is left out), followed by
+  *Hiring* and *Office*. The preset fills the options and is shown as active; the
+  points stay through both picks.
+- Step 3: the card ends at *Talking points: 1 of 4 covered*; a ticked point says
+  *Covered* and the time it was last ticked. Points are kept after resuming.
+- Step 4: the player jumps to *Hiring*'s time on the Transcript tab; each change
+  shows at once. Without a language model the points still show, above *Open
+  Settings*.
+- Step 5: the card shows the session's points, as they were.
+- Step 6: both devices end with the ticked *Office* and the edited *Budget*.
+- Step 7: the edit, then the delete, reach the first device. Sessions keep their points.
+- Step 8: the lists and every session's points come back, ticks and times included.
+- Step 9: each point is read with *Covered* or *Not covered yet*; the card title is
+  read as a heading, expanded or collapsed.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

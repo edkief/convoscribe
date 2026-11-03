@@ -110,7 +110,8 @@ class RecordingControllerTest {
             val summaryTemplate: String? = null,
             val cleanedWith: String? = null,
             val tags: List<String> = emptyList(),
-            val titleSource: String = TitleSource.DEFAULT
+            val titleSource: String = TitleSource.DEFAULT,
+            val talkingPoints: List<String> = emptyList()
         )
 
         /** A call to [recordEngine], in order. */
@@ -127,10 +128,21 @@ class RecordingControllerTest {
             summaryTemplate: String?,
             cleanedWith: String?,
             tags: List<String>,
-            titleSource: String
+            titleSource: String,
+            talkingPoints: List<String>
         ): Long {
             createCalls +=
-                Create(title, language, numSpeakers, participants, summaryTemplate, cleanedWith, tags, titleSource)
+                Create(
+                    title,
+                    language,
+                    numSpeakers,
+                    participants,
+                    summaryTemplate,
+                    cleanedWith,
+                    tags,
+                    titleSource,
+                    talkingPoints
+                )
             val id = nextId.incrementAndGet()
             cleaned[id] = cleanedWith
             // Match the production `SessionRepository`: a file at
@@ -634,7 +646,8 @@ class RecordingControllerTest {
                 participants = listOf("Alice"),
                 title = "  Interview  ",
                 summaryTemplate = "interview",
-                tags = listOf("Acme")
+                tags = listOf("Acme"),
+                talkingPoints = listOf("Budget")
             )
         )
         advanceUntilIdle()
@@ -648,7 +661,8 @@ class RecordingControllerTest {
                     listOf("Alice"),
                     "interview",
                     tags = listOf("Acme"),
-                    titleSource = TitleSource.USER
+                    titleSource = TitleSource.USER,
+                    talkingPoints = listOf("Budget")
                 )
             ),
             h.store.createCalls

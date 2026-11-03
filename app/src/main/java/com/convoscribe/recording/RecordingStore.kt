@@ -28,6 +28,7 @@ interface RecordingStore {
      * [tags] are tag names, created when missing, and [titleSource]
      * says whether [title] is the date-based default or was chosen
      * (issue #32, see [com.convoscribe.data.TitleSource]).
+     * [talkingPoints] become the session's talking points (issue #102).
      */
     suspend fun createSession(
         title: String,
@@ -37,7 +38,8 @@ interface RecordingStore {
         summaryTemplate: String? = null,
         cleanedWith: String? = null,
         tags: List<String> = emptyList(),
-        titleSource: String = TitleSource.DEFAULT
+        titleSource: String = TitleSource.DEFAULT,
+        talkingPoints: List<String> = emptyList()
     ): Long
 
     /**

@@ -157,6 +157,36 @@ class SessionManifestTest {
         assertEquals(manifest, SessionManifests.decode(SessionManifests.encode(manifest)))
     }
 
+    /** Issue #102: a session without talking points encodes as it did before they existed. */
+    @Test
+    fun manifest_leavesOutAnEmptyTalkingPointsList() = runTest {
+        val manifest = repo.snapshot(session())!!.manifest
+        assertFalse(SessionManifests.encode(manifest).contains("talkingPoints"))
+    }
+
+    /** Issue #102: talking points travel with their session, in order, with their state and ids. */
+    @Test
+    fun applyManifest_carriesTheTalkingPoints() = runTest {
+        val id = repo.createSession(title = "Weekly", language = "en", talkingPoints = listOf(" Budget ", "", "Hiring"))
+        val (budget, hiring) = repo.getTalkingPoints(id)
+        repo.setTalkingPointCovered(budget.id, true, atMs = 1_200)
+        repo.moveTalkingPoint(hiring.id, -1)
+        val snapshot = repo.snapshot(id)!!
+        assertEquals(listOf("Hiring", "Budget"), snapshot.manifest.talkingPoints.map { it.text })
+        val (other, otherRepo) = otherDevice()
+        try {
+            val newId = otherRepo.applyManifest(snapshot.manifest, 42L, staged(snapshot))
+            val copied = other.talkingPointDao().getForSession(newId)
+            assertEquals(listOf(hiring.pointId, budget.pointId), copied.map { it.pointId })
+            assertEquals(listOf(false, true), copied.map { it.covered })
+            assertEquals(listOf(null, 1_200L), copied.map { it.coveredAtMs })
+            assertEquals(listOf(false, true), copied.map { it.byUser })
+            assertEquals(snapshot.manifest.talkingPoints, otherRepo.snapshot(newId)!!.manifest.talkingPoints)
+        } finally {
+            other.close()
+        }
+    }
+
     /** Issue #31: action items, deleted ones included, travel with their session and keep the user's state. */
     @Test
     fun applyManifest_carriesTheActionItems() = runTest {

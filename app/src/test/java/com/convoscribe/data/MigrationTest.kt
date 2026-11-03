@@ -577,4 +577,33 @@ class MigrationTest {
             db.close()
         }
     }
+
+    @Test
+    fun migrate20To21_noTalkingPointsAndPointsGoWithTheirSession() = runTest {
+        helper.createDatabase(DB_NAME, 20).use { db ->
+            db.execSQL(
+                "INSERT INTO sessions (id, title, createdAt, durationMs, language, audioPath, status, " +
+                    "transcriptEdited, titleSource, syncId, updatedAt) " +
+                    "VALUES (1, 'Weekly', 100, 0, 'en', '', 'DIARIZED', 0, 'user', 'sync-1', 100)"
+            )
+        }
+        helper.runMigrationsAndValidate(DB_NAME, 21, true).close()
+
+        val db = Room.databaseBuilder(ApplicationProvider.getApplicationContext(), AppDatabase::class.java, DB_NAME)
+            .addMigrations(MIGRATION_15_16, MIGRATION_18_19)
+            .allowMainThreadQueries()
+            .build()
+        try {
+            assertEquals(emptyList<TalkingPointListEntity>(), db.talkingPointListDao().getAll())
+            assertEquals(emptyList<TalkingPointEntity>(), db.talkingPointDao().getForSession(1))
+            db.talkingPointDao().insertAll(
+                listOf(TalkingPointEntity(sessionId = 1, text = "Budget", position = 0, createdAt = 1))
+            )
+            assertEquals(listOf(false), db.talkingPointDao().getForSession(1).map { it.covered })
+            db.sessionDao().delete(1)
+            assertEquals(emptyList<TalkingPointEntity>(), db.talkingPointDao().getForSession(1))
+        } finally {
+            db.close()
+        }
+    }
 }

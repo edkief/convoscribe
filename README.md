@@ -279,7 +279,8 @@ brings them to your other devices.
   Settings shows when it last synced, how many sessions are waiting to
   upload or download and the last error, with **Sync now**. With sync
   off, no server or no network, everything else works as before.
-  Known voices, presets and your summary templates sync too (#70):
+  Known voices, presets, your summary templates and (#102) talking-point
+  lists sync too (#70):
   adding, editing or deleting one on a device does the same on the
   others, the most recent edit wins, and a preset keeps its tags and
   template by name. Items both devices already had (say after
@@ -287,7 +288,9 @@ brings them to your other devices.
   semantic-search vectors travel with it, so a device that has the
   same embedding model and the same text uses them instead of indexing
   the session again; otherwise it indexes the session itself, as
-  before.
+  before. Talking-point lists need a server that knows the
+  `talking-points` kind (after `server-v0.9.0`); an older one keeps
+  syncing everything else.
 - **Action items as a checklist** (issue #31). A summary's action
   items become a checklist on the Summary tab, below the summary. The
   model lists them again as JSON after the summary (the bullet list is
@@ -301,6 +304,21 @@ brings them to your other devices.
   *Open actions* lists every session's unticked items, by session or
   by owner. Items are backed up and synced with their session.
   Summaries saved before this version get items when regenerated.
+- **Talking points** (issue #102). Before a conversation, list what you
+  mean to raise. On the Record screen, under *Talking points*, type points
+  or *Attach a list*. Keep reusable lists in Settings → Search & organise →
+  Talking points, one point per line. While recording, a card above the
+  live transcript shows *Talking points: n of m covered*. Tick each point
+  as it comes up (the recording time is noted), or add one. Afterwards the
+  points head the session's Summary tab, even without a language model.
+  There you can tick, untick, edit, reorder, delete and add them, and tap a
+  covered point's time to play from there. Each conversation keeps its own
+  copy: ticking never changes the list, and editing a list never changes
+  past conversations. Presets don't carry talking points, and applying a
+  preset keeps the ones you typed. Lists are backed up and sync like
+  templates (the most recent edit wins). A session's points sync with it
+  and merge point by point. An app older than this one drops a session's
+  talking points if it edits that session.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -691,6 +709,11 @@ one package per concern:
   still to download, and tombstones keep the deleted length for the
   conflict rule. Every write path stamps `sessions.updatedAt` through
   `SessionRepository.touch` for "most recently changed wins".
+  Schema v21 (issue #102) adds `talking_point_lists` (library items, points
+  one per line, behind `TalkingPointListStore`) and `talking_points` (a
+  session's own copy, each point with a `pointId` UUID, `covered`,
+  `coveredAtMs` and `byUser`). The manifest's `talkingPoints` is left
+  out while empty, and `SessionMerge` merges the points by id.
   Schema v19 (issue #70) gives known-voice samples, presets and summary
   templates a `syncId` (and presets and templates an `updatedAt`),
   which backups now carry, and `sync_state.contentKey`, the text hash of
@@ -723,7 +746,8 @@ one package per concern:
   session tables, so no write path is missed, and when the app opens.
   `SyncStatusStore` keeps what Settings shows and the feed cursor.
   After sessions, a run syncs the library (#70) through `LibraryKind`,
-  one document per summary template, preset and known-voice sample
+  one document per summary template, preset, known-voice sample and
+  talking-point list (#102)
   (templates first, so presets resolve them by name): it downloads,
   then pushes changes with no recording length, so the most recent
   change wins. Deleted items are noticed as missing rows with a synced

@@ -465,6 +465,13 @@ fun SessionScreen(
             onShare = { item -> ActionItemIntents.share(context, item, state.title, state.createdAt) },
             onAddToCalendar = { item -> ActionItemIntents.addToCalendar(context, item, state.title, state.createdAt) }
         ),
+        pointActions = SessionPointActions(
+            onCovered = summaryVm::setPointCovered,
+            onAdd = summaryVm::addPoint,
+            onEdit = summaryVm::editPoint,
+            onMove = summaryVm::movePoint,
+            onDelete = summaryVm::deletePoint
+        ),
         onAsk = { question -> askVm.ask(question) },
         onRetryAsk = { askVm.retryLast() },
         onCancelAsk = { askVm.cancel() },
@@ -532,6 +539,7 @@ internal fun SessionBody(
     onWriteNotes: () -> Unit = {},
     onCancelNotes: () -> Unit = {},
     itemActions: ActionItemActions = ActionItemActions(),
+    pointActions: SessionPointActions = SessionPointActions(),
     onAsk: (String) -> Unit,
     onRetryAsk: () -> Unit,
     onCancelAsk: () -> Unit,
@@ -829,6 +837,13 @@ internal fun SessionBody(
                     onOpenItem = { item ->
                         selectedTab = 0
                         val at = item.atMs
+                        if (canPlay && at != null) playback.onSeek(at)
+                    },
+                    pointActions = pointActions,
+                    // To the transcript where the point was covered.
+                    onOpenPoint = { point ->
+                        selectedTab = 0
+                        val at = point.coveredAtMs
                         if (canPlay && at != null) playback.onSeek(at)
                     }
                 )

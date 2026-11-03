@@ -16,6 +16,7 @@ import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.SummaryTemplateEntity
+import com.convoscribe.data.TalkingPointListEntity
 import com.convoscribe.data.cleanAudioPathFor
 import com.convoscribe.llm.ExtractedActionItem
 import com.convoscribe.llm.SummaryTemplates
@@ -110,13 +111,17 @@ class BackupRoundTripTest {
             SummaryTemplateEntity(name = "Standup", body = "Who did what.", createdAt = 5)
         )
         val template = SummaryTemplates.userKey(templateId)
+        db.talkingPointListDao().insert(
+            TalkingPointListEntity(name = "Weekly", points = "Budget\nHiring", createdAt = 6)
+        )
         for (n in 1..3) {
             val id = repo.createSession(
                 title = "Session $n",
                 language = "en",
                 participants = listOf("Ann", "Bob"),
                 summaryTemplate = template,
-                tags = listOf("Acme", "week $n")
+                tags = listOf("Acme", "week $n"),
+                talkingPoints = listOf("Budget", "Point $n")
             )
             repo.addSegment(id, 0, 900, "hello there", listOf(TimedToken("hello", 0), TimedToken(" there", 450)))
             repo.addSegment(
@@ -242,6 +247,9 @@ class BackupRoundTripTest {
         )
         assertEquals(phone.db.summaryTemplateDao().getAll().single().syncId, template.syncId)
         assertEquals(phone.presets.observeAll().first().single().syncId, preset.syncId)
+        val list = tablet.db.talkingPointListDao().getAll().single()
+        assertEquals("Weekly" to "Budget\nHiring", list.name to list.points)
+        assertEquals(phone.db.talkingPointListDao().getAll().single().syncId, list.syncId)
         val settings = tablet.settings.settings.value
         assertEquals("llama", settings.llmModel)
         assertEquals(templateKey, settings.defaultSummaryTemplate)
@@ -265,6 +273,7 @@ class BackupRoundTripTest {
         assertEquals(1, tablet.db.enrolledSpeakerDao().getAll().size)
         assertEquals(1, tablet.db.summaryTemplateDao().getAll().size)
         assertEquals(1, tablet.presets.observeAll().first().size)
+        assertEquals(1, tablet.db.talkingPointListDao().getAll().size)
     }
 
     @Test

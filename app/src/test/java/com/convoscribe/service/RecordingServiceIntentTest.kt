@@ -25,7 +25,8 @@ class RecordingServiceIntentTest {
             title = "Cafe",
             summaryTemplate = SummaryTemplates.INTERVIEW_KEY,
             cleanAudio = true,
-            tags = listOf("Acme", "Weekly")
+            tags = listOf("Acme", "Weekly"),
+            talkingPoints = listOf("Budget", "Hiring")
         )
         val read = RecordingService.optionsFrom(RecordingService.startIntent(context, options = options))!!
         assertEquals(options, read)

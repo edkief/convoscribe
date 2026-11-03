@@ -95,9 +95,9 @@ private val SEMANTIC_INDEX_MODES = listOf(
     SemanticIndexMode.ANY_TIME to R.string.settings_semantic_index_mode_any_time
 )
 
-/** Tags (and presets) of conversations (issue #32), each managed on its own screen. */
+/** Tags and presets (issue #32) and talking-point lists (issue #102), each managed on its own screen. */
 @Composable
-internal fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit) {
+internal fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit, onOpenTalkingPoints: () -> Unit = {}) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
         title = stringResource(R.string.settings_section_organise)
@@ -111,6 +111,11 @@ internal fun OrganiseSection(onOpenTags: () -> Unit, onOpenPresets: () -> Unit) 
             label = stringResource(R.string.settings_organise_presets_row),
             help = stringResource(R.string.settings_organise_presets_help),
             onClick = onOpenPresets
+        )
+        NavRow(
+            label = stringResource(R.string.settings_organise_talking_points_row),
+            help = stringResource(R.string.settings_organise_talking_points_help),
+            onClick = onOpenTalkingPoints
         )
     }
 }

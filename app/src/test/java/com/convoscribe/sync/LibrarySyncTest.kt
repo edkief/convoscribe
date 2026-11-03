@@ -10,6 +10,8 @@ import com.convoscribe.data.Preset
 import com.convoscribe.data.PresetRepository
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateRepository
+import com.convoscribe.data.TalkingPointList
+import com.convoscribe.data.TalkingPointListRepository
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
@@ -46,6 +48,7 @@ class LibrarySyncTest {
         val repo = SessionRepository(db, File(dir, "recordings").apply { mkdirs() }) { now }
         val templates = SummaryTemplateRepository(db.summaryTemplateDao()) { now }
         val presets = PresetRepository(db) { now }
+        val lists = TalkingPointListRepository(db.talkingPointListDao()) { now }
         val settings = SettingsRepository(
             context.getSharedPreferences("library-$name-${System.nanoTime()}", 0),
             InMemorySecretStore()
@@ -225,5 +228,28 @@ class LibrarySyncTest {
         assertEquals(SyncOutcome.DONE, a.sync())
 
         assertNotNull(fake.documents[a.repo.getSession(id)!!.syncId])
+    }
+
+    /** Issue #102: talking-point lists travel, are edited and deleted like the rest of the library. */
+    @Test
+    fun talkingPointListsTravelBothWays() = runTest {
+        a.lists.add("Weekly", listOf("Budget", "Hiring"))
+        a.sync()
+        b.sync()
+        val onB = b.lists.observeAll().first().single()
+        assertEquals(listOf("Budget", "Hiring"), onB.points)
+
+        b.lists.update(onB.id, "Weekly 1:1", listOf("Hiring", "Office"))
+        b.sync()
+        a.sync()
+        assertEquals(
+            listOf("Weekly 1:1" to listOf("Hiring", "Office")),
+            a.lists.observeAll().first().map { it.name to it.points }
+        )
+
+        a.lists.delete(a.lists.observeAll().first().single().id)
+        a.sync()
+        b.sync()
+        assertEquals(emptyList<TalkingPointList>(), b.lists.observeAll().first())
     }
 }

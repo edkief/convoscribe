@@ -11,6 +11,7 @@ import com.convoscribe.data.MessageRole
 import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateStore
+import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TranscriptFormatter
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.llm.ActionItemsParser
@@ -67,6 +68,7 @@ import kotlinx.coroutines.launch
  *   identified; `null` when nothing is running and nothing failed.
  * @property items the summary's action items (issue #31), done ones
  *   included, in the summary's order.
+ * @property points the session's talking points (issue #102), in order.
  */
 data class SummaryUiState(
     val saved: String? = null,
@@ -79,7 +81,8 @@ data class SummaryUiState(
     val selectedKey: String = SummaryTemplates.MEETING_KEY,
     val step: SummaryStep? = null,
     val notes: MarkNotesProgress? = null,
-    val items: List<ActionItemEntity> = emptyList()
+    val items: List<ActionItemEntity> = emptyList(),
+    val points: List<TalkingPointEntity> = emptyList()
 )
 
 /**
@@ -181,6 +184,9 @@ class SummaryViewModel(
         }
         viewModelScope.launch {
             repository.observeActionItems(sessionId).collect { rows -> _state.update { it.copy(items = rows) } }
+        }
+        viewModelScope.launch {
+            repository.observeTalkingPoints(sessionId).collect { rows -> _state.update { it.copy(points = rows) } }
         }
         markNotes?.let { writer ->
             viewModelScope.launch {
@@ -343,6 +349,27 @@ class SummaryViewModel(
     /** Remove action item [itemId]; regenerating does not bring it back. */
     fun deleteItem(itemId: Long) {
         viewModelScope.launch { repository.deleteActionItem(itemId) }
+    }
+
+    /** Tick or untick a talking point by hand (issue #102); an earlier time stays. */
+    fun setPointCovered(pointId: Long, covered: Boolean) {
+        viewModelScope.launch { repository.setTalkingPointCovered(pointId, covered) }
+    }
+
+    fun addPoint(text: String) {
+        viewModelScope.launch { repository.addTalkingPoint(sessionId, text) }
+    }
+
+    fun editPoint(pointId: Long, text: String) {
+        viewModelScope.launch { repository.editTalkingPoint(pointId, text) }
+    }
+
+    fun movePoint(pointId: Long, by: Int) {
+        viewModelScope.launch { repository.moveTalkingPoint(pointId, by) }
+    }
+
+    fun deletePoint(pointId: Long) {
+        viewModelScope.launch { repository.deleteTalkingPoint(pointId) }
     }
 
     /** Write (or rewrite) the full note of every mark (issue #48); it goes on if the screen closes. */

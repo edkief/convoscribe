@@ -14,6 +14,9 @@ object SyncKinds {
     /** A summary template the user wrote. */
     const val TEMPLATE: String = "template"
 
+    /** A talking-point list (issue #102). */
+    const val TALKING_POINTS: String = "talking-points"
+
     /** A session's semantic vectors, under the session's sync id. */
     const val VECTORS: String = "vectors"
 }

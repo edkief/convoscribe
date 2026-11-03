@@ -29,6 +29,16 @@ data class TemplateManifest(
     val createdAt: Long
 )
 
+/** A talking-point list as sync sends it (issue #102): its points in order. */
+@Serializable
+data class TalkingPointListManifest(
+    val schema: Int = LibraryManifests.SCHEMA,
+    val syncId: String,
+    val name: String,
+    val points: List<String> = emptyList(),
+    val createdAt: Long
+)
+
 /**
  * A preset as sync sends it (issue #70): its tags by name, sorted, and
  * its template by [SessionManifest.TemplateRef], since both are local
@@ -77,6 +87,13 @@ object LibraryManifests {
 
     fun template(row: SummaryTemplateEntity): TemplateManifest =
         TemplateManifest(syncId = row.syncId, name = row.name, body = row.body, createdAt = row.createdAt)
+
+    fun talkingPoints(row: TalkingPointListEntity): TalkingPointListManifest = TalkingPointListManifest(
+        syncId = row.syncId,
+        name = row.name,
+        points = TalkingPoints.split(row.points),
+        createdAt = row.createdAt
+    )
 
     /** [row] with its tags named by [tagNames] and its template by [userTemplateNames]. */
     fun preset(row: PresetEntity, tagNames: Map<Long, String>, userTemplateNames: Map<Long, String>): PresetManifest =

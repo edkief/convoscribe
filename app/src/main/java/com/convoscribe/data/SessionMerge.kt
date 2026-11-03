@@ -21,6 +21,12 @@ package com.convoscribe.data
  * edited it, and a new summary's item that repeats one already listed
  * is left out ([ActionItemMerge.same]).
  *
+ * Talking points (issue #102) merge by their id: a point's text and its
+ * covered state each come from the side that changed them, a point
+ * added on either side is kept, and one removed on a side is gone
+ * unless the other side changed it. Their order is the side's that
+ * reordered them.
+ *
  * Without a base (a session changed here before this device kept one)
  * every difference counts as changed on both sides.
  */
@@ -105,7 +111,8 @@ object SessionMerge {
                 messages = mergeMessages(),
                 marks = mergeMarks(),
                 tags = mergeTags(),
-                actionItems = mergeActionItems()
+                actionItems = mergeActionItems(),
+                talkingPoints = mergeTalkingPoints()
             )
             return Result(manifest, dropped)
         }
@@ -253,6 +260,28 @@ object SessionMerge {
                 true
             }.values.toList()
         }
+
+        private fun mergeTalkingPoints(): List<SessionManifest.TalkingPoint> {
+            val merged = keyed(
+                base?.talkingPoints,
+                local.talkingPoints,
+                remote.talkingPoints,
+                { it.id },
+                editBeatsRemoval = true
+            ) { was, l, r ->
+                val text = pick(was?.text ?: NO_BASE, l.text, r.text)
+                val state = pick(was?.let(::pointState) ?: NO_BASE, pointState(l), pointState(r))
+                l.copy(text = text, covered = state.first, coveredAtMs = state.second, byUser = state.third)
+            }
+            val order = field { side -> side.talkingPoints.map { it.id } }
+            val rank = order.withIndex().associate { it.value to it.index }
+            return merged.withIndex()
+                .sortedWith(compareBy({ rank[it.value.id] ?: Int.MAX_VALUE }, { it.index }))
+                .map { it.value }
+        }
+
+        private fun pointState(point: SessionManifest.TalkingPoint) =
+            Triple(point.covered, point.coveredAtMs, point.byUser)
 
         private val SessionManifest.ActionItem.isTouched: Boolean get() = done || edited || deleted
 

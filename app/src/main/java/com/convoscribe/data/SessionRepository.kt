@@ -36,7 +36,7 @@ class SessionRepository(
     private val db: AppDatabase,
     private val recordingsDir: File,
     private val clock: () -> Long = System::currentTimeMillis
-) : RecordingStore {
+) : RecordingStore, SessionTalkingPoints {
     private val sessionDao: SessionDao = db.sessionDao()
     private val segmentDao: SegmentDao = db.segmentDao()
     private val speakerDao: SpeakerDao = db.speakerDao()
@@ -45,6 +45,7 @@ class SessionRepository(
     private val tagDao: TagDao = db.tagDao()
     private val globalChatDao: GlobalChatMessageDao = db.globalChatMessageDao()
     private val actionItemDao: ActionItemDao = db.actionItemDao()
+    private val talkingPointDao: TalkingPointDao = db.talkingPointDao()
 
     /**
      * Create a new session row with [status] = RECORDING and
@@ -54,7 +55,8 @@ class SessionRepository(
      * primary key. The returned id is what the recorder uses to
      * create the WAV file. [numSpeakers] is normalised like
      * [setSessionSpeakerCount]; [participants] like [setParticipants];
-     * [tags] like [setSessionTags].
+     * [tags] like [setSessionTags]. [talkingPoints] become the
+     * session's own talking points (issue #102), in order.
      */
     override suspend fun createSession(
         title: String,
@@ -64,7 +66,8 @@ class SessionRepository(
         summaryTemplate: String?,
         cleanedWith: String?,
         tags: List<String>,
-        titleSource: String
+        titleSource: String,
+        talkingPoints: List<String>
     ): Long = db.withTransaction {
         val row = SessionEntity(
             title = title,
@@ -80,6 +83,12 @@ class SessionRepository(
         val id = sessionDao.insert(row)
         sessionDao.update(row.copy(id = id, audioPath = File(recordingsDir, "$id.wav").absolutePath))
         linkTags(id, tags)
+        val now = clock()
+        talkingPointDao.insertAll(
+            TalkingPoints.cleanAll(talkingPoints).mapIndexed { index, text ->
+                TalkingPointEntity(sessionId = id, text = text, position = index, createdAt = now)
+            }
+        )
         id
     }
 
@@ -270,6 +279,73 @@ class SessionRepository(
         sessionDao.touchForActionItem(itemId, clock())
     }
 
+    /** The session's talking points (issue #102), in order. */
+    override fun observeTalkingPoints(sessionId: Long): Flow<List<TalkingPointEntity>> =
+        talkingPointDao.observeForSession(sessionId)
+
+    suspend fun getTalkingPoints(sessionId: Long): List<TalkingPointEntity> = talkingPointDao.getForSession(sessionId)
+
+    /**
+     * Tick or untick a talking point by hand: it is the user's from now
+     * on, so automatic checking leaves it alone. [atMs] is when it was
+     * covered on the recording's clock, if known; unticking clears it.
+     */
+    override suspend fun setTalkingPointCovered(pointId: Long, covered: Boolean, atMs: Long?) {
+        val point = talkingPointDao.get(pointId) ?: return
+        talkingPointDao.setCovered(pointId, covered, if (covered) atMs ?: point.coveredAtMs else null, byUser = true)
+        touch(point.sessionId)
+    }
+
+    /** Add a talking point at the end of the session's list; a blank [text] adds nothing. Returns its id. */
+    override suspend fun addTalkingPoint(sessionId: Long, text: String): Long? {
+        val cleaned = TalkingPoints.clean(text).takeIf { it.isNotEmpty() } ?: return null
+        return db.withTransaction {
+            val position = (talkingPointDao.getForSession(sessionId).maxOfOrNull { it.position } ?: -1) + 1
+            talkingPointDao.insertAll(
+                listOf(
+                    TalkingPointEntity(sessionId = sessionId, text = cleaned, position = position, createdAt = clock())
+                )
+            )
+            touch(sessionId)
+            talkingPointDao.getForSession(sessionId).last().id
+        }
+    }
+
+    /** Change a talking point's text; a blank or unchanged [text] changes nothing. */
+    suspend fun editTalkingPoint(pointId: Long, text: String) {
+        val point = talkingPointDao.get(pointId) ?: return
+        val cleaned = TalkingPoints.clean(text).takeIf { it.isNotEmpty() && it != point.text } ?: return
+        talkingPointDao.setText(pointId, cleaned)
+        touch(point.sessionId)
+    }
+
+    suspend fun deleteTalkingPoint(pointId: Long) {
+        val point = talkingPointDao.get(pointId) ?: return
+        talkingPointDao.delete(pointId)
+        touch(point.sessionId)
+    }
+
+    /** Move a talking point [by] places (negative is up), within the list. */
+    suspend fun moveTalkingPoint(pointId: Long, by: Int) {
+        val point = talkingPointDao.get(pointId) ?: return
+        db.withTransaction {
+            val points = talkingPointDao.getForSession(point.sessionId).toMutableList()
+            val from = points.indexOfFirst { it.id == pointId }
+            val to = (from + by).coerceIn(0, points.lastIndex)
+            if (from < 0 || from == to) return@withTransaction
+            points.add(to, points.removeAt(from))
+            points.forEachIndexed { index, row ->
+                if (row.position != index) {
+                    talkingPointDao.setPosition(
+                        row.id,
+                        index
+                    )
+                }
+            }
+            touch(point.sessionId)
+        }
+    }
+
     /**
      * Recording finished. Stamp the duration and move the session
      * to [SessionStatus.TRANSCRIBED]; the service then diarizes it or
@@ -439,6 +515,7 @@ class SessionRepository(
                 messages = chatMessageDao.getForSession(sessionId),
                 marks = markDao.getForSession(sessionId),
                 actionItems = actionItemDao.getForSession(sessionId),
+                talkingPoints = talkingPointDao.getForSession(sessionId),
                 tags = tagDao.namesFor(sessionId),
                 templates = db.summaryTemplateDao().getAll().associate { it.id to it.name }
             )
@@ -458,7 +535,8 @@ class SessionRepository(
             userTemplateNames = rows.templates,
             audio = audio,
             cleanAudio = clean,
-            actionItems = rows.actionItems
+            actionItems = rows.actionItems,
+            talkingPoints = rows.talkingPoints
         )
         val files = buildMap {
             if (audio != null && audioFile != null) put(audio.sha256, audioFile)
@@ -536,6 +614,7 @@ class SessionRepository(
             chatMessageDao.deleteForSession(existing.id)
             markDao.deleteForSession(existing.id)
             actionItemDao.deleteForSession(existing.id)
+            talkingPointDao.deleteForSession(existing.id)
             tagDao.unlinkAll(existing.id)
             existing.id
         }
@@ -600,6 +679,20 @@ class SessionRepository(
                 )
             }
         )
+        talkingPointDao.insertAll(
+            manifest.talkingPoints.mapIndexed { index, point ->
+                TalkingPointEntity(
+                    sessionId = id,
+                    pointId = point.id,
+                    text = point.text,
+                    position = index,
+                    covered = point.covered,
+                    coveredAtMs = point.coveredAtMs,
+                    byUser = point.byUser,
+                    createdAt = point.createdAt
+                )
+            }
+        )
         linkTags(id, manifest.tags)
         when {
             audio != null -> moveFile(audio, target)
@@ -620,6 +713,7 @@ class SessionRepository(
         val messages: List<ChatMessageEntity>,
         val marks: List<MarkEntity>,
         val actionItems: List<ActionItemEntity>,
+        val talkingPoints: List<TalkingPointEntity>,
         val tags: List<String>,
         val templates: Map<Long, String>
     )

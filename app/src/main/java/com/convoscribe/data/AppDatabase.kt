@@ -15,8 +15,8 @@ import java.util.UUID
  * LLM chat messages, (v2) enrolled speakers, (v5) a full-text
  * index over transcript lines, (v7) summary templates and (v8)
  * marks, (v12) tags and presets, (v14) the *Ask across sessions* history,
- * (v15) semantic search, (v16) stable session ids and (v20) action
- * items. The current version is 20; the generated JSON for every version is committed
+ * (v15) semantic search, (v16) stable session ids, (v20) action
+ * items and (v21) talking points. The current version is 21; the generated JSON for every version is committed
  * under `app/schemas/` so each auto-migration can be diffed
  * against it.
  *
@@ -109,6 +109,10 @@ import java.util.UUID
  * table only, so existing summaries have no action items until they
  * are regenerated.
  *
+ * The 20 → 21 migration (issue #102) is automatic: the
+ * `talking_point_lists` and `talking_points` tables only, so there
+ * are no lists and no session has talking points.
+ *
  * [Converters] is registered so the enum columns ([SessionStatus],
  * [MessageKind], [MessageRole]) round-trip as their `name`.
  */
@@ -131,9 +135,11 @@ import java.util.UUID
         SyncStateEntity::class,
         SyncTombstoneEntity::class,
         FileHashEntity::class,
-        ActionItemEntity::class
+        ActionItemEntity::class,
+        TalkingPointListEntity::class,
+        TalkingPointEntity::class
     ],
-    version = 20,
+    version = 21,
     exportSchema = true,
     autoMigrations = [
         AutoMigration(from = 1, to = 2),
@@ -152,7 +158,8 @@ import java.util.UUID
         AutoMigration(from = 14, to = 15),
         AutoMigration(from = 16, to = 17),
         AutoMigration(from = 17, to = 18, spec = Migration17To18::class),
-        AutoMigration(from = 19, to = 20)
+        AutoMigration(from = 19, to = 20),
+        AutoMigration(from = 20, to = 21)
     ]
 )
 @TypeConverters(Converters::class)
@@ -171,6 +178,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun semanticIndexDao(): SemanticIndexDao
     abstract fun syncDao(): SyncDao
     abstract fun actionItemDao(): ActionItemDao
+    abstract fun talkingPointListDao(): TalkingPointListDao
+    abstract fun talkingPointDao(): TalkingPointDao
 
     companion object {
         const val NAME: String = "convoscribe.db"
