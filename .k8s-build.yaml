@@ -6,9 +6,6 @@
 #   git-<sha> and latest, not X.Y.Z.
 version: 1
 
-# Server build requires pglite with large storage requirements
-storage: disk
-
 builds:
   - name: server
     context: server
