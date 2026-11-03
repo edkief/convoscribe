@@ -5,20 +5,25 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -33,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -378,7 +384,9 @@ private class PageExtras(
  * Render-only body of [SettingsScreen] for previews and screenshot tests:
  * the overview when [page] is `null`, otherwise that page. Back goes from
  * a page to the overview through [onPageChange], and from the overview out
- * of Settings through [SettingsActions.onBack].
+ * of Settings through [SettingsActions.onBack]. In a window of at least
+ * [TWO_PANES_MIN_WIDTH] the two show side by side (the first page while
+ * [page] is `null`) and back leaves Settings.
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
  * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
@@ -424,30 +432,59 @@ internal fun SettingsBody(
         backup = backup,
         formatTime = { DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(it)) }
     )
-    val back: () -> Unit = { if (page != null) onPageChange(null) else actions.onBack() }
-    BackHandler(onBack = back)
-    ScreenScaffold(
-        title = stringResource(page?.title ?: R.string.settings_title),
-        onBack = back,
-        snackbarHost = { SnackbarHost(snackbarHostState) }
-    ) { innerPadding: PaddingValues ->
-        // Each page keeps its own scroll position.
-        key(page) {
-            PaneColumn(modifier = Modifier.padding(innerPadding)) {
-                if (page == null) {
-                    SettingsOverview(
-                        state = state,
-                        inputs = inputs,
-                        onOpen = onPageChange,
-                        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
-                    )
-                } else {
-                    SettingsPageContent(page = page, state = state, actions = actions, extras = extras)
+    BoxWithConstraints {
+        val twoPanes = maxWidth >= TWO_PANES_MIN_WIDTH
+        val back: () -> Unit = { if (!twoPanes && page != null) onPageChange(null) else actions.onBack() }
+        BackHandler(onBack = back)
+        ScreenScaffold(
+            title = stringResource(if (twoPanes) R.string.settings_title else page?.title ?: R.string.settings_title),
+            onBack = back,
+            snackbarHost = { SnackbarHost(snackbarHostState) }
+        ) { innerPadding: PaddingValues ->
+            if (twoPanes) {
+                // Side by side a page is always open; the list is there to change it.
+                val open = page ?: SettingsPage.SERVER
+                Row(modifier = Modifier.padding(innerPadding)) {
+                    PaneColumn(modifier = Modifier.width(OVERVIEW_PANE_WIDTH)) {
+                        SettingsOverview(
+                            state = state,
+                            inputs = inputs,
+                            onOpen = onPageChange,
+                            selected = open,
+                            showArrows = false
+                        )
+                    }
+                    VerticalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    key(open) {
+                        PaneColumn(modifier = Modifier.weight(1f)) {
+                            SettingsPageContent(page = open, state = state, actions = actions, extras = extras)
+                        }
+                    }
+                }
+            } else {
+                // Each page starts at its top.
+                key(page) {
+                    PaneColumn(modifier = Modifier.padding(innerPadding)) {
+                        if (page == null) {
+                            SettingsOverview(
+                                state = state,
+                                inputs = inputs,
+                                onOpen = onPageChange,
+                                modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
+                            )
+                        } else {
+                            SettingsPageContent(page = page, state = state, actions = actions, extras = extras)
+                        }
+                    }
                 }
             }
         }
     }
 }
+
+/** From this window width (Material's "expanded") the overview and the open page show side by side. */
+private val TWO_PANES_MIN_WIDTH = 840.dp
+private val OVERVIEW_PANE_WIDTH = 360.dp
 
 /** A scrolling column with the screen's margins, its content centred up to the reading width. */
 @Composable
