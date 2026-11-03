@@ -52,6 +52,8 @@ data class SettingsForm(
     val apiKey: String = "",
     val model: String = "",
     val maxChars: String = "24000",
+    /** Seconds between talking-point checks while recording (issue #103); 0 is off. */
+    val talkingPointSeconds: String = SettingsRepository.DEFAULT_TALKING_POINT_CHECK_SECONDS.toString(),
     val numThreads: Int = 4,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
@@ -82,6 +84,7 @@ data class SettingsForm(
                 syncKey = syncKey,
                 model = settings.llmModel,
                 maxChars = settings.maxTranscriptChars.toString(),
+                talkingPointSeconds = settings.talkingPointCheckSeconds.toString(),
                 numThreads = settings.numThreads,
                 numSpeakers = settings.numSpeakers,
                 clusterThreshold = settings.clusterThreshold,
@@ -354,6 +357,7 @@ class SettingsViewModel(
         val form = _state.value.form
         val current = repo.settings.value
         val parsedChars = form.maxChars.toIntOrNull() ?: current.maxTranscriptChars
+        val parsedPointSeconds = form.talkingPointSeconds.trim().toIntOrNull() ?: current.talkingPointCheckSeconds
 
         val keyChanged = form.syncKey != repo.syncKey()
         // Before the address, whose change schedules a sync run that reads the key.
@@ -363,6 +367,7 @@ class SettingsViewModel(
                 llmBaseUrl = form.baseUrl,
                 llmModel = form.model,
                 maxTranscriptChars = parsedChars,
+                talkingPointCheckSeconds = parsedPointSeconds,
                 numThreads = form.numThreads,
                 numSpeakers = form.numSpeakers,
                 clusterThreshold = form.clusterThreshold,

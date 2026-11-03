@@ -252,18 +252,30 @@ internal fun SummariesSection(
     }
 }
 
-/** The language model's expert setting: how much of a transcript is sent. */
+/**
+ * The language model's expert settings: how much of a transcript is
+ * sent, and how often talking points are checked while recording.
+ */
 @Composable
 internal fun AiAdvanced(form: SettingsForm, onFormChange: (SettingsForm) -> Unit) {
     Disclosure(
         title = stringResource(R.string.settings_advanced),
-        summary = stringResource(R.string.settings_ai_advanced_summary, form.maxChars),
+        summary = stringResource(R.string.settings_ai_advanced_summary, form.maxChars, form.talkingPointSeconds),
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)
     ) {
         OutlinedTextField(
             value = form.maxChars,
             onValueChange = { onFormChange(form.copy(maxChars = it)) },
             label = { Text(text = stringResource(R.string.settings_llm_max_chars_label)) },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            modifier = Modifier.fillMaxWidth()
+        )
+        OutlinedTextField(
+            value = form.talkingPointSeconds,
+            onValueChange = { onFormChange(form.copy(talkingPointSeconds = it)) },
+            label = { Text(text = stringResource(R.string.settings_talking_point_check_label)) },
+            supportingText = { Text(text = stringResource(R.string.settings_talking_point_check_help)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth()

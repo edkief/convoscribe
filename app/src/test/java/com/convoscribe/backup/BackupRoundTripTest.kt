@@ -193,7 +193,13 @@ class BackupRoundTripTest {
             )
         )
         settings.update {
-            it.copy(llmModel = "llama", llmBaseUrl = "http://llm", defaultSummaryTemplate = template, numThreads = 2)
+            it.copy(
+                llmModel = "llama",
+                llmBaseUrl = "http://llm",
+                defaultSummaryTemplate = template,
+                numThreads = 2,
+                talkingPointCheckSeconds = 40
+            )
         }
         secrets.setApiKey("sk-super-secret-llm")
         secrets.setAsrServerKey("sk-super-secret-asr")
@@ -252,6 +258,7 @@ class BackupRoundTripTest {
         assertEquals(phone.db.talkingPointListDao().getAll().single().syncId, list.syncId)
         val settings = tablet.settings.settings.value
         assertEquals("llama", settings.llmModel)
+        assertEquals(40, settings.talkingPointCheckSeconds)
         assertEquals(templateKey, settings.defaultSummaryTemplate)
         assertEquals("device-specific settings are not restored", 4, settings.numThreads)
         assertEquals("", tablet.secrets.getApiKey())

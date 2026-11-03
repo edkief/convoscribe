@@ -109,6 +109,7 @@ data class AppSettings(
     val llmBaseUrl: String = "",
     val llmModel: String = "",
     val maxTranscriptChars: Int = 24000,
+    val talkingPointCheckSeconds: Int = SettingsRepository.DEFAULT_TALKING_POINT_CHECK_SECONDS,
     val asrLanguage: String = "en",
     val asrEngine: String = "cpu",
     val asrEngineChosen: Boolean = false,

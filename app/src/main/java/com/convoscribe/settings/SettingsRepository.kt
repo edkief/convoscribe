@@ -41,6 +41,7 @@ class SettingsRepository(
      * field and persist the result. The returned value is the new
      * state. The validation rules are:
      *  - `maxTranscriptChars` clamped to 2000..400000
+     *  - `talkingPointCheckSeconds` 0 (off) or clamped to 5..300
      *  - `numThreads` clamped to 1..8
      *  - `numSpeakers` must be -1 or in 1..10; 0 or anything < -1
      *    becomes -1
@@ -83,6 +84,7 @@ class SettingsRepository(
             putString(KEY_LLM_BASE_URL, next.llmBaseUrl)
             putString(KEY_LLM_MODEL, next.llmModel)
             putInt(KEY_MAX_TRANSCRIPT_CHARS, next.maxTranscriptChars)
+            putInt(KEY_TALKING_POINT_CHECK_SECONDS, next.talkingPointCheckSeconds)
             putString(KEY_ASR_LANGUAGE, next.asrLanguage)
             putBoolean(KEY_ASR_ENGINE_CHOSEN, next.asrEngineChosen)
             if (next.asrEngineChosen) putString(KEY_ASR_ENGINE, next.asrEngine) else remove(KEY_ASR_ENGINE)
@@ -214,6 +216,10 @@ class SettingsRepository(
             llmBaseUrl = prefs.getString(KEY_LLM_BASE_URL, "") ?: "",
             llmModel = prefs.getString(KEY_LLM_MODEL, "") ?: "",
             maxTranscriptChars = prefs.getInt(KEY_MAX_TRANSCRIPT_CHARS, 24000),
+            talkingPointCheckSeconds = prefs.getInt(
+                KEY_TALKING_POINT_CHECK_SECONDS,
+                DEFAULT_TALKING_POINT_CHECK_SECONDS
+            ),
             asrLanguage = rawLang,
             asrEngine = prefs.getString(KEY_ASR_ENGINE, null) ?: "",
             numThreads = prefs.getInt(KEY_NUM_THREADS, 4),
@@ -299,6 +305,19 @@ class SettingsRepository(
         const val KEY_LLM_BASE_URL = "llmBaseUrl"
         const val KEY_LLM_MODEL = "llmModel"
         const val KEY_MAX_TRANSCRIPT_CHARS = "maxTranscriptChars"
+        const val KEY_TALKING_POINT_CHECK_SECONDS = "talkingPointCheckSeconds"
+
+        /**
+         * How often, in seconds of recording, talking points are checked
+         * while recording (issue #103). Each check resends some overlap,
+         * so much shorter mostly repeats itself; a point still ticks
+         * within half a minute of being said.
+         */
+        const val DEFAULT_TALKING_POINT_CHECK_SECONDS = 15
+
+        /** Shortest and longest [AppSettings.talkingPointCheckSeconds] other than 0 (off). */
+        const val MIN_TALKING_POINT_CHECK_SECONDS = 5
+        const val MAX_TALKING_POINT_CHECK_SECONDS = 300
         const val KEY_ASR_LANGUAGE = "asrLanguage"
         const val KEY_ASR_ENGINE = "asrEngine"
         const val KEY_ASR_ENGINE_CHOSEN = "asrEngineChosen"
@@ -407,6 +426,14 @@ internal fun AppSettings.normaliseNumeric(): AppSettings {
     }
     return copy(
         maxTranscriptChars = maxTranscriptChars.coerceIn(2000, 400_000),
+        talkingPointCheckSeconds = if (talkingPointCheckSeconds <= 0) {
+            0
+        } else {
+            talkingPointCheckSeconds.coerceIn(
+                SettingsRepository.MIN_TALKING_POINT_CHECK_SECONDS,
+                SettingsRepository.MAX_TALKING_POINT_CHECK_SECONDS
+            )
+        },
         numThreads = numThreads.coerceIn(1, 8),
         numSpeakers = speakers,
         clusterThreshold = clusterThreshold.coerceIn(0.05f, 0.95f),

@@ -363,6 +363,8 @@
     <string name="settings_llm_api_key_hide">Hide</string>
     <string name="settings_llm_model_label">Model name</string>
     <string name="settings_llm_max_chars_label">Max transcript characters</string>
+    <string name="settings_talking_point_check_label">Check talking points every (seconds)</string>
+    <string name="settings_talking_point_check_help">While recording, how often the latest speech is sent to the language model to tick talking points. 5 to 300; 0 turns it off.</string>
     <string name="settings_llm_test">Test connection</string>
     <string name="settings_llm_test_idle">Test the connection to load available models.</string>
     <string name="settings_transcription_engine">Speech engine</string>
@@ -915,7 +917,7 @@
     <string name="settings_speakers_known_help">Voices that get a real name in transcripts</string>
     <string name="settings_speakers_advanced_summary">Clustering %1$.2f · Voice match %2$.2f · %3$s · Step %4$s s</string>
     <string name="settings_recording_advanced_summary">CPU threads: %1$d</string>
-    <string name="settings_ai_advanced_summary">Max transcript characters: %1$s</string>
+    <string name="settings_ai_advanced_summary">Max transcript characters: %1$s · talking points every %2$s s</string>
     <string name="settings_about_licences">Open-source models and licences</string>
     <string name="settings_server_own">Your own server</string>
     <string name="settings_server_own_none">Not set up</string>

@@ -2,6 +2,7 @@ package com.convoscribe.backup
 
 import com.convoscribe.data.SessionManifest
 import com.convoscribe.settings.AppSettings
+import com.convoscribe.settings.SettingsRepository
 import kotlinx.serialization.Serializable
 
 /**
@@ -105,6 +106,8 @@ data class PortableSettings(
     val llmBaseUrl: String,
     val llmModel: String,
     val maxTranscriptChars: Int,
+    /** Older backups have none: they restore with the default. */
+    val talkingPointCheckSeconds: Int = SettingsRepository.DEFAULT_TALKING_POINT_CHECK_SECONDS,
     val asrLanguage: String,
     val asrServerUrl: String,
     val asrServerModel: String,
@@ -137,6 +140,7 @@ data class PortableSettings(
             llmBaseUrl = llmBaseUrl,
             llmModel = llmModel,
             maxTranscriptChars = maxTranscriptChars,
+            talkingPointCheckSeconds = talkingPointCheckSeconds,
             asrLanguage = asrLanguage,
             asrServerUrl = asrServerUrl,
             asrServerModel = asrServerModel,
@@ -168,6 +172,7 @@ data class PortableSettings(
                 llmBaseUrl = settings.llmBaseUrl,
                 llmModel = settings.llmModel,
                 maxTranscriptChars = settings.maxTranscriptChars,
+                talkingPointCheckSeconds = settings.talkingPointCheckSeconds,
                 asrLanguage = settings.asrLanguage,
                 asrServerUrl = settings.asrServerUrl,
                 asrServerModel = settings.asrServerModel,
