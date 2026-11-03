@@ -793,4 +793,36 @@ class SessionRepositoryTest {
         repo.deleteSession(id)
         assertEquals(emptyList<TalkingPointEntity>(), db.talkingPointDao().getForSession(id))
     }
+
+    @Test
+    fun talkingPoints_automaticTicksLeaveCoveredAndHandSetPointsAlone() = runTest {
+        var now = 1_000L
+        repo = SessionRepository(db, recordingsDir, clock = { now })
+        val id = repo.createSession(title = "T", language = "en", talkingPoints = listOf("A", "B", "C", "D"))
+        val other = repo.createSession(title = "O", language = "en", talkingPoints = listOf("X"))
+        val (a, b, c, d) = repo.getTalkingPoints(id)
+        val x = repo.getTalkingPoints(other).single()
+        repo.setTalkingPointCovered(b.id, true, atMs = 100)
+        repo.setTalkingPointCovered(c.id, true, atMs = 200)
+        repo.setTalkingPointCovered(c.id, false)
+        repo.tickTalkingPointsAutomatically(id, mapOf(a.id to 300L))
+        now = 2_000L
+
+        val ticked = repo.tickTalkingPointsAutomatically(
+            id,
+            mapOf(a.id to 900L, b.id to 900L, c.id to 900L, d.id to 900L, x.id to 900L, 999L to 900L)
+        )
+
+        assertEquals(1, ticked)
+        val points = repo.getTalkingPoints(id)
+        assertEquals(listOf(true, true, false, true), points.map { it.covered })
+        assertEquals(listOf(300L, 100L, null, 900L), points.map { it.coveredAtMs })
+        assertEquals(listOf(false, true, true, false), points.map { it.byUser })
+        assertFalse(repo.getTalkingPoints(other).single().covered)
+        assertEquals(2_000L, repo.getSession(id)!!.updatedAt)
+
+        now = 3_000L
+        assertEquals(0, repo.tickTalkingPointsAutomatically(id, mapOf(d.id to 1L)))
+        assertEquals(2_000L, repo.getSession(id)!!.updatedAt)
+    }
 }

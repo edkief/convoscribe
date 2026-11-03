@@ -166,6 +166,24 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun save_talkingPointSecondsParsedOrKept() {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertEquals("15", vm.state.value.form.talkingPointSeconds)
+        vm.update(vm.state.value.form.copy(talkingPointSeconds = " 30 "))
+        vm.save()
+        assertEquals(30, repo.settings.value.talkingPointCheckSeconds)
+
+        vm.update(vm.state.value.form.copy(talkingPointSeconds = "soon"))
+        vm.save()
+        assertEquals(30, repo.settings.value.talkingPointCheckSeconds)
+
+        vm.update(vm.state.value.form.copy(talkingPointSeconds = "0"))
+        vm.save()
+        assertEquals(0, repo.settings.value.talkingPointCheckSeconds)
+    }
+
+    @Test
     fun testConnection_withFakeModelsListsPopulatesTestResultAndAvailableModels() = runTest(dispatcher) {
         val fake = FakeChatClient(models = listOf("m1", "m2"))
         val repo = newRepo()

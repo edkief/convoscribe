@@ -296,6 +296,27 @@ class SessionRepository(
         touch(point.sessionId)
     }
 
+    /**
+     * Tick talking points the language model found covered while
+     * recording (issue #103): each point id in [ticks] at its recording
+     * time. A point already covered, or ticked or unticked by hand
+     * meanwhile, is left as it is. Returns how many were ticked.
+     */
+    suspend fun tickTalkingPointsAutomatically(sessionId: Long, ticks: Map<Long, Long>): Int {
+        if (ticks.isEmpty()) return 0
+        return db.withTransaction {
+            var ticked = 0
+            for ((pointId, atMs) in ticks) {
+                val point = talkingPointDao.get(pointId) ?: continue
+                if (point.sessionId != sessionId || point.covered || point.byUser) continue
+                talkingPointDao.setCovered(pointId, covered = true, atMs = atMs, byUser = false)
+                ticked++
+            }
+            if (ticked > 0) touch(sessionId)
+            ticked
+        }
+    }
+
     /** Add a talking point at the end of the session's list; a blank [text] adds nothing. Returns its id. */
     override suspend fun addTalkingPoint(sessionId: Long, text: String): Long? {
         val cleaned = TalkingPoints.clean(text).takeIf { it.isNotEmpty() } ?: return null

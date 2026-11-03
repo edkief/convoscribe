@@ -283,6 +283,49 @@ object PromptBuilder {
     }
 
     /**
+     * System prompt for a talking-point check while recording (issue
+     * #103): which of the user's points the latest stretch of the
+     * conversation actually discussed. Answered as JSON for
+     * [TalkingPointAnswer].
+     */
+    const val TALKING_POINTS_SYSTEM: String =
+        "You follow a conversation as it is being recorded and keep track of the points the user means " +
+            "to raise. You get the numbered points not covered yet and the latest part of the transcript. " +
+            "A point is covered only when the transcript actually discusses it, not when a word merely " +
+            "appears. Reply with only a JSON array, one object per covered point, giving its number and the " +
+            "time of the transcript line where it is discussed, for example " +
+            "[{\"point\": 2, \"at\": \"12:34\"}]. Reply [] when none is covered. Nothing else."
+
+    /** Room the user turn takes besides the transcript, beyond the points themselves. */
+    private const val TALKING_POINTS_FRAME_CHARS: Int = 200
+
+    /** The smallest transcript a check sends, however long the points. */
+    private const val TALKING_POINTS_MIN_TRANSCRIPT_CHARS: Int = 1_000
+
+    /** How much transcript a check of [points] may send within [maxChars] in all. */
+    fun talkingPointsTranscriptBudget(points: List<String>, maxChars: Int): Int {
+        val overhead = TALKING_POINTS_SYSTEM.length + TALKING_POINTS_FRAME_CHARS + pointsList(points).length
+        return (maxChars - overhead).coerceAtLeast(TALKING_POINTS_MIN_TRANSCRIPT_CHARS)
+    }
+
+    /**
+     * Messages for a talking-point check (issue #103):
+     * [TALKING_POINTS_SYSTEM], then the open [points] numbered from 1
+     * and the [transcript] window ([TalkingPointWindow]), which the
+     * caller has fitted to [talkingPointsTranscriptBudget].
+     */
+    fun talkingPoints(points: List<String>, transcript: String): List<LlmMessage> = listOf(
+        LlmMessage(LlmMessage.ROLE_SYSTEM, TALKING_POINTS_SYSTEM),
+        LlmMessage(
+            LlmMessage.ROLE_USER,
+            "Points not covered yet:\n" + pointsList(points) + "\n\nLatest transcript:\n\n" + transcript
+        )
+    )
+
+    private fun pointsList(points: List<String>): String =
+        points.withIndex().joinToString(separator = "\n") { (i, point) -> "${i + 1}. $point" }
+
+    /**
      * System prompt for a session title (issue #32); [title] adds the
      * language. Kept short: the answer is a few words.
      */

@@ -2294,6 +2294,50 @@ Boox in e-ink mode too.
 - Step 9: each point is read with *Covered* or *Not covered yet*; the card title is
   read as a heading, expanded or collapsed.
 
+## 54. Talking points tick themselves (issue #103)
+
+Needs a language model set up. For step 5, point it at an address that does not
+answer (for example `http://10.255.255.1:8000/v1`).
+
+**Steps**
+
+1. Settings → AI & summaries → Advanced: check that *Check talking points every* is
+   15. Set it to 2 and save, then to 1000 and save, then back to 15.
+2. Record a conversation with the points *Budget*, *Hiring* and *Office move*. After
+   a few seconds, talk about the budget for half a minute. Tick *Office move* and
+   untick it at once.
+3. Pause for a minute, then resume and talk about hiring. Just before Stop, mention
+   the office move in a sentence, then Stop at once.
+4. Record with no talking points for a minute, with logcat filtered on
+   `talking points`.
+5. With the language model unreachable, record with points for two minutes while
+   talking. Then make the model reachable again and go on talking about a point.
+6. Set the interval to 0 and record with points while talking about them.
+7. Record with a dozen points and tick a few by hand. Scroll the card, then turn on
+   *Not covered first*. Stop, and start another recording with points.
+
+**Expected**
+
+- Step 1: the field reads 5, then 300, then 15 after each save. The Advanced summary
+  shows the interval.
+- Step 2: *Budget* ticks itself within about half a minute, at a time inside the
+  budget talk. *Office move* stays unticked, even after the office is mentioned in
+  step 3.
+- Step 3: nothing is ticked while paused. *Hiring* ticks after resuming. On the
+  Summary tab, *Office move* is still unticked (it was unticked by hand), and
+  *Budget* and *Hiring* show their times.
+- Step 4: no check is logged.
+- Step 5: recording, the timer and the transcript carry on without a dialog or
+  toast. After about 45 seconds the card says *Can't check talking points
+  automatically right now. Tick them by hand.*, and logcat shows one warning, not
+  one per check. Ticking by hand works. Once the model answers again, within 5
+  minutes, the note goes and the point ticks.
+- Step 6: nothing ticks itself; points tick by hand as before.
+- Step 7: the points scroll inside the card while the chip stays in view. With the
+  chip on (it shows a check mark), unticked points come first in their own order,
+  and a point moves down once ticked. The next recording starts with the chip still
+  on.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

@@ -11,16 +11,20 @@ import com.convoscribe.data.FakePresetStore
 import com.convoscribe.data.FakeSummaryTemplateStore
 import com.convoscribe.data.FakeTalkingPointListStore
 import com.convoscribe.data.Preset
+import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.diarization.SpeakerMatcher
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
+import com.convoscribe.recording.RecordingPhase
+import com.convoscribe.recording.RecordingState
 import com.convoscribe.recording.RecordingStore
 import com.convoscribe.settings.InMemorySecretStore
 import com.convoscribe.settings.SettingsRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.first
@@ -94,25 +98,27 @@ class RecordViewModelTest {
         listOf(TalkingPointList(1, "Weekly", listOf("Budget", "Hiring")))
     )
 
-    private fun newViewModel(missing: (String) -> Boolean = { false }) = RecordViewModel(
-        controller = RecordingController(
-            audioSource = object : AudioSource {
-                override fun chunks() = emptyFlow<ShortArray>()
-            },
-            transcriberFactory = TranscriberFactory { error("not used") },
-            store = UnusedStore,
-            defaultOptions = { ConversationOptions(language = "en") },
-            asrDispatcher = StandardTestDispatcher()
-        ),
-        settings = settings,
-        enrolled = enrolled,
-        templates = FakeSummaryTemplateStore(),
-        missingModels = missing,
-        saveMarkNote = { id, note -> savedNotes += id to note },
-        tagNames = flowOf(listOf("Acme", "Weekly")),
-        presetStore = presetStore,
-        talkingPointLists = lists
-    )
+    private fun newViewModel(missing: (String) -> Boolean = { false }, failing: Flow<Set<Long>> = flowOf(emptySet())) =
+        RecordViewModel(
+            controller = RecordingController(
+                audioSource = object : AudioSource {
+                    override fun chunks() = emptyFlow<ShortArray>()
+                },
+                transcriberFactory = TranscriberFactory { error("not used") },
+                store = UnusedStore,
+                defaultOptions = { ConversationOptions(language = "en") },
+                asrDispatcher = StandardTestDispatcher()
+            ),
+            settings = settings,
+            enrolled = enrolled,
+            templates = FakeSummaryTemplateStore(),
+            missingModels = missing,
+            saveMarkNote = { id, note -> savedNotes += id to note },
+            tagNames = flowOf(listOf("Acme", "Weekly")),
+            presetStore = presetStore,
+            talkingPointLists = lists,
+            failingChecks = failing
+        )
 
     @Test
     fun applyPreset_fillsTheOptionsAndIsShownAsActiveUntilEdited() = runTest(dispatcher) {
@@ -161,6 +167,49 @@ class RecordViewModelTest {
         assertEquals("With points", presetStore.presets.value.last().name)
         vm.applyPreset(null)
         assertEquals(listOf("Hiring"), vm.options.value.talkingPoints)
+        job.cancel()
+    }
+
+    /** Issue #103: the quiet note shows only for the open session whose checks keep failing. */
+    @Test
+    fun checksFailing_onlyForTheOpenSession() {
+        val recording = RecordingState(phase = RecordingPhase.RECORDING, sessionId = 4L)
+        assertTrue(checksFailing(recording, setOf(4L)))
+        assertTrue(checksFailing(recording.copy(phase = RecordingPhase.PAUSED), setOf(4L)))
+        assertFalse(checksFailing(recording, setOf(5L)))
+        assertFalse(checksFailing(recording, emptySet()))
+        assertFalse(checksFailing(recording.copy(phase = RecordingPhase.STOPPING), setOf(4L)))
+        assertFalse(checksFailing(RecordingState(), setOf(4L)))
+    }
+
+    @Test
+    fun pointsOpenFirst_isRememberedInTheSettings() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.pointsOpenFirst.collect {} }
+        assertFalse(vm.pointsOpenFirst.value)
+        vm.setPointsOpenFirst(true)
+        advanceUntilIdle()
+        assertTrue(vm.pointsOpenFirst.value)
+        assertTrue(settings.settings.value.talkingPointsOpenFirst)
+        assertTrue(newViewModel().pointsOpenFirst.value)
+        job.cancel()
+    }
+
+    @Test
+    fun livePointsOrder_putsPointsNotCoveredFirstKeepingTheirOrder() {
+        fun point(id: Long, covered: Boolean) =
+            TalkingPointEntity(id = id, sessionId = 1, text = "p$id", position = 0, covered = covered, createdAt = 0)
+        val points = listOf(point(1, true), point(2, false), point(3, true), point(4, false))
+        assertEquals(listOf(1L, 2L, 3L, 4L), livePointsOrder(points, openFirst = false).map { it.id })
+        assertEquals(listOf(2L, 4L, 1L, 3L), livePointsOrder(points, openFirst = true).map { it.id })
+    }
+
+    @Test
+    fun pointChecksFailing_isFalseWithoutAnOpenSession() = runTest(dispatcher) {
+        val vm = newViewModel(failing = flowOf(setOf(1L)))
+        val job = launch { vm.pointChecksFailing.collect {} }
+        advanceUntilIdle()
+        assertFalse(vm.pointChecksFailing.value)
         job.cancel()
     }
 

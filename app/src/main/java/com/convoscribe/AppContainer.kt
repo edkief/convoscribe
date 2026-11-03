@@ -42,6 +42,7 @@ import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
+import com.convoscribe.llm.TalkingPointChecker
 import com.convoscribe.llm.embedding.EmbeddingGemmaFactory
 import com.convoscribe.llm.embedding.SemanticIndexRunner
 import com.convoscribe.llm.embedding.TextEmbedderFactory
@@ -715,6 +716,15 @@ class AppContainer(val context: Context) {
     /** Names sessions from their summary (issue #32). */
     val autoTitler: AutoTitler =
         AutoTitler(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
+
+    /**
+     * Ticks a recording's talking points as they come up (issue #103),
+     * following [recordingController] for the life of the app.
+     */
+    val talkingPointChecker: TalkingPointChecker =
+        TalkingPointChecker(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls).also {
+            it.watch(recordingController.state)
+        }
 
     /**
      * The installed version, from the package manager (`buildConfig`

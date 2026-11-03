@@ -309,7 +309,10 @@ brings them to your other devices.
   or *Attach a list*. Keep reusable lists in Settings → Search & organise →
   Talking points, one point per line. While recording, a card above the
   live transcript shows *Talking points: n of m covered*. Tick each point
-  as it comes up (the recording time is noted), or add one. Afterwards the
+  as it comes up (the recording time is noted), or add one. A long list
+  scrolls inside the card. The *Not covered first* chip lists the points
+  still to raise at the top, keeping their order. The app remembers your
+  choice. Afterwards the
   points head the session's Summary tab, even without a language model.
   There you can tick, untick, edit, reorder, delete and add them, and tap a
   covered point's time to play from there. Each conversation keeps its own
@@ -319,6 +322,21 @@ brings them to your other devices.
   templates (the most recent edit wins). A session's points sync with it
   and merge point by point. An app older than this one drops a session's
   talking points if it edits that session.
+  With a language model set up, the points also **tick themselves** while
+  you record (issue #103). Every *Check talking points every* seconds
+  (Settings → AI & summaries → Advanced: 15 by default, 5 to 300, 0 turns it
+  off), the speech since the last check, plus 20 seconds before it, and the
+  points not covered yet go to the language model in the background. The
+  speech sent is cut to fit *Max transcript characters*. Each point the
+  model names is ticked at the time it was discussed. A point you ticked or
+  unticked by hand is never sent or changed. Pause stops the checks,
+  Resume starts them again, and one more check reads the end of the
+  conversation after Stop. Checks run one at a time and share the language
+  model with mark notes and titles. A failed check never disturbs the
+  recording: it is retried on the same speech after a wait that doubles
+  each time, up to 5 minutes. After two failures in a row, the card says
+  quietly that checks aren't working and to tick by hand. The note goes
+  once a check succeeds.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -767,9 +785,11 @@ one package per concern:
 - `llm/` — `ChatClient` (OkHttp + kotlinx.serialization, SSE
   streaming), `LlmException`, `LlmMessage`, `PromptBuilder`,
   `SseParser`, `TranscriptTruncator`, `ActionItemsParser` (a summary's
-  action items, #31); `MarkNotesWriter` and
-  `AutoTitler` run their LLM calls on the application scope, one at a
-  time.
+  action items, #31); `MarkNotesWriter`,
+  `AutoTitler` and `TalkingPointChecker` (follows the recording and ticks
+  talking points, #103, with `TalkingPointWindow` and
+  `TalkingPointAnswer`) run their LLM calls on the application scope, one
+  at a time.
 - `recording/` — `RecordingController` (the audio + ASR loop),
   `RecordingState`, `RecordingStore`, `SessionRecovery` (the
   crash-recovery boot pass).
@@ -824,6 +844,11 @@ the fields below are *Specify my own*:
   transcripts are summarised in parts and questions about them use the
   most relevant parts (see *Summaries and Q&A* above), so raise it only
   if your model has room: a bigger budget means fewer, larger requests.
+- **Check talking points every** — while recording, how many seconds
+  between talking-point checks (issue #103). Default 15, 5 to 300; 0
+  turns automatic ticking off. Shorter mostly resends speech the last
+  check already read; a slow model sets the real pace, since checks never
+  overlap.
 
 The endpoint is contacted only by `llm/ChatClient.kt`. The
 streaming path uses server-sent events (`data: {…}\n\n` chunks)
@@ -926,7 +951,8 @@ typed in (#94):
    it provides (`GET /api/sync/v1/config`), then shows one confirmation
    naming the server, its language model and its transcription, and
    what goes to each: transcripts to the language model (summaries,
-   questions, names and mark notes, also automatically), and recordings
+   questions, names and mark notes, also automatically, and while
+   recording to tick talking points), and recordings
    to transcription only when you transcribe again on the server.
    Nothing is sent to either before you accept.
 3. *Language model* and *Transcription server* now each offer **Sync

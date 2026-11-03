@@ -66,6 +66,8 @@ class SettingsRepositoryTest {
         assertEquals("", s.llmBaseUrl)
         assertEquals("", s.llmModel)
         assertEquals(24000, s.maxTranscriptChars)
+        assertEquals(15, s.talkingPointCheckSeconds)
+        assertEquals(false, s.talkingPointsOpenFirst)
         assertEquals("en", s.asrLanguage)
         // CPU until the engine check has verified the NPU on the device.
         assertEquals("cpu", s.asrEngine)
@@ -124,6 +126,23 @@ class SettingsRepositoryTest {
         assertEquals(-1, s.numSpeakers)
         assertEquals(0.95f, s.clusterThreshold, 0.0001f)
         assertEquals(0.05f, s.speakerMatchThreshold, 0.0001f)
+    }
+
+    @Test
+    fun talkingPointCheckSeconds_isOffOrClampedAndPersists() {
+        val repo = newRepository()
+        repo.update { it.copy(talkingPointCheckSeconds = 1) }
+        assertEquals(5, repo.settings.value.talkingPointCheckSeconds)
+        repo.update { it.copy(talkingPointCheckSeconds = 1_000) }
+        assertEquals(300, repo.settings.value.talkingPointCheckSeconds)
+        repo.update { it.copy(talkingPointCheckSeconds = -3) }
+        assertEquals(0, repo.settings.value.talkingPointCheckSeconds)
+        repo.update { it.copy(talkingPointCheckSeconds = 0) }
+        assertEquals(0, newRepository().settings.value.talkingPointCheckSeconds)
+        repo.update { it.copy(talkingPointCheckSeconds = 10) }
+        assertEquals(10, newRepository().settings.value.talkingPointCheckSeconds)
+        repo.update { it.copy(talkingPointsOpenFirst = true) }
+        assertEquals(true, newRepository().settings.value.talkingPointsOpenFirst)
     }
 
     @Test

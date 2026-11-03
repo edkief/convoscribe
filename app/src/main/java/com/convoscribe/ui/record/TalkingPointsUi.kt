@@ -11,9 +11,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,8 +52,17 @@ internal data class TalkingPointActions(
     val onAdd: (String) -> Unit = {},
     val onRemove: (Int) -> Unit = {},
     val onToggleLive: (TalkingPointEntity) -> Unit = {},
-    val onAddLive: (String) -> Unit = {}
+    val onAddLive: (String) -> Unit = {},
+    val onOpenFirstChange: (Boolean) -> Unit = {}
 )
+
+/**
+ * [points] as the open session's card lists them: in their own order,
+ * or with [openFirst] those not covered yet first, each group keeping
+ * that order.
+ */
+internal fun livePointsOrder(points: List<TalkingPointEntity>, openFirst: Boolean): List<TalkingPointEntity> =
+    if (openFirst) points.sortedBy { it.covered } else points
 
 /**
  * Before Start (issue #102): the new conversation's talking points,
@@ -121,7 +132,10 @@ internal fun LiveTalkingPoints(
     points: List<TalkingPointEntity>,
     onToggle: (TalkingPointEntity) -> Unit,
     onAdd: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    checksFailing: Boolean = false,
+    openFirst: Boolean = false,
+    onOpenFirstChange: (Boolean) -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
     // Open while there are points; a conversation without any starts folded.
@@ -144,6 +158,27 @@ internal fun LiveTalkingPoints(
                 }
                 .padding(horizontal = spacing.l, vertical = spacing.m)
         )
+        if (checksFailing) {
+            // Quiet on purpose: checks may run every few seconds, and recording goes on regardless.
+            SupportingText(
+                text = stringResource(R.string.record_talking_points_check_failing),
+                modifier = Modifier.padding(start = spacing.l, end = spacing.l, bottom = spacing.s)
+            )
+        }
+        if (expanded && points.size > 1) {
+            // Outside the scrolling list, so it stays in reach with a dozen points.
+            FilterChip(
+                selected = openFirst,
+                onClick = { onOpenFirstChange(!openFirst) },
+                label = { Text(text = stringResource(R.string.record_talking_points_open_first)) },
+                leadingIcon = if (openFirst) {
+                    { Icon(imageVector = Icons.Filled.Check, contentDescription = null) }
+                } else {
+                    null
+                },
+                modifier = Modifier.padding(start = spacing.l, end = spacing.l)
+            )
+        }
         if (expanded) {
             Column(
                 modifier = Modifier
@@ -158,7 +193,7 @@ internal fun LiveTalkingPoints(
                         modifier = Modifier.padding(start = spacing.s)
                     )
                 }
-                points.forEach { point ->
+                livePointsOrder(points, openFirst).forEach { point ->
                     TalkingPointRow(
                         text = point.text,
                         covered = point.covered,

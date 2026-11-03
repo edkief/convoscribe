@@ -420,6 +420,45 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun recordTalkingPointChecksFailing() = capture("record_talking_point_checks_failing") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            livePoints = SESSION_POINTS,
+            pointChecksFailing = true,
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    /** A long meeting's dozen points scroll inside the card; the chip stays above them. */
+    @Test
+    fun recordManyTalkingPointsOpenFirst() = capture("record_many_talking_points_open_first") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 2_754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            livePoints = MANY_POINTS,
+            pointsOpenFirst = true,
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    @Test
     fun presetEditor() = capture("preset_editor") {
         PresetsBody(
             presets = PRESETS,
@@ -1836,6 +1875,19 @@ class ScreenshotTest(private val variant: Variant) {
             ),
             TalkingPointList(2, "1:1 with Élodie", listOf("Goals", "Feedback"))
         )
+
+        private val MANY_POINTS = (1..12).map { n ->
+            TalkingPointEntity(
+                id = n.toLong(),
+                sessionId = 1,
+                pointId = "m$n",
+                text = "Agenda item $n",
+                position = n,
+                covered = n % 3 == 0,
+                coveredAtMs = if (n % 3 == 0) n * 120_000L else null,
+                createdAt = T0
+            )
+        }
 
         private val SESSION_POINTS = TALKING_POINT_LISTS.first().points.mapIndexed { index, text ->
             TalkingPointEntity(
