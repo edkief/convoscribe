@@ -62,7 +62,8 @@ import kotlinx.coroutines.launch
  *  - talking points (issue #102): before Start they are part of
  *    [options] ([attachList], [addPoint], [removePoint]); once the
  *    session is open, [livePoints] are its own, ticked with
- *    [togglePoint] and added with [addLivePoint].
+ *    [togglePoint] and added with [addLivePoint]. [pointChecksFailing]
+ *    says when their automatic checks keep failing (issue #103).
  * Constructed by
  * [com.convoscribe.ui.AppNavHost]'s `viewModelFactory` reading
  * `AppContainer.recordingController` so the singleton lives across
@@ -79,7 +80,8 @@ class RecordViewModel(
     tagNames: Flow<List<String>> = flowOf(emptyList()),
     private val presetStore: PresetStore? = null,
     talkingPointLists: TalkingPointListStore? = null,
-    private val sessionPoints: SessionTalkingPoints? = null
+    private val sessionPoints: SessionTalkingPoints? = null,
+    failingChecks: Flow<Set<Long>> = flowOf(emptySet())
 ) : ViewModel() {
 
     private val recordingController = controller
@@ -131,6 +133,14 @@ class RecordViewModel(
             if (id == null || sessionPoints == null) flowOf(emptyList()) else sessionPoints.observeTalkingPoints(id)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /**
+     * The open session's automatic talking-point checks keep failing
+     * (issue #103), so the screen says, quietly, to tick them by hand.
+     */
+    val pointChecksFailing: StateFlow<Boolean> = combine(controller.state, failingChecks, ::checksFailing)
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     /** Start from [preset]'s options, or from the Settings defaults for `null`; the talking points stay. */
     fun applyPreset(preset: Preset?) {
@@ -323,3 +333,7 @@ fun formatElapsed(ms: Long): String {
         String.format(Locale.US, "%02d:%02d", minutes, seconds)
     }
 }
+
+/** Whether [state]'s open session is one of the [failing] ones (issue #103); never while idle. */
+internal fun checksFailing(state: RecordingState, failing: Set<Long>): Boolean =
+    state.phase.active && state.sessionId in failing

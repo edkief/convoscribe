@@ -420,6 +420,25 @@ class ScreenshotTest(private val variant: Variant) {
     }
 
     @Test
+    fun recordTalkingPointChecksFailing() = capture("record_talking_point_checks_failing") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            livePoints = SESSION_POINTS,
+            pointChecksFailing = true,
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    @Test
     fun presetEditor() = capture("preset_editor") {
         PresetsBody(
             presets = PRESETS,

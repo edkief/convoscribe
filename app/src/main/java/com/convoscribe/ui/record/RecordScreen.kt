@@ -136,7 +136,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                     tagNames = container.sessionRepository.observeTags().map { tags -> tags.map { it.name } },
                     presetStore = container.presets,
                     talkingPointLists = container.talkingPointLists,
-                    sessionPoints = container.sessionRepository
+                    sessionPoints = container.sessionRepository,
+                    failingChecks = container.talkingPointChecker.failing
                 )
             }
         }
@@ -150,6 +151,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val activePreset by vm.activePreset.collectAsStateWithLifecycle()
     val talkingPointLists by vm.talkingPointLists.collectAsStateWithLifecycle()
     val livePoints by vm.livePoints.collectAsStateWithLifecycle()
+    val pointChecksFailing by vm.pointChecksFailing.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
@@ -257,6 +259,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         ),
         talkingPointLists = talkingPointLists,
         livePoints = livePoints,
+        pointChecksFailing = pointChecksFailing,
         pointActions = TalkingPointActions(
             onAttach = vm::attachList,
             onAdd = vm::addPoint,
@@ -373,6 +376,7 @@ internal fun RecordBody(
     optionActions: ConversationOptionActions = ConversationOptionActions(),
     talkingPointLists: List<TalkingPointList> = emptyList(),
     livePoints: List<TalkingPointEntity> = emptyList(),
+    pointChecksFailing: Boolean = false,
     pointActions: TalkingPointActions = TalkingPointActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
@@ -449,6 +453,7 @@ internal fun RecordBody(
                     if (phase.active) {
                         LiveTalkingPoints(
                             points = livePoints,
+                            checksFailing = pointChecksFailing,
                             onToggle = pointActions.onToggleLive,
                             onAdd = pointActions.onAddLive,
                             modifier = Modifier

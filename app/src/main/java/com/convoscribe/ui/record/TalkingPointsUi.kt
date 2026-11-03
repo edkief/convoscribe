@@ -121,7 +121,8 @@ internal fun LiveTalkingPoints(
     points: List<TalkingPointEntity>,
     onToggle: (TalkingPointEntity) -> Unit,
     onAdd: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    checksFailing: Boolean = false
 ) {
     val spacing = AppTheme.spacing
     // Open while there are points; a conversation without any starts folded.
@@ -144,6 +145,13 @@ internal fun LiveTalkingPoints(
                 }
                 .padding(horizontal = spacing.l, vertical = spacing.m)
         )
+        if (checksFailing) {
+            // Quiet on purpose: checks may run every few seconds, and recording goes on regardless.
+            SupportingText(
+                text = stringResource(R.string.record_talking_points_check_failing),
+                modifier = Modifier.padding(start = spacing.l, end = spacing.l, bottom = spacing.s)
+            )
+        }
         if (expanded) {
             Column(
                 modifier = Modifier
