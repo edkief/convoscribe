@@ -1,10 +1,11 @@
 import { and, asc, eq, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
-import { documents, sessionIndex } from '@/db/schema';
+import { documents, sessionIndex, talkingPointLists } from '@/db/schema';
 import { blobKeys, blobStore } from './blob-store';
 import { db } from './db';
 import { lockOwner, readManifest } from './documents';
 import { upsertSessionIndex } from './session-index';
 import { SEARCH_TEXT_VERSION } from './session-search';
+import { upsertTalkingPointList } from './talking-point-index';
 
 /**
  * Index every live session whose index row is missing or was read from
@@ -129,4 +130,60 @@ export async function backfillManifestSizes(
     }
   }
   return { filled, skipped };
+}
+
+/**
+ * Index every live talking-point list whose row is missing or was read from
+ * another manifest: those pushed before the web app listed them (#104), or
+ * after a row was lost. As [backfillSessionIndex]: one at a time, under the
+ * owner's lock, only if the list still has the manifest that was read, and
+ * keeping no state. A manifest that cannot be read is logged and skipped.
+ */
+export async function backfillTalkingPointLists(
+  options: { limit?: number; log?: (message: string) => void } = {},
+): Promise<{ indexed: number; skipped: number }> {
+  const log = options.log ?? ((message: string) => console.warn(message));
+  let indexed = 0;
+  let skipped = 0;
+  let after: { owner: string; syncId: string } | undefined;
+  while (options.limit === undefined || indexed < options.limit) {
+    const [doc] = await db()
+      .select({ owner: documents.owner, syncId: documents.syncId, manifestHash: documents.manifestHash, changedAt: documents.changedAt })
+      .from(documents)
+      .leftJoin(talkingPointLists, and(eq(talkingPointLists.owner, documents.owner), eq(talkingPointLists.syncId, documents.syncId)))
+      .where(
+        and(
+          eq(documents.kind, 'talking-points'),
+          eq(documents.deleted, false),
+          isNotNull(documents.manifestHash),
+          or(isNull(talkingPointLists.manifestHash), ne(talkingPointLists.manifestHash, documents.manifestHash)),
+          after ? sql`(${documents.owner}, ${documents.syncId}) > (${after.owner}, ${after.syncId})` : undefined,
+        ),
+      )
+      .orderBy(asc(documents.owner), asc(documents.syncId))
+      .limit(1);
+    if (!doc) break;
+    after = doc;
+    const manifestHash = doc.manifestHash!;
+    try {
+      const manifest: unknown = JSON.parse(
+        Buffer.from(await readManifest(doc.owner, 'talking-points', doc.syncId, manifestHash)).toString('utf8'),
+      );
+      const wrote = await db().transaction(async (tx) => {
+        await lockOwner(tx, doc.owner);
+        const [current] = await tx
+          .select({ manifestHash: documents.manifestHash, deleted: documents.deleted })
+          .from(documents)
+          .where(and(eq(documents.owner, doc.owner), eq(documents.kind, 'talking-points'), eq(documents.syncId, doc.syncId)));
+        if (current?.deleted || current?.manifestHash !== manifestHash) return false;
+        await upsertTalkingPointList(tx, doc.owner, doc.syncId, manifestHash, manifest, doc.changedAt);
+        return true;
+      });
+      if (wrote) indexed++;
+    } catch (err) {
+      skipped++;
+      log(`talking-point lists: skipped ${doc.syncId} of ${doc.owner}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { indexed, skipped };
 }

@@ -8,6 +8,7 @@ import { db, type Db } from './db';
 import { HttpError, type Kind } from './http';
 import { upsertSessionIndex } from './session-index';
 import { deleteSessionText } from './session-search';
+import { deleteTalkingPointList, upsertTalkingPointList } from './talking-point-index';
 
 /** What the index knows about a document's current revision. */
 export type DocumentMeta = {
@@ -182,6 +183,7 @@ export async function putDocument(
       await tx.insert(documentBlobs).values(refs.map((sha256) => ({ owner, kind, syncId, sha256 })));
     }
     if (kind === 'session') await upsertSessionIndex(tx, owner, syncId, push.manifestHash, parsed, push.changedAt);
+    if (kind === 'talking-points') await upsertTalkingPointList(tx, owner, syncId, push.manifestHash, parsed, push.changedAt);
     return meta(row);
   });
 }
@@ -198,6 +200,9 @@ export async function putDocument(
  * manifest's hash and its recordings' references, so clean-up leaves them
  * and [restoreSession] can bring it back for [TRASH_DAYS]. Devices see the
  * same tombstone either way. Other kinds are deleted outright.
+ *
+ * `strict` is for a delete from the web app (#104), made from what the page
+ * showed: any other current revision is a 409, and a deleted document a 404.
  */
 export async function deleteDocument(
   owner: string,
@@ -205,13 +210,15 @@ export async function deleteDocument(
   syncId: string,
   baseRevision: number,
   deletedDurationMs: number | null = null,
+  { strict = false }: { strict?: boolean } = {},
 ): Promise<DocumentMeta> {
   return db().transaction(async (tx) => {
     await lockOwner(tx, owner);
     const where = and(eq(documents.owner, owner), eq(documents.kind, kind), eq(documents.syncId, syncId));
     const [current] = await tx.select().from(documents).where(where);
-    if (!current) throw new HttpError(404, 'not_found');
+    if (!current || (strict && current.deleted)) throw new HttpError(404, 'not_found');
     if (current.deleted) return meta(current);
+    if (strict && current.revision !== baseRevision) throw conflict(meta(current));
     if (current.revision !== baseRevision && !deleteWins(deletedDurationMs, meta(current))) throw conflict(meta(current));
     const trash = kind === 'session' && current.manifestHash !== null;
     const [row] = await tx
@@ -231,6 +238,7 @@ export async function deleteDocument(
       .returning();
     if (!trash) await tx.delete(documentBlobs).where(and(eq(documentBlobs.owner, owner), eq(documentBlobs.kind, kind), eq(documentBlobs.syncId, syncId)));
     if (kind === 'session') await deleteSessionText(tx, owner, syncId);
+    if (kind === 'talking-points') await deleteTalkingPointList(tx, owner, syncId);
     return meta(row);
   });
 }
