@@ -68,7 +68,7 @@ class SessionRepository(
     ): Long = db.withTransaction {
         val row = SessionEntity(
             title = title,
-            createdAt = System.currentTimeMillis(),
+            createdAt = clock(),
             language = language,
             status = SessionStatus.RECORDING,
             numSpeakers = normaliseSpeakerCount(numSpeakers),
@@ -109,7 +109,7 @@ class SessionRepository(
     ): Long = db.withTransaction {
         val row = SessionEntity(
             title = title,
-            createdAt = System.currentTimeMillis(),
+            createdAt = clock(),
             durationMs = durationMs,
             language = language,
             status = SessionStatus.TRANSCRIBED,
@@ -189,7 +189,7 @@ class SessionRepository(
             sessionId = sessionId,
             atMs = atMs.coerceAtLeast(0L),
             note = normaliseNote(note),
-            createdAt = System.currentTimeMillis()
+            createdAt = clock()
         )
     ).also { touch(sessionId) }
 
@@ -217,7 +217,7 @@ class SessionRepository(
 
     /** Save the full note the LLM wrote for mark [markId] (issue #48); it is current again. */
     suspend fun setMarkExpansion(markId: Long, text: String) {
-        markDao.setExpanded(markId, text, System.currentTimeMillis())
+        markDao.setExpanded(markId, text, clock())
         sessionDao.touchForMark(markId, clock())
     }
 
@@ -698,7 +698,7 @@ class SessionRepository(
             kind = kind,
             role = role,
             content = content,
-            createdAt = System.currentTimeMillis(),
+            createdAt = clock(),
             templateName = templateName,
             coveredMs = coveredMs,
             totalMs = totalMs
@@ -732,7 +732,7 @@ class SessionRepository(
         GlobalChatMessageEntity(
             role = role,
             content = content,
-            createdAt = System.currentTimeMillis(),
+            createdAt = clock(),
             filters = filters?.let { GlobalChatCodec.encodeFilters(it) },
             citations = GlobalChatCodec.encodeCitations(citations),
             excerptCount = excerptCount,
@@ -953,7 +953,7 @@ class SessionRepository(
     }
 
     private suspend fun linkTags(sessionId: Long, names: List<String>) {
-        val ids = tagDao.ensure(names, System.currentTimeMillis())
+        val ids = tagDao.ensure(names, clock())
         tagDao.link(ids.map { SessionTagEntity(sessionId, it) })
     }
 
