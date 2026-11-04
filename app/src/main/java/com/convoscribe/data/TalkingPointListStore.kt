@@ -64,9 +64,6 @@ object TalkingPoints {
     /** A list's stored points, in order. */
     fun split(stored: String): List<String> = cleanAll(stored.split('\n'))
 
-    /** One point per line of [text], as typed in a multi-line field. */
-    fun fromLines(text: String): List<String> = split(text)
-
     /** [extra] appended to [current], leaving out points [current] already has (ignoring case and accents). */
     fun append(current: List<String>, extra: List<String>): List<String> {
         val seen = current.map(::key).toMutableSet()

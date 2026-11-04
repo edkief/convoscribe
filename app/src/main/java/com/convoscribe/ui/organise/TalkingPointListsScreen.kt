@@ -113,22 +113,22 @@ internal fun TalkingPointListsBody(
 ) {
     var draftId by rememberSaveable { mutableStateOf(initialDraft?.id) }
     var draftName by rememberSaveable { mutableStateOf(initialDraft?.name.orEmpty()) }
-    var draftPoints by rememberSaveable { mutableStateOf(initialDraft?.points.orEmpty()) }
+    var draftPoints by rememberSaveable { mutableStateOf(initialDraft?.points.orEmpty().joinToString("\n")) }
     var deletingId by rememberSaveable { mutableStateOf<Long?>(null) }
     val open = { draft: TalkingPointListDraft? ->
         draftId = draft?.id
         draftName = draft?.name.orEmpty()
-        draftPoints = draft?.points.orEmpty()
+        draftPoints = draft?.points.orEmpty().joinToString("\n")
     }
     val editingId = draftId
     if (editingId != null) {
-        val draft = TalkingPointListDraft(editingId, draftName, draftPoints)
+        val draft = TalkingPointListDraft(editingId, draftName, draftPoints.split('\n'))
         BackHandler { open(null) }
         TalkingPointListEditor(
             draft = draft,
             onChange = {
                 draftName = it.name
-                draftPoints = it.points
+                draftPoints = it.points.joinToString("\n")
             },
             onSave = {
                 onSave(draft)
@@ -365,8 +365,8 @@ private fun TalkingPointListEditor(
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    value = draft.points,
-                    onValueChange = { onChange(draft.copy(points = it)) },
+                    value = draft.points.joinToString("\n"),
+                    onValueChange = { onChange(draft.copy(points = it.split('\n'))) },
                     label = { Text(text = stringResource(R.string.talking_points_points_label)) },
                     minLines = 6,
                     modifier = Modifier
