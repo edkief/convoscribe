@@ -459,6 +459,7 @@ class ScreenshotTest(private val variant: Variant) {
         TalkingPointListsBody(lists = TALKING_POINT_LISTS, onBack = {}, onSave = {}, onDelete = {})
     }
 
+    /** One row per point (issue #111), with a blank one just added at the end. */
     @Test
     fun talkingPointListEditor() = capture("talking_point_list_editor") {
         TalkingPointListsBody(
@@ -466,7 +467,7 @@ class ScreenshotTest(private val variant: Variant) {
             onBack = {},
             onSave = {},
             onDelete = {},
-            initialDraft = TalkingPointListDraft.of(TALKING_POINT_LISTS.first())
+            initialDraft = TalkingPointListDraft.of(TALKING_POINT_LISTS.first()).addPoint()
         )
     }
 

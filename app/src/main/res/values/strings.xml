@@ -297,7 +297,9 @@
     <string name="talking_points_new_title">New list</string>
     <string name="talking_points_edit_title">Edit list</string>
     <string name="talking_points_name_label">List name</string>
-    <string name="talking_points_points_label">Points, one per line</string>
+    <string name="talking_points_points_heading">Points</string>
+    <string name="talking_points_point_label">Point %1$d</string>
+    <string name="talking_points_add_point">Add point</string>
     <plurals name="talking_points_count">
         <item quantity="one">%1$d point</item>
         <item quantity="other">%1$d points</item>
@@ -311,6 +313,8 @@
     <string name="talking_point_text_label">Talking point</string>
     <string name="talking_point_move_up">Move up</string>
     <string name="talking_point_move_down">Move down</string>
+    <string name="talking_point_move_up_named">Move “%1$s” up</string>
+    <string name="talking_point_move_down_named">Move “%1$s” down</string>
     <string name="talking_point_add_label">Add a talking point</string>
     <string name="talking_point_add">Add</string>
     <string name="record_talking_points_help">What you mean to raise. Tick each point as it comes up.</string>
