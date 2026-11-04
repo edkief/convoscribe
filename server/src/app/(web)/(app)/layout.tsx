@@ -32,7 +32,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <Link href="/" className="brand">
+        <Link href="/" className="brand" aria-label="ConvoScribe">
           <LogoMark />
           <span>ConvoScribe</span>
         </Link>

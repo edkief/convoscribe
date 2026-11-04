@@ -2298,6 +2298,15 @@ button.t-mark-time:hover {
   .account .who {
     display: none;
   }
+
+  /* Leave the top bar's links room (#110): the logo alone, closer icons. */
+  .brand span {
+    display: none;
+  }
+
+  .account {
+    gap: 0.25rem;
+  }
 }
 
 @media (max-width: 640px) {
