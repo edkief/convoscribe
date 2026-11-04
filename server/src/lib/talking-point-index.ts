@@ -1,26 +1,9 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { documents, talkingPointLists } from '@/db/schema';
 import { db, type Db } from './db';
+import { cleanPoint, cleanPoints } from './talking-point-text';
 
-/** Longest point or name kept, in characters: the app's `TalkingPoints.MAX_LEN`. */
-export const POINT_MAX = 300;
-
-/**
- * The app's `TalkingPoints.clean`: on one line, whitespace collapsed,
- * trimmed and capped at [POINT_MAX]. NUL goes too, which Postgres text
- * cannot hold.
- */
-export function cleanPoint(text: string): string {
-  return text
-    .replace(/\u0000/g, '')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, POINT_MAX)
-    .trim();
-}
-
-/** The app's `TalkingPoints.cleanAll`: each cleaned, blanks left out. */
-export const cleanPoints = (texts: string[]): string[] => texts.map(cleanPoint).filter((p) => p !== '');
+export { POINT_MAX, cleanPoint, cleanPoints } from './talking-point-text';
 
 /** A talking-point list as the web app shows it (#104). */
 export type TalkingPointList = {
