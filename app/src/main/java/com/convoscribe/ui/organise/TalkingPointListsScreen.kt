@@ -47,9 +47,9 @@ import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.theme.AppTheme
 
-/** Settings › Talking points (issue #102), the `talking-points` route. */
+/** Home's Talking points section (issue #108): the talking-point lists (issue #102). */
 @Composable
-fun TalkingPointListsScreen(navController: NavHostController) {
+fun TalkingPointListsScreen(navController: NavHostController, onBack: (() -> Unit)? = null) {
     val container = (LocalContext.current.applicationContext as ConvoApp).container
     val vm: TalkingPointListsViewModel = viewModel(
         factory = viewModelFactory { initializer { TalkingPointListsViewModel(container.talkingPointLists) } }
@@ -57,7 +57,7 @@ fun TalkingPointListsScreen(navController: NavHostController) {
     val lists by vm.lists.collectAsStateWithLifecycle()
     TalkingPointListsBody(
         lists = lists,
-        onBack = { navController.popBackStack() },
+        onBack = onBack,
         onSave = vm::save,
         onDelete = vm::delete
     )
@@ -72,7 +72,7 @@ fun TalkingPointListsScreen(navController: NavHostController) {
 @Composable
 internal fun TalkingPointListsBody(
     lists: List<TalkingPointList>,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onSave: (TalkingPointListDraft) -> Unit,
     onDelete: (Long) -> Unit,
     initialDraft: TalkingPointListDraft? = null
@@ -130,7 +130,7 @@ internal fun TalkingPointListsBody(
 @Composable
 private fun TalkingPointLists(
     lists: List<TalkingPointList>,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onNew: () -> Unit,
     onEdit: (TalkingPointList) -> Unit,
     onDelete: (TalkingPointList) -> Unit

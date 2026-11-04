@@ -9,6 +9,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.SyncKinds
 import com.convoscribe.data.SyncStateEntity
+import com.convoscribe.llm.ExtractedActionItem
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -245,5 +246,22 @@ class HomeViewModelTest {
         vm.sessions.first { it.size == 1 }
         assertEquals(1, downloads)
         assertFalse(db.syncDao().state(SyncKinds.SESSION, "removed")!!.excluded)
+    }
+
+    @Test
+    fun sessions_carryOpenActionsAndTalkingPoints() = runTest(dispatcher) {
+        val busy = repo.createSession(title = "busy", language = "en", talkingPoints = listOf("a", "b"))
+        val quiet = repo.createSession(title = "quiet", language = "en")
+        repo.replaceExtractedItems(busy, listOf(ExtractedActionItem("one"), ExtractedActionItem("two")))
+        repo.setTalkingPointCovered(repo.observeTalkingPoints(busy).first()[0].id, true, 1L)
+        val vm = HomeViewModel(repo)
+
+        val rows = vm.sessions.first { rows -> rows.size == 2 && rows.any { it.points != null } }
+        val busyRow = rows.single { it.id == busy }
+        assertEquals(2, busyRow.openActions)
+        assertEquals(PointsCount(covered = 1, total = 2), busyRow.points)
+        val quietRow = rows.single { it.id == quiet }
+        assertEquals(0, quietRow.openActions)
+        assertNull(quietRow.points)
     }
 }

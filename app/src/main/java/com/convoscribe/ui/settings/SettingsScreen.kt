@@ -264,7 +264,6 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             onOpenSummaryTemplates = { navController.navigate("summary-templates") },
             onOpenTags = { navController.navigate("tags") },
             onOpenPresets = { navController.navigate("presets") },
-            onOpenTalkingPoints = { navController.navigate("talking-points") },
             onDownloadCleanup = {
                 ContextCompat.startForegroundService(
                     context,
@@ -338,7 +337,6 @@ internal class SettingsActions(
     val onOpenSummaryTemplates: () -> Unit = {},
     val onOpenTags: () -> Unit = {},
     val onOpenPresets: () -> Unit = {},
-    val onOpenTalkingPoints: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
     val onDownloadSemantic: () -> Unit = {},
@@ -636,8 +634,7 @@ private fun SettingsPageContent(
             )
             OrganiseSection(
                 onOpenTags = actions.onOpenTags,
-                onOpenPresets = actions.onOpenPresets,
-                onOpenTalkingPoints = actions.onOpenTalkingPoints
+                onOpenPresets = actions.onOpenPresets
             )
         }
         SettingsPage.BACKUP -> DataSection(

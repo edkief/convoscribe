@@ -32,6 +32,9 @@ import kotlinx.coroutines.launch
  * recording is still on its way. A session removed from this device
  * is [onServerOnly]: no local row ([id] is 0), shown greyed with
  * *Download*, by its [syncId].
+ *
+ * Follow-ups (issue #108): its [openActions] (action items neither
+ * done nor deleted) and its talking [points], `null` when it has none.
  */
 data class SessionRow(
     val id: Long,
@@ -45,11 +48,16 @@ data class SessionRow(
     val syncId: String = "",
     val synced: Boolean = false,
     val audioDownloading: Boolean = false,
-    val onServerOnly: Boolean = false
+    val onServerOnly: Boolean = false,
+    val openActions: Int = 0,
+    val points: PointsCount? = null
 ) {
     /** Unique across local and removed rows, for the list. */
     val key: String get() = if (onServerOnly) "server:$syncId" else "local:$id"
 }
+
+/** How many of a session's [total] talking points are [covered] (issue #108). */
+data class PointsCount(val covered: Int, val total: Int)
 
 /**
  * The tag filter above the session list (issue #32): the [tags] that
@@ -90,14 +98,26 @@ class HomeViewModel(
         TagFilter(tags = tags, selected = selected.filterTo(HashSet()) { id -> tags.any { it.id == id } })
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), TagFilter())
 
+    /** Open action items and talking points per session id (issue #108). */
+    private val followUps = combine(
+        repository.observeOpenActionCounts(),
+        repository.observeTalkingPointCounts()
+    ) { actions, points -> actions to points }
+
     private val local = combine(
         repository.observeAllSessions(),
         repository.observeSpeakerCounts(),
         repository.observeSessionTags(),
-        tagFilter
-    ) { rows, counts, tags, filter ->
+        tagFilter,
+        followUps
+    ) { rows, counts, tags, filter, (actions, points) ->
         rows.filter { row -> !filter.active || tags[row.id].orEmpty().any { it.id in filter.selected } }
-            .map { it.toRow(counts[it.id] ?: 0, tags[it.id].orEmpty().map { tag -> tag.name }) }
+            .map {
+                it.toRow(counts[it.id] ?: 0, tags[it.id].orEmpty().map { tag -> tag.name }).copy(
+                    openActions = actions[it.id] ?: 0,
+                    points = points[it.id]?.let { p -> PointsCount(covered = p.covered, total = p.total) }
+                )
+            }
     }
 
     /**
