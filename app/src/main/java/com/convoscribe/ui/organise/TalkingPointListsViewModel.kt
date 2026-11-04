@@ -24,12 +24,36 @@ data class TalkingPointListDraft(val id: Long = 0, val name: String = "", val po
     /** The points as saved: in the order shown, cleaned, without blanks. */
     val savedPoints: List<String> get() = TalkingPoints.cleanAll(points)
 
-    /** Point [index] set to [text], kept on one line and capped at [TalkingPoints.MAX_LEN]. */
+    /**
+     * Point [index] set to [text], capped at [TalkingPoints.MAX_LEN].
+     * Text over several lines, as pasted (issue #114), is split with
+     * [TalkingPoints.fromPaste]: the row keeps the first point no other
+     * row has, and the rest go right after it.
+     */
     fun withPoint(index: Int, text: String): TalkingPointListDraft {
         if (index !in points.indices) return this
-        val line = text.replace('\n', ' ').take(TalkingPoints.MAX_LEN)
-        return copy(points = points.toMutableList().also { it[index] = line })
+        val out = points.toMutableList()
+        if (TalkingPoints.isMultiLine(text)) {
+            val fresh = TalkingPoints.pasted(points.filterIndexed { i, _ -> i != index }, text)
+            out[index] = fresh.firstOrNull().orEmpty()
+            out.addAll(index + 1, fresh.drop(1))
+        } else {
+            out[index] = text.take(TalkingPoints.MAX_LEN)
+        }
+        return copy(points = out)
     }
+
+    /**
+     * A pasted block's points (issue #114) after the existing ones,
+     * filling blank rows at the end rather than leaving them above.
+     */
+    fun importPoints(text: String): TalkingPointListDraft {
+        val kept = points.dropLastWhile { it.isBlank() }
+        return copy(points = (kept + TalkingPoints.pasted(kept, text)).ifEmpty { listOf("") })
+    }
+
+    /** How many points [importPoints] would add. */
+    fun importCount(text: String): Int = TalkingPoints.pasted(points, text).size
 
     /** A blank point after [after], at the end by default. */
     fun addPoint(after: Int = points.lastIndex): TalkingPointListDraft {

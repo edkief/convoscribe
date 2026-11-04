@@ -54,11 +54,32 @@ class TalkingPointListsViewModelTest {
     }
 
     @Test
-    fun withPointKeepsOneLineAndTheCap() {
+    fun withPointKeepsTheCap() {
         val draft = TalkingPointListDraft(points = listOf("a", "b"))
-        assertEquals(listOf("a", "x y"), draft.withPoint(1, "x\ny").points)
+        assertEquals(listOf("a", "x y"), draft.withPoint(1, "x y").points)
         assertEquals(TalkingPoints.MAX_LEN, draft.withPoint(0, "z".repeat(TalkingPoints.MAX_LEN + 5)).points[0].length)
         assertEquals(draft, draft.withPoint(2, "out of range"))
+    }
+
+    @Test
+    fun pastingLinesIntoARowSplitsThemAfterIt() {
+        val draft = TalkingPointListDraft(points = listOf("Budget", "", "Office"))
+        assertEquals(
+            listOf("Budget", "Hiring", "Parking", "Office"),
+            draft.withPoint(1, "- Hiring\n- budget\n- Parking\n- office").points
+        )
+        // Nothing new: the row goes blank rather than repeating a point.
+        assertEquals(listOf("Budget", "", "Office"), draft.withPoint(1, "Budget\nOffice").points)
+    }
+
+    @Test
+    fun importAppendsAfterThePointsAndFillsABlankLastRow() {
+        val draft = TalkingPointListDraft(points = listOf("Budget", "", ""))
+        assertEquals(2, draft.importCount("1. Hiring\n2. Budget\n3. Office"))
+        assertEquals(listOf("Budget", "Hiring", "Office"), draft.importPoints("1. Hiring\n2. Budget\n3. Office").points)
+        assertEquals(listOf("Budget"), draft.importPoints("budget").points)
+        assertEquals(listOf("A", "B"), TalkingPointListDraft().importPoints("A\nB").points)
+        assertEquals(listOf(""), TalkingPointListDraft().importPoints("\n").points)
     }
 
     @Test
