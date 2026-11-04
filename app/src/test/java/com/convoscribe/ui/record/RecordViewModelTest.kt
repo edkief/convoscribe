@@ -160,6 +160,19 @@ class RecordViewModelTest {
         assertEquals(emptyList<String>(), other.options.value.talkingPoints)
     }
 
+    /** Issue #114: pasted lines add a point each, leaving out repeats. */
+    @Test
+    fun addPoint_splitsPastedLines() = runTest(dispatcher) {
+        val vm = newViewModel()
+        vm.addPoint("Budget")
+        assertEquals(2, vm.pasteCount("- budget\n- Hiring\n- Office"))
+        vm.addPoint("- budget\n- Hiring\n- Office")
+        assertEquals(listOf("Budget", "Hiring", "Office"), vm.options.value.talkingPoints)
+        // One line is kept as typed, marker and all.
+        vm.addPoint("- Parking")
+        assertEquals(listOf("Budget", "Hiring", "Office", "- Parking"), vm.options.value.talkingPoints)
+    }
+
     /** Issue #102: talking points are the conversation's: attached, added, kept across presets, never a preset's. */
     @Test
     fun talkingPoints_areAttachedWithoutRepeatsAndSurviveAPreset() = runTest(dispatcher) {

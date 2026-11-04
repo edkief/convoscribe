@@ -7,8 +7,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -29,6 +31,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -136,9 +139,14 @@ private fun TalkingPointMenuButton(menu: TalkingPointMenu) {
     }
 }
 
-/** A field and an Add button that adds a talking point (issue #102), then clears itself. */
+/**
+ * A field and an Add button that adds a talking point (issue #102),
+ * then clears itself. With [splitLines], text pasted over several lines
+ * goes to [onAdd] at once, for it to split (issue #114); otherwise its
+ * lines are joined.
+ */
 @Composable
-fun AddTalkingPointField(onAdd: (String) -> Unit, modifier: Modifier = Modifier) {
+fun AddTalkingPointField(onAdd: (String) -> Unit, modifier: Modifier = Modifier, splitLines: Boolean = false) {
     var text by rememberSaveable { mutableStateOf("") }
     val add = {
         if (text.isNotBlank()) onAdd(text)
@@ -151,7 +159,14 @@ fun AddTalkingPointField(onAdd: (String) -> Unit, modifier: Modifier = Modifier)
     ) {
         OutlinedTextField(
             value = text,
-            onValueChange = { text = it.replace('\n', ' ').take(TalkingPoints.MAX_LEN) },
+            onValueChange = {
+                if (splitLines && TalkingPoints.isMultiLine(it)) {
+                    onAdd(it)
+                    text = ""
+                } else {
+                    text = it.replace('\n', ' ').take(TalkingPoints.MAX_LEN)
+                }
+            },
             label = { Text(text = stringResource(R.string.talking_point_add_label)) },
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
@@ -182,6 +197,54 @@ fun TalkingPointDialog(initialText: String, onConfirm: (String) -> Unit, onDismi
         confirmButton = {
             TextButton(enabled = text.isNotBlank(), onClick = { onConfirm(text) }) {
                 Text(text = stringResource(R.string.session_rename_save))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(text = stringResource(R.string.session_rename_cancel)) }
+        }
+    )
+}
+
+/**
+ * *Paste talking points* (issue #114): a box for a block of text, one
+ * point per line. The button says how many points [countFor] finds to
+ * add and is off at none; [onImport] gets the text. The text survives
+ * rotation.
+ *
+ * @param initialText text in the box on first composition (screenshots).
+ */
+@Composable
+fun PastePointsDialog(
+    countFor: (String) -> Int,
+    onImport: (String) -> Unit,
+    onDismiss: () -> Unit,
+    initialText: String = ""
+) {
+    var text by rememberSaveable { mutableStateOf(initialText) }
+    val count = countFor(text)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(R.string.talking_points_paste_title)) },
+        text = {
+            // Scrolls so the field and buttons stay reachable at large font sizes.
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+            ) {
+                SupportingText(text = stringResource(R.string.talking_points_paste_help))
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text(text = stringResource(R.string.talking_points_paste_label)) },
+                    minLines = 5,
+                    maxLines = 10,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = count > 0, onClick = { onImport(text) }) {
+                Text(text = pluralStringResource(R.plurals.talking_points_paste_add, count, count))
             }
         },
         dismissButton = {

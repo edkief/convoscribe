@@ -300,6 +300,14 @@
     <string name="talking_points_points_heading">Points</string>
     <string name="talking_points_point_label">Point %1$d</string>
     <string name="talking_points_add_point">Add point</string>
+    <string name="talking_points_paste">Paste points</string>
+    <string name="talking_points_paste_title">Paste talking points</string>
+    <string name="talking_points_paste_label">Talking points, one per line</string>
+    <string name="talking_points_paste_help">Bullets and numbers at the start of a line are dropped, and points already there are left out.</string>
+    <plurals name="talking_points_paste_add">
+        <item quantity="one">Add %1$d point</item>
+        <item quantity="other">Add %1$d points</item>
+    </plurals>
     <plurals name="talking_points_count">
         <item quantity="one">%1$d point</item>
         <item quantity="other">%1$d points</item>

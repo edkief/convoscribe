@@ -77,6 +77,7 @@ import com.convoscribe.ui.ask.AskAcrossBody
 import com.convoscribe.ui.ask.AskAcrossMessage
 import com.convoscribe.ui.ask.AskAcrossUiState
 import com.convoscribe.ui.components.MarkNoteDialog
+import com.convoscribe.ui.components.PastePointsDialog
 import com.convoscribe.ui.components.TagPickerDialog
 import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
@@ -469,6 +470,21 @@ class ScreenshotTest(private val variant: Variant) {
             onDelete = {},
             initialDraft = TalkingPointListDraft.of(TALKING_POINT_LISTS.first()).addPoint()
         )
+    }
+
+    /** Paste talking points (issue #114): a pasted block and how many points it adds. */
+    @Test
+    fun talkingPointListPaste() {
+        assumeTextFieldDialogsRender()
+        captureScreen("talking_point_list_paste") {
+            val draft = TalkingPointListDraft.of(TALKING_POINT_LISTS.first())
+            PastePointsDialog(
+                countFor = draft::importCount,
+                onImport = {},
+                onDismiss = {},
+                initialText = "- Budget for Q3\n- Customer feedback\n- [ ] Holiday rota\n1. Parking"
+            )
+        }
     }
 
     @Test

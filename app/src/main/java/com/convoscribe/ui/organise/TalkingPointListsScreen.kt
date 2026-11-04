@@ -65,6 +65,7 @@ import com.convoscribe.data.TalkingPointList
 import com.convoscribe.data.UncoveredPoint
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ConfirmDialog
+import com.convoscribe.ui.components.PastePointsDialog
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
@@ -332,6 +333,7 @@ private const val NOT_COVERED_LIMIT = 10
 /** The session screen's Summary tab, which heads with its talking points. */
 private const val SUMMARY_TAB = 1
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TalkingPointListEditor(
     draft: TalkingPointListDraft,
@@ -343,6 +345,17 @@ private fun TalkingPointListEditor(
     val spacing = AppTheme.spacing
     // The row to focus once composed: one just added with Next or Add point.
     var focusIndex by remember { mutableStateOf<Int?>(null) }
+    var pasting by rememberSaveable { mutableStateOf(false) }
+    if (pasting) {
+        PastePointsDialog(
+            countFor = draft::importCount,
+            onImport = {
+                onChange(draft.importPoints(it))
+                pasting = false
+            },
+            onDismiss = { pasting = false }
+        )
+    }
     ScreenScaffold(
         title = stringResource(
             if (draft.id == 0L) R.string.talking_points_new_title else R.string.talking_points_edit_title
@@ -402,17 +415,23 @@ private fun TalkingPointListEditor(
                         onRemove = { onChange(draft.removePoint(index)) }
                     )
                 }
-                TextButton(
-                    onClick = {
-                        onChange(draft.addPoint())
-                        focusIndex = draft.points.size
+                // Wraps so Paste points moves under Add point at large font sizes.
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(spacing.s)) {
+                    TextButton(
+                        onClick = {
+                            onChange(draft.addPoint())
+                            focusIndex = draft.points.size
+                        }
+                    ) {
+                        Icon(imageVector = Icons.Filled.Add, contentDescription = null)
+                        Text(
+                            text = stringResource(R.string.talking_points_add_point),
+                            modifier = Modifier.padding(start = spacing.s)
+                        )
                     }
-                ) {
-                    Icon(imageVector = Icons.Filled.Add, contentDescription = null)
-                    Text(
-                        text = stringResource(R.string.talking_points_add_point),
-                        modifier = Modifier.padding(start = spacing.s)
-                    )
+                    TextButton(onClick = { pasting = true }) {
+                        Text(text = stringResource(R.string.talking_points_paste))
+                    }
                 }
             }
         }
