@@ -2435,6 +2435,56 @@ and on a Boox in e-ink mode.
 - Step 9: the bar's labels stay readable (a long one may end in *…*); on a wide
   window the bar is a rail down the left side, with labels wrapping.
 
+## 57. Paste talking points (issue #114)
+
+Copy this block from a note or an email, with its line breaks:
+
+```
+- Budget
+* Hiring
+1. Office move
+2) [ ] Parking
+
+-5 degrees
+budget
+```
+
+Have a list *Weekly* with the point *Budget*. Run the app steps on a phone and on
+a Boox in e-ink mode; run the web steps in a browser, with the window wide and at
+phone width.
+
+**Steps**
+
+1. App: Home → **Talking points** → edit *Weekly* → *Paste points*. Paste the
+   block, rotate the device, then tap the add button. Save.
+2. App: *New list*, name it *Pasted*, long-press *Point 1* and paste the block.
+   Save.
+3. App: on the Record screen, paste the block into *Add a talking point*. Then
+   *Paste points*, paste it again, and cancel. Start and stop a short recording.
+4. App: with the font size at its largest, open *Paste points* in a list.
+5. App: with TalkBack on, open *Paste points* and move through the dialog.
+6. Web: open *Talking points*, edit *Weekly*, choose *Paste points*, paste the
+   block, choose the add button, and save. Then paste the block into a point's
+   field, and save again.
+
+**Expected**
+
+- Step 1: before you add them, the button reads *Add 4 points*. The text is still
+  there after rotating. *Weekly* ends with *Budget*, *Hiring*, *Office move*,
+  *Parking* and *-5 degrees*, with no blank row between *Budget* and *Hiring*.
+- Step 2: the row becomes *Budget*, and *Hiring*, *Office move*, *Parking* and
+  *-5 degrees* follow it, one row each. Markers and the checkbox are gone, and
+  *budget* (a repeat) is left out.
+- Step 3: the paste adds the five points at once. The second paste's button reads
+  *Add 0 points* and can't be tapped. The session has the five points.
+- Step 4: the dialog scrolls; its field and buttons can all be reached.
+- Step 5: the field is read as *Talking points, one per line* and the button with
+  its count.
+- Step 6: the panel's button reads *Add 4 points*, and the list saves with the five
+  points in that order on the web and, after a sync, on the device. Pasting into
+  a field adds nothing new to a list that already has them: the field goes blank.
+  At phone width the panel fits without scrolling sideways.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
