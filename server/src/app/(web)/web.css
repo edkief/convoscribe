@@ -454,6 +454,11 @@ a.chip:hover {
   color: var(--accent-text);
 }
 
+.icon-button[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
 .side-link[aria-current='page'] svg,
 .side-link[aria-current='page'] .count {
   color: var(--accent-text);
