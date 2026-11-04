@@ -1389,8 +1389,8 @@ session with a saved summary. To check the upgrade, install this build
 
 **Steps**
 
-1. On Home, tap the speech-bubble icon in the top bar. Go back, open
-   Search and tap the same icon there.
+1. On Home, tap **Ask** in the bottom bar. Go back to Recordings, open
+   Search and tap the speech-bubble icon there.
 2. Ask about the fact said only in the older session.
 3. Tap each citation chip under the answer.
 4. Ask a follow-up that does not repeat the topic (*Who said that?*).
@@ -1754,8 +1754,8 @@ for step 10.
 5. Tap **Regenerate**.
 6. Switch the template to *Brief* and Regenerate, then back to
    *Meeting* and Regenerate.
-7. Summarise a second session with action items. On Home open the menu
-   → **Open actions**; switch between *By session* and *By owner*.
+7. Summarise a second session with action items. On Home tap
+   **Actions** in the bottom bar; switch between *By session* and *By owner*.
 8. In *Open actions* tick an item, then tap another one.
 9. Delete the second session from Home and open *Open actions* again.
 10. Sync the first session to the second device and open its Summary
@@ -2260,7 +2260,7 @@ Boox in e-ink mode too.
 
 **Steps**
 
-1. Settings → Search & organise → **Talking points** → *New list*. Name it
+1. Home → **Talking points** in the bottom bar → *New list*. Name it
    *Weekly*, type *Budget*, *Hiring* and *Office* on three lines, and save. Edit it,
    rotate the device halfway through typing, and save.
 2. On the Record screen, under *Talking points*, type *budget* and add it, then
@@ -2378,6 +2378,44 @@ app in a browser.
 - Step 7: both changes survive (#90), and every device and the web end on the
   same version.
 - Step 8: only that user's lists show.
+
+## 56. Home's sections (issue #108)
+
+Have a few sessions, some with open action items and some with talking points
+(one point left unticked), and at least one talking-point list. Run on a phone,
+and on a Boox in e-ink mode.
+
+**Steps**
+
+1. Open the app. Tap each item in the bottom bar: Recordings, Actions, Talking
+   points, Ask.
+2. In Recordings scroll down, switch to Actions, then back to Recordings.
+3. On Actions, press Back. Press Back again.
+4. Open Search from Recordings and tap its speech-bubble icon.
+5. On Talking points, tap *Record with this list* on a list, then go back.
+   Rotate the device on the Record screen before going back.
+6. Tick an open action item, then look at the badge and at that session's card.
+7. Tap a point under *Not covered last time*.
+8. Check Settings → Search & organise and Recordings' ⋮ menu.
+9. Set the system font size to the largest. Turn the phone to landscape, or use
+   a tablet or the Boox.
+
+**Expected**
+
+- Step 1: each section opens with its own title; the app starts on Recordings.
+  Actions has a badge with the number of open items. Only Recordings has *New
+  recording*; Talking points has *New list*.
+- Step 2: Recordings is still scrolled where it was.
+- Step 3: the first Back goes to Recordings; the second leaves the app.
+- Step 4: the app goes back to Home on the Ask section.
+- Step 5: Record opens with the list's points under *Talking points*, attached
+  once, also after rotating. With models missing, setup opens first, as for *New
+  recording*.
+- Step 6: the badge and the card's *open actions* count go down by one.
+- Step 7: that session opens on its Summary tab, with the point unticked.
+- Step 8: neither has a Talking points or Open actions entry any more.
+- Step 9: the bar's labels stay readable (a long one may end in *…*); on a wide
+  window the bar is a rail down the left side, with labels wrapping.
 
 ## Troubleshooting
 
