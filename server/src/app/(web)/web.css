@@ -454,6 +454,11 @@ a.chip:hover {
   color: var(--accent-text);
 }
 
+.icon-button[aria-current='page'] {
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+
 .side-link[aria-current='page'] svg,
 .side-link[aria-current='page'] .count {
   color: var(--accent-text);
@@ -2292,6 +2297,15 @@ button.t-mark-time:hover {
 
   .account .who {
     display: none;
+  }
+
+  /* Leave the top bar's links room (#110): the logo alone, closer icons. */
+  .brand span {
+    display: none;
+  }
+
+  .account {
+    gap: 0.25rem;
   }
 }
 

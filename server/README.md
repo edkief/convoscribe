@@ -41,8 +41,9 @@ Start (#104).
 On a laptop or a tablet in landscape, a sidebar holds a search field and lists
 your sessions, your talking-point lists, your tags with how many sessions carry each, the trash, the
 size of the recordings you store (trash included) and who is signed in; below
-1200 px wide it folds into a top bar, with search and trash buttons beside
-*Sign out*, and for admins a button to the admin pages.
+1200 px wide it folds into a top bar, with talking points (#110), search and
+trash buttons beside *Sign out*, and for admins a button to the admin pages. On
+a phone the bar shows the logo without the name, so every button fits.
 
 - **Library** (`/`): your sessions, newest first and grouped by day (in
   the browser's time zone), 50 to a page. Each row shows the title, the
