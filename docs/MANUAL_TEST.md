@@ -2361,6 +2361,10 @@ app in a browser.
    *Budget* talked about.
 7. Edit a point on A without syncing, tick a different one on the web, then sync A.
 8. Sign in as another user (authz-proxy) and open *Talking points*.
+9. Narrow the window below 1200 px, then to phone width (390 px, or a phone),
+   signed in as an admin (#110). Open the session list and tap the checklist
+   button in the top bar. Create a list with two points, move one, edit it,
+   and delete it.
 
 **Pass**
 
@@ -2378,6 +2382,10 @@ app in a browser.
 - Step 7: both changes survive (#90), and every device and the web end on the
   same version.
 - Step 8: only that user's lists show.
+- Step 9: the top bar shows Talking points, Search, Admin, Trash and Sign out at
+  both widths, all on screen (the logo loses its name at phone width). The
+  checklist button opens *Talking points* and stays highlighted there. Every
+  change works and the page never scrolls sideways.
 
 ## 56. Home's sections (issue #108)
 

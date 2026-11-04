@@ -333,7 +333,9 @@ brings them to your other devices.
   templates (the most recent edit wins). A session's points sync with it
   and merge point by point. Lists can also be written, and a session's
   points ticked and edited, in the server's web app (issue #104), which is
-  handy for typing a list on a laptop before the meeting. An app older than this one drops a session's
+  handy for typing a list on a laptop before the meeting. On a phone or a
+  narrow window, the lists are the checklist button in the web app's top bar
+  (issue #110). An app older than this one drops a session's
   talking points if it edits that session.
   With a language model set up, the points also **tick themselves** while
   you record (issue #103). Every *Check talking points every* seconds
