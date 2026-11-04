@@ -314,7 +314,8 @@ brings them to your other devices.
 - **Talking points** (issue #102). Before a conversation, list what you
   mean to raise. On the Record screen, under *Talking points*, type points
   or *Attach a list*. Keep reusable lists in Home's **Talking points**
-  section (issue #108), one point per line. *Record with this list* on a list
+  section (issue #108), one row per point that you can move up or down
+  (issue #111). *Record with this list* on a list
   opens the Record screen with it attached. Under the lists, *Not covered
   last time* shows points left unticked in conversations from the last 14
   days (at most 10), and tapping one opens that session's Summary tab.

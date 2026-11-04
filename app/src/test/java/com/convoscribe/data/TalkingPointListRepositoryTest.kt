@@ -57,6 +57,6 @@ class TalkingPointListRepositoryTest {
             listOf("Budget", "Réunion", "Hiring"),
             TalkingPoints.append(listOf("Budget", "Réunion"), listOf("budget", " reunion ", "Hiring", ""))
         )
-        assertEquals(listOf("a", "b"), TalkingPoints.fromLines("a\n\n  b  \n"))
+        assertEquals(listOf("a", "b"), TalkingPoints.split("a\n\n  b  \n"))
     }
 }

@@ -2261,8 +2261,11 @@ Boox in e-ink mode too.
 **Steps**
 
 1. Home → **Talking points** in the bottom bar → *New list*. Name it
-   *Weekly*, type *Budget*, *Hiring* and *Office* on three lines, and save. Edit it,
-   rotate the device halfway through typing, and save.
+   *Weekly* and type *Budget* in *Point 1*. Press Next on the keyboard and type
+   *Hiring*, then tap *Add point* and type *Office*. Tap *Add point* again and
+   remove the blank row. Save. Edit it, move *Office* up, rotate the device
+   halfway through typing in a point, move *Office* back down, and save. Repeat
+   the edit with the font size at its largest.
 2. On the Record screen, under *Talking points*, type *budget* and add it, then
    *Attach a list* → *Weekly*. Pick a preset, then *Settings defaults*.
 3. Start recording. Tick *Hiring*, add *Holidays* in the card, untick *Hiring*, tick
@@ -2274,11 +2277,16 @@ Boox in e-ink mode too.
    first, edit *Budget*. Sync both twice.
 7. Edit *Weekly* on the second device, sync both. Delete it on the first, sync both.
 8. Back up, wipe the app's data, restore.
-9. With TalkBack on, move through the Record card and the Summary section.
+9. With TalkBack on, move through the list editor, the Record card and the
+   Summary section.
 
 **Expected**
 
-- Step 1: the list shows *3 points* and the first ones; the edit survives rotation.
+- Step 1: each point is its own row; Next and *Add point* each add a row and put
+  the cursor in it. *Move up* is greyed out on the first row and *Move down* on the
+  last. The list shows *3 points* and the first ones, in the order saved; the rows,
+  their text and their order survive rotation. At the largest font the buttons sit
+  under each field and nothing is cut off.
 - Step 2: *budget* is listed once (the list's *Budget* is left out), followed by
   *Hiring* and *Office*. The preset fills the options and is shown as active; the
   points stay through both picks.
@@ -2291,8 +2299,10 @@ Boox in e-ink mode too.
 - Step 6: both devices end with the ticked *Office* and the edited *Budget*.
 - Step 7: the edit, then the delete, reach the first device. Sessions keep their points.
 - Step 8: the lists and every session's points come back, ticks and times included.
-- Step 9: each point is read with *Covered* or *Not covered yet*; the card title is
-  read as a heading, expanded or collapsed.
+- Step 9: in the editor each field is read as *Point 1*, *Point 2*…, and its
+  buttons as *Move “Budget” up*, *Move “Budget” down* and *Remove “Budget”*
+  (*Point n* for a blank row). Each point is read with *Covered* or *Not covered
+  yet*; the card title is read as a heading, expanded or collapsed.
 
 ## 54. Talking points tick themselves (issue #103)
 
