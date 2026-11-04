@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.HorizontalDivider
@@ -26,17 +27,23 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -134,8 +141,17 @@ internal fun HomeShellFrame(
                     NavigationRailItem(
                         selected = item == section,
                         onClick = { onSelect(item) },
-                        icon = { SectionIcon(item, openActions) },
-                        label = { Text(text = stringResource(item.label)) }
+                        icon = { BarText { SectionIcon(item, openActions) } },
+                        label = {
+                            BarText {
+                                Text(
+                                    text = stringResource(item.label),
+                                    maxLines = 2,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.widthIn(max = RAIL_LABEL_MAX_WIDTH)
+                                )
+                            }
+                        }
                     )
                 }
             }
@@ -156,8 +172,16 @@ internal fun HomeShellFrame(
                             NavigationBarItem(
                                 selected = item == section,
                                 onClick = { onSelect(item) },
-                                icon = { SectionIcon(item, openActions) },
-                                label = { Text(text = stringResource(item.label), maxLines = 1) }
+                                icon = { BarText { SectionIcon(item, openActions) } },
+                                label = {
+                                    BarText {
+                                        Text(
+                                            text = stringResource(item.label),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
                             )
                         }
                     }
@@ -172,6 +196,19 @@ internal fun HomeShellFrame(
             ) { content() }
         }
     }
+}
+
+/**
+ * [content] with the font scale capped at [MAX_BAR_FONT_SCALE]: four
+ * labels side by side cannot grow without bound, so the bar's labels
+ * and badge stop at that size while the sections' content keeps the
+ * user's full scale.
+ */
+@Composable
+private fun BarText(content: @Composable () -> Unit) {
+    val density = LocalDensity.current
+    val capped = Density(density.density, minOf(density.fontScale, MAX_BAR_FONT_SCALE))
+    CompositionLocalProvider(LocalDensity provides capped, content = content)
 }
 
 /** The section's icon; Actions with a badge counting open items. */
@@ -191,6 +228,12 @@ private fun SectionIcon(section: HomeSection, openActions: Int) {
         icon()
     }
 }
+
+/** Largest font scale the bar's labels and badge follow. */
+private const val MAX_BAR_FONT_SCALE = 1.3f
+
+/** A rail label wider than this wraps onto a second line. */
+private val RAIL_LABEL_MAX_WIDTH = 72.dp
 
 /** Past this many open items the badge says "99+". */
 private const val BADGE_MAX = 99

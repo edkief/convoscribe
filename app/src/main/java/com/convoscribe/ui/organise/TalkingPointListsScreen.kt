@@ -4,8 +4,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -237,6 +238,7 @@ private fun TalkingPointLists(
 }
 
 /** Name, how many points, the first few, with *Record with this list* and Edit. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TalkingPointListRow(list: TalkingPointList, onRecord: () -> Unit, onEdit: () -> Unit) {
     val spacing = AppTheme.spacing
@@ -260,12 +262,13 @@ private fun TalkingPointListRow(list: TalkingPointList, onRecord: () -> Unit, on
                 )
             }
         }
-        Row(
+        // Wraps so Edit moves under Record with this list at large font sizes.
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = spacing.m, vertical = spacing.s),
             horizontalArrangement = Arrangement.spacedBy(spacing.s),
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(spacing.xs)
         ) {
             FilledTonalButton(onClick = onRecord) {
                 Icon(painter = painterResource(R.drawable.ic_mic), contentDescription = null)
