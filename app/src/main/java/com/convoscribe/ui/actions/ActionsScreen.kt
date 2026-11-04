@@ -41,9 +41,12 @@ import com.convoscribe.ui.home.formatSessionDate
 import com.convoscribe.ui.session.ActionItemActions
 import com.convoscribe.ui.theme.AppTheme
 
-/** *Open actions* (issue #31), from Home's menu. */
+/**
+ * *Open actions* (issue #31), Home's Actions section (issue #108): no
+ * back arrow when [onBack] is `null`.
+ */
 @Composable
-fun ActionsScreen(navController: NavHostController) {
+fun ActionsScreen(navController: NavHostController, onBack: (() -> Unit)? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
     val vm: ActionsViewModel = viewModel(
@@ -52,7 +55,7 @@ fun ActionsScreen(navController: NavHostController) {
     val state by vm.state.collectAsStateWithLifecycle()
     ActionsBody(
         state = state,
-        onBack = { navController.popBackStack() },
+        onBack = onBack,
         onGrouping = vm::setGrouping,
         actions = ActionItemActions(
             onDone = vm::setDone,
@@ -82,7 +85,7 @@ fun ActionsScreen(navController: NavHostController) {
 @Composable
 internal fun ActionsBody(
     state: ActionsUiState,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onGrouping: (ActionsGrouping) -> Unit,
     actions: ActionItemActions,
     onShare: (OpenActionItem) -> Unit,

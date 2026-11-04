@@ -70,8 +70,10 @@ import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.EmptyState
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SpeakerDot
+import com.convoscribe.ui.home.HomeSection
 import com.convoscribe.ui.home.formatSessionDate
 import com.convoscribe.ui.home.languageTag
+import com.convoscribe.ui.home.openHomeSection
 import com.convoscribe.ui.session.languageName
 import com.convoscribe.ui.sessionRoute
 import com.convoscribe.ui.theme.AppTheme
@@ -128,7 +130,7 @@ fun SearchScreen(navController: NavHostController) {
             navController.navigate(sessionRoute(id, tab = tab, lineId = line?.segmentId, atMs = line?.startMs))
         },
         onBack = { navController.popBackStack() },
-        onAskAcross = { navController.navigate("ask") }
+        onAskAcross = { navController.openHomeSection(HomeSection.ASK) }
     )
 }
 

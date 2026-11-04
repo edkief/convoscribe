@@ -47,6 +47,7 @@ import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import com.convoscribe.data.UncoveredPoint
 import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
@@ -80,6 +81,9 @@ import com.convoscribe.ui.components.TagPickerDialog
 import com.convoscribe.ui.enginecheck.EngineCheckBody
 import com.convoscribe.ui.enginecheck.EngineCheckUiState
 import com.convoscribe.ui.home.HomeBody
+import com.convoscribe.ui.home.HomeSection
+import com.convoscribe.ui.home.HomeShellFrame
+import com.convoscribe.ui.home.PointsCount
 import com.convoscribe.ui.home.SessionRow
 import com.convoscribe.ui.home.TagFilter
 import com.convoscribe.ui.organise.PresetDraft
@@ -222,6 +226,89 @@ class ScreenshotTest(private val variant: Variant) {
             onSettings = {},
             onEngineCheck = {}
         )
+    }
+
+    /** Home's sections (issue #108): Recordings in the bottom bar, cards with their follow-ups, a badge on Actions. */
+    @Test
+    fun homeShellRecordings() = capture("home_shell_recordings") {
+        HomeShellFrame(section = HomeSection.RECORDINGS, openActions = 7, onSelect = {}) {
+            HomeBody(
+                sessions = SESSIONS_WITH_FOLLOW_UPS,
+                onNewRecording = {},
+                onOpenSession = {},
+                onDelete = {},
+                onSettings = {},
+                onEngineCheck = {}
+            )
+        }
+    }
+
+    @Test
+    fun homeShellActions() = capture("home_shell_actions") {
+        HomeShellFrame(section = HomeSection.ACTIONS, openActions = OPEN_ACTIONS.size, onSelect = {}) {
+            ActionsBody(
+                state = ActionsUiState(
+                    groups = ActionsViewModel.group(OPEN_ACTIONS, ActionsGrouping.SESSION),
+                    loaded = true
+                ),
+                onBack = null,
+                onGrouping = {},
+                actions = ActionItemActions(),
+                onShare = {},
+                onAddToCalendar = {},
+                onOpen = {}
+            )
+        }
+    }
+
+    /** Talking points (issue #108): Record with this list, and points recent conversations left open. */
+    @Test
+    fun homeShellTalkingPoints() = capture("home_shell_talking_points") {
+        HomeShellFrame(section = HomeSection.TALKING_POINTS, openActions = 0, onSelect = {}) {
+            TalkingPointListsBody(
+                lists = TALKING_POINT_LISTS,
+                notCovered = NOT_COVERED,
+                onBack = null,
+                onSave = {},
+                onDelete = {}
+            )
+        }
+    }
+
+    @Test
+    fun homeShellAsk() = capture("home_shell_ask") {
+        HomeShellFrame(section = HomeSection.ASK, openActions = 120, onSelect = {}) {
+            AskAcrossBody(
+                state = AskAcrossUiState(messages = ASK_ACROSS_CHAT, sessionIds = setOf(1L, 2L)),
+                onAsk = {},
+                onRetry = {},
+                onCancel = {},
+                onClearHistory = {},
+                onLanguage = {},
+                onDateRange = {},
+                onSpeaker = {},
+                onTag = {},
+                onOpenCitation = {},
+                onOpenSettings = {},
+                onBack = null
+            )
+        }
+    }
+
+    /** On a wide window the bar becomes a navigation rail (issue #108). */
+    @WideWindow
+    @Test
+    fun homeShellRail() = capture("home_shell_rail") {
+        HomeShellFrame(section = HomeSection.RECORDINGS, openActions = 7, onSelect = {}) {
+            HomeBody(
+                sessions = SESSIONS_WITH_FOLLOW_UPS,
+                onNewRecording = {},
+                onOpenSession = {},
+                onDelete = {},
+                onSettings = {},
+                onEngineCheck = {}
+            )
+        }
     }
 
     /** Two-way sync (issue #69): a recording still downloading, and a session removed from this device. */
@@ -1693,6 +1780,17 @@ class ScreenshotTest(private val variant: Variant) {
             row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.DIARIZED, speakers = 2)
         )
 
+        /** Issue #108: open action items and talking points on the cards. */
+        private val SESSIONS_WITH_FOLLOW_UPS = listOf(
+            row(4, "Weekly sync", T0 + 2 * DAY, 754_000L, SessionStatus.DIARIZED, speakers = 3)
+                .copy(openActions = 2, points = PointsCount(covered = 3, total = 4)),
+            row(3, "Réunion budget", T0 + DAY, 1_932_000L, SessionStatus.DIARIZED, language = "fr", speakers = 4)
+                .copy(openActions = 1),
+            row(2, "Interview with Carol", T0, 3_725_000L, SessionStatus.DIARIZED, speakers = 2)
+                .copy(points = PointsCount(covered = 1, total = 1)),
+            row(1, "Recording #1", T0 - DAY, 61_000L, SessionStatus.DIARIZED, speakers = 2)
+        )
+
         private val SYNC_SESSIONS = listOf(
             row(3, "Weekly sync", T0 + 2 * DAY, 754_000L, SessionStatus.DIARIZED, speakers = 3)
                 .copy(synced = true, audioDownloading = true, syncId = "a"),
@@ -1865,6 +1963,23 @@ class ScreenshotTest(private val variant: Variant) {
             done = done,
             position = id.toInt(),
             createdAt = T0
+        )
+
+        private val NOT_COVERED = listOf(
+            UncoveredPoint(
+                11,
+                sessionId = 4,
+                text = "Office move",
+                sessionTitle = "Weekly sync",
+                sessionCreatedAt = T0 + 2 * DAY
+            ),
+            UncoveredPoint(
+                12,
+                sessionId = 2,
+                text = "Feedback",
+                sessionTitle = "1:1 with Élodie",
+                sessionCreatedAt = T0
+            )
         )
 
         private val TALKING_POINT_LISTS = listOf(

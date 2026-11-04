@@ -287,10 +287,11 @@
     <string name="settings_organise_tags_help">Rename or delete the tags on your conversations.</string>
     <string name="settings_organise_presets_row">Presets</string>
     <string name="settings_organise_presets_help">Saved options for recurring conversations, picked on the Record screen or by long-pressing the Quick Settings tile.</string>
-    <string name="settings_organise_talking_points_row">Talking points</string>
-    <string name="settings_organise_talking_points_help">Lists of things to raise, attached to a conversation on the Record screen.</string>
     <string name="talking_points_title">Talking points</string>
-    <string name="talking_points_explanation">A list holds the points you mean to raise in a recurring conversation. Attach it on the Record screen: the conversation gets its own copy of the points to tick off, and the list stays as it is.</string>
+    <string name="talking_points_explanation">A list holds the points you mean to raise in a recurring conversation. Record with it, or attach it on the Record screen: the conversation gets its own copy of the points to tick off, and the list stays as it is.</string>
+    <string name="talking_points_record_with">Record with this list</string>
+    <string name="talking_points_not_covered_title">Not covered last time</string>
+    <string name="talking_points_not_covered_from">%1$s · %2$s</string>
     <string name="talking_points_new">New list</string>
     <string name="talking_points_empty">No lists yet.</string>
     <string name="talking_points_new_title">New list</string>
@@ -641,7 +642,23 @@
     <string name="open_actions_no_owner">No owner</string>
     <string name="open_actions_empty">No open actions</string>
     <string name="open_actions_empty_hint">Action items from your summaries are listed here until you tick them off.</string>
-    <string name="home_open_actions">Open actions</string>
+    <!-- Home's sections (issue #108) -->
+    <string name="home_section_recordings">Recordings</string>
+    <string name="home_section_actions">Actions</string>
+    <string name="home_section_talking_points">Talking points</string>
+    <string name="home_section_ask">Ask</string>
+    <plurals name="home_open_actions_badge">
+        <item quantity="one">%d open action</item>
+        <item quantity="other">%d open actions</item>
+    </plurals>
+    <plurals name="home_card_open_actions">
+        <item quantity="one">%d open action</item>
+        <item quantity="other">%d open actions</item>
+    </plurals>
+    <plurals name="home_card_points">
+        <item quantity="one">%1$d of %2$d point</item>
+        <item quantity="other">%1$d of %2$d points</item>
+    </plurals>
     <string name="session_ask_not_configured">Set up a language model endpoint in Settings to ask questions.</string>
     <string name="session_ask_open_settings">Open Settings</string>
     <string name="session_ask_input_label">Ask about this conversation…</string>

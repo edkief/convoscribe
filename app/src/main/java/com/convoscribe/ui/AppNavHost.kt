@@ -11,13 +11,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.convoscribe.ConvoApp
-import com.convoscribe.ui.actions.ActionsScreen
-import com.convoscribe.ui.ask.AskAcrossScreen
 import com.convoscribe.ui.enginecheck.EngineCheckScreen
-import com.convoscribe.ui.home.HomeScreen
+import com.convoscribe.ui.home.HomeShell
 import com.convoscribe.ui.organise.PresetsScreen
 import com.convoscribe.ui.organise.TagsScreen
-import com.convoscribe.ui.organise.TalkingPointListsScreen
 import com.convoscribe.ui.record.RecordScreen
 import com.convoscribe.ui.search.SearchScreen
 import com.convoscribe.ui.session.SessionScreen
@@ -31,6 +28,9 @@ private const val ROUTE_HOME = "home"
 private const val ROUTE_SETUP = "setup"
 private const val ROUTE_SETUP_WITH_ENGINE = "setup?engine={engine}&language={language}&back={back}"
 private const val ROUTE_RECORD = "record"
+
+/** The new-conversation Record destination's route, to pop up to (issue #108 added `?list=`). */
+internal const val ROUTE_RECORD_WITH_LIST = "record?list={list}"
 private const val ROUTE_RECORD_RESUME = "record/resume/{id}"
 private const val ROUTE_SESSION_DETAIL = "session/{id}?tab={tab}&line={line}&at={at}"
 private const val ROUTE_ENGINE_CHECK = "engine-check"
@@ -40,9 +40,6 @@ private const val ROUTE_SUMMARY_TEMPLATES = "summary-templates"
 private const val ROUTE_SEARCH = "search"
 private const val ROUTE_TAGS = "tags"
 private const val ROUTE_PRESETS = "presets"
-private const val ROUTE_TALKING_POINTS = "talking-points"
-private const val ROUTE_ASK_ACROSS = "ask"
-private const val ROUTE_ACTIONS = "actions"
 
 private const val NO_ARG = -1L
 
@@ -68,14 +65,19 @@ internal fun settingsRoute(page: SettingsPage? = null): String =
  * `home` and a fresh install lands on `setup` first.
  *
  * Routes:
- *  - `home` — landing screen with the "New recording" FAB and
- *    session list;
+ *  - `home` — [HomeShell] (issue #108): a bottom bar (a rail on wide
+ *    screens) of Recordings (the session list and the "New recording"
+ *    FAB), Actions (open action items, issue #31), Talking points (the
+ *    talking-point lists, issue #102) and Ask (across sessions, issue
+ *    #49). The entry's `section` saved state picks the section;
  *  - `setup` — first-run model download (also reachable with
  *    `?engine=npu|cpu` to scope the download to one engine, and
  *    `&language=en|fr` for another language than Settings'; with
  *    `&back=true` it pops back to the caller when done, which is how
  *    the Record screen gets a new conversation's models);
- *  - `record` — live-transcript screen reached from the FAB;
+ *  - `record` — live-transcript screen reached from the FAB; with
+ *    `?list=` (Talking points' *Record with this list*, issue #108) that
+ *    talking-point list is attached;
  *  - `record/resume/{id}` — the same screen, continuing session
  *    `id` (reached from the session screen's mic button); stopping
  *    returns to that session;
@@ -91,9 +93,8 @@ internal fun settingsRoute(page: SettingsPage? = null): String =
  *    screen renders an "Open setup" hint when the embedding
  *    model is not installed.
  *  - `search` — search across sessions (issue #24), reached from
- *    the home top bar;
- *  - `ask` — ask a question across sessions (issue #49), reached from
- *    the home top bar and the search screen;
+ *    the Recordings top bar; its *Ask across sessions* goes back to
+ *    `home` on the Ask section;
  *  - `session/{id}` — session-detail screen (transcript tab,
  *    summary tab and ask tab). The route id is a `Long` so the
  *    home list's `session/${row.id}` push lands on the right row.
@@ -119,8 +120,8 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         }
     }
     NavHost(navController = navController, startDestination = startDestination) {
-        composable(ROUTE_HOME) {
-            HomeScreen(navController = navController)
+        composable(ROUTE_HOME) { backStackEntry ->
+            HomeShell(navController = navController, savedStateHandle = backStackEntry.savedStateHandle)
         }
         composable(ROUTE_SETUP) {
             ModelSetupScreen(
@@ -166,8 +167,19 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
                 }
             )
         }
-        composable(ROUTE_RECORD) {
-            RecordScreen(navController = navController)
+        composable(
+            route = ROUTE_RECORD_WITH_LIST,
+            arguments = listOf(
+                navArgument("list") {
+                    type = NavType.LongType
+                    defaultValue = NO_ARG
+                }
+            )
+        ) { backStackEntry ->
+            RecordScreen(
+                navController = navController,
+                attachListId = backStackEntry.arguments?.getLong("list")?.takeIf { it != NO_ARG }
+            )
         }
         composable(
             route = ROUTE_RECORD_RESUME,
@@ -204,20 +216,11 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
         composable(ROUTE_SEARCH) {
             SearchScreen(navController = navController)
         }
-        composable(ROUTE_ASK_ACROSS) {
-            AskAcrossScreen(navController = navController)
-        }
-        composable(ROUTE_ACTIONS) {
-            ActionsScreen(navController = navController)
-        }
         composable(ROUTE_TAGS) {
             TagsScreen(navController = navController)
         }
         composable(ROUTE_PRESETS) {
             PresetsScreen(navController = navController)
-        }
-        composable(ROUTE_TALKING_POINTS) {
-            TalkingPointListsScreen(navController = navController)
         }
         composable(
             route = ROUTE_SESSION_DETAIL,

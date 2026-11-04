@@ -1,10 +1,12 @@
 package com.convoscribe.ui.organise
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,8 +16,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -27,7 +33,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,41 +48,67 @@ import androidx.navigation.NavHostController
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.data.TalkingPointList
+import com.convoscribe.data.UncoveredPoint
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ConfirmDialog
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.home.formatSessionDate
+import com.convoscribe.ui.home.newRecordingRoute
+import com.convoscribe.ui.sessionRoute
 import com.convoscribe.ui.theme.AppTheme
 
-/** Settings › Talking points (issue #102), the `talking-points` route. */
+/**
+ * Home's Talking points section (issue #108): the talking-point lists
+ * (issue #102), each with *Record with this list*, and the points
+ * recent conversations did not cover.
+ */
 @Composable
-fun TalkingPointListsScreen(navController: NavHostController) {
+fun TalkingPointListsScreen(navController: NavHostController, onBack: (() -> Unit)? = null) {
     val container = (LocalContext.current.applicationContext as ConvoApp).container
     val vm: TalkingPointListsViewModel = viewModel(
-        factory = viewModelFactory { initializer { TalkingPointListsViewModel(container.talkingPointLists) } }
+        factory = viewModelFactory {
+            initializer {
+                TalkingPointListsViewModel(
+                    store = container.talkingPointLists,
+                    uncovered = container.sessionRepository.observeRecentUncovered(
+                        sinceMs = System.currentTimeMillis() - NOT_COVERED_WINDOW_MS,
+                        limit = NOT_COVERED_LIMIT
+                    )
+                )
+            }
+        }
     )
     val lists by vm.lists.collectAsStateWithLifecycle()
+    val notCovered by vm.notCovered.collectAsStateWithLifecycle()
     TalkingPointListsBody(
         lists = lists,
-        onBack = { navController.popBackStack() },
+        notCovered = notCovered,
+        onBack = onBack,
         onSave = vm::save,
-        onDelete = vm::delete
+        onDelete = vm::delete,
+        onRecord = { list -> navController.navigate(newRecordingRoute(container, attachListId = list.id)) },
+        onOpenSession = { id -> navController.navigate(sessionRoute(id, tab = SUMMARY_TAB)) }
     )
 }
 
 /**
- * The lists with New list, or the editor for one: its name and its
- * points, one per line. Delete asks first. The draft survives rotation.
+ * The lists with New list and *Not covered last time*, or the editor
+ * for one: its name and its points, one per line, and Delete for a
+ * saved list. Delete asks first. The draft survives rotation.
  *
  * @param initialDraft editor to show on first composition (screenshots).
  */
 @Composable
 internal fun TalkingPointListsBody(
     lists: List<TalkingPointList>,
-    onBack: () -> Unit,
+    onBack: (() -> Unit)?,
     onSave: (TalkingPointListDraft) -> Unit,
     onDelete: (Long) -> Unit,
+    notCovered: List<UncoveredPoint> = emptyList(),
+    onRecord: (TalkingPointList) -> Unit = {},
+    onOpenSession: (Long) -> Unit = {},
     initialDraft: TalkingPointListDraft? = null
 ) {
     var draftId by rememberSaveable { mutableStateOf(initialDraft?.id) }
@@ -100,15 +134,18 @@ internal fun TalkingPointListsBody(
                 onSave(draft)
                 open(null)
             },
-            onCancel = { open(null) }
+            onCancel = { open(null) },
+            onDelete = { deletingId = editingId }
         )
     } else {
         TalkingPointLists(
             lists = lists,
+            notCovered = notCovered,
             onBack = onBack,
             onNew = { open(TalkingPointListDraft()) },
             onEdit = { open(TalkingPointListDraft.of(it)) },
-            onDelete = { deletingId = it.id }
+            onRecord = onRecord,
+            onOpenSession = onOpenSession
         )
     }
     lists.firstOrNull { it.id == deletingId }?.let { list ->
@@ -120,6 +157,7 @@ internal fun TalkingPointListsBody(
             onConfirm = {
                 onDelete(list.id)
                 deletingId = null
+                open(null)
             },
             onDismiss = { deletingId = null },
             destructive = true
@@ -130,43 +168,79 @@ internal fun TalkingPointListsBody(
 @Composable
 private fun TalkingPointLists(
     lists: List<TalkingPointList>,
-    onBack: () -> Unit,
+    notCovered: List<UncoveredPoint>,
+    onBack: (() -> Unit)?,
     onNew: () -> Unit,
     onEdit: (TalkingPointList) -> Unit,
-    onDelete: (TalkingPointList) -> Unit
+    onRecord: (TalkingPointList) -> Unit,
+    onOpenSession: (Long) -> Unit
 ) {
     val spacing = AppTheme.spacing
-    ScreenScaffold(title = stringResource(R.string.talking_points_title), onBack = onBack) { innerPadding ->
+    ScreenScaffold(
+        title = stringResource(R.string.talking_points_title),
+        onBack = onBack,
+        floatingActionButton = {
+            ExtendedFloatingActionButton(
+                onClick = onNew,
+                icon = { Icon(imageVector = Icons.Filled.Add, contentDescription = null) },
+                text = { Text(text = stringResource(R.string.talking_points_new)) }
+            )
+        }
+    ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding),
-            contentPadding = PaddingValues(horizontal = spacing.screen, vertical = spacing.s),
+            contentPadding = PaddingValues(
+                start = spacing.screen,
+                end = spacing.screen,
+                top = spacing.s,
+                // Keep the last row clear of the floating button.
+                bottom = AppTheme.sizes.recordButton + spacing.xl
+            ),
             verticalArrangement = Arrangement.spacedBy(spacing.m),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            item(key = "intro") {
-                Column(
-                    modifier = Modifier
-                        .widthIn(max = AppTheme.sizes.contentMaxWidth)
-                        .fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(spacing.s)
-                ) {
-                    SupportingText(text = stringResource(R.string.talking_points_explanation))
-                    Button(onClick = onNew) { Text(text = stringResource(R.string.talking_points_new)) }
-                    if (lists.isEmpty()) SupportingText(text = stringResource(R.string.talking_points_empty))
+            if (lists.isEmpty()) {
+                item(key = "intro") {
+                    Column(
+                        modifier = Modifier
+                            .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                            .fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(spacing.s)
+                    ) {
+                        SupportingText(text = stringResource(R.string.talking_points_explanation))
+                        SupportingText(text = stringResource(R.string.talking_points_empty))
+                    }
                 }
             }
             items(lists, key = { it.id }) { list ->
-                TalkingPointListRow(list = list, onEdit = { onEdit(list) }, onDelete = { onDelete(list) })
+                TalkingPointListRow(list = list, onRecord = { onRecord(list) }, onEdit = { onEdit(list) })
+            }
+            if (notCovered.isNotEmpty()) {
+                item(key = "not-covered") {
+                    Text(
+                        text = stringResource(R.string.talking_points_not_covered_title),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                            .fillMaxWidth()
+                            .padding(top = spacing.m)
+                    )
+                }
+                items(notCovered, key = { "point:${it.pointId}" }) { point ->
+                    NotCoveredRow(point = point, onClick = { onOpenSession(point.sessionId) })
+                }
             }
         }
     }
 }
 
-/** Name, how many points, the first few, with Edit and Delete. */
+/** Name, how many points, the first few, with *Record with this list* and Edit. */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun TalkingPointListRow(list: TalkingPointList, onEdit: () -> Unit, onDelete: () -> Unit) {
+private fun TalkingPointListRow(list: TalkingPointList, onRecord: () -> Unit, onEdit: () -> Unit) {
     val spacing = AppTheme.spacing
     AppCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth).fillMaxWidth()) {
         Column(
@@ -188,29 +262,68 @@ private fun TalkingPointListRow(list: TalkingPointList, onEdit: () -> Unit, onDe
                 )
             }
         }
-        Row(
+        // Wraps so Edit moves under Record with this list at large font sizes.
+        FlowRow(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = spacing.s),
-            horizontalArrangement = Arrangement.End
+                .padding(horizontal = spacing.m, vertical = spacing.s),
+            horizontalArrangement = Arrangement.spacedBy(spacing.s),
+            verticalArrangement = Arrangement.spacedBy(spacing.xs)
         ) {
-            TextButton(onClick = onEdit) { Text(text = stringResource(R.string.presets_edit)) }
-            TextButton(
-                onClick = onDelete,
-                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-            ) {
-                Text(text = stringResource(R.string.tags_delete))
+            FilledTonalButton(onClick = onRecord) {
+                Icon(painter = painterResource(R.drawable.ic_mic), contentDescription = null)
+                Text(
+                    text = stringResource(R.string.talking_points_record_with),
+                    modifier = Modifier.padding(start = spacing.s)
+                )
             }
+            TextButton(onClick = onEdit) { Text(text = stringResource(R.string.presets_edit)) }
         }
     }
 }
+
+/** A point left open: its text, and the conversation and day it belongs to. */
+@Composable
+private fun NotCoveredRow(point: UncoveredPoint, onClick: () -> Unit) {
+    val spacing = AppTheme.spacing
+    Column(
+        modifier = Modifier
+            .widthIn(max = AppTheme.sizes.contentMaxWidth)
+            .fillMaxWidth()
+            .clip(MaterialTheme.shapes.small)
+            .clickable(onClick = onClick)
+            .padding(vertical = spacing.s),
+        verticalArrangement = Arrangement.spacedBy(spacing.xs)
+    ) {
+        Text(text = point.text, style = MaterialTheme.typography.bodyLarge)
+        Text(
+            text = stringResource(
+                R.string.talking_points_not_covered_from,
+                point.sessionTitle,
+                formatSessionDate(point.sessionCreatedAt)
+            ),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+/** How far back *Not covered last time* looks (issue #108). */
+private const val NOT_COVERED_WINDOW_MS = 14L * 24 * 60 * 60 * 1000
+
+/** At most this many points under *Not covered last time*. */
+private const val NOT_COVERED_LIMIT = 10
+
+/** The session screen's Summary tab, which heads with its talking points. */
+private const val SUMMARY_TAB = 1
 
 @Composable
 private fun TalkingPointListEditor(
     draft: TalkingPointListDraft,
     onChange: (TalkingPointListDraft) -> Unit,
     onSave: () -> Unit,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onDelete: () -> Unit
 ) {
     val spacing = AppTheme.spacing
     ScreenScaffold(
@@ -219,6 +332,14 @@ private fun TalkingPointListEditor(
         ),
         onBack = onCancel,
         actions = {
+            if (draft.id != 0L) {
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text(text = stringResource(R.string.tags_delete))
+                }
+            }
             TextButton(onClick = onSave, enabled = draft.canSave) {
                 Text(text = stringResource(R.string.session_rename_save))
             }

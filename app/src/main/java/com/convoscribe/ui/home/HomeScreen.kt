@@ -67,6 +67,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
+import com.convoscribe.AppContainer
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.audio.AudioImportException
@@ -94,7 +95,7 @@ import com.convoscribe.update.UpdateState
 import kotlinx.coroutines.launch
 
 /**
- * Landing screen: the session list and the "New recording" action,
+ * Home's Recordings section (issue #108): the session list and the "New recording" action,
  * which goes to the `record` route — or to `setup` when a model bundle
  * the configured language and engine need is missing, so it works both
  * on first run and in steady state.
@@ -115,10 +116,11 @@ import kotlinx.coroutines.launch
  * Once sessions are tagged (issue #32), a row of tag chips above the
  * list filters it to sessions with any of the ticked tags.
  *
- * The top bar has Settings and an overflow menu with Open actions
- * (issue #31), Import audio and Engine check. Each
- * session is a card (title, date, duration, speakers, language, a
- * status badge and its tags); tapping it opens `session/{id}`, and Delete is in the
+ * The top bar has Search, Settings and an overflow menu with Import
+ * audio and Engine check. Each session is a card (title, date,
+ * duration, speakers, language, a line with its open action items and
+ * covered talking points when it has any (issue #108), a status badge
+ * and its tags); tapping it opens `session/{id}`, and Delete is in the
  * card's overflow menu (long-press still works) behind a confirmation.
  *
  * @param navController app-level controller; passed in (rather than
@@ -139,17 +141,7 @@ fun HomeScreen(navController: NavHostController) {
             }
         }
     )
-    // Compute the click handler in composition so the language
-    // setting is read fresh every recomposition. The container is
-    // cheap to access — it is held on the application instance.
-    val onNewRecording: () -> Unit = {
-        val settings = container.settingsRepository.settings.value
-        val missing = container.modelStore.missing(
-            ModelCatalog.requiredFor(settings.asrLanguage, settings.asrEngine)
-        )
-        val target = if (missing.isEmpty()) "record" else "setup"
-        navController.navigate(target)
-    }
+    val onNewRecording: () -> Unit = { navController.navigate(newRecordingRoute(container)) }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val tagFilter by vm.tagFilter.collectAsStateWithLifecycle()
     val importer = container.importAudioUseCase
@@ -234,9 +226,7 @@ fun HomeScreen(navController: NavHostController) {
         onDownloadAgain = vm::downloadAgain,
         onSettings = { navController.navigate(settingsRoute()) },
         onEngineCheck = { navController.navigate("engine-check") },
-        onSearch = { navController.navigate("search") },
-        onAskAcross = { navController.navigate("ask") },
-        onOpenActions = { navController.navigate("actions") }
+        onSearch = { navController.navigate("search") }
     )
 }
 
@@ -265,9 +255,7 @@ internal fun HomeBody(
     onDownloadAgain: (String) -> Unit = {},
     onSettings: () -> Unit,
     onEngineCheck: () -> Unit,
-    onSearch: () -> Unit = {},
-    onAskAcross: () -> Unit = {},
-    onOpenActions: () -> Unit = {}
+    onSearch: () -> Unit = {}
 ) {
     var overflowExpanded by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<SessionRow?>(null) }
@@ -279,17 +267,8 @@ internal fun HomeBody(
     val wide = LocalConfiguration.current.screenWidthDp >= WIDE_SCREEN_DP
 
     ScreenScaffold(
-        title = stringResource(R.string.app_name),
+        title = stringResource(R.string.home_section_recordings),
         actions = {
-            // Ask across sessions (issue #49), once there is something to ask about.
-            if (searchable) {
-                IconButton(onClick = onAskAcross) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_conversation),
-                        contentDescription = stringResource(R.string.ask_across_open)
-                    )
-                }
-            }
             if (searchable && !wide) {
                 IconButton(onClick = onSearch) {
                     Icon(
@@ -315,14 +294,6 @@ internal fun HomeBody(
                     expanded = overflowExpanded,
                     onDismissRequest = { overflowExpanded = false }
                 ) {
-                    // Every session's unticked action items (issue #31).
-                    DropdownMenuItem(
-                        text = { Text(text = stringResource(R.string.home_open_actions)) },
-                        onClick = {
-                            overflowExpanded = false
-                            onOpenActions()
-                        }
-                    )
                     DropdownMenuItem(
                         text = { Text(text = stringResource(R.string.home_import_audio_menu)) },
                         onClick = {
@@ -408,11 +379,27 @@ internal fun HomeBody(
     }
 }
 
+/**
+ * Where *New recording* goes: `record`, with [attachListId]'s talking
+ * points attached (issue #108), or `setup` when a model bundle the
+ * configured language and engine need is missing. Settings are read at
+ * the time of the call, so a changed language counts.
+ */
+internal fun newRecordingRoute(container: AppContainer, attachListId: Long? = null): String {
+    val settings = container.settingsRepository.settings.value
+    val missing = container.modelStore.missing(ModelCatalog.requiredFor(settings.asrLanguage, settings.asrEngine))
+    return when {
+        missing.isNotEmpty() -> "setup"
+        attachListId != null -> "record?list=$attachListId"
+        else -> "record"
+    }
+}
+
 /** How faint a session removed from this device is in the list (issue #69). */
 private const val SERVER_ONLY_ALPHA = 0.6f
 
 /** Width from which Home shows a search field instead of a top-bar icon. */
-private const val WIDE_SCREEN_DP = 600
+internal const val WIDE_SCREEN_DP = 600
 
 /** A field-shaped button above the session list that opens search. */
 @Composable
@@ -671,6 +658,13 @@ private fun SessionCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                followUpText(row)?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
                 if (row.onServerOnly || row.audioDownloading) {
                     SyncBadge(onServerOnly = row.onServerOnly, modifier = Modifier.padding(top = spacing.xs))
                 } else if (statusLabel(row.status) != null) {
@@ -726,4 +720,22 @@ private fun SessionCard(
             }
         }
     }
+}
+
+/**
+ * `2 open actions · 4 of 5 points` (issue #108): what is left to do
+ * from the session and how its talking points went, or `null` when it
+ * has neither.
+ */
+@Composable
+private fun followUpText(row: SessionRow): String? {
+    val parts = listOfNotNull(
+        if (row.openActions > 0) {
+            pluralStringResource(R.plurals.home_card_open_actions, row.openActions, row.openActions)
+        } else {
+            null
+        },
+        row.points?.let { pluralStringResource(R.plurals.home_card_points, it.total, it.covered, it.total) }
+    )
+    return parts.takeIf { it.isNotEmpty() }?.joinToString(" · ")
 }

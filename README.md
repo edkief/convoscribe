@@ -89,7 +89,13 @@ brings them to your other devices.
   server cannot be reached, the device transcript is kept. A transcript
   you edited by hand is never replaced automatically. Session info shows
   `server` and the server's model.
-- **Import an audio file** as a session: *Import audio…* on Home, or
+- **Home** (issue #108) has four sections in a bar along the bottom (a
+  rail down the side on wide screens): **Recordings** (the session
+  list), **Actions** (open action items, with a badge counting them),
+  **Talking points** (your lists) and **Ask** (questions across
+  sessions). The app opens on Recordings, and Back from another section
+  returns there. Each section keeps its place while you switch.
+- **Import an audio file** as a session: *Import audio…* in Recordings' menu, or
   share a voice note to ConvoScribe / *Open with* it from a file
   manager. Any format Android can decode (MP3, M4A/AAC, OGG/Opus,
   FLAC, AMR, WAV…) is converted to 16 kHz mono, stored as the
@@ -97,7 +103,7 @@ brings them to your other devices.
   transcription server when *Improve recordings on the server* is on),
   then speakers are identified. It runs in the background with progress and
   Cancel; a cancelled or unreadable import leaves nothing behind.
-- **Search across sessions** from Home (the search icon, or the
+- **Search across sessions** from Recordings (the search icon, or the
   search field on wide screens). Words are matched in session titles,
   transcript lines, speaker names and saved summaries, ignoring capitals
   and accents (*reunion* finds *Réunion*), each word as the start of a
@@ -199,7 +205,7 @@ brings them to your other devices.
   minutes…*).
 - **Ask across sessions** — ask a question about all your past
   conversations (*What did Alice say about the budget last month?*)
-  from the speech-bubble icon on Home or on the Search screen. Narrow it
+  in Home's **Ask** section, also reached from the Search screen. Narrow it
   with the Search filters (person, language, date, tag). The sessions
   sharing the most words with the question are picked from the search
   index, their most relevant parts and saved summaries are sent to the
@@ -301,14 +307,18 @@ brings them to your other devices.
   owner and due date, or delete it. Tap its time to go to that moment
   in the transcript. Its menu also shares it as text or adds it to the
   calendar (an all-day event on its due date). Regenerating keeps what
-  you ticked, edited or deleted and adds only new items. Home's menu →
-  *Open actions* lists every session's unticked items, by session or
+  you ticked, edited or deleted and adds only new items. Home's
+  **Actions** section lists every session's unticked items, by session or
   by owner. Items are backed up and synced with their session.
   Summaries saved before this version get items when regenerated.
 - **Talking points** (issue #102). Before a conversation, list what you
   mean to raise. On the Record screen, under *Talking points*, type points
-  or *Attach a list*. Keep reusable lists in Settings → Search & organise →
-  Talking points, one point per line. While recording, a card above the
+  or *Attach a list*. Keep reusable lists in Home's **Talking points**
+  section (issue #108), one point per line. *Record with this list* on a list
+  opens the Record screen with it attached. Under the lists, *Not covered
+  last time* shows points left unticked in conversations from the last 14
+  days (at most 10), and tapping one opens that session's Summary tab.
+  While recording, a card above the
   live transcript shows *Talking points: n of m covered*. Tick each point
   as it comes up (the recording time is noted), or add one. A long list
   scrolls inside the card. The *Not covered first* chip lists the points
@@ -414,9 +424,11 @@ brings them to your other devices.
   Onyx Boox, Standard elsewhere), **Standard** or **E-ink**. On
   Android 12+ Standard mode can take its colours from the wallpaper
   (*Use device colours*).
-- **Session cards** on Home show the date, duration, number of
+- **Session cards** in Recordings show the date, duration, number of
   speakers and whether a session is recording, identifying speakers
-  or failed, with Delete in each card's menu. The Record screen shows
+  or failed, with Delete in each card's menu. A card also says how many
+  action items are still open and how many talking points were covered
+  (*2 open actions · 3 of 4 points*), when it has any (issue #108). The Record screen shows
   a live **microphone level** meter, and each speaker keeps one colour
   on their chip and lines, also after a rename.
 - **In-app updates.** When you open the app (at most every 30
@@ -811,8 +823,9 @@ one package per concern:
 - `enginecheck/` — `DeviceInfo` (manufacturer / SoC / libcdsprpc /
   storage), `EngineCheckRunner`, `Report`.
 - `ui/<screen>/` — one package per screen, Composable + ViewModel
-  pair (`home`, `record`, `session`, `settings`, `setup`,
-  `enginecheck`, `organise` for Settings → Search & organise); `ui/settings/` has one
+  pair (`home`, with `HomeShell` hosting Home's sections, `record`,
+  `session`, `settings`, `setup`, `enginecheck`, `organise` for tags,
+  presets and the Talking points section); `ui/settings/` has one
   file per Settings page and the overview; `ui/update/` holds the update banner shared by Home
   and Settings; `ui/AppNavHost.kt` is the navigation graph;
   `ui/theme/` is the Material 3 theme.

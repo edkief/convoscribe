@@ -58,14 +58,14 @@ import com.convoscribe.ui.settingsRoute
 import com.convoscribe.ui.theme.AppTheme
 
 /**
- * *Ask across sessions* (issue #49), reached from Home and Search: a
+ * *Ask across sessions* (issue #49), Home's Ask section (issue #108), also reached from Search: a
  * question about every past conversation, narrowed by the Search
  * screen's filter chips, answered from excerpts of the most relevant
  * ones. Tapping a citation opens that session's transcript at the
  * cited line with the player cued there, as a search hit does.
  */
 @Composable
-fun AskAcrossScreen(navController: NavHostController) {
+fun AskAcrossScreen(navController: NavHostController, onBack: (() -> Unit)? = null) {
     val container = (LocalContext.current.applicationContext as ConvoApp).container
     val streamIntervalMs = if (AppTheme.isEink) StreamPacer.EINK_INTERVAL_MS else 0L
     val vm: AskAcrossViewModel = viewModel(
@@ -101,7 +101,7 @@ fun AskAcrossScreen(navController: NavHostController) {
             )
         },
         onOpenSettings = { navController.navigate(settingsRoute(SettingsPage.AI)) },
-        onBack = { navController.popBackStack() }
+        onBack = onBack
     )
 }
 
@@ -128,7 +128,7 @@ internal fun AskAcrossBody(
     onTag: (Long?) -> Unit,
     onOpenCitation: (Citation) -> Unit,
     onOpenSettings: () -> Unit,
-    onBack: () -> Unit
+    onBack: (() -> Unit)?
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     var clearOpen by remember { mutableStateOf(false) }

@@ -61,3 +61,6 @@ data class OpenActionItem(
     val sessionTitle: String,
     val sessionCreatedAt: Long
 )
+
+/** A number of rows belonging to session [sessionId] (issue #108). */
+data class SessionCount(val sessionId: Long, val count: Int)

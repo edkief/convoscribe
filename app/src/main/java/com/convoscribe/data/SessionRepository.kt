@@ -236,6 +236,24 @@ class SessionRepository(
     /** Action items neither done nor deleted, across sessions, newest session first (issue #31). */
     fun observeOpenActionItems(): Flow<List<OpenActionItem>> = actionItemDao.observeOpen()
 
+    /** Open action items per session id, for Home's cards (issue #108); sessions with none are absent. */
+    fun observeOpenActionCounts(): Flow<Map<Long, Int>> =
+        actionItemDao.observeOpenCounts().map { rows -> rows.associate { it.sessionId to it.count } }
+
+    /** Every open action item, for the badge on Home's Actions section (issue #108). */
+    fun observeOpenActionCount(): Flow<Int> = actionItemDao.observeOpenCounts().map { rows -> rows.sumOf { it.count } }
+
+    /** Talking points per session id, total and covered (issue #108); sessions with none are absent. */
+    fun observeTalkingPointCounts(): Flow<Map<Long, TalkingPointCount>> =
+        talkingPointDao.observeCounts().map { rows -> rows.associateBy { it.sessionId } }
+
+    /**
+     * Points not covered in sessions recorded since [sinceMs], newest
+     * session first, at most [limit] (issue #108).
+     */
+    fun observeRecentUncovered(sinceMs: Long, limit: Int): Flow<List<UncoveredPoint>> =
+        talkingPointDao.observeRecentUncovered(sinceMs, limit)
+
     /**
      * Fold the action items of a new summary into the session's
      * ([ActionItemMerge]), in one transaction: the ones the user

@@ -145,6 +145,21 @@ class RecordViewModelTest {
         job.cancel()
     }
 
+    /** Issue #108: *Record with this list* attaches it once; an unknown list adds nothing. */
+    @Test
+    fun attachListOnce_attachesTheListOnlyOnce() = runTest(dispatcher) {
+        val vm = newViewModel()
+        vm.attachListOnce(1)
+        vm.attachListOnce(1)
+        advanceUntilIdle()
+        assertEquals(listOf("Budget", "Hiring"), vm.options.value.talkingPoints)
+
+        val other = newViewModel()
+        other.attachListOnce(42)
+        advanceUntilIdle()
+        assertEquals(emptyList<String>(), other.options.value.talkingPoints)
+    }
+
     /** Issue #102: talking points are the conversation's: attached, added, kept across presets, never a preset's. */
     @Test
     fun talkingPoints_areAttachedWithoutRepeatsAndSurviveAPreset() = runTest(dispatcher) {

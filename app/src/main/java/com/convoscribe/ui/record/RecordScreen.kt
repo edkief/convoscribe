@@ -70,6 +70,7 @@ import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
+import com.convoscribe.ui.ROUTE_RECORD_WITH_LIST
 import com.convoscribe.ui.components.AppCard
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.MarkNoteDialog
@@ -115,9 +116,11 @@ import kotlinx.coroutines.flow.map
  *   into, or `null` for a new session. When set, Start appends to
  *   that session and stopping pops back to its (already open)
  *   session screen instead of pushing a new one.
+ * @param attachListId talking-point list to attach to the new
+ *   conversation (Talking points' *Record with this list*, issue #108).
  */
 @Composable
-fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null) {
+fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null, attachListId: Long? = null) {
     val context = LocalContext.current
     val container = (context.applicationContext as ConvoApp).container
     val vm: RecordViewModel = viewModel(
@@ -142,6 +145,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             }
         }
     )
+    // Talking points' *Record with this list* (issue #108).
+    LaunchedEffect(attachListId) { attachListId?.let(vm::attachListOnce) }
     val state by vm.state.collectAsStateWithLifecycle()
     val options by vm.options.collectAsStateWithLifecycle()
     val enrolledNames by vm.enrolledNames.collectAsStateWithLifecycle()
@@ -219,7 +224,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             navController.popBackStack()
         } else {
             navController.navigate("session/$id") {
-                popUpTo("record") { inclusive = true }
+                popUpTo(ROUTE_RECORD_WITH_LIST) { inclusive = true }
             }
         }
         vm.onNavigatedToSession()

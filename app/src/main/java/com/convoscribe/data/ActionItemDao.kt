@@ -25,6 +25,13 @@ interface ActionItemDao {
     )
     fun observeOpen(): Flow<List<OpenActionItem>>
 
+    /** How many items are open (neither done nor deleted) per session, for Home's cards (issue #108). */
+    @Query(
+        "SELECT sessionId, COUNT(*) AS count FROM action_items " +
+            "WHERE done = 0 AND deleted = 0 GROUP BY sessionId"
+    )
+    fun observeOpenCounts(): Flow<List<SessionCount>>
+
     @Insert
     suspend fun insertAll(items: List<ActionItemEntity>)
 

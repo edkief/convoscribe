@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import app.cash.turbine.test
 import com.convoscribe.asr.TimedToken
+import com.convoscribe.llm.ExtractedActionItem
 import java.io.File
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
@@ -824,5 +825,56 @@ class SessionRepositoryTest {
         now = 3_000L
         assertEquals(0, repo.tickTalkingPointsAutomatically(id, mapOf(d.id to 1L)))
         assertEquals(2_000L, repo.getSession(id)!!.updatedAt)
+    }
+
+    @Test
+    fun openActionCounts_countOnlyOpenItemsPerSession() = runTest {
+        val a = repo.createSession(title = "A", language = "en")
+        val b = repo.createSession(title = "B", language = "en")
+        repo.replaceExtractedItems(
+            a,
+            listOf(ExtractedActionItem("one"), ExtractedActionItem("two"), ExtractedActionItem("three"))
+        )
+        repo.replaceExtractedItems(b, listOf(ExtractedActionItem("four")))
+        val items = repo.observeActionItems(a).first()
+        repo.setActionItemDone(items[0].id, true)
+        repo.deleteActionItem(items[1].id)
+
+        assertEquals(mapOf(a to 1, b to 1), repo.observeOpenActionCounts().first())
+        assertEquals(2, repo.observeOpenActionCount().first())
+    }
+
+    @Test
+    fun talkingPointCounts_totalAndCoveredPerSession() = runTest {
+        val a = repo.createSession(title = "A", language = "en", talkingPoints = listOf("x", "y", "z"))
+        repo.createSession(title = "B", language = "en")
+        val points = repo.observeTalkingPoints(a).first()
+        repo.setTalkingPointCovered(points[1].id, true, 5L)
+
+        assertEquals(
+            mapOf(a to TalkingPointCount(a, total = 3, covered = 1)),
+            repo.observeTalkingPointCounts().first()
+        )
+    }
+
+    @Test
+    fun recentUncovered_newestSessionFirst_withinWindowAndLimit() = runTest {
+        var now = 1_000L
+        repo = SessionRepository(db, recordingsDir, clock = { now })
+        repo.createSession(title = "Old", language = "en", talkingPoints = listOf("stale"))
+        now = 5_000L
+        val mid = repo.createSession(title = "Mid", language = "en", talkingPoints = listOf("m1", "m2"))
+        now = 9_000L
+        val new = repo.createSession(title = "New", language = "en", talkingPoints = listOf("n1", "n2"))
+        repo.setTalkingPointCovered(repo.observeTalkingPoints(new).first()[0].id, true, 1L)
+
+        val recent = repo.observeRecentUncovered(sinceMs = 2_000L, limit = 10).first()
+        assertEquals(listOf("n2", "m1", "m2"), recent.map { it.text })
+        assertEquals(listOf(new, mid, mid), recent.map { it.sessionId })
+        assertEquals("New", recent[0].sessionTitle)
+        assertEquals(9_000L, recent[0].sessionCreatedAt)
+
+        val limited = repo.observeRecentUncovered(sinceMs = 2_000L, limit = 2).first()
+        assertEquals(listOf("n2", "m1"), limited.map { it.text })
     }
 }
