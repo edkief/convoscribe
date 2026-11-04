@@ -2,10 +2,14 @@ package com.convoscribe.ui.organise
 
 import com.convoscribe.data.FakeTalkingPointListStore
 import com.convoscribe.data.TalkingPointList
+import com.convoscribe.data.UncoveredPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -45,5 +49,12 @@ class TalkingPointListsViewModelTest {
         assertFalse(draft.canSave)
         TalkingPointListsViewModel(store).save(draft)
         assertEquals(emptyList<TalkingPointList>(), store.lists.value)
+    }
+
+    @Test
+    fun notCoveredPassesTheRecentPointsThrough() = runTest {
+        val point = UncoveredPoint(7, sessionId = 3, text = "Career goals", sessionTitle = "1:1", sessionCreatedAt = 10)
+        val vm = TalkingPointListsViewModel(store, uncovered = flowOf(listOf(point)))
+        assertEquals(listOf(point), vm.notCovered.first { it.isNotEmpty() })
     }
 }

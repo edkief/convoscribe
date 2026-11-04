@@ -28,6 +28,9 @@ private const val ROUTE_HOME = "home"
 private const val ROUTE_SETUP = "setup"
 private const val ROUTE_SETUP_WITH_ENGINE = "setup?engine={engine}&language={language}&back={back}"
 private const val ROUTE_RECORD = "record"
+
+/** The new-conversation Record destination's route, to pop up to (issue #108 added `?list=`). */
+internal const val ROUTE_RECORD_WITH_LIST = "record?list={list}"
 private const val ROUTE_RECORD_RESUME = "record/resume/{id}"
 private const val ROUTE_SESSION_DETAIL = "session/{id}?tab={tab}&line={line}&at={at}"
 private const val ROUTE_ENGINE_CHECK = "engine-check"
@@ -72,7 +75,9 @@ internal fun settingsRoute(page: SettingsPage? = null): String =
  *    `&language=en|fr` for another language than Settings'; with
  *    `&back=true` it pops back to the caller when done, which is how
  *    the Record screen gets a new conversation's models);
- *  - `record` — live-transcript screen reached from the FAB;
+ *  - `record` — live-transcript screen reached from the FAB; with
+ *    `?list=` (Talking points' *Record with this list*, issue #108) that
+ *    talking-point list is attached;
  *  - `record/resume/{id}` — the same screen, continuing session
  *    `id` (reached from the session screen's mic button); stopping
  *    returns to that session;
@@ -162,8 +167,19 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
                 }
             )
         }
-        composable(ROUTE_RECORD) {
-            RecordScreen(navController = navController)
+        composable(
+            route = ROUTE_RECORD_WITH_LIST,
+            arguments = listOf(
+                navArgument("list") {
+                    type = NavType.LongType
+                    defaultValue = NO_ARG
+                }
+            )
+        ) { backStackEntry ->
+            RecordScreen(
+                navController = navController,
+                attachListId = backStackEntry.arguments?.getLong("list")?.takeIf { it != NO_ARG }
+            )
         }
         composable(
             route = ROUTE_RECORD_RESUME,

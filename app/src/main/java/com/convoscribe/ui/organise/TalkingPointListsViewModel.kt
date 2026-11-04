@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.data.TalkingPointListStore
 import com.convoscribe.data.TalkingPoints
+import com.convoscribe.data.UncoveredPoint
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -22,10 +25,21 @@ data class TalkingPointListDraft(val id: Long = 0, val name: String = "", val po
     }
 }
 
-/** Settings › Talking points (issue #102): add, edit and delete talking-point lists. */
-class TalkingPointListsViewModel(private val store: TalkingPointListStore) : ViewModel() {
+/**
+ * Home's Talking points section (issues #102, #108): add, edit and
+ * delete talking-point lists, and the points recent conversations did
+ * not cover, from [uncovered].
+ */
+class TalkingPointListsViewModel(
+    private val store: TalkingPointListStore,
+    uncovered: Flow<List<UncoveredPoint>> = flowOf(emptyList())
+) : ViewModel() {
 
     val lists: StateFlow<List<TalkingPointList>> = store.observeAll()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** *Not covered last time* (issue #108): newest conversation first. */
+    val notCovered: StateFlow<List<UncoveredPoint>> = uncovered
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Save [draft] as a new list or over the one it edits; ignored without a name. */

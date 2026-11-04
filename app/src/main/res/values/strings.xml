@@ -288,7 +288,10 @@
     <string name="settings_organise_presets_row">Presets</string>
     <string name="settings_organise_presets_help">Saved options for recurring conversations, picked on the Record screen or by long-pressing the Quick Settings tile.</string>
     <string name="talking_points_title">Talking points</string>
-    <string name="talking_points_explanation">A list holds the points you mean to raise in a recurring conversation. Attach it on the Record screen: the conversation gets its own copy of the points to tick off, and the list stays as it is.</string>
+    <string name="talking_points_explanation">A list holds the points you mean to raise in a recurring conversation. Record with it, or attach it on the Record screen: the conversation gets its own copy of the points to tick off, and the list stays as it is.</string>
+    <string name="talking_points_record_with">Record with this list</string>
+    <string name="talking_points_not_covered_title">Not covered last time</string>
+    <string name="talking_points_not_covered_from">%1$s · %2$s</string>
     <string name="talking_points_new">New list</string>
     <string name="talking_points_empty">No lists yet.</string>
     <string name="talking_points_new_title">New list</string>

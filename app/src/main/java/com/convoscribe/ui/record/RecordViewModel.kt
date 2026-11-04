@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -120,6 +121,8 @@ class RecordViewModel(
         presets.firstOrNull { presetOptions(it, templates) == withoutPoints }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
+    private val listStore: TalkingPointListStore? = talkingPointLists
+
     /** The user's talking-point lists (issue #102), to attach before Start. */
     val talkingPointLists: StateFlow<List<TalkingPointList>> = (talkingPointLists?.observeAll() ?: flowOf(emptyList()))
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -150,6 +153,22 @@ class RecordViewModel(
         } else {
             presetOptions(preset, summaryTemplates.value)
         }.copy(talkingPoints = points)
+    }
+
+    /** The list [attachListOnce] attached, so a second call (recomposition) does nothing. */
+    private var attachedListId: Long? = null
+
+    /**
+     * Attach list [id] once (issue #108, *Record with this list*): its
+     * points are added as [attachList] does; an unknown id adds nothing.
+     */
+    fun attachListOnce(id: Long) {
+        if (attachedListId == id) return
+        attachedListId = id
+        val store = listStore ?: return
+        viewModelScope.launch {
+            store.observeAll().first().firstOrNull { it.id == id }?.let(::attachList)
+        }
     }
 
     /** Add [list]'s points to the new conversation's, leaving out those it already has. */

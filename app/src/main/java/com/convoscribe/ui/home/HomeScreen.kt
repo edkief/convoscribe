@@ -67,6 +67,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavHostController
+import com.convoscribe.AppContainer
 import com.convoscribe.ConvoApp
 import com.convoscribe.R
 import com.convoscribe.audio.AudioImportException
@@ -140,17 +141,7 @@ fun HomeScreen(navController: NavHostController) {
             }
         }
     )
-    // Compute the click handler in composition so the language
-    // setting is read fresh every recomposition. The container is
-    // cheap to access — it is held on the application instance.
-    val onNewRecording: () -> Unit = {
-        val settings = container.settingsRepository.settings.value
-        val missing = container.modelStore.missing(
-            ModelCatalog.requiredFor(settings.asrLanguage, settings.asrEngine)
-        )
-        val target = if (missing.isEmpty()) "record" else "setup"
-        navController.navigate(target)
-    }
+    val onNewRecording: () -> Unit = { navController.navigate(newRecordingRoute(container)) }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val tagFilter by vm.tagFilter.collectAsStateWithLifecycle()
     val importer = container.importAudioUseCase
@@ -385,6 +376,22 @@ internal fun HomeBody(
             },
             onDismiss = { pendingRemove = null }
         )
+    }
+}
+
+/**
+ * Where *New recording* goes: `record`, with [attachListId]'s talking
+ * points attached (issue #108), or `setup` when a model bundle the
+ * configured language and engine need is missing. Settings are read at
+ * the time of the call, so a changed language counts.
+ */
+internal fun newRecordingRoute(container: AppContainer, attachListId: Long? = null): String {
+    val settings = container.settingsRepository.settings.value
+    val missing = container.modelStore.missing(ModelCatalog.requiredFor(settings.asrLanguage, settings.asrEngine))
+    return when {
+        missing.isNotEmpty() -> "setup"
+        attachListId != null -> "record?list=$attachListId"
+        else -> "record"
     }
 }
 
