@@ -831,7 +831,10 @@ class SessionRepositoryTest {
     fun openActionCounts_countOnlyOpenItemsPerSession() = runTest {
         val a = repo.createSession(title = "A", language = "en")
         val b = repo.createSession(title = "B", language = "en")
-        repo.replaceExtractedItems(a, listOf(ExtractedActionItem("one"), ExtractedActionItem("two"), ExtractedActionItem("three")))
+        repo.replaceExtractedItems(
+            a,
+            listOf(ExtractedActionItem("one"), ExtractedActionItem("two"), ExtractedActionItem("three"))
+        )
         repo.replaceExtractedItems(b, listOf(ExtractedActionItem("four")))
         val items = repo.observeActionItems(a).first()
         repo.setActionItemDone(items[0].id, true)
@@ -848,7 +851,10 @@ class SessionRepositoryTest {
         val points = repo.observeTalkingPoints(a).first()
         repo.setTalkingPointCovered(points[1].id, true, 5L)
 
-        assertEquals(mapOf(a to TalkingPointCount(a, total = 3, covered = 1)), repo.observeTalkingPointCounts().first())
+        assertEquals(
+            mapOf(a to TalkingPointCount(a, total = 3, covered = 1)),
+            repo.observeTalkingPointCounts().first()
+        )
     }
 
     @Test
@@ -868,6 +874,7 @@ class SessionRepositoryTest {
         assertEquals("New", recent[0].sessionTitle)
         assertEquals(9_000L, recent[0].sessionCreatedAt)
 
-        assertEquals(listOf("n2", "m1"), repo.observeRecentUncovered(sinceMs = 2_000L, limit = 2).first().map { it.text })
+        val limited = repo.observeRecentUncovered(sinceMs = 2_000L, limit = 2).first()
+        assertEquals(listOf("n2", "m1"), limited.map { it.text })
     }
 }
