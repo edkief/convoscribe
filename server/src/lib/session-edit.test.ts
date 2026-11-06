@@ -274,6 +274,20 @@ describe('editing a session from the web (#84)', () => {
     });
   });
 
+  describe('Q&A (#118)', () => {
+    it('clears the questions and answers, keeping the summary', async () => {
+      const messages = [
+        { kind: 'SUMMARY', role: 'ASSISTANT', content: 'sum', createdAt: 1 },
+        { kind: 'QA', role: 'USER', content: 'q?', createdAt: 2 },
+        { kind: 'QA', role: 'ASSISTANT', content: 'a.', createdAt: 3, coveredMs: 1, totalMs: 2 },
+      ];
+      const { pushed, meta, manifest } = await edited({ kind: 'qaClear' }, { messages });
+      expect(meta.revision).toBe(pushed.revision + 1);
+      expect(manifest.messages).toEqual([messages[0]]);
+      expect((await editSession(OWNER, SYNC_ID, meta.revision, { kind: 'qaClear' })).revision).toBe(meta.revision);
+    });
+  });
+
   describe('what it leaves alone', () => {
     it('keeps fields this server doesn’t know, at every level', async () => {
       const over = {
