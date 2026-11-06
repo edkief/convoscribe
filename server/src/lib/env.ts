@@ -40,6 +40,9 @@ const schema = z
     LLM_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
     LLM_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
     LLM_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
+    // How much transcript the web app's summaries send in one call (#117), the
+    // app's *Max transcript characters*; a longer one is summarised in parts.
+    LLM_MAX_TRANSCRIPT_CHARS: z.preprocess(blankToUndefined, z.coerce.number().int().min(1000).default(24000)),
     ASR_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
     ASR_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
     ASR_MODEL: z.preprocess(blankToUndefined, z.string().optional()),

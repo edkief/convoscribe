@@ -23,7 +23,7 @@ export type SessionEdit =
   | { kind: 'pointAdd'; text: string }
   | { kind: 'pointDelete'; id: string };
 
-type Json = Record<string, unknown>;
+export type Json = Record<string, unknown>;
 
 const TITLE_MAX = 100;
 const TAG_MAX = 30;
@@ -207,19 +207,20 @@ export function applyEdit(manifest: Json, edit: SessionEdit): boolean {
   }
 }
 
+/** A session's current revision and manifest, as plain JSON, for a web edit to change. */
+export type Editable = { current: DocumentMeta; manifest: Json };
+
 /**
- * Edit a session from the web app (#84), as one more device would: a new
- * revision of the manifest through [putDocument], which devices download.
- * Only from the revision the page showed: 409 if it has changed since. 422
- * `newer_schema` for a manifest from a newer app than this server knows, 404
- * for an unknown or deleted session. An edit that changes nothing returns the
- * current revision.
+ * The session to edit from the web app, read from `baseRevision`, the one the
+ * page showed: 409 if it has changed since, 422 `newer_schema` for a manifest
+ * from a newer app than this server knows, 404 for an unknown or deleted
+ * session.
  *
- * The manifest is patched as plain JSON rather than typed, so a field this
- * server has never heard of survives. (JSON numbers become doubles on the
- * way, which no field the app writes is large enough to notice.)
+ * The manifest is plain JSON rather than typed, so a field this server has
+ * never heard of survives. (JSON numbers become doubles on the way, which no
+ * field the app writes is large enough to notice.)
  */
-export async function editSession(owner: string, syncId: string, baseRevision: number, edit: SessionEdit): Promise<DocumentMeta> {
+export async function loadForEdit(owner: string, syncId: string, baseRevision: number): Promise<Editable> {
   const current = await getDocumentMeta(owner, 'session', syncId);
   if (!current || current.deleted || !current.manifestHash) throw new HttpError(404, 'not_found');
   if (current.revision !== baseRevision) throw conflict(current);
@@ -233,7 +234,15 @@ export async function editSession(owner: string, syncId: string, baseRevision: n
   if (!isRecord(manifest)) throw new HttpError(422, 'invalid_manifest');
   const { schema } = manifest;
   if (schema !== undefined && (typeof schema !== 'number' || schema > KNOWN_SCHEMA)) throw new HttpError(422, 'newer_schema');
-  if (!applyEdit(manifest, edit)) return current;
+  return { current, manifest };
+}
+
+/**
+ * Save a manifest changed from `current`, as one more device would: a new
+ * revision through [putDocument], which devices download. Refused (409) if
+ * the session changed since `current`, so nothing is overwritten unseen.
+ */
+export function saveEdited(owner: string, syncId: string, { current, manifest }: Editable): Promise<DocumentMeta> {
   const next = Buffer.from(JSON.stringify(manifest));
   return putDocument(
     owner,
@@ -242,11 +251,21 @@ export async function editSession(owner: string, syncId: string, baseRevision: n
     {
       manifest: next,
       manifestHash: createHash('sha256').update(next).digest('hex'),
-      baseRevision,
+      baseRevision: current.revision,
       durationMs: current.durationMs,
       // Later than what it replaces even if a device's clock runs ahead, for the conflict rule.
       changedAt: Math.max(Date.now(), current.changedAt + 1),
     },
     { strict: true },
   );
+}
+
+/**
+ * Edit a session from the web app (#84): [loadForEdit], [applyEdit], then
+ * [saveEdited]. An edit that changes nothing returns the current revision.
+ */
+export async function editSession(owner: string, syncId: string, baseRevision: number, edit: SessionEdit): Promise<DocumentMeta> {
+  const editable = await loadForEdit(owner, syncId, baseRevision);
+  if (!applyEdit(editable.manifest, edit)) return editable.current;
+  return saveEdited(owner, syncId, editable);
 }

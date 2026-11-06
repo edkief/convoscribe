@@ -1,7 +1,9 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { upstreamOf } from '@/lib/ai-proxy';
 import { formatBytes, formatDateTime, formatLength } from '@/lib/format';
+import { listTemplates, resolveTemplate } from '@/lib/summary-templates';
 import { KNOWN_SCHEMA, marksByLine, spoken, timestamp, type Message, type SessionView } from '@/lib/transcript-export';
 import { pageLocale, requireIdentity } from '@/lib/web-identity';
 import { readSession } from '@/lib/web-session';
@@ -11,6 +13,7 @@ import { IconAlert, IconCalendar, IconChevronLeft, IconClock, IconGlobe } from '
 import { Markdown } from '../../../_components/Markdown';
 import { PlayerBar, PlayerProvider, SeekTime } from '../../../_components/Player';
 import { EditableSpeakers, EditableTags, EditableTitle, SessionEditor } from '../../../_components/SessionEditor';
+import { SummaryPanel } from '../../../_components/SummaryPanel';
 import { TalkingPointList } from '../../../_components/TalkingPointList';
 import { Tabs, type Tab } from '../../../_components/Tabs';
 import { DeleteSession } from '../../../_components/TrashActions';
@@ -32,7 +35,8 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
  * lines and action items (#84) and talking points (#104) can be edited,
  * unless it comes from a newer app than this server knows.
  * A search result (#83) opens it on a line (`?line=`) or the summaries
- * (`?tab=summary`, with `&earlier=1` for an older one).
+ * (`?tab=summary`, with `&earlier=1` for an older one). When the server
+ * offers a language model, the Summary tab can write the summary (#117).
  */
 export default async function SessionPage({ params, searchParams }: PageProps<'/sessions/[syncId]'>) {
   const { owner } = await requireIdentity();
@@ -62,7 +66,14 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
     { href: `${base}/transcript/vtt`, label: 'Subtitles', detail: 'WebVTT' },
   ];
   const newer = (view.schema ?? 0) > KNOWN_SCHEMA;
-  const tabs = panels(view, when, tones, earlier === '1', !newer);
+  // Summarising is a web edit, so only for a session this server can edit.
+  const templates = !newer && upstreamOf('llm') ? await listTemplates(owner) : null;
+  const summarise = templates && {
+    syncId,
+    templates: templates.map(({ key, name }) => ({ key, name })),
+    selected: resolveTemplate(view.summaryTemplate, templates).key,
+  };
+  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise);
 
   return (
     <SessionEditor syncId={syncId} revision={meta.revision} editable={!newer}>
@@ -148,29 +159,37 @@ function panels(
   tones: Record<number, number>,
   openEarlier: boolean,
   editable: boolean,
+  summarise: { syncId: string; templates: { key: string; name: string }[]; selected: string } | null,
 ): Tab[] {
   const tabs: Tab[] = [];
   const summaries = [...view.summaries].reverse();
-  if (summaries.length) {
+  const saved = summaries.length > 0 && (
+    <>
+      <SummaryMeta message={summaries[0]} when={when} />
+      <Markdown text={summaries[0].content} />
+      {summaries.length > 1 && (
+        <details className="earlier" open={openEarlier}>
+          <summary>Earlier summaries ({summaries.length - 1})</summary>
+          {summaries.slice(1).map((m, i) => (
+            <div key={i} className="earlier-item">
+              <SummaryMeta message={m} when={when} />
+              <Markdown text={m.content} />
+            </div>
+          ))}
+        </details>
+      )}
+    </>
+  );
+  if (summaries.length || summarise) {
     tabs.push({
       id: 'summary',
       label: 'Summary',
-      content: (
-        <>
-          <SummaryMeta message={summaries[0]} when={when} />
-          <Markdown text={summaries[0].content} />
-          {summaries.length > 1 && (
-            <details className="earlier" open={openEarlier}>
-              <summary>Earlier summaries ({summaries.length - 1})</summary>
-              {summaries.slice(1).map((m, i) => (
-                <div key={i} className="earlier-item">
-                  <SummaryMeta message={m} when={when} />
-                  <Markdown text={m.content} />
-                </div>
-              ))}
-            </details>
-          )}
-        </>
+      content: summarise ? (
+        <SummaryPanel {...summarise} hasSummary={summaries.length > 0}>
+          {saved}
+        </SummaryPanel>
+      ) : (
+        saved
       ),
     });
   }
@@ -230,7 +249,7 @@ function panels(
   // Next to the summary. Without points too where they can be added, unless
   // it would be the only tab, which would take the transcript's full width.
   if (view.talkingPoints.length || (editable && tabs.length)) {
-    tabs.splice(summaries.length ? 1 : 0, 0, {
+    tabs.splice(tabs[0]?.id === 'summary' ? 1 : 0, 0, {
       id: 'points',
       label: 'Talking points',
       count: view.talkingPoints.length ? view.talkingPoints.filter((p) => !p.covered).length : undefined,

@@ -45,6 +45,8 @@ export type SessionView = {
   marks: Mark[];
   actionItems: ActionItem[];
   talkingPoints: TalkingPoint[];
+  /** The key of the template the session is summarised with (#117), or null for the default. */
+  summaryTemplate: string | null;
 };
 
 /** The manifest schema this server was written against; a newer one is shown read-only. */
@@ -69,6 +71,17 @@ const message = (m: Record<string, unknown>): Message => ({
   createdAt: num(m.createdAt),
   templateName: str(m.templateName),
 });
+
+/**
+ * A session's `summaryTemplate` (`{key}` for a built-in, `{user: name}` for
+ * a user template, as the app's `SessionManifests.templateRef` writes it) as
+ * a template key: `user:<name>` for a user template. Null when there is none.
+ */
+export function templateKeyOf(ref: unknown): string | null {
+  const { key, user } = record(ref);
+  if (typeof user === 'string' && user) return `user:${user}`;
+  return typeof key === 'string' && key ? key : null;
+}
 
 /** Read a parsed session manifest. Never throws. */
 export function sessionView(manifest: unknown): SessionView {
@@ -138,6 +151,7 @@ export function sessionView(manifest: unknown): SessionView {
         coveredAtMs: x.covered === true ? num(x.coveredAtMs) : null,
         byUser: x.byUser === true,
       })),
+    summaryTemplate: templateKeyOf(m.summaryTemplate),
   };
 }
 

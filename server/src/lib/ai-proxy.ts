@@ -34,7 +34,8 @@ const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 let dispatcher: Agent | undefined;
 let timeoutMs = DEFAULT_TIMEOUT_MS;
 
-function agent(): Agent {
+/** The connection pool every upstream call shares, with the app's timeouts. */
+export function agent(): Agent {
   dispatcher ??= new Agent({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs });
   return dispatcher;
 }

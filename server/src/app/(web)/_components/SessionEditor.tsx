@@ -12,6 +12,10 @@ type Editor = {
   save: (edit: SessionEdit) => Promise<string | null>;
   /** The revision the next request should name. */
   revision: () => number;
+  /** Take the revision another request saved (#117), as `save` does with its own. */
+  saved: (revision: number) => void;
+  /** Ask to reload: the session changed somewhere else. */
+  markStale: () => void;
 };
 
 const EditorContext = createContext<Editor | null>(null);
@@ -66,7 +70,18 @@ export function SessionEditor({ syncId, revision, editable, children }: { syncId
     },
     [syncId, router],
   );
-  const editor = useMemo(() => ({ save, revision: () => latest.current }), [save]);
+  const editor = useMemo(
+    () => ({
+      save,
+      revision: () => latest.current,
+      saved: (next: number) => {
+        latest.current = Math.max(latest.current, next);
+        router.refresh();
+      },
+      markStale: () => setStale(true),
+    }),
+    [save, router],
+  );
 
   return (
     <EditorContext.Provider value={editable ? editor : null}>
