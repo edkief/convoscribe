@@ -18,8 +18,10 @@ It can also offer its users a language model and a transcription server
 (#93, see *Language model and transcription* below), so devices reach them
 with their sync key and never hold the upstream address or key. With a
 language model, the web app can also summarise a session (#117, see
-*Summarising a session* below) and answer questions about one (#118, see
-*Asking about a session* below).
+*Summarising a session* below), answer questions about one (#118, see
+*Asking about a session* below), and suggest its title, check its talking
+points and write its marks' notes (#119, see *Titles, talking points and mark
+notes* below).
 
 ## Web app
 
@@ -109,7 +111,8 @@ understands it, with a note.
 On a session's page you can rename it, add and remove tags, rename a speaker,
 correct a line (*Edit text*, then tap the line; Ctrl/Cmd+Enter saves), tick,
 edit or delete an action item, and tick, untick, edit, remove or add a talking
-point (#104). A point ticked or unticked here counts as by hand, so the app's
+point (#104). A title the model wrote, here or in the app, can be put back to
+the one it replaced (*Put back*, #119). A point ticked or unticked here counts as by hand, so the app's
 automatic checks (#103) leave it alone; unticking forgets when it was covered.
 The *Talking points* tab shows when the session has points, or, to add some,
 when the panel has other tabs. Reordering a session's points is for the app. Splitting, merging or deleting lines and changing
@@ -151,8 +154,15 @@ items merged in and the template kept for next time. Action items you ticked,
 edited or deleted stay as they are; the model's others are replaced, and an
 item that repeats one you kept is left out. Devices download it at their next
 sync. If the session changed while the summary was being written, nothing is
-saved and the page asks you to reload. The model naming the session after its
-summary, as the app can, is not done here yet.
+saved and the page asks you to reload.
+
+As in the app, a session whose title is still the date-based default is named
+from its new summary (#119). The tab says *Naming the session…* while the model
+writes the title, and summary and title are saved as the same revision. The
+title it replaced can be put back. If naming fails, the summary is saved
+anyway with the old title. The app's *Name conversations automatically*
+setting stays on each device, so the server can't see it and always names a
+session that still has its default title.
 
 ### Asking about a session
 
@@ -177,6 +187,32 @@ changed while the answer was being written, nothing is saved and the page
 asks you to reload. Your question stays in the field. *Clear* removes every
 question and answer of the session, but not its summary. A device keeps the
 removal when it merges, as it does for one made in the app.
+
+### Titles, talking points and mark notes
+
+When the server offers a language model (#119), three smaller actions run as
+they do in the app, with the same prompts:
+
+- **Suggest title**, the sparkle beside the title: the model names the session
+  from its summary, or from its transcript when there is none, in a few words
+  in the session's language. The new title replaces the current one, whatever
+  it was. *Put back* under the title restores the one it replaced (the title
+  from before the model's first one, after several suggestions).
+- **Check points**, on the *Talking points* tab when some are open: the model
+  reads the whole transcript and ticks the points it finds discussed, with the
+  time to play from. A transcript longer than `LLM_MAX_TRANSCRIPT_CHARS` is
+  read in parts; a point found in one part isn't asked about again. Points
+  ticked or unticked by hand are neither sent nor changed, and a point already
+  ticked stays ticked.
+- **Write notes**, on the *Marks* tab when a mark has no full note, or one
+  written before the transcript changed: the model writes each from the mark's
+  note and the transcript around it (a minute before, half a minute after).
+  The tab counts the notes as they are written.
+
+Each action is a web edit (*Editing a session*) saved as one new revision once
+it is done, or none if nothing changed. *Stop*, or closing the page, cancels
+it and saves nothing, including the notes already written. If the session
+changed in the meantime, nothing is saved and the page asks you to reload.
 
 ### Admin pages
 
@@ -296,14 +332,17 @@ else `Host`) with `403 cross_site`. Another owner's session or list is `404`.
 | `GET /api/web/v1/sessions/<syncId>/audio` | `?clean=1` for the cleaned recording, `?download=1` to download it; `Range: bytes=a-b` | `audio/wav`, streamed from S3 (`206` for a range), so a recording of any size never sits in memory |
 | `GET /api/web/v1/sessions/<syncId>/transcript/<format>` | `format` is `md`, `srt` or `vtt` | The transcript as a download named after the session; `404` for another format |
 | `DELETE /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n}`, the revision the page shows | `200 {"syncId","revision"}`, the session in the trash and its semantic vectors deleted. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
-| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`, and for talking points (#104) `{"kind":"pointCovered","id","covered"}`, `{"kind":"point","id","text"}`, `{"kind":"pointAdd","text"}`, `{"kind":"pointDelete","id"}`, and `{"kind":"qaClear"}` to remove the questions and answers (#118); `at` is an index in the manifest's array, `id` a point's id | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
+| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`, and for talking points (#104) `{"kind":"pointCovered","id","covered"}`, `{"kind":"point","id","text"}`, `{"kind":"pointAdd","text"}`, `{"kind":"pointDelete","id"}`, `{"kind":"qaClear"}` to remove the questions and answers (#118), and `{"kind":"titleRestore"}` to put back the title an automatic one replaced (#119); `at` is an index in the manifest's array, `id` a point's id | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
 | `POST /api/web/v1/sessions/<syncId>/summary` | JSON `{"baseRevision": n, "template"?: key, "zone"?: tz}` (#117) | NDJSON events: `{"step"}` while a long transcript is summarised in parts, `{"text"}` with the summary so far, then `{"done":true,"revision"}` once saved or `{"error"}` (`conflict`, `empty_reply`, `upstream_*`). Before it starts, a JSON error: `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript` |
 | `POST /api/web/v1/sessions/<syncId>/questions` | JSON `{"baseRevision": n, "question"}` (#118), the question up to 4000 characters | NDJSON events: `{"text"}` with the answer so far, then `{"done":true,"revision"}` once the question and answer are saved or `{"error"}` (`conflict`, `empty_reply`, `upstream_*`). Before it starts, a JSON error: `400 invalid_body` for a blank question, `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript` |
+| `POST /api/web/v1/sessions/<syncId>/title` | JSON `{"baseRevision": n}` (#119) | NDJSON: `{"done":true,"revision","title"}` once the title is saved (the same revision if it didn't change), or `{"error"}` (`conflict`, `empty_reply`, `upstream_*`). Before it starts, a JSON error: `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript` (no summary and no transcript) |
+| `POST /api/web/v1/sessions/<syncId>/points` | JSON `{"baseRevision": n}` (#119) | NDJSON: `{"step":{"part","parts"}}` before each part of a long transcript, then `{"done":true,"revision","ticked"}` (the same revision for none) or `{"error"}` (`conflict`, `unreadable_reply`, `upstream_*`). Before it starts, a JSON error: `404 not_offered`, `409 conflict`, `422 newer_schema`, `no_open_points` or `empty_transcript` |
+| `POST /api/web/v1/sessions/<syncId>/mark-notes` | JSON `{"baseRevision": n}` (#119) | NDJSON: `{"progress":{"done","total"}}` as each note is written, then `{"done":true,"revision","written"}` once all are saved, or `{"error"}` (`conflict`, `empty_reply` when every note came back blank, `upstream_*`). Before it starts, a JSON error: `404 not_offered`, `409 conflict`, `422 newer_schema`, `no_marks` or `empty_transcript` |
 | `GET /api/web/v1/talking-points` | | `200 {"lists":[{"syncId","revision","name","points","createdAt","changedAt"}]}`, by name, from Postgres |
 | `POST /api/web/v1/talking-points` | JSON `{"name", "points": [...]}` | `201 {"syncId","revision"}`: a new list, as a device would push it. `400 invalid_body` for a blank name or more than 200 points |
 | `PUT /api/web/v1/talking-points/<syncId>` | JSON `{"baseRevision": n, "name", "points": [...]}` | `200 {"syncId","revision"}`, the same revision if nothing changed. Fields this server doesn't know are kept. `409 conflict` if it changed since that revision, `422 newer_schema` for a list from a newer app, `404` if unknown or deleted |
 | `DELETE /api/web/v1/talking-points/<syncId>` | JSON `{"baseRevision": n}` | `200 {"syncId","revision"}`, leaving a tombstone devices delete it by. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
-| `POST /api/web/v1/sessions/<syncId>/summary` | JSON `{"baseRevision": n, "template"?: key, "zone"?: tz}`: a template key (`meeting`, …, or `user:<name>`; else the session's, else Meeting) and the browser's IANA time zone (#117) | NDJSON, one event a line: `{"step": {"part","parts"} \| "combining" \| "writing"}` while a long transcript is summarised in parts, `{"text"}` with the summary so far (without its action items), then `{"done": true, "revision"}` once saved or `{"error"}`: `conflict` if the session changed meanwhile, `empty_reply`, or an upstream code as for the AI proxy. Nothing is saved without `done`. Before the stream starts: `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript`, `404` if unknown or deleted |
+| `POST /api/web/v1/sessions/<syncId>/summary` | JSON `{"baseRevision": n, "template"?: key, "zone"?: tz}`: a template key (`meeting`, …, or `user:<name>`; else the session's, else Meeting) and the browser's IANA time zone (#117) | NDJSON, one event a line: `{"step": {"part","parts"} \| "combining" \| "writing"}` while a long transcript is summarised in parts, `{"step": "naming"}` while a session with its default title is named (#119), `{"text"}` with the summary so far (without its action items), then `{"done": true, "revision"}` once saved or `{"error"}`: `conflict` if the session changed meanwhile, `empty_reply`, or an upstream code as for the AI proxy. Nothing is saved without `done`. Before the stream starts: `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript`, `404` if unknown or deleted |
 | `POST /api/web/v1/sessions/<syncId>/restore` | | `200 {"syncId","revision"}`: the session is live again as a new revision. `404 not_in_trash` once purged, after 30 days, or for a session deleted before the trash existed |
 | `DELETE /api/web/v1/trash` | | `200 {"purged"}`: every session in the trash removed for good |
 | `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","firstSeenAt","lastSeenAt"}]}` |
