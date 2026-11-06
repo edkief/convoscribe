@@ -762,6 +762,18 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
 12. Unplug (`dumpsys battery unplug`), then plug in again.
 13. Import a file (§22); while the notification says it is identifying
     speakers, tap **Cancel** on it.
+14. Recording while speakers are identified (issue #121). In **Auto**,
+    record 15+ minutes and tap **Stop**. While *Identifying speakers…*
+    shows, start a new recording and keep it going until logcat shows
+    `diarization engine session=` for the first session, then a few
+    minutes more. Stop it.
+15. As step 14 with Settings › *Improve recordings on the server* on:
+    start the new recording as soon as Start is available again (after
+    the server transcript, while speakers are identified).
+16. Record and stop twice in a row, the second stop while the first
+    session is still *Identifying speakers…*.
+17. While recording, open another session and tap **Identify speakers
+    now**. Keep recording until it finishes.
 
 **Expected**
 
@@ -801,6 +813,16 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
   identified once plugged in.
 - Step 13: the imported session is kept with its transcript and shows
   *Speakers not identified yet*.
+- Steps 14–15: the recording notification, the floating control and
+  the timer keep going when the first session's speakers are
+  identified. The second session's duration matches how long it really
+  ran, and logcat shows no `recording stopped` for it before you tap
+  **Stop**.
+- Step 16: both sessions get their speakers, one after the other;
+  neither is left *Speakers pending*.
+- Step 17: the notification stays the recording one (timer, Mark,
+  Pause, Stop) while speakers are identified, the recording carries on
+  afterwards, and the other session shows its speakers.
 
 ## 26. Floating control shapes (issue #21)
 
