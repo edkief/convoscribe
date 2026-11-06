@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -41,6 +43,7 @@ import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.ui.components.AddTalkingPointField
 import com.convoscribe.ui.components.AppCard
+import com.convoscribe.ui.components.PastePointsDialog
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.components.TalkingPointRow
@@ -50,6 +53,8 @@ import com.convoscribe.ui.theme.AppTheme
 internal data class TalkingPointActions(
     val onAttach: (TalkingPointList) -> Unit = {},
     val onAdd: (String) -> Unit = {},
+    /** How many points pasting a block would add (issue #114); the block itself goes to [onAdd]. */
+    val pasteCount: (String) -> Int = { 0 },
     val onRemove: (Int) -> Unit = {},
     val onToggleLive: (TalkingPointEntity) -> Unit = {},
     val onAddLive: (String) -> Unit = {},
@@ -66,15 +71,37 @@ internal fun livePointsOrder(points: List<TalkingPointEntity>, openFirst: Boolea
 
 /**
  * Before Start (issue #102): the new conversation's talking points,
- * *Attach a list* when there are lists, and a field to add one.
+ * *Attach a list* when there are lists, *Paste points* (issue #114) and
+ * a field to add one, which splits text pasted over several lines.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun TalkingPointsSetup(points: List<String>, lists: List<TalkingPointList>, actions: TalkingPointActions) {
+    var pasting by rememberSaveable { mutableStateOf(false) }
+    if (pasting) {
+        PastePointsDialog(
+            countFor = actions.pasteCount,
+            onImport = {
+                actions.onAdd(it)
+                pasting = false
+            },
+            onDismiss = { pasting = false }
+        )
+    }
     SectionCard(
         title = stringResource(R.string.talking_points_title),
         supportingText = stringResource(R.string.record_talking_points_help)
     ) {
-        if (lists.isNotEmpty()) AttachListButton(lists = lists, onAttach = actions.onAttach)
+        // Wraps so Paste points moves under Attach a list at large font sizes.
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s),
+            verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.xs)
+        ) {
+            if (lists.isNotEmpty()) AttachListButton(lists = lists, onAttach = actions.onAttach)
+            OutlinedButton(onClick = { pasting = true }) {
+                Text(text = stringResource(R.string.talking_points_paste))
+            }
+        }
         points.forEachIndexed { index, point ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(text = point, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
@@ -86,7 +113,7 @@ internal fun TalkingPointsSetup(points: List<String>, lists: List<TalkingPointLi
                 }
             }
         }
-        AddTalkingPointField(onAdd = actions.onAdd)
+        AddTalkingPointField(onAdd = actions.onAdd, splitLines = true)
     }
 }
 

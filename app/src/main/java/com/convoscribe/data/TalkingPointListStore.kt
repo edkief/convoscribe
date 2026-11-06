@@ -64,6 +64,24 @@ object TalkingPoints {
     /** A list's stored points, in order. */
     fun split(stored: String): List<String> = cleanAll(stored.split('\n'))
 
+    /** Whether [text] runs over more than one line, as pasted text can (issue #114). */
+    fun isMultiLine(text: String): Boolean = text.any { it == '\n' || it == '\r' }
+
+    /**
+     * A pasted block of text as points (issue #114): one per line, with
+     * a leading list marker (`-`, `*`, `+`, `•`, `·`, `1.`, `1)`) and
+     * checkbox (`[ ]`, `[x]`) dropped, each cleaned, and blanks and
+     * repeats left out. A marker counts only when a space follows it, so
+     * `-5 degrees` keeps its sign.
+     */
+    fun fromPaste(text: String): List<String> {
+        val lines = text.split(LINE_BREAK).map { it.replace(MARKER, "") }
+        return append(emptyList(), lines)
+    }
+
+    /** The points [text] adds to [current]: [fromPaste], leaving out those [current] already has. */
+    fun pasted(current: List<String>, text: String): List<String> = append(current, fromPaste(text)).drop(current.size)
+
     /** [extra] appended to [current], leaving out points [current] already has (ignoring case and accents). */
     fun append(current: List<String>, extra: List<String>): List<String> {
         val seen = current.map(::key).toMutableSet()
@@ -73,4 +91,9 @@ object TalkingPoints {
     }
 
     private fun key(text: String): String = SearchText.fold(clean(text))
+
+    private val LINE_BREAK = Regex("\r\n|\r|\n")
+
+    /** The server's `talking-point-text.ts` drops the same markers. */
+    private val MARKER = Regex("^\\s*(?:(?:[-*+•·]|\\d{1,3}[.)])\\s+)?(?:\\[[ xX]]\\s+)?")
 }

@@ -315,7 +315,10 @@ brings them to your other devices.
   mean to raise. On the Record screen, under *Talking points*, type points
   or *Attach a list*. Keep reusable lists in Home's **Talking points**
   section (issue #108), one row per point that you can move up or down
-  (issue #111). *Record with this list* on a list
+  (issue #111). To bring in a list kept elsewhere, use *Paste points* or paste
+  several lines into a point (issue #114). Each line becomes a point, bullets
+  and numbers are dropped, and points already there are left out. The Record
+  screen's *Talking points* takes a paste the same way. *Record with this list* on a list
   opens the Record screen with it attached. Under the lists, *Not covered
   last time* shows points left unticked in conversations from the last 14
   days (at most 10), and tapping one opens that session's Summary tab.

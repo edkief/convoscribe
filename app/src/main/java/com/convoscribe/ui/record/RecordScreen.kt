@@ -270,6 +270,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         pointActions = TalkingPointActions(
             onAttach = vm::attachList,
             onAdd = vm::addPoint,
+            pasteCount = vm::pasteCount,
             onRemove = vm::removePoint,
             onToggleLive = vm::togglePoint,
             onAddLive = vm::addLivePoint,

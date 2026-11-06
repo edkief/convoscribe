@@ -176,10 +176,26 @@ class RecordViewModel(
         _options.update { it.copy(talkingPoints = TalkingPoints.append(it.talkingPoints, list.points)) }
     }
 
-    /** Add a point to the new conversation; a blank or repeated one is left out. */
+    /**
+     * Add a point to the new conversation; a blank or repeated one is
+     * left out. Text over several lines, as pasted (issue #114), adds a
+     * point per line ([TalkingPoints.fromPaste]).
+     */
     fun addPoint(text: String) {
-        _options.update { it.copy(talkingPoints = TalkingPoints.append(it.talkingPoints, listOf(text))) }
+        _options.update { options ->
+            val points = options.talkingPoints
+            options.copy(
+                talkingPoints = if (TalkingPoints.isMultiLine(text)) {
+                    points + TalkingPoints.pasted(points, text)
+                } else {
+                    TalkingPoints.append(points, listOf(text))
+                }
+            )
+        }
     }
+
+    /** How many points pasting [text] would add (issue #114). */
+    fun pasteCount(text: String): Int = TalkingPoints.pasted(_options.value.talkingPoints, text).size
 
     fun removePoint(index: Int) {
         _options.update { options ->

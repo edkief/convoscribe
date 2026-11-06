@@ -1,13 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type ClipboardEvent, type FormEvent, type ReactNode } from 'react';
 import type { TalkingPointList } from '@/lib/talking-point-index';
+import { importIntoRows, isMultiLine, pastedPoints, pasteIntoRow, POINT_MAX } from '@/lib/talking-point-text';
 import { IconAlert, IconArrowDown, IconArrowUp, IconChecklist, IconClose, IconPencil, IconPlus, IconTrash } from './Icons';
 import { ConfirmButton } from './TrashActions';
-
-/** The app's `TalkingPoints.MAX_LEN`. */
-const POINT_MAX = 300;
 
 type Answer = { ok: true } | { ok: false; message: string; stale?: boolean };
 
@@ -33,7 +31,10 @@ type Draft = { key: number; text: string };
 let nextKey = 0;
 const draft = (text: string): Draft => ({ key: nextKey++, text });
 
-/** A list's name and points as fields: add, edit, move and remove points, then save them together. */
+/**
+ * A list's name and points as fields: add, edit, move and remove points,
+ * paste a block of them (#114), then save them together.
+ */
 function ListForm({
   list,
   onSaved,
@@ -50,6 +51,9 @@ function ListForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputs = useRef(new Map<number, HTMLInputElement>());
+  /** The *Paste points* box's text, or `null` while it is closed (#114). */
+  const [pasting, setPasting] = useState<string | null>(null);
+  const pasteCount = pasting === null ? 0 : pastedPoints(points.map((p) => p.text), pasting).length;
 
   const set = (key: number, text: string) => setPoints((all) => all.map((p) => (p.key === key ? { ...p, text } : p)));
   const move = (at: number, by: number) =>
@@ -66,6 +70,35 @@ function ListForm({
       return [...all.slice(0, at), point, ...all.slice(at)];
     });
     requestAnimationFrame(() => inputs.current.get(point.key)?.focus());
+  };
+
+  /** Text pasted over several lines into row `at` becomes a row per line, the extra ones right after it (#114). */
+  const pasteInto = (at: number, event: ClipboardEvent<HTMLInputElement>) => {
+    const pasted = event.clipboardData.getData('text');
+    if (!isMultiLine(pasted)) return;
+    event.preventDefault();
+    const input = event.currentTarget;
+    const full = input.value.slice(0, input.selectionStart ?? input.value.length) + pasted + input.value.slice(input.selectionEnd ?? input.value.length);
+    const rows = pasteIntoRow(
+      points.map((p) => p.text),
+      at,
+      full,
+    );
+    const inserted = rows.slice(at + 1, at + 1 + rows.length - points.length).map(draft);
+    setPoints([...points.slice(0, at), { ...points[at], text: rows[at] }, ...inserted, ...points.slice(at + 1)]);
+    const last = inserted.at(-1)?.key ?? points[at].key;
+    requestAnimationFrame(() => inputs.current.get(last)?.focus());
+  };
+
+  /** The box's points after the list's, keeping the rows already there (#114). */
+  const importPasted = () => {
+    if (pasting === null) return;
+    const rows = importIntoRows(
+      points.map((p) => p.text),
+      pasting,
+    );
+    setPoints(rows.map((text, i) => (points[i]?.text === text ? points[i] : draft(text))));
+    setPasting(null);
   };
 
   const submit = async (event: FormEvent) => {
@@ -115,6 +148,7 @@ function ListForm({
                 aria-label={`Point ${at + 1}`}
                 placeholder="Something to raise"
                 onChange={(event) => set(point.key, event.target.value)}
+                onPaste={(event) => pasteInto(at, event)}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') {
                     event.preventDefault();
@@ -141,10 +175,40 @@ function ListForm({
             </li>
           ))}
         </ol>
-        <button type="button" className="button ghost" onClick={() => add()}>
-          <IconPlus size={15} />
-          Add point
-        </button>
+        <div className="tp-add-buttons">
+          <button type="button" className="button ghost" onClick={() => add()}>
+            <IconPlus size={15} />
+            Add point
+          </button>
+          <button type="button" className="button ghost" aria-expanded={pasting !== null} onClick={() => setPasting(pasting === null ? '' : null)}>
+            Paste points
+          </button>
+        </div>
+        {pasting !== null && (
+          <div className="tp-paste">
+            <textarea
+              className="edit-input"
+              rows={6}
+              autoFocus
+              aria-label="Talking points, one per line"
+              aria-describedby="tp-paste-help"
+              placeholder={'- Budget\n- Hiring'}
+              value={pasting}
+              onChange={(event) => setPasting(event.target.value)}
+            />
+            <p id="tp-paste-help" className="tp-paste-help">
+              One point per line. Bullets and numbers at the start of a line are dropped, and points already in the list are left out.
+            </p>
+            <div className="action-form-buttons">
+              <button type="button" className="button primary" disabled={pasteCount === 0} onClick={importPasted}>
+                {pasteCount === 1 ? 'Add 1 point' : `Add ${pasteCount} points`}
+              </button>
+              <button type="button" className="button ghost" onClick={() => setPasting(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
       </fieldset>
       {error && (
         <p className="inline-error" role="alert">

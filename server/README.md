@@ -79,8 +79,10 @@ a phone the bar shows the logo without the name, so every button fits.
 - **Talking points** (`/talking-points`, #104): your talking-point lists, by
   name, each with its points in order. *New list* and the pencil open the same
   form: a name, and the points, one field each, with buttons to move one up or
-  down or remove it (Enter in a point adds one after it). *Save* sends the whole
-  list. Names and points are cleaned as in the app (spaces collapsed, at most
+  down or remove it (Enter in a point adds one after it). *Paste points*, or
+  pasting several lines into a point, adds a point per line: bullets and numbers
+  are dropped and points already in the list are left out (#114). *Save* sends
+  the whole list. Names and points are cleaned as in the app (spaces collapsed, at most
   300 characters, blank points dropped). Deleting a list removes it from your
   devices; conversations it was attached to keep their own copy of the points.
   The page reads Postgres (`talking_point_lists`), never S3. A list is a library

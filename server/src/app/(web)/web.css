@@ -1966,6 +1966,29 @@ button.t-mark-time:hover {
   cursor: default;
 }
 
+.tp-add-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* Paste points (#114) */
+.tp-paste {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.tp-paste textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.tp-paste-help {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 0.8rem;
+}
+
 .point-state {
   color: var(--text-3);
   font-size: 0.8rem;
