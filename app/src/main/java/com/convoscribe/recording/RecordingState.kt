@@ -19,7 +19,8 @@ package com.convoscribe.recording
  * `finishRecording` has stamped the duration.
  *
  * Any error during start or collection jumps back to `IDLE` with
- * [RecordingState.error] populated.
+ * [RecordingState.error] populated, and so does the session's job
+ * being cancelled by anything but stop or pause (issue #122).
  */
 enum class RecordingPhase {
     IDLE,

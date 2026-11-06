@@ -11,6 +11,7 @@ import com.convoscribe.audio.WavWriter
 import com.convoscribe.audio.inputLevel
 import com.convoscribe.audio.samplesToMs
 import com.convoscribe.audio.toFloatSamples
+import com.convoscribe.ui.record.formatElapsed
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -146,7 +147,7 @@ class RecordingController(
                 error = null
             )
         }
-        sessionJob = scope.launch {
+        val job = scope.launch {
             // The whole session lives in a try/catch so an
             // unexpected throwable is funnelled through the same
             // cleanup path: close native handles, finish the DB
@@ -237,22 +238,78 @@ class RecordingController(
                 )
                 capture(transcriber, wav, clean)
             } catch (ce: CancellationException) {
-                // Cooperative cancellation: stop() / pause() / scope
-                // cancel path. Do not call finishRecording here —
-                // stop() owns that and has already replaced the state
-                // with STOPPING, and a pause keeps the session open.
-                // Re-throw so structured concurrency still sees the
-                // cancel.
+                // stop() and pause() claim the phase before cancelling
+                // us, and own what happens next. Anything else (the
+                // caller's scope cancelled, issue #122) ends the
+                // session here. Re-throw so structured concurrency
+                // still sees the cancel.
+                endIfCancelledOutside(transcriber, wav, clean, sessionId)
                 throw ce
             } catch (t: Throwable) {
                 fail(t, transcriber, wav, clean, sessionId)
             }
         }
+        sessionJob = job
+        // A scope cancelled before the body ran (it was already
+        // cancelled, or cancelled before the dispatcher got to it)
+        // never reaches the cancel path above; nothing was opened, so
+        // only the state needs to leave LOADING.
+        job.invokeOnCompletion { cause ->
+            if (cause is CancellationException &&
+                claim({ it == RecordingPhase.LOADING }, RecordingPhase.IDLE)
+            ) {
+                _state.update { RecordingState(error = UNEXPECTED_STOP) }
+            }
+        }
+    }
+
+    /**
+     * Cancel path of a session's job (issue #122). [stop] and [pause]
+     * move the phase to `STOPPING` / `PAUSED` before cancelling, so a
+     * job cancelled while still `LOADING` or `RECORDING` was cancelled
+     * by someone else: the caller's scope, e.g. a destroyed service.
+     * Such a session would otherwise stay `RECORDING` with nothing
+     * capturing, so it is ended like a capture error, with what was
+     * recorded saved and an error the Record screen shows. Claiming
+     * the phase first means a [stop] racing with this one finds the
+     * session already ending and leaves it alone.
+     */
+    private suspend fun endIfCancelledOutside(
+        transcriber: StreamingTranscriber?,
+        wav: WavWriter?,
+        clean: CleanTrack?,
+        sessionId: Long?
+    ) {
+        if (!claim({ it == RecordingPhase.LOADING || it == RecordingPhase.RECORDING }, RecordingPhase.STOPPING)) return
+        val message = if (wav != null) {
+            "$UNEXPECTED_STOP after ${formatElapsed(samplesToMs(wav.samplesWritten))}"
+        } else {
+            UNEXPECTED_STOP
+        }
+        Log.w(TAG, "capture cancelled from outside session=$sessionId")
+        withContext(NonCancellable) {
+            fail(IllegalStateException(message), transcriber, wav, clean, sessionId)
+        }
+    }
+
+    /**
+     * Move to [to] if the current phase satisfies [from], atomically,
+     * and say whether it did. [stop], [pause] and
+     * [endIfCancelledOutside] all claim the phase this way, so exactly
+     * one of them ends a session.
+     */
+    private fun claim(from: (RecordingPhase) -> Boolean, to: RecordingPhase): Boolean {
+        var claimed = false
+        _state.update { current ->
+            claimed = from(current.phase)
+            if (claimed) current.copy(phase = to, inputLevel = 0f) else current
+        }
+        return claimed
     }
 
     /**
      * Drain the audio source until the collector is cancelled
-     * (stop() / pause() / scope cancellation). Each emission is
+     * (stop() / pause(), or the scope, see [endIfCancelledOutside]). Each emission is
      * persisted twice: once to the WAV on the current scope's
      * dispatcher (cheap), once to the recognizer on the ASR
      * dispatcher (expensive). Collecting opens the microphone and
@@ -331,11 +388,12 @@ class RecordingController(
      * so the cleaned WAV and the recognizer catch up with the original.
      */
     suspend fun pause(): Unit = lifecycle.withLock {
-        if (_state.value.phase != RecordingPhase.RECORDING) return@withLock
-        _state.update { it.copy(phase = RecordingPhase.PAUSED) }
+        if (!claim({ it == RecordingPhase.RECORDING }, RecordingPhase.PAUSED)) return@withLock
         sessionJob?.cancelAndJoin()
         sessionJob = null
         _state.update { it.copy(inputLevel = 0f) }
+        // A capture cancelled from outside just before the claim has
+        // already ended the session (and cleared the transcriber).
         val transcriber = activeTranscriber ?: return@withLock
         val clean = activeClean
         val events = withContext(asrDispatcher) {
@@ -351,7 +409,8 @@ class RecordingController(
      * the same transcriber and WAV, so the session, its transcript and
      * [RecordingState.elapsedMs] simply continue. No-op unless
      * [RecordingPhase.PAUSED]. A capture error after resuming ends the
-     * session like any other.
+     * session like any other, and so does [scope] being cancelled
+     * (see [endIfCancelledOutside]).
      */
     suspend fun resume(scope: CoroutineScope): Unit = lifecycle.withLock {
         if (_state.value.phase != RecordingPhase.PAUSED) return@withLock
@@ -364,6 +423,7 @@ class RecordingController(
             try {
                 capture(transcriber, wav, clean)
             } catch (ce: CancellationException) {
+                endIfCancelledOutside(transcriber, wav, clean, id)
                 throw ce
             } catch (t: Throwable) {
                 fail(t, transcriber, wav, clean, id)
@@ -381,10 +441,8 @@ class RecordingController(
      * The cleanup sequence is:
      *  1. flip state to [RecordingPhase.STOPPING];
      *  2. cancel and join the audio collection job so the launched
-     *     coroutine leaves its local handles alone (the launched
-     *     coroutine's catch block will not fire because
-     *     [CancellationException] is re-thrown before its catch
-     *     arm);
+     *     coroutine leaves its local handles alone (its cancel path
+     *     sees `STOPPING` and leaves the session to us);
      *  3. call [StreamingTranscriber.finish] on the ASR dispatcher
      *     to flush any pending partial into a [TranscriptEvent.Final];
      *  4. close the transcriber and the WAV writer;
@@ -400,9 +458,10 @@ class RecordingController(
      * coroutine populates as it sets them up.
      */
     suspend fun stop(): Long? = lifecycle.withLock {
-        if (!_state.value.phase.active) return@withLock null
         val id = _state.value.sessionId ?: return@withLock null
-        _state.update { it.copy(phase = RecordingPhase.STOPPING, inputLevel = 0f) }
+        // Loses to a capture cancelled from outside, which is already
+        // ending the session (issue #122).
+        if (!claim({ it.active }, RecordingPhase.STOPPING)) return@withLock null
         sessionJob?.cancelAndJoin()
         val transcriber = activeTranscriber
         val wav = activeWav
@@ -526,5 +585,10 @@ class RecordingController(
             }
             current.copy(partialText = partial, finalLines = lines)
         }
+    }
+
+    private companion object {
+        /** Error of a session whose job was cancelled from outside (issue #122). */
+        const val UNEXPECTED_STOP = "Recording stopped unexpectedly"
     }
 }
