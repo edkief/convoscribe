@@ -2,10 +2,11 @@
 
 import { useState, type FormEvent } from 'react';
 import { timestamp, type TalkingPoint } from '@/lib/transcript-export';
-import { IconCheckCircle, IconCircle, IconPencil, IconPlus, IconTrash } from './Icons';
+import { IconCheckCircle, IconCircle, IconPencil, IconPlus, IconSparkle, IconTrash } from './Icons';
 import { SeekTime } from './Player';
 import { useSaved, useSessionEditor } from './SessionEditor';
 import { ConfirmButton } from './TrashActions';
+import { useModelRun } from './useModelRun';
 
 /** The app's `TalkingPoints.MAX_LEN`. */
 const POINT_MAX = 300;
@@ -156,14 +157,62 @@ function AddPoint() {
   );
 }
 
+type CheckEvent = { step?: { part: number; parts: number }; done?: boolean; revision?: number; ticked?: number; error?: string };
+
+/**
+ * *Check points* (#119): the server's language model reads the whole
+ * transcript and ticks the points it finds covered, with where. Points set
+ * by hand are left alone.
+ */
+function CheckPoints({ syncId }: { syncId: string }) {
+  const [step, setStep] = useState<{ part: number; parts: number } | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const action = useModelRun<CheckEvent>(syncId, 'points', (event) => {
+    if (event.step) setStep(event.step);
+  });
+  if (!action) return null;
+  const run = async () => {
+    setStep(null);
+    setResult(null);
+    const done = await action.run();
+    if (done) setResult(done.ticked ? `${done.ticked} ${done.ticked === 1 ? 'point' : 'points'} ticked.` : 'No other point was covered.');
+  };
+  return (
+    <div className="model-action">
+      {action.running ? (
+        <>
+          <span className="model-busy" aria-live="polite">
+            {step ? `Checking part ${step.part} of ${step.parts}…` : 'Checking the transcript…'}
+          </span>
+          <button type="button" className="button" onClick={action.stop}>
+            Stop
+          </button>
+        </>
+      ) : (
+        <button type="button" className="button" onClick={() => void run()}>
+          <IconSparkle size={15} /> Check points
+        </button>
+      )}
+      {result && !action.running && <span className="muted">{result}</span>}
+      {action.error && (
+        <p className="inline-error" role="alert">
+          {action.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 /**
  * The session's talking points (#104): covered or not, and where each was
  * covered, to play from there. Where the session can be edited they can be
- * ticked, unticked, edited, removed and added.
+ * ticked, unticked, edited, removed and added. With `check` (#119), the
+ * server's language model can tick the open ones.
  */
-export function TalkingPointList({ points }: { points: TalkingPoint[] }) {
+export function TalkingPointList({ points, check }: { points: TalkingPoint[]; check?: { syncId: string } | null }) {
   return (
     <>
+      {check && points.some((p) => !p.covered && !p.byUser) && <CheckPoints syncId={check.syncId} />}
       {points.length > 0 ? (
         <ul className="actions">
           {points.map((point) => (

@@ -1104,6 +1104,75 @@ a.chip:hover {
   }
 }
 
+/* Suggest title, check points, write notes (#119). */
+.title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.title-previous {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+}
+
+.link-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+.link-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.title-suggest {
+  flex: none;
+  font-size: 0.85rem;
+}
+
+.model-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+}
+
+.model-action .inline-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.model-busy::before {
+  content: '';
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: summarise-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .model-busy::before {
+    animation: none;
+  }
+}
+
 .earlier {
   margin-top: 1.25rem;
   padding-top: 0.75rem;

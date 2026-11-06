@@ -117,6 +117,7 @@ export function summarySource(manifest: Json, zone: string) {
     marks: view.marks.map(({ atMs, note }) => ({ atMs, note })),
     knownNames: [...new Set([...view.speakers.map((s) => s.label), ...view.participants].filter((n) => n.trim()))],
     recordedOn: view.createdAt !== null ? recordedOn(view.createdAt, zone) : null,
+    language: view.language,
   };
 }
 

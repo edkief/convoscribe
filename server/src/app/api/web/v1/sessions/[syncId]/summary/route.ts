@@ -1,5 +1,6 @@
 import { splitSummary } from '@/lib/action-items';
 import { upstreamOf } from '@/lib/ai-proxy';
+import { applyAutoTitle, suggestTitle } from '@/lib/assist';
 import { env } from '@/lib/env';
 import { validZone } from '@/lib/format';
 import { baseRevisionOf, HttpError, jsonBody, syncIdParam, webAuthed } from '@/lib/http';
@@ -16,7 +17,7 @@ type Ctx = RouteContext<'/api/web/v1/sessions/[syncId]/summary'>;
 const TEXT_EVERY_MS = 100;
 
 /** One line of the answer's stream. */
-type Event = { step: SummaryStep } | { text: string } | { done: true; revision: number } | { error: string };
+type Event = { step: SummaryStep | 'naming' } | { text: string } | { done: true; revision: number } | { error: string };
 
 /**
  * Summarise a session with the server's language model (#117), as the app
@@ -25,8 +26,10 @@ type Event = { step: SummaryStep } | { text: string } | { done: true; revision: 
  * Meeting) and the browser's time zone, for the recording date the model is
  * told. A request that can't start is a JSON error; once started, the answer
  * is NDJSON events: `step` while a long transcript is summarised in parts,
- * `text` with the summary so far, then `done` with the saved revision or
- * `error`. Closing the request cancels the model and saves nothing.
+ * `text` with the summary so far, `step: "naming"` while a session with its
+ * date-based title is named from the summary (#119, the app's `AutoTitler`),
+ * then `done` with the saved revision or `error`. Summary and title are saved
+ * as one revision. Closing the request cancels the model and saves nothing.
  */
 export async function POST(req: Request, ctx: Ctx) {
   return webAuthed(req, async ({ owner }) => {
@@ -61,6 +64,18 @@ export async function POST(req: Request, ctx: Ctx) {
         return;
       }
       applySummary(editable.manifest, { prose, items, template, now: Date.now() });
+      if (editable.manifest.titleSource === 'default') {
+        send({ step: 'naming' });
+        try {
+          const title = await suggestTitle({ from: { summary: prose }, language: source.language }, chatStream, signal);
+          if (title) applyAutoTitle(editable.manifest, title);
+        } catch (err) {
+          // As in the app, the session simply keeps its title.
+          if (signal.aborted) return;
+          console.warn(`web summary: naming the session failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (signal.aborted) return;
+      }
       const saved = await saveEdited(owner, syncId, editable);
       send({ done: true, revision: saved.revision });
     });

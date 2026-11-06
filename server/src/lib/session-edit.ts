@@ -12,6 +12,7 @@ import { KNOWN_SCHEMA } from './transcript-export';
  */
 export type SessionEdit =
   | { kind: 'title'; title: string }
+  | { kind: 'titleRestore' }
   | { kind: 'tags'; tags: string[] }
   | { kind: 'speaker'; index: number; label: string }
   | { kind: 'line'; at: number; text: string }
@@ -39,6 +40,7 @@ export function parseEdit(value: unknown): SessionEdit {
   const e = isRecord(value) ? value : {};
   const ok =
     (e.kind === 'title' && isString(e.title)) ||
+    e.kind === 'titleRestore' ||
     (e.kind === 'tags' && Array.isArray(e.tags) && e.tags.every(isString)) ||
     (e.kind === 'speaker' && isIndex(e.index) && isString(e.label)) ||
     (e.kind === 'line' && isIndex(e.at) && isString(e.text)) ||
@@ -118,6 +120,14 @@ export function applyEdit(manifest: Json, edit: SessionEdit): boolean {
       if (!title) return false;
       if (manifest.title === title && manifest.titleSource === 'user' && (manifest.previousTitle ?? null) === null) return false;
       manifest.title = title;
+      manifest.titleSource = 'user';
+      manifest.previousTitle = null;
+      return true;
+    }
+    case 'titleRestore': {
+      // As `SessionRepository.undoAutoTitle` (#119): the title put back counts as the user's.
+      if (manifest.titleSource !== 'auto' || !isString(manifest.previousTitle)) return false;
+      manifest.title = manifest.previousTitle;
       manifest.titleSource = 'user';
       manifest.previousTitle = null;
       return true;

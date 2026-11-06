@@ -2596,6 +2596,56 @@ the end. Use a browser with the window wide, then at phone width.
   button except *Clear*. The cleared session has no *Q&A* tab.
 - At phone width the field and buttons fit without scrolling sideways.
 
+## 60. Title, talking points and mark notes in the web app (issue #119)
+
+Run the server with `LLM_UPSTREAM_URL` set, as in §58. You need:
+
+- **A**: a session recorded with *Name conversations automatically* off, so
+  it still has its date-based title, with no summary.
+- **B**: a session with a title you typed and a summary, three talking
+  points (one discussed in the conversation, one not, and one you unticked
+  by hand in the app), and three marks: one with no full note, one whose
+  full note was written before you edited a line, and one with a current
+  full note.
+
+Use a browser with the window wide, then at phone width.
+
+**Steps**
+
+1. On B, press the sparkle beside the title.
+2. Press *Put back* under the title.
+3. On B's *Talking points* tab, press *Check points*.
+4. On B's *Marks* tab, press *Write notes* and press *Stop* after the first
+   note. Then press *Write notes* again and let it finish.
+5. On A, summarise from the *Summary* tab.
+6. On B, start *Write notes* and, while it runs, rename the session on a
+   device and sync.
+7. Sync a device and open A and B in the app.
+8. Restart the server without `LLM_UPSTREAM_URL` and reload B.
+
+**Expected**
+
+- Step 1: the button reads *Naming… Stop*, then a title of a few words
+  replaces yours, with *Named automatically. Put back “<your title>”* under it.
+- Step 2: your title is back and the line under it is gone.
+- Step 3: the tab reads *Checking the transcript…*, then *1 point ticked.*
+  The discussed point is ticked with a time that plays the moment. The
+  undiscussed point and the one set by hand are unchanged, and *Check points*
+  is gone if no open point is left.
+- Step 4: after *Stop*, no note is saved and the tab still reads *2 marks
+  need a note.* The second time it reads *Writing note 1 of 2…*, then *2 of
+  2*, and both notes show; the current note is unchanged and the stale note
+  loses *Written before the transcript changed*.
+- Step 5: after the summary streams in, the tab reads *Naming the session…*,
+  then A's title is a few words about the conversation, with *Put back* under it.
+- Step 6: *Not saved: this session changed somewhere else* and the *Reload*
+  banner. After reloading, no new note was saved.
+- Step 7: the app shows A's new title, B's ticked point with its time, and
+  B's full notes.
+- Step 8: no sparkle, no *Check points* and no *Write notes*. *Put back*
+  still shows for an automatic title.
+- At phone width the buttons and messages wrap without scrolling sideways.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
