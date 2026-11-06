@@ -165,7 +165,7 @@ fun SessionScreen(
                     settings = container.settingsRepository,
                     templates = container.summaryTemplates,
                     markNotes = container.markNotesWriter,
-                    autoTitler = container.autoTitler
+                    summariser = container.sessionSummariser
                 )
             }
         }

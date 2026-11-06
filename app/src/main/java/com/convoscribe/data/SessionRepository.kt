@@ -802,6 +802,10 @@ class SessionRepository(
     fun observeMessages(sessionId: Long, kind: MessageKind): Flow<List<ChatMessageEntity>> =
         chatMessageDao.observe(sessionId, kind)
 
+    /** The chat messages of [kind] for [sessionId], oldest first. */
+    suspend fun getMessages(sessionId: Long, kind: MessageKind): List<ChatMessageEntity> =
+        chatMessageDao.getForSession(sessionId).filter { it.kind == kind }
+
     suspend fun deleteChatKind(sessionId: Long, kind: MessageKind) {
         chatMessageDao.deleteKind(sessionId, kind)
         touch(sessionId)

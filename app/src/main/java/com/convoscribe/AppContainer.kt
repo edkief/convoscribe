@@ -42,6 +42,7 @@ import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
+import com.convoscribe.llm.SessionSummariser
 import com.convoscribe.llm.TalkingPointChecker
 import com.convoscribe.llm.embedding.EmbeddingGemmaFactory
 import com.convoscribe.llm.embedding.SemanticIndexRunner
@@ -716,6 +717,10 @@ class AppContainer(val context: Context) {
     /** Names sessions from their summary (issue #32). */
     val autoTitler: AutoTitler =
         AutoTitler(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
+
+    /** Writes session summaries, from the Summary tab (issue #29 moved the run here). */
+    val sessionSummariser: SessionSummariser =
+        SessionSummariser(sessionRepository, chatClient, settingsRepository, summaryTemplates, autoTitler)
 
     /**
      * Ticks a recording's talking points as they come up (issue #103),
