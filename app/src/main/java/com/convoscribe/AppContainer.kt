@@ -358,6 +358,7 @@ class AppContainer(val context: Context) {
         isCharging = ::isPluggedIn,
         onPending = { pendingDiarizationScheduler.sync() },
         onDiarized = { markNotesWriter.onDiarized(it) },
+        onFinished = { sessionSummariser.onFinished(it) },
         onCancelled = { pendingDiarizationScheduler.hold() }
     )
 
@@ -718,9 +719,19 @@ class AppContainer(val context: Context) {
     val autoTitler: AutoTitler =
         AutoTitler(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
 
-    /** Writes session summaries, from the Summary tab (issue #29 moved the run here). */
-    val sessionSummariser: SessionSummariser =
-        SessionSummariser(sessionRepository, chatClient, settingsRepository, summaryTemplates, autoTitler)
+    /**
+     * Writes session summaries: from the Summary tab, and once a session
+     * is finished when *Summarise automatically* is on (issue #29).
+     */
+    val sessionSummariser: SessionSummariser = SessionSummariser(
+        sessionRepository,
+        chatClient,
+        settingsRepository,
+        summaryTemplates,
+        autoTitler,
+        applicationScope,
+        llmCalls
+    )
 
     /**
      * Ticks a recording's talking points as they come up (issue #103),

@@ -355,6 +355,45 @@ class DiarizeSessionUseCaseTest {
         assertEquals(listOf(id), diarized)
     }
 
+    /** Issue #29: a session is finished once identified, failed, or left to the user. */
+    @Test
+    fun onFinished_followsIdentifiedFailedAndManualSessionsButNotTheChargingJob() = runTest {
+        val finished = mutableListOf<Long>()
+        fun useCase(diarizer: Diarizer) = DiarizeSessionUseCase(
+            repository = repo,
+            diarizerFactory = ScriptedDiarizerFactory(diarizer),
+            settings = settings,
+            readSamples = { FloatArray(16_000) },
+            isCharging = { false },
+            onFinished = { finished += it }
+        )
+        suspend fun session(): Long = repo.createSession(title = "Test", language = "en").also {
+            repo.addSegment(it, startMs = 0L, endMs = 1000L, text = "first")
+        }
+        val turns = listOf(SpeakerTurn(startMs = 0L, endMs = 1000L, speaker = 0))
+
+        val failed = session()
+        useCase(ThrowingDiarizer()).run(failed)
+        val identified = session()
+        useCase(ScriptedDiarizer(turns)).run(identified)
+        assertEquals(listOf(failed, identified), finished)
+
+        settings.update { it.copy(speakerIdMode = "charging") }
+        val waiting = session()
+        assertFalse(useCase(ScriptedDiarizer(turns)).runOrDefer(waiting))
+        assertEquals(listOf(failed, identified), finished)
+
+        settings.update { it.copy(speakerIdMode = "manual") }
+        val manual = session()
+        assertFalse(useCase(ScriptedDiarizer(turns)).runOrDefer(manual))
+        assertEquals(listOf(failed, identified, manual), finished)
+
+        // Nothing to say, nothing to summarise.
+        val empty = repo.createSession(title = "Empty", language = "en")
+        useCase(ScriptedDiarizer(turns)).run(empty)
+        assertEquals(listOf(failed, identified, manual), finished)
+    }
+
     @Test
     fun run_lineWithTokenTimesSpanningTwoSpeakers_isSplitIntoLabelledLines() = runTest {
         val id = repo.createSession(title = "Test", language = "en")

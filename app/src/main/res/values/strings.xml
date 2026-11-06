@@ -347,6 +347,8 @@
     <string name="presets_delete_title">Delete “%1$s”?</string>
     <string name="presets_delete_message">Conversations recorded with it are kept.</string>
     <string name="settings_summaries_default_label">Default template</string>
+    <string name="settings_auto_summary_label">Summarise conversations automatically</string>
+    <string name="settings_auto_summary_help">Once a conversation is finished and its speakers are identified, the language model writes its summary with the conversation\'s template, unless it already has one. Off by default: every conversation goes to the language model.</string>
     <string name="settings_auto_mark_notes_label">Write notes for marks automatically</string>
     <string name="settings_auto_title_label">Name conversations automatically</string>
     <string name="settings_auto_title_help">After the first summary, the language model gives a conversation that still has its date as its title a short name. A title you typed is never changed.</string>

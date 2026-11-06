@@ -61,6 +61,10 @@ import com.convoscribe.llm.SummaryTemplates
  * session's speakers are identified, when an LLM endpoint is set up;
  * the Summary tab can always write them by hand.
  *
+ * [autoSummary] summarises a conversation once it is finished (issue
+ * #29): its speakers identified, or left for the user to identify. Only
+ * when an LLM endpoint is set up and it has no summary yet.
+ *
  * [autoTitle] names a conversation from its summary (issue #32) while
  * it still has its date-based title, when an LLM endpoint is set up.
  *
@@ -135,6 +139,7 @@ data class AppSettings(
     val defaultSummaryTemplate: String = SummaryTemplates.MEETING_KEY,
     val cleanAudioDefault: Boolean = false,
     val autoMarkNotes: Boolean = true,
+    val autoSummary: Boolean = false,
     val autoTitle: Boolean = true,
     val talkingPointsOpenFirst: Boolean = false,
     val displayMode: String = DisplayMode.AUTO.key,

@@ -436,6 +436,13 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun autoSummary_isOffThenPersists() {
+        assertFalse(newRepository().settings.value.autoSummary)
+        newRepository().update { it.copy(autoSummary = true) }
+        assertTrue(newRepository().settings.value.autoSummary)
+    }
+
+    @Test
     fun cleanAudioDefault_isOffThenPersists() {
         assertFalse(newRepository().settings.value.cleanAudioDefault)
         newRepository().update { it.copy(cleanAudioDefault = true) }

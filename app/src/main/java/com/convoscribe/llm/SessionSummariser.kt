@@ -1,5 +1,7 @@
 package com.convoscribe.llm
 
+import android.util.Log
+import com.convoscribe.TAG
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
 import com.convoscribe.data.ParticipantsCodec
@@ -10,6 +12,12 @@ import com.convoscribe.settings.SettingsRepository
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Writes a session's summary: the transcript goes to the LLM with the
@@ -19,14 +27,21 @@ import java.time.ZoneId
  * session ([AutoTitler], issue #32).
  *
  * [summarise] is the Summary tab's *Summarise* / *Regenerate*, which
- * streams into the screen.
+ * streams into the screen. [onFinished] is the automatic path (issue
+ * #29): once a session is finished, it is summarised in the app's
+ * [scope] if *Summarise automatically* is on, an endpoint is set up and
+ * it has no summary yet. The automatic run takes [calls], the lock that
+ * keeps one background LLM call at a time ([MarkNotesWriter],
+ * [AutoTitler]); the tab's run does not wait for it, as before.
  */
 class SessionSummariser(
     private val repository: SessionRepository,
     private val chatClient: ChatClient,
     private val settings: SettingsRepository,
     private val templates: SummaryTemplateStore,
-    private val autoTitler: AutoTitler? = null
+    private val autoTitler: AutoTitler? = null,
+    private val scope: CoroutineScope? = null,
+    private val calls: Mutex = Mutex()
 ) {
     /** How a [summarise] run ended without an error. */
     enum class Outcome {
@@ -39,6 +54,8 @@ class SessionSummariser(
         /** The LLM answered nothing; the previous summary stays. */
         NO_ANSWER
     }
+
+    private val jobs = mutableMapOf<Long, Job>()
 
     /**
      * Summarise [sessionId] with the template [templateKey] (a built-in
@@ -102,6 +119,44 @@ class SessionSummariser(
         )
         autoTitler?.onSummarySaved(sessionId, full)
         return Outcome.SAVED
+    }
+
+    /**
+     * [sessionId] is finished (its speakers identified, or left for the
+     * user to identify): summarise it if *Summarise automatically* is
+     * on, an endpoint is set up and it has no summary yet. Returns the
+     * run, or `null` when there is none to start. A failure is logged
+     * and otherwise ignored; the user can still summarise by hand.
+     */
+    fun onFinished(sessionId: Long): Job? {
+        val current = settings.settings.value
+        if (!current.autoSummary || !current.llmConfigured) return null
+        val scope = scope ?: return null
+        synchronized(jobs) {
+            if (jobs[sessionId]?.isActive == true) return null
+            val job = scope.launch { summariseIfMissing(sessionId) }
+            jobs[sessionId] = job
+            job.invokeOnCompletion { synchronized(jobs) { if (jobs[sessionId] === job) jobs.remove(sessionId) } }
+            return job
+        }
+    }
+
+    private suspend fun summariseIfMissing(sessionId: Long) {
+        try {
+            val outcome = calls.withLock {
+                val hasSummary = repository.getMessages(sessionId, MessageKind.SUMMARY)
+                    .any { it.role == MessageRole.ASSISTANT }
+                val session = repository.getSession(sessionId)
+                if (hasSummary || session == null) return
+                val key = session.summaryTemplate ?: settings.settings.value.defaultSummaryTemplate
+                summarise(sessionId, key)
+            }
+            Log.i(TAG, "auto summary session=$sessionId outcome=$outcome")
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (failure: Exception) {
+            Log.w(TAG, "auto summary: LLM request failed session=$sessionId", failure)
+        }
     }
 
     /** The session's speaker names and participants, that action item owners are matched to. */

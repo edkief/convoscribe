@@ -198,7 +198,8 @@ class BackupRoundTripTest {
                 llmBaseUrl = "http://llm",
                 defaultSummaryTemplate = template,
                 numThreads = 2,
-                talkingPointCheckSeconds = 40
+                talkingPointCheckSeconds = 40,
+                autoSummary = true
             )
         }
         secrets.setApiKey("sk-super-secret-llm")
@@ -259,6 +260,7 @@ class BackupRoundTripTest {
         val settings = tablet.settings.settings.value
         assertEquals("llama", settings.llmModel)
         assertEquals(40, settings.talkingPointCheckSeconds)
+        assertTrue(settings.autoSummary)
         assertEquals(templateKey, settings.defaultSummaryTemplate)
         assertEquals("device-specific settings are not restored", 4, settings.numThreads)
         assertEquals("", tablet.secrets.getApiKey())
