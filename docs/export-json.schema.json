@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/edkief/convoscribe/docs/export-json.schema.json",
+  "title": "ConvoScribe conversation export, version 1",
+  "description": "One conversation exported as JSON (issue #29). See docs/export-json.md.",
+  "type": "object",
+  "required": ["format", "version", "session", "speakers"],
+  "properties": {
+    "format": { "const": "convoscribe-transcript" },
+    "version": { "const": 1 },
+    "session": {
+      "type": "object",
+      "required": ["title", "createdAt", "createdAtMs", "durationMs", "language", "participants", "tags"],
+      "properties": {
+        "title": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "createdAtMs": { "type": "integer" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "language": { "type": "string" },
+        "participants": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "speakers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["index", "label"],
+        "properties": {
+          "index": { "type": "integer", "minimum": 0 },
+          "label": { "type": "string" }
+        }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["startMs", "endMs", "text", "edited", "words"],
+        "properties": {
+          "startMs": { "type": "integer" },
+          "endMs": { "type": "integer" },
+          "speakerIndex": { "type": "integer", "minimum": 0 },
+          "speaker": { "type": "string" },
+          "text": { "type": "string" },
+          "edited": { "type": "boolean" },
+          "words": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["text", "startMs", "endMs"],
+              "properties": {
+                "text": { "type": "string" },
+                "startMs": { "type": "integer" },
+                "endMs": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "marks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["atMs"],
+        "properties": {
+          "atMs": { "type": "integer" },
+          "note": { "type": "string" },
+          "fullNote": { "type": "string" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["content", "createdAt"],
+      "properties": {
+        "content": { "type": "string" },
+        "template": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "actionItems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text", "done"],
+        "properties": {
+          "text": { "type": "string" },
+          "owner": { "type": "string" },
+          "dueDate": { "type": "string" },
+          "atMs": { "type": "integer" },
+          "done": { "type": "boolean" }
+        }
+      }
+    },
+    "talkingPoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["text", "covered"],
+        "properties": {
+          "text": { "type": "string" },
+          "covered": { "type": "boolean" },
+          "coveredAtMs": { "type": "integer" }
+        }
+      }
+    },
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["question", "askedAt"],
+        "properties": {
+          "question": { "type": "string" },
+          "answer": { "type": "string" },
+          "askedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  }
+}

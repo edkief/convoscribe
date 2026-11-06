@@ -2646,6 +2646,79 @@ Use a browser with the window wide, then at phone width.
   still shows for an automatic title.
 - At phone width the buttons and messages wrap without scrolling sideways.
 
+## 61. Export a conversation, and automatic summaries (issue #29)
+
+You need a French conversation of a few minutes with two speakers, one of
+them renamed (*Élodie*), a mark with a note, a summary with action items,
+talking points and one question asked. Also install a notes app that opens a
+folder of Markdown files (Obsidian, or any file manager), a video player that
+loads subtitles (VLC), and apps that open DOCX and PDF.
+
+**Steps**
+
+1. Open the conversation, open the menu and choose *Export…*. Check the
+   dialog, then keep *Markdown*, all three boxes ticked and *Share…*, and
+   choose *Export*. Send it to a notes app or Drive.
+2. *Export…* again, choose *Save to a folder*, then *Choose folder…*, and pick
+   (or create) an Obsidian vault folder. Choose *Export*.
+3. Rename a speaker, then export *Markdown* to the folder again.
+4. Export each other format to the folder: *Plain text*, *SRT*, *WebVTT*,
+   *JSON*, *Word* and *PDF*. While *SRT* or *WebVTT* is selected, look at the
+   *Include* boxes.
+5. Save *Share audio*'s M4A next to the `.srt` (or export the audio with
+   *Save audio…* into the same folder) and open the M4A with the subtitles in
+   VLC.
+6. Open the `.docx` and the `.pdf`.
+7. Untick *Transcript and marks* and *Questions and answers*, export *Word*.
+   Untick everything.
+8. In a file manager, delete the export folder (or in Android Settings → Apps
+   → ConvoScribe, clear its storage access). Export to the folder again.
+9. Restart the app and open *Export…* again.
+10. Settings → AI & summaries: turn on *Summarise conversations
+    automatically*. Record a new conversation of a minute and stop. Do it
+    again with Settings → Speakers → *On demand*.
+11. With *Summarise conversations automatically* on, re-identify the speakers
+    of a conversation that already has a summary.
+
+**Expected**
+
+- Step 1: the dialog lists the seven formats, the three *Include* boxes and
+  *Share…* / *Save to a folder*. The share sheet offers a `.md` file named
+  `yyyy-MM-dd <title>.md`. It opens with front matter (title, date, duration,
+  language, speakers, participants, tags), the summary, the action items and
+  talking points as task lists, the transcript with the mark as a quote, and
+  the questions. The accents read correctly and *Élodie* appears, not
+  *Speaker 1*.
+- Step 2: the folder's name shows (*Save to <folder>*), and a snackbar says
+  *Saved <file> in <folder>*. The note opens in Obsidian.
+- Step 3: there is still one file of that name; it now has the new speaker
+  name. Obsidian shows the updated note.
+- Step 4: with *SRT* or *WebVTT* selected, only *Transcript and marks* can be
+  ticked and a line says subtitles hold the transcript only. Each file has the
+  right extension, and *Export* remembers the format chosen last.
+- Step 5: the subtitles follow the speech, each headed by its speaker, at most
+  two lines; a long line is split over several subtitles in order, none
+  overlapping the next.
+- Step 6: both open with the title, a grey line with the date and length,
+  headings, the summary's bullets and bold text, the task lists, the
+  transcript with bold times and speakers, the marks as indented quotes, and
+  the questions. French accents, `œ`, `«»` and `’` print correctly in the PDF,
+  which has a page number at the foot of each page.
+- Step 7: the Word file has the title and the summary, items and points only.
+  With nothing ticked, *Export* is greyed out.
+- Step 8: a snackbar says the export folder is no longer available, with
+  *Choose*; it opens the folder picker. Until a folder is picked, the dialog
+  shows *Save to a folder* and *Choose folder…*, and *Export* is greyed out
+  with it selected.
+- Step 9: the dialog opens on the last format, boxes and destination, with the
+  folder picked in step 8.
+- Step 10: once the speakers are identified (or straight after the transcript
+  under *On demand*), the Summary tab shows a summary written with the
+  conversation's template, with its action items, without opening the
+  conversation first. With the language model unreachable, nothing is shown
+  and *Summarise* still works.
+- Step 11: the summary is not replaced.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
