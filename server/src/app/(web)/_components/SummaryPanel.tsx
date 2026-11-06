@@ -3,6 +3,7 @@
 import { useRef, useState, type ReactNode } from 'react';
 import { IconSparkle } from './Icons';
 import { Markdown } from './Markdown';
+import { readEvents } from './ndjson';
 import { useSessionEditor } from './SessionEditor';
 
 type Step = { part: number; parts: number } | 'combining' | 'writing';
@@ -67,29 +68,16 @@ export function SummaryPanel({ syncId, templates, selected, hasSummary, children
         body: JSON.stringify({ baseRevision: editor.revision(), template, zone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
         signal: controller.signal,
       });
-      if (!res.ok || !res.body) {
-        outcome = ((await res.json().catch(() => ({}))) as Event).error ?? 'unknown';
-      } else {
-        const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
-        let buffered = '';
-        for (;;) {
-          const { value, done } = await reader.read();
-          if (done) break;
-          buffered += value;
-          let newline;
-          while ((newline = buffered.indexOf('\n')) >= 0) {
-            const event = JSON.parse(buffered.slice(0, newline)) as Event;
-            buffered = buffered.slice(newline + 1);
-            if (event.step) setStep(event.step);
-            if (event.text !== undefined) setText(event.text);
-            if (event.error) outcome = event.error;
-            if (event.done && event.revision !== undefined) {
-              outcome = null;
-              editor.saved(event.revision);
-            }
-          }
+      const refused = await readEvents<Event>(res, (event) => {
+        if (event.step) setStep(event.step);
+        if (event.text !== undefined) setText(event.text);
+        if (event.error) outcome = event.error;
+        if (event.done && event.revision !== undefined) {
+          outcome = null;
+          editor.saved(event.revision);
         }
-      }
+      });
+      if (refused) outcome = refused;
     } catch {
       outcome = controller.signal.aborted ? null : 'unreachable';
     }
