@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t xml:space="preserve">Point d'équipe — budget</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Meta"/></w:pPr><w:r><w:t xml:space="preserve">2026-11-06 14:30 · 12:34</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Meta"/></w:pPr><w:r><w:t xml:space="preserve">Speakers: Élodie, Speaker 2</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Meta"/></w:pPr><w:r><w:t xml:space="preserve">Tags: équipe, budget</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Summary</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading2"/></w:pPr><w:r><w:t xml:space="preserve">Résumé</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">•</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Budget déplacements </w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">en baisse</w:t></w:r><w:r><w:t xml:space="preserve"> de 10 %</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">•</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Recrutement au printemps</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading3"/></w:pPr><w:r><w:t xml:space="preserve">Décisions</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">1.</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Envoyer le compte rendu vendredi</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Action items</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">[ ]</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Envoyer le compte rendu (Élodie, due 2026-11-13)</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">[x]</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Réserver la salle</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Talking points</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">[x]</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Budget</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="ListParagraph"/><w:ind w:left="360" w:hanging="360"/></w:pPr><w:r><w:t xml:space="preserve">[ ]</w:t><w:tab/></w:r><w:r><w:t xml:space="preserve">Recrutement</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Transcript</w:t></w:r></w:p>
+<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">[00:00] Élodie: </w:t></w:r><w:r><w:t xml:space="preserve">Bonjour à tous, on commence par le budget.</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">⚑ [00:05] Mark: chiffres déplacements</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:t xml:space="preserve">Les déplacements baissent de 10 %.</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:t xml:space="preserve">Une marge pour recruter.</w:t></w:r></w:p>
+<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">[00:04] Speaker 2: </w:t></w:r><w:r><w:t xml:space="preserve">D'accord. Les dépenses de déplacement ont baissé de dix pour cent cette année, ce qui nous laisse une marge pour le recrutement prévu au printemps.</w:t></w:r></w:p>
+<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">[00:17] </w:t></w:r><w:r><w:t xml:space="preserve">Merci.</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Quote"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">⚑ [00:19] Mark</w:t></w:r></w:p>
+<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">[00:19] Élodie: </w:t></w:r><w:r><w:t xml:space="preserve">On envoie le compte rendu &lt;vendredi&gt; &amp; on clôt.</w:t></w:r></w:p>
+<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t xml:space="preserve">Questions</w:t></w:r></w:p>
+<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Q: Quel est le pourcentage ?</w:t></w:r></w:p>
+<w:p><w:r><w:t xml:space="preserve">Dix pour cent (</w:t></w:r><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">10 %</w:t></w:r><w:r><w:t xml:space="preserve">).</w:t></w:r></w:p>
+<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Q: Et pour l'an prochain ?</w:t></w:r></w:p>
+<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="567" w:footer="567" w:gutter="0"/></w:sectPr>
+</w:body></w:document>
