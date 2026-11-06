@@ -133,14 +133,14 @@ class RecordingService : Service() {
             ACTION_TOGGLE_PAUSE -> when (controller().state.value.phase) {
                 RecordingPhase.RECORDING -> handlePause()
                 RecordingPhase.PAUSED -> handleResume()
-                else -> if (idle()) stopSelf()
+                else -> stopIfIdle()
             }
             ACTION_DIARIZE -> {
                 val id = intent.getLongExtra(EXTRA_SESSION_ID, -1L)
                 if (id <= 0L) {
                     // Defensive: a malformed intent must not crash
                     // the service. Bail out cleanly.
-                    if (idle()) stopSelf()
+                    stopIfIdle()
                 } else {
                     val count = intent.getIntExtra(EXTRA_NUM_SPEAKERS, NUM_SPEAKERS_UNSET)
                     handleDiarize(id, count.takeIf { it != NUM_SPEAKERS_UNSET })
@@ -156,29 +156,29 @@ class RecordingService : Service() {
                         intent.getBooleanExtra(EXTRA_CLEAN, false),
                         intent.getBooleanExtra(EXTRA_SERVER, false)
                     )
-                } else if (idle()) {
-                    stopSelf()
+                } else {
+                    stopIfIdle()
                 }
             }
             ACTION_CANCEL_RETRANSCRIBE -> {
                 val job = retranscribeJob
                 if (job != null) {
                     job.cancel()
-                } else if (idle()) {
-                    stopSelf()
+                } else {
+                    stopIfIdle()
                 }
             }
             ACTION_CANCEL_DIARIZE -> {
                 // The run returns once stopped; its own clean-up leaves
                 // the foreground (issue #64).
-                if (!diarizerUseCase().cancel() && idle()) stopSelf()
+                if (!diarizerUseCase().cancel()) stopIfIdle()
             }
             ACTION_IMPORT -> {
                 val uri = intent.data
                 if (uri != null) {
                     handleImport(uri)
-                } else if (idle()) {
-                    stopSelf()
+                } else {
+                    stopIfIdle()
                 }
             }
             ACTION_CANCEL_IMPORT -> {
@@ -186,14 +186,14 @@ class RecordingService : Service() {
                 val state = (application as ConvoApp).container.importAudioUseCase.state.value
                 if (job != null && (state as? ImportState.Running)?.cancellable != false) {
                     job.cancel()
-                } else if (idle()) {
-                    stopSelf()
+                } else {
+                    stopIfIdle()
                 }
             }
             // Defensive: an intent with an unknown action is a
             // client bug. Don't crash; just stay in foreground if
             // we already are, otherwise exit cleanly.
-            else -> if (idle()) stopSelf()
+            else -> stopIfIdle()
         }
         return START_NOT_STICKY
     }
@@ -282,47 +282,74 @@ class RecordingService : Service() {
         // stop() is suspend; hop onto the service scope so we do
         // not block onStartCommand on the audio+ASR teardown.
         scope.launch {
-            // A session stopped while paused gave its wake lock back;
-            // diarization needs it again.
-            acquireWakeLock()
-            val completedId = controller.stop()
-            // Mic capture has ended; the service stays in the
-            // foreground but switches to a `dataSync` type while
-            // diarization runs. The microphone is no longer in use,
-            // so the microphone-typed foreground would not be
-            // allowed past Android 14 anyway. The notification
-            // text changes to "Identifying speakers…" so the user
-            // sees the service is still working.
-            ensureNotificationChannel()
-            // With *Improve recordings on the server* (issue #58) the
-            // transcript is redone on the server first. It runs as
-            // the re-transcription job, so the session screen shows
-            // its progress and Cancel; a cancel or a failure keeps the
-            // device transcript, and speakers are identified anyway.
-            if (completedId != null) improveOnServer(completedId)
+            // Counted until speakers are identified, so the service is
+            // not stopped under this job by another one ending, and a
+            // recording started meanwhile is not stopped by this one
+            // ending (issue #121).
+            processing++
+            try {
+                // A session stopped while paused gave its wake lock back;
+                // diarization needs it again.
+                acquireWakeLock()
+                val completedId = controller.stop()
+                // Mic capture has ended; the service stays in the
+                // foreground but switches to a `dataSync` type while
+                // diarization runs. The microphone is no longer in use,
+                // so the microphone-typed foreground would not be
+                // allowed past Android 14 anyway. The notification
+                // text changes to "Identifying speakers…" so the user
+                // sees the service is still working.
+                ensureNotificationChannel()
+                // With *Improve recordings on the server* (issue #58) the
+                // transcript is redone on the server first. It runs as
+                // the re-transcription job, so the session screen shows
+                // its progress and Cancel; a cancel or a failure keeps the
+                // device transcript, and speakers are identified anyway.
+                if (completedId != null) improveOnServer(completedId)
+                showDiarizingOrRecording()
+                if (completedId != null) {
+                    // Now, or left pending for the charger / the user
+                    // (Settings › Identify speakers, issue #11).
+                    diarizerUseCase().runOrDefer(completedId)
+                }
+            } finally {
+                processing--
+            }
+            // Diarization is done (or there was nothing to diarize).
+            // A recording, import or other run started meanwhile owns
+            // the foreground now; otherwise give back the wake lock and
+            // leave the foreground in one go, so no stale
+            // "Identifying…" notification is left behind.
+            stopIfIdle()
+        }
+    }
+
+    /**
+     * Show "Identifying speakers…" in a `dataSync` foreground, unless a
+     * session is open: the recording keeps its microphone-typed
+     * foreground and its own notification (issue #121), which is posted
+     * again so a `startForegroundService` call is still answered.
+     */
+    private fun showDiarizingOrRecording() {
+        val current = controller().state.value
+        if (current.phase == RecordingPhase.IDLE) {
             ServiceCompat.startForeground(
-                this@RecordingService,
+                this,
                 NOTIFICATION_ID,
                 buildDiarizingNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
-            if (completedId != null) {
-                // Now, or left pending for the charger / the user
-                // (Settings › Identify speakers, issue #11).
-                diarizerUseCase().runOrDefer(completedId)
-            }
-            // Diarization is done (or there was nothing to
-            // diarize). Release the wake lock first so we don't
-            // keep the CPU pinned after the service has gone, then
-            // tear down the foreground state in one go so we don't
-            // briefly leave a stale "Identifying…" notification
-            // behind.
-            // An import started meanwhile owns the foreground now.
-            if (importJob == null) {
-                releaseWakeLock()
-                ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                stopSelf()
-            }
+        } else {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                buildNotification(
+                    current.elapsedMs,
+                    paused = current.phase == RecordingPhase.PAUSED,
+                    marks = current.markCount
+                ),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+            )
         }
     }
 
@@ -371,7 +398,7 @@ class RecordingService : Service() {
     private fun handlePause() {
         val controller = controller()
         if (controller.state.value.phase != RecordingPhase.RECORDING) {
-            if (idle()) stopSelf()
+            stopIfIdle()
             return
         }
         scope.launch {
@@ -388,7 +415,7 @@ class RecordingService : Service() {
     private fun handleMark() {
         val controller = controller()
         if (!controller.state.value.phase.active) {
-            if (idle()) stopSelf()
+            stopIfIdle()
             return
         }
         scope.launch { controller.mark() }
@@ -398,7 +425,7 @@ class RecordingService : Service() {
     private fun handleResume() {
         val controller = controller()
         if (controller.state.value.phase != RecordingPhase.PAUSED) {
-            if (idle()) stopSelf()
+            stopIfIdle()
             return
         }
         scope.launch {
@@ -418,18 +445,16 @@ class RecordingService : Service() {
      */
     private fun handleDiarize(sessionId: Long, numSpeakers: Int?) {
         ensureNotificationChannel()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildDiarizingNotification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        )
+        // A recording open meanwhile keeps its own notification.
+        showDiarizingOrRecording()
         scope.launch {
-            diarizerUseCase().run(sessionId, numSpeakers = numSpeakers)
-            if (idle()) {
-                ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                stopSelf()
+            processing++
+            try {
+                diarizerUseCase().run(sessionId, numSpeakers = numSpeakers)
+            } finally {
+                processing--
             }
+            stopIfIdle()
         }
     }
 
@@ -448,7 +473,7 @@ class RecordingService : Service() {
      */
     private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean, onServer: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
-        if (!idle() || useCase.isRunning) return
+        if (!work().acceptsJob || useCase.isRunning) return
         ensureNotificationChannel()
         ServiceCompat.startForeground(
             this,
@@ -492,12 +517,9 @@ class RecordingService : Service() {
             } finally {
                 progress.cancel()
                 retranscribeJob = null
-                releaseWakeLock()
-                // A recording started meanwhile owns the foreground now.
-                if (idle()) {
-                    ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
+                // A recording or a speaker identification still going
+                // keeps the wake lock and the foreground.
+                stopIfIdle()
             }
         }
     }
@@ -505,12 +527,34 @@ class RecordingService : Service() {
     /** The running import, so [ACTION_CANCEL_IMPORT] can stop it. */
     private var importJob: Job? = null
 
+    /** Post-Stop jobs and *Identify speakers* runs still going (issue #121); see [ServiceWork.processing]. */
+    private var processing = 0
+
+    private fun work(): ServiceWork = ServiceWork(
+        phase = controller().state.value.phase,
+        retranscribing = retranscribeJob != null,
+        importing = importJob != null,
+        processing = processing
+    )
+
     /**
-     * No recording, re-transcription or import holds the service; it
-     * may leave the foreground.
+     * Nothing holds the service: no session is open and no job of any
+     * kind runs ([ServiceWork.idle]).
      */
-    private fun idle(): Boolean =
-        controller().state.value.phase == RecordingPhase.IDLE && retranscribeJob == null && importJob == null
+    private fun idle(): Boolean = work().idle
+
+    /**
+     * Give back the wake lock, leave the foreground and stop, but only
+     * when nothing holds the service ([idle]). The one way every job
+     * ends the service: a recording runs in [scope], so stopping while
+     * one is open would cancel its capture (issue #121).
+     */
+    private fun stopIfIdle() {
+        if (!idle()) return
+        releaseWakeLock()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
 
     /**
      * Import the audio file at [uri] as a new session (issue #3), in a
@@ -522,7 +566,7 @@ class RecordingService : Service() {
      */
     private fun handleImport(uri: Uri) {
         val useCase = (application as ConvoApp).container.importAudioUseCase
-        if (!idle() || useCase.isRunning) return
+        if (!work().acceptsJob || useCase.isRunning) return
         ensureNotificationChannel()
         ServiceCompat.startForeground(
             this,
@@ -548,11 +592,7 @@ class RecordingService : Service() {
             } finally {
                 progress.cancel()
                 importJob = null
-                releaseWakeLock()
-                if (idle()) {
-                    ServiceCompat.stopForeground(this@RecordingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                }
+                stopIfIdle()
             }
         }
     }
@@ -724,13 +764,11 @@ class RecordingService : Service() {
                     // The controller fell back to IDLE because of
                     // an error: surface a final teardown so we do
                     // not leak the foreground notification while
-                    // showing a dead service.
-                    releaseWakeLock()
-                    ServiceCompat.stopForeground(
-                        this@RecordingService,
-                        ServiceCompat.STOP_FOREGROUND_REMOVE
-                    )
-                    stopSelf()
+                    // showing a dead service. An earlier session's
+                    // speakers still being identified keep the
+                    // service, under their own notification (#121).
+                    if (!idle()) showDiarizingOrRecording()
+                    stopIfIdle()
                 }
             }
             .launchIn(scope)
