@@ -62,6 +62,24 @@ describe('editing a session from the web (#84)', () => {
     });
   });
 
+  describe('titleRestore (#119)', () => {
+    it('puts back the title an automatic one replaced, as the user’s', async () => {
+      const { meta, pushed, manifest } = await edited({ kind: 'titleRestore' }, { title: 'Budget', titleSource: 'auto', previousTitle: 'Recording 2025-10-09 10:00' });
+      expect(meta.revision).toBe(pushed.revision + 1);
+      expect(manifest).toMatchObject({ title: 'Recording 2025-10-09 10:00', titleSource: 'user', previousTitle: null });
+    });
+
+    it('changes nothing for a title the user chose', async () => {
+      const { meta, pushed } = await edited({ kind: 'titleRestore' }, { titleSource: 'user', previousTitle: 'Old' });
+      expect(meta.revision).toBe(pushed.revision);
+    });
+
+    it('changes nothing for an automatic title with nothing to put back', async () => {
+      const { meta, pushed } = await edited({ kind: 'titleRestore' }, { titleSource: 'auto', previousTitle: null });
+      expect(meta.revision).toBe(pushed.revision);
+    });
+  });
+
   describe('tags', () => {
     it('cleans them, drops repeats in any case and sorts by name', async () => {
       const long = 'y'.repeat(40);

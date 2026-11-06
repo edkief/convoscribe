@@ -32,6 +32,9 @@ export type Message = { role: string; content: string; createdAt: number | null;
 export type SessionView = {
   schema: number | null;
   title: string;
+  /** `default`, `user` or `auto`; an automatic title (#119) can be put back to `previousTitle`. */
+  titleSource: string | null;
+  previousTitle: string | null;
   createdAt: number | null;
   durationMs: number | null;
   language: string | null;
@@ -114,6 +117,8 @@ export function sessionView(manifest: unknown): SessionView {
   return {
     schema: num(m.schema),
     title: str(m.title)?.trim() || 'Untitled session',
+    titleSource: str(m.titleSource),
+    previousTitle: str(m.previousTitle),
     createdAt: num(m.createdAt),
     durationMs: num(m.durationMs),
     language: str(m.language),

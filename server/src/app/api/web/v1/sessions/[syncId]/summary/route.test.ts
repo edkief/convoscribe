@@ -4,6 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { resetAiProxy } from '@/lib/ai-proxy';
 import { getDocumentMeta, readManifest } from '@/lib/documents';
 import { resetLlmClient } from '@/lib/llm-client';
+import { TITLE_SYSTEM } from '@/lib/assist-prompt';
 import { PART_NOTES_SYSTEM } from '@/lib/summary-prompt';
 import { stubServerEnv } from '@/test/env';
 import { ctx, request, setupSyncServer } from '@/test/http';
@@ -193,6 +194,42 @@ describe('POST /api/web/v1/sessions/<syncId>/summary (#117)', () => {
     finish();
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect((await getDocumentMeta(OWNER, 'session', 's1'))!.revision).toBe(pushed.revision);
+  });
+
+  it('names a session with its date-based title from the summary, in the same revision (#119)', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { title: 'Recording 2025-10-09 10:00', titleSource: 'default', language: 'fr' }));
+    reply = (messages, res) => answer(messages[0].content.startsWith(TITLE_SYSTEM) ? 'Titre : « Le deck »' : REPLY)(messages, res);
+    const out = await events(await summarise('s1', { baseRevision: pushed.revision }));
+    expect(out).toContainEqual({ step: 'naming' });
+    expect(out.at(-1)).toEqual({ done: true, revision: pushed.revision + 1 });
+    expect(calls[1]).toEqual([
+      { role: 'system', content: TITLE_SYSTEM + ' Write it in French.' },
+      { role: 'user', content: 'Summary:\n\n' + SUMMARY.trim() },
+    ]);
+    const { manifest } = await manifestOf('s1');
+    expect(manifest).toMatchObject({ title: 'Le deck', titleSource: 'auto', previousTitle: 'Recording 2025-10-09 10:00' });
+    expect(manifest.messages.at(-1).content).toBe(SUMMARY.trimEnd());
+  });
+
+  it('leaves a chosen or automatic title alone (#119)', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { titleSource: 'auto', previousTitle: 'x' }));
+    const out = await events(await summarise('s1', { baseRevision: pushed.revision }));
+    expect(out.some((e) => e.step === 'naming')).toBe(false);
+    expect(calls).toHaveLength(1);
+    expect((await manifestOf('s1')).manifest.title).toBe('Session s1');
+  });
+
+  it('saves the summary when naming the session fails (#119)', async () => {
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { title: 'Recording', titleSource: 'default' }));
+    reply = (messages, res) => {
+      if (!messages[0].content.startsWith(TITLE_SYSTEM)) return answer(REPLY)(messages, res);
+      res.writeHead(500);
+      res.end('down');
+    };
+    expect((await events(await summarise('s1', { baseRevision: pushed.revision }))).at(-1)).toEqual({ done: true, revision: pushed.revision + 1 });
+    const { manifest } = await manifestOf('s1');
+    expect(manifest).toMatchObject({ title: 'Recording', titleSource: 'default' });
+    expect(manifest.messages.at(-1).content).toBe(SUMMARY.trimEnd());
   });
 
   it('refuses what it cannot start, as a JSON error', async () => {
