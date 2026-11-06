@@ -13,7 +13,11 @@ import com.convoscribe.audio.WavWriter
 import com.convoscribe.data.TitleSource
 import java.io.File
 import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onCompletion
@@ -22,6 +26,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -94,8 +99,13 @@ class RecordingControllerTest {
         /** Sessions passed to [reopenSession], in order. */
         val reopenCalls: MutableList<Long> = mutableListOf()
 
-        override suspend fun sessionLanguage(sessionId: Long): String =
-            languages[sessionId] ?: error("unknown session $sessionId")
+        /** When set, [sessionLanguage] waits for it, so a test can hold a continue in LOADING. */
+        var languageGate: CompletableDeferred<Unit>? = null
+
+        override suspend fun sessionLanguage(sessionId: Long): String {
+            languageGate?.await()
+            return languages[sessionId] ?: error("unknown session $sessionId")
+        }
 
         override suspend fun reopenSession(sessionId: Long) {
             reopenCalls += sessionId
@@ -1020,5 +1030,174 @@ class RecordingControllerTest {
         assertEquals(original.size, cleaned.size)
         assertEquals(original.last(), cleaned.last(), 0f)
         assertEquals(1_600, h.transcriber.fed.size)
+    }
+
+    /**
+     * A scope of its own, a child of the test's, so a test can cancel
+     * it the way the service's `onDestroy()` cancels the service scope
+     * (issue #122).
+     */
+    private fun TestScope.serviceScope(): CoroutineScope = CoroutineScope(coroutineContext + Job())
+
+    @Test
+    fun outsideCancel_whileRecording_endsTheSessionWithAnError() = runTest {
+        val h = buildHarness()
+        val scope = serviceScope()
+        h.controller.start(scope)
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId!!
+        repeat(12) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        scope.cancel()
+        advanceUntilIdle()
+
+        val state = h.controller.state.value
+        assertEquals(RecordingPhase.IDLE, state.phase)
+        assertEquals("Recording stopped unexpectedly after 00:01", state.error)
+        assertNull(state.lastCompletedSessionId)
+        assertNull(state.sessionId)
+        assertEquals(listOf(FakeRecordingStore.Finish(id, 1_200L)), h.store.finishCalls)
+        assertEquals(listOf("line-3", "line-6", "line-9", "line-12"), h.store.segments.map { it.text })
+        assertTrue(h.transcriber.closed)
+        assertEquals(0, h.audio.collectors)
+        assertEquals(
+            WavWriter.HEADER_SIZE + 12L * AudioSpec.CHUNK_SAMPLES * 2L,
+            File(h.store.audioPath(id)).length()
+        )
+
+        // The session is over: stop has nothing to finish, and a new
+        // recording can start.
+        assertNull(h.controller.stop())
+        assertEquals(1, h.store.finishCalls.size)
+        h.controller.start(this)
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.RECORDING, h.controller.state.value.phase)
+        assertNull(h.controller.state.value.error)
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun outsideCancel_afterPauseAndResume_endsTheSessionWithAnError() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId!!
+        repeat(2) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+        h.controller.pause()
+        advanceUntilIdle()
+
+        val scope = serviceScope()
+        h.controller.resume(scope)
+        advanceUntilIdle()
+        repeat(3) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        scope.cancel()
+        advanceUntilIdle()
+
+        val state = h.controller.state.value
+        assertEquals(RecordingPhase.IDLE, state.phase)
+        assertEquals("Recording stopped unexpectedly after 00:00", state.error)
+        assertEquals(listOf(FakeRecordingStore.Finish(id, 500L)), h.store.finishCalls)
+        assertTrue(h.transcriber.closed)
+        assertEquals(0, h.audio.collectors)
+        assertNull(h.controller.stop())
+        assertEquals(1, h.store.finishCalls.size)
+    }
+
+    @Test
+    fun outsideCancel_whileLoading_returnsToIdleWithAnError_andTheNextStartWorks() = runTest {
+        val store = FakeRecordingStore(tmp.root)
+        existingRecording(store, sessionId = 7L, ms = 600, language = "en")
+        store.languageGate = CompletableDeferred()
+        val h = buildHarness(store = store)
+        val scope = serviceScope()
+        h.controller.start(scope, resumeSessionId = 7L)
+        // The body starts and waits on the session's language.
+        runCurrent()
+        assertEquals(RecordingPhase.LOADING, h.controller.state.value.phase)
+
+        scope.cancel()
+        advanceUntilIdle()
+
+        assertEquals(RecordingPhase.IDLE, h.controller.state.value.phase)
+        assertEquals("Recording stopped unexpectedly", h.controller.state.value.error)
+        assertTrue(store.finishCalls.isEmpty())
+        assertTrue(store.reopenCalls.isEmpty())
+
+        store.languageGate = null
+        h.controller.start(this)
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.RECORDING, h.controller.state.value.phase)
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun scopeCancelledBeforeTheSessionRuns_returnsToIdleWithAnError() = runTest {
+        val h = buildHarness()
+        val scope = serviceScope()
+        h.controller.start(scope)
+        scope.cancel()
+        advanceUntilIdle()
+
+        assertEquals(RecordingPhase.IDLE, h.controller.state.value.phase)
+        assertEquals("Recording stopped unexpectedly", h.controller.state.value.error)
+        assertEquals(0, h.factory.createCount)
+
+        h.controller.start(this)
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.RECORDING, h.controller.state.value.phase)
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun stopAndPause_cancelTheirOwnJob_withoutAnError() = runTest {
+        val h = buildHarness()
+        val scope = serviceScope()
+        h.controller.start(scope)
+        advanceUntilIdle()
+        repeat(3) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        h.controller.pause()
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.PAUSED, h.controller.state.value.phase)
+        assertNull(h.controller.state.value.error)
+
+        h.controller.resume(scope)
+        advanceUntilIdle()
+        val id = h.controller.stop()!!
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.IDLE, h.controller.state.value.phase)
+        assertNull(h.controller.state.value.error)
+        assertEquals(id, h.controller.state.value.lastCompletedSessionId)
+        assertEquals(listOf(FakeRecordingStore.Finish(id, 300L)), h.store.finishCalls)
+        scope.cancel()
+    }
+
+    @Test
+    fun scopeCancelledWhilePaused_leavesTheSessionPaused() = runTest {
+        val h = buildHarness()
+        val scope = serviceScope()
+        h.controller.start(scope)
+        advanceUntilIdle()
+        h.controller.pause()
+        advanceUntilIdle()
+
+        // Nothing is capturing while paused, so there is no job to cancel.
+        scope.cancel()
+        advanceUntilIdle()
+
+        assertEquals(RecordingPhase.PAUSED, h.controller.state.value.phase)
+        assertNull(h.controller.state.value.error)
+        assertTrue(h.store.finishCalls.isEmpty())
+        h.controller.stop()
+        advanceUntilIdle()
+        assertEquals(1, h.store.finishCalls.size)
     }
 }
