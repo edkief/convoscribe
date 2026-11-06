@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import type { SessionEdit } from '@/lib/session-edit';
 import { Avatar } from './Avatar';
-import { IconAlert, IconClose, IconPencil } from './Icons';
+import { IconAlert, IconClose, IconPencil, IconSparkle } from './Icons';
+import { useModelRun } from './useModelRun';
 
 type Editor = {
   /** Save an edit, returning an error message or null. Edits go one at a time, in order. */
@@ -183,14 +184,73 @@ function InlineText({ value, label, maxLength, className, edit, children }: Inli
   );
 }
 
-/** The session's title (#84), capped by the same 100 characters as in the app. */
-export function EditableTitle({ title }: { title: string }) {
+/**
+ * The session's title (#84), capped by the same 100 characters as in the app.
+ * With `suggest` (#119), the server's language model can name the session;
+ * a title written automatically, here or by the app, can be put back to the
+ * one it replaced (`previousTitle`).
+ */
+export function EditableTitle({ title, syncId, suggest, previousTitle }: { title: string; syncId: string; suggest: boolean; previousTitle: string | null }) {
   return (
-    <div className="title-edit">
-      <InlineText value={title} label="Rename session" maxLength={100} className="wide" edit={(next) => ({ kind: 'title', title: next })}>
-        {(value) => <h1>{value}</h1>}
-      </InlineText>
+    <div className="title-block">
+      <div className="title-edit">
+        <InlineText value={title} label="Rename session" maxLength={100} className="wide" edit={(next) => ({ kind: 'title', title: next })}>
+          {(value) => <h1>{value}</h1>}
+        </InlineText>
+        {suggest && <SuggestTitle syncId={syncId} />}
+      </div>
+      {previousTitle !== null && <PutBackTitle previous={previousTitle} />}
     </div>
+  );
+}
+
+/** *Suggest title* (#119): the server's language model names the session. */
+function SuggestTitle({ syncId }: { syncId: string }) {
+  const action = useModelRun(syncId, 'title');
+  if (!action) return null;
+  return (
+    <>
+      {action.running ? (
+        <button type="button" className="button ghost title-suggest" onClick={action.stop}>
+          Naming… Stop
+        </button>
+      ) : (
+        <button type="button" className="icon-button" aria-label="Suggest a title" title="Suggest a title" onClick={() => void action.run()}>
+          <IconSparkle size={15} />
+        </button>
+      )}
+      {action.error && (
+        <span className="inline-error" role="alert">
+          {action.error}
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Put back the title an automatic one replaced (#119), as the app's *Undo*. */
+function PutBackTitle({ previous }: { previous: string }) {
+  const editor = useSessionEditor();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  if (!editor) return null;
+  const putBack = async () => {
+    setBusy(true);
+    setError(await editor.save({ kind: 'titleRestore' }));
+    setBusy(false);
+  };
+  return (
+    <p className="title-previous">
+      <span className="muted">Named automatically.</span>
+      <button type="button" className="link-button" disabled={busy} onClick={() => void putBack()}>
+        Put back “{previous}”
+      </button>
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </p>
   );
 }
 

@@ -6,7 +6,7 @@ import { Markdown } from './Markdown';
 import { readEvents } from './ndjson';
 import { useSessionEditor } from './SessionEditor';
 
-type Step = { part: number; parts: number } | 'combining' | 'writing';
+type Step = { part: number; parts: number } | 'combining' | 'writing' | 'naming';
 type Event = { step?: Step; text?: string; done?: boolean; revision?: number; error?: string };
 
 /** What a failed summary says, by the server's error code. */
@@ -34,7 +34,15 @@ function failure(code: string): string {
 }
 
 const stepText = (step: Step | null) =>
-  step === null ? 'Writing the summary…' : step === 'combining' ? 'Combining the notes…' : step === 'writing' ? 'Writing the summary from the notes…' : `Taking notes on part ${step.part} of ${step.parts}…`;
+  step === null
+    ? 'Writing the summary…'
+    : step === 'combining'
+      ? 'Combining the notes…'
+      : step === 'writing'
+        ? 'Writing the summary from the notes…'
+        : step === 'naming'
+          ? 'Naming the session…'
+          : `Taking notes on part ${step.part} of ${step.parts}…`;
 
 /**
  * *Summarise* on a session's Summary tab (#117): pick a template, and the

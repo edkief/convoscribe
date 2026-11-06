@@ -10,8 +10,9 @@ import { readSession } from '@/lib/web-session';
 import { ActionList } from '../../../_components/ActionList';
 import { DownloadMenu, type Download } from '../../../_components/DownloadMenu';
 import { IconAlert, IconCalendar, IconChevronLeft, IconClock, IconGlobe } from '../../../_components/Icons';
+import { MarkList } from '../../../_components/MarkList';
 import { Markdown } from '../../../_components/Markdown';
-import { PlayerBar, PlayerProvider, SeekTime } from '../../../_components/Player';
+import { PlayerBar, PlayerProvider } from '../../../_components/Player';
 import { EditableSpeakers, EditableTags, EditableTitle, SessionEditor } from '../../../_components/SessionEditor';
 import { QaPanel } from '../../../_components/QaPanel';
 import { SummaryPanel } from '../../../_components/SummaryPanel';
@@ -38,7 +39,8 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
  * A search result (#83) opens it on a line (`?line=`) or the summaries
  * (`?tab=summary`, with `&earlier=1` for an older one). When the server
  * offers a language model, the Summary tab can write the summary (#117)
- * and the Q&A tab can ask about the session (#118).
+ * and the Q&A tab can ask about the session (#118); the model can also name
+ * the session, tick its talking points and write its marks' full notes (#119).
  */
 export default async function SessionPage({ params, searchParams }: PageProps<'/sessions/[syncId]'>) {
   const { owner } = await requireIdentity();
@@ -76,7 +78,9 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
     templates: templates.map(({ key, name }) => ({ key, name })),
     selected: resolveTemplate(view.summaryTemplate, templates).key,
   };
-  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm });
+  // The smaller actions (#119) read the transcript.
+  const assist = llm && lines.length > 0 ? { syncId } : null;
+  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm }, assist);
 
   return (
     <SessionEditor syncId={syncId} revision={meta.revision} editable={!newer}>
@@ -87,7 +91,12 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
               <IconChevronLeft size={16} /> All sessions
             </Link>
             <div className="title-row">
-              <EditableTitle title={view.title} />
+              <EditableTitle
+                title={view.title}
+                syncId={syncId}
+                suggest={llm && (lines.length > 0 || view.summaries.length > 0)}
+                previousTitle={view.titleSource === 'auto' ? view.previousTitle : null}
+              />
               <div className="title-actions">
                 <DownloadMenu items={downloads} />
                 <DeleteSession syncId={syncId} revision={meta.revision} title={view.title} />
@@ -164,6 +173,7 @@ function panels(
   editable: boolean,
   summarise: { syncId: string; templates: { key: string; name: string }[]; selected: string } | null,
   qa: { syncId: string; ask: boolean },
+  assist: { syncId: string } | null,
 ): Tab[] {
   const tabs: Tab[] = [];
   const summaries = [...view.summaries].reverse();
@@ -212,24 +222,7 @@ function panels(
       id: 'marks',
       label: 'Marks',
       count: view.marks.length,
-      content: (
-        <ul className="marks">
-          {view.marks.map((mark, i) => (
-            <li key={i}>
-              <div className="mark-head">
-                <SeekTime ms={mark.atMs} label={timestamp(mark.atMs)} />
-                <strong>{mark.note || 'Marked moment'}</strong>
-              </div>
-              {mark.expandedNote && (
-                <p className={mark.expandedStale ? 'mark-note stale' : 'mark-note'}>
-                  {mark.expandedNote}
-                  {mark.expandedStale && <em> Written before the transcript changed.</em>}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      ),
+      content: <MarkList marks={view.marks} write={assist} />,
     });
   }
   if (view.questions.length || qa.ask) {
@@ -247,7 +240,7 @@ function panels(
       id: 'points',
       label: 'Talking points',
       count: view.talkingPoints.length ? view.talkingPoints.filter((p) => !p.covered).length : undefined,
-      content: <TalkingPointList points={view.talkingPoints} />,
+      content: <TalkingPointList points={view.talkingPoints} check={assist} />,
     });
   }
   return tabs;
