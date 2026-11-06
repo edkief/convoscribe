@@ -1221,6 +1221,63 @@ a.chip:hover {
 .question {
   margin: 0 0 0.3rem;
   font-weight: 620;
+  white-space: pre-line;
+}
+
+/* Ask on the Q&A tab (#118). */
+.qa-coverage {
+  margin: 0.4rem 0 0;
+}
+
+.qa-empty {
+  margin: 0 0 1rem;
+}
+
+.qa-live .panel-meta::before {
+  content: '';
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: summarise-pulse 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qa-live .panel-meta::before {
+    animation: none;
+  }
+}
+
+.qa-error {
+  margin: 0.75rem 0 0;
+}
+
+.qa-ask {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.qa-ask textarea {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.qa-buttons,
+.qa-clear {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.qa-clear {
+  margin-top: 0.5rem;
 }
 
 /* Transcript */

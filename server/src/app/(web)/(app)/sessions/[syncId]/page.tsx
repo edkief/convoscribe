@@ -13,6 +13,7 @@ import { IconAlert, IconCalendar, IconChevronLeft, IconClock, IconGlobe } from '
 import { Markdown } from '../../../_components/Markdown';
 import { PlayerBar, PlayerProvider, SeekTime } from '../../../_components/Player';
 import { EditableSpeakers, EditableTags, EditableTitle, SessionEditor } from '../../../_components/SessionEditor';
+import { QaPanel } from '../../../_components/QaPanel';
 import { SummaryPanel } from '../../../_components/SummaryPanel';
 import { TalkingPointList } from '../../../_components/TalkingPointList';
 import { Tabs, type Tab } from '../../../_components/Tabs';
@@ -36,7 +37,8 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
  * unless it comes from a newer app than this server knows.
  * A search result (#83) opens it on a line (`?line=`) or the summaries
  * (`?tab=summary`, with `&earlier=1` for an older one). When the server
- * offers a language model, the Summary tab can write the summary (#117).
+ * offers a language model, the Summary tab can write the summary (#117)
+ * and the Q&A tab can ask about the session (#118).
  */
 export default async function SessionPage({ params, searchParams }: PageProps<'/sessions/[syncId]'>) {
   const { owner } = await requireIdentity();
@@ -67,13 +69,14 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
   ];
   const newer = (view.schema ?? 0) > KNOWN_SCHEMA;
   // Summarising is a web edit, so only for a session this server can edit.
-  const templates = !newer && upstreamOf('llm') ? await listTemplates(owner) : null;
+  const llm = !newer && !!upstreamOf('llm');
+  const templates = llm ? await listTemplates(owner) : null;
   const summarise = templates && {
     syncId,
     templates: templates.map(({ key, name }) => ({ key, name })),
     selected: resolveTemplate(view.summaryTemplate, templates).key,
   };
-  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise);
+  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm });
 
   return (
     <SessionEditor syncId={syncId} revision={meta.revision} editable={!newer}>
@@ -160,6 +163,7 @@ function panels(
   openEarlier: boolean,
   editable: boolean,
   summarise: { syncId: string; templates: { key: string; name: string }[]; selected: string } | null,
+  qa: { syncId: string; ask: boolean },
 ): Tab[] {
   const tabs: Tab[] = [];
   const summaries = [...view.summaries].reverse();
@@ -228,22 +232,12 @@ function panels(
       ),
     });
   }
-  const questions = pairs(view.questions);
-  if (questions.length) {
+  if (view.questions.length || qa.ask) {
     tabs.push({
       id: 'questions',
       label: 'Q&A',
-      count: questions.length,
-      content: (
-        <ul className="qa-list">
-          {questions.map((qa, i) => (
-            <li key={i} className="qa">
-              {qa.question && <p className="question">{qa.question.content}</p>}
-              {qa.answer && <Markdown text={qa.answer.content} />}
-            </li>
-          ))}
-        </ul>
-      ),
+      count: view.questions.filter((m) => m.role === 'USER').length || undefined,
+      content: <QaPanel {...qa} questions={view.questions} />,
     });
   }
   // Next to the summary. Without points too where they can be added, unless
@@ -262,14 +256,4 @@ function panels(
 function SummaryMeta({ message, when }: { message: Message; when: (ms: number | null) => string | null }) {
   const text = [message.templateName, when(message.createdAt)].filter(Boolean).join(' · ');
   return text ? <p className="panel-meta">{text}</p> : null;
-}
-
-/** Q&A messages as question and answer pairs, in order. */
-function pairs(messages: Message[]) {
-  const out: { question?: Message; answer?: Message }[] = [];
-  for (const m of messages) {
-    if (m.role === 'USER' || !out.length || out.at(-1)!.answer) out.push({});
-    out.at(-1)![m.role === 'USER' ? 'question' : 'answer'] = m;
-  }
-  return out;
 }

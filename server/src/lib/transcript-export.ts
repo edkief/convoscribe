@@ -26,7 +26,8 @@ export type ActionItem = { at: number; text: string; owner: string | null; dueDa
 /** A talking point of the session (#104): `byUser` when ticked or unticked by hand, `coveredAtMs` on the recording's clock. */
 export type TalkingPoint = { id: string; text: string; covered: boolean; coveredAtMs: number | null; byUser: boolean };
 
-export type Message = { role: string; content: string; createdAt: number | null; templateName: string | null };
+/** A summary or Q&A message; an answer from excerpts of a long transcript has the span they covered (#118). */
+export type Message = { role: string; content: string; createdAt: number | null; templateName: string | null; coveredMs: number | null; totalMs: number | null };
 
 export type SessionView = {
   schema: number | null;
@@ -70,6 +71,8 @@ const message = (m: Record<string, unknown>): Message => ({
   content: str(m.content) ?? '',
   createdAt: num(m.createdAt),
   templateName: str(m.templateName),
+  coveredMs: num(m.coveredMs),
+  totalMs: num(m.totalMs),
 });
 
 /**
