@@ -6,7 +6,8 @@ import { baseRevisionOf, HttpError, jsonBody, syncIdParam, webAuthed } from '@/l
 import { chatStream, LlmError } from '@/lib/llm-client';
 import { loadForEdit, saveEdited } from '@/lib/session-edit';
 import { applySummary, summarise, summarySource, type SummaryStep } from '@/lib/summarise';
-import { listTemplates, resolveTemplate, templateKeyOf } from '@/lib/summary-templates';
+import { listTemplates, resolveTemplate } from '@/lib/summary-templates';
+import { templateKeyOf } from '@/lib/transcript-export';
 
 type Ctx = RouteContext<'/api/web/v1/sessions/[syncId]/summary'>;
 

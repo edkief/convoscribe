@@ -1063,6 +1063,47 @@ a.chip:hover {
   font-size: 0.8rem;
 }
 
+/* Summarise on the Summary tab (#117). */
+.summarise {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0.6rem;
+  margin-bottom: 1rem;
+}
+
+.summarise .field {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.summarise-error {
+  margin: -0.4rem 0 1rem;
+}
+
+.summarise-live .panel-meta::before {
+  content: '';
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: summarise-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes summarise-pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .summarise-live .panel-meta::before {
+    animation: none;
+  }
+}
+
 .earlier {
   margin-top: 1.25rem;
   padding-top: 0.75rem;

@@ -34,14 +34,6 @@ export async function listTemplates(owner: string): Promise<SummaryTemplate[]> {
   return [...BUILT_IN_TEMPLATES, ...[...byName.values()].sort((a, b) => a.name.localeCompare(b.name))];
 }
 
-/** A session's `summaryTemplate` (`{key}` or `{user: name}`) as a template key, or null. */
-export function templateKeyOf(ref: unknown): string | null {
-  if (!ref || typeof ref !== 'object') return null;
-  const { key, user } = ref as Record<string, unknown>;
-  if (typeof user === 'string' && user) return USER_PREFIX + user;
-  return typeof key === 'string' && key ? key : null;
-}
-
 /** The manifest's reference to `template`, as the app's `SessionManifests.templateRef` writes it. */
 export const templateRef = (template: SummaryTemplate) => (template.builtIn ? { key: template.key } : { user: template.name });
 
