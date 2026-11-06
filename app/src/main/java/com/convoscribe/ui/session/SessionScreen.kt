@@ -71,6 +71,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.SpeakerEntity
 import com.convoscribe.data.TranscriptLine
 import com.convoscribe.data.TranscriptMark
+import com.convoscribe.export.ExportSection
 import com.convoscribe.llm.embedding.SemanticIndexRunner
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ImportState
@@ -150,7 +151,8 @@ fun SessionScreen(
                     enrollFromSession = container.enrollFromSessionUseCase,
                     playerFactory = { scope -> MediaPlayerAudioPlayer(scope) },
                     audioExporter = container.audioExporter,
-                    cueAtMs = cueAtMs
+                    cueAtMs = cueAtMs,
+                    transcriptExporter = container.sessionExporter
                 )
             }
         }
@@ -165,7 +167,7 @@ fun SessionScreen(
                     settings = container.settingsRepository,
                     templates = container.summaryTemplates,
                     markNotes = container.markNotesWriter,
-                    autoTitler = container.autoTitler
+                    summariser = container.sessionSummariser
                 )
             }
         }
@@ -209,12 +211,61 @@ fun SessionScreen(
             context.startActivity(Intent.createChooser(send, context.getString(R.string.session_share_audio_chooser)))
         }
     }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val screenScope = rememberCoroutineScope()
+    // Export (issue #29): the folder is picked once and remembered.
+    val settingsRepo = container.settingsRepository
+    val pickExportFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val previous = settingsRepo.settings.value.exportFolderUri.takeIf { it.isNotEmpty() }
+        val name = container.exportFolder.remember(uri.toString(), previous)
+        if (name == null) {
+            screenScope.launch {
+                snackbarHostState.showSnackbar(context.getString(R.string.session_export_folder_failed))
+            }
+        } else {
+            settingsRepo.update { it.copy(exportFolderUri = uri.toString(), exportFolderName = name) }
+        }
+    }
+    LaunchedEffect(vm) {
+        vm.transcriptExports.collect { event ->
+            when (event) {
+                is TranscriptExport.Share -> {
+                    val result = event.result
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = result.mime
+                        putExtra(Intent.EXTRA_SUBJECT, result.title)
+                        if (result.text != null) putExtra(Intent.EXTRA_TEXT, result.text)
+                        result.file?.let { file ->
+                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            clipData = ClipData.newRawUri(file.name, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                    }
+                    context.startActivity(
+                        Intent.createChooser(send, context.getString(R.string.session_export_chooser))
+                    )
+                }
+                TranscriptExport.FolderUnavailable -> {
+                    // Forget the folder that is gone, then offer to pick it again.
+                    val gone = settingsRepo.settings.value.exportFolderUri
+                    if (gone.isNotEmpty()) container.exportFolder.forget(gone)
+                    settingsRepo.update { it.copy(exportFolderUri = "", exportFolderName = "") }
+                    val result = snackbarHostState.showSnackbar(
+                        message = context.getString(R.string.session_export_folder_gone),
+                        actionLabel = context.getString(R.string.session_export_choose),
+                        duration = SnackbarDuration.Long
+                    )
+                    if (result == SnackbarResult.ActionPerformed) pickExportFolder.launch(null)
+                }
+            }
+        }
+    }
     // Playback ends when the user leaves the screen or the app goes to
     // the background (there is no background playback).
     DisposableEffect(vm) { onDispose { vm.stopPlayback() } }
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { vm.stopPlayback() }
-    val snackbarHostState = remember { SnackbarHostState() }
-    val screenScope = rememberCoroutineScope()
     LaunchedEffect(vm) {
         // Surface one-shot messages from the ViewModel: a
         // successful "remember this voice" enrollment emits a
@@ -312,6 +363,26 @@ fun SessionScreen(
         tagging = TagsUi(tags = state.tags, allTags = allTags, onSetTags = vm::setTags),
         replacedTitle = state.replacedTitle,
         onRestoreTitle = vm::undoAutoTitle,
+        export = ExportUi(
+            initial = ExportChoices.from(appSettings),
+            folderName = appSettings.exportFolderName.takeIf { appSettings.exportFolderUri.isNotEmpty() },
+            onExport = { choices ->
+                settingsRepo.update {
+                    it.copy(
+                        exportFormat = choices.format.key,
+                        exportSections = ExportSection.encode(choices.sections),
+                        exportToFolder = choices.toFolder
+                    )
+                }
+                val current = settingsRepo.settings.value
+                if (choices.toFolder && current.exportFolderUri.isNotEmpty()) {
+                    vm.exportTranscript(choices.options, current.exportFolderUri, current.exportFolderName)
+                } else {
+                    vm.exportTranscript(choices.options)
+                }
+            },
+            onPickFolder = { pickExportFolder.launch(null) }
+        ),
         notFound = state.notFound,
         summaryState = summaryState,
         askState = askState,
@@ -567,7 +638,9 @@ internal fun SessionBody(
     initialMarksOpen: Boolean = false,
     tagging: TagsUi = TagsUi(),
     replacedTitle: String? = null,
-    onRestoreTitle: () -> Unit = {}
+    onRestoreTitle: () -> Unit = {},
+    export: ExportUi = ExportUi(),
+    initialExportOpen: Boolean = false
 ) {
     var selectedTab by rememberSaveable { mutableIntStateOf(initialTab) }
     var overflowExpanded by remember { mutableStateOf(false) }
@@ -589,6 +662,7 @@ internal fun SessionBody(
     var cleanupOpen by remember { mutableStateOf(false) }
     var removeCleaningOpen by remember { mutableStateOf(false) }
     var tagsOpen by remember { mutableStateOf(false) }
+    var exportOpen by remember { mutableStateOf(initialExportOpen) }
     ScreenScaffold(
         title = title,
         onBack = onBack,
@@ -659,6 +733,14 @@ internal fun SessionBody(
                     onClick = {
                         overflowExpanded = false
                         onSaveAudio()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text(text = stringResource(R.string.session_overflow_export)) },
+                    enabled = !notFound && status != SessionStatus.RECORDING,
+                    onClick = {
+                        overflowExpanded = false
+                        exportOpen = true
                     }
                 )
                 val canDiarize = status != SessionStatus.DIARIZING &&
@@ -909,6 +991,17 @@ internal fun SessionBody(
                 renameSpeakerIndex = null
             },
             onDismiss = { renameSpeakerIndex = null }
+        )
+    }
+    if (exportOpen) {
+        ExportDialog(
+            ui = export.copy(
+                onExport = { choices ->
+                    exportOpen = false
+                    export.onExport(choices)
+                }
+            ),
+            onDismiss = { exportOpen = false }
         )
     }
     if (tagsOpen) {

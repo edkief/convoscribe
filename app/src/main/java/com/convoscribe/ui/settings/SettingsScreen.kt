@@ -302,6 +302,7 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             onDiarizationStepChange = vm::setDiarizationStep,
             onCleanAudioDefaultChange = vm::setCleanAudioDefault,
             onAutoMarkNotesChange = vm::setAutoMarkNotes,
+            onAutoSummaryChange = vm::setAutoSummary,
             onAutoTitleChange = vm::setAutoTitle,
             onBackup = { whenFree { createBackup.launch(backupFileName) } },
             onRestore = { whenFree { pickBackup.launch(arrayOf(BACKUP_MIME, "application/octet-stream")) } },
@@ -348,6 +349,7 @@ internal class SettingsActions(
     val onDiarizationStepChange: (Float) -> Unit = {},
     val onCleanAudioDefaultChange: (Boolean) -> Unit = {},
     val onAutoMarkNotesChange: (Boolean) -> Unit = {},
+    val onAutoSummaryChange: (Boolean) -> Unit = {},
     val onAutoTitleChange: (Boolean) -> Unit = {},
     val onTestServer: () -> Unit = {},
     val onServerAutoChange: (Boolean) -> Unit = {},
@@ -616,6 +618,8 @@ private fun SettingsPageContent(
                 onOpenTemplates = actions.onOpenSummaryTemplates,
                 autoMarkNotes = state.autoMarkNotes,
                 onAutoMarkNotesChange = actions.onAutoMarkNotesChange,
+                autoSummary = state.autoSummary,
+                onAutoSummaryChange = actions.onAutoSummaryChange,
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
             )

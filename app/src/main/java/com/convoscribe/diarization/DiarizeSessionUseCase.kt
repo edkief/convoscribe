@@ -112,6 +112,11 @@ import kotlinx.coroutines.withContext
  *   were identified, so the notes of its marks can be written with
  *   their names (issue #48). It must only start that work, not wait
  *   for it.
+ * @property onFinished called with the session id once nothing more
+ *   happens to it on its own (issue #29): its speakers identified, the
+ *   identification failed, or it was left pending under
+ *   [SpeakerIdMode.MANUAL]. Not for a session left for the charging
+ *   job, nor one without a transcript. It must only start work.
  * @property onCancelled called when the user cancelled a run
  *   ([cancel]), before the session is pending again, so the charging
  *   job is held until the next charge.
@@ -128,6 +133,7 @@ class DiarizeSessionUseCase(
     private val isCharging: () -> Boolean = { true },
     private val onPending: () -> Unit = {},
     private val onDiarized: (Long) -> Unit = {},
+    private val onFinished: (Long) -> Unit = {},
     private val onCancelled: () -> Unit = {}
 ) {
     private val lock = Mutex()
@@ -170,8 +176,11 @@ class DiarizeSessionUseCase(
     /** Leave [sessionId] waiting for speaker identification and schedule the charging job. */
     suspend fun defer(sessionId: Long) {
         repository.setStatus(sessionId, SessionStatus.DIARIZATION_PENDING)
-        Log.i(TAG, "diarization deferred session=$sessionId mode=${settings.settings.value.speakerIdMode}")
+        val mode = settings.settings.value.speakerIdMode
+        Log.i(TAG, "diarization deferred session=$sessionId mode=$mode")
         onPending()
+        // Left for the user to identify: nothing more happens on its own.
+        if (SpeakerIdMode.of(mode) == SpeakerIdMode.MANUAL) onFinished(sessionId)
     }
 
     /**
@@ -399,6 +408,7 @@ class DiarizeSessionUseCase(
                     " speakers=$speakerCount splitLines=${replacements.size} manualLines=${kept.size}"
             )
             onDiarized(sessionId)
+            onFinished(sessionId)
         } catch (ce: CancellationException) {
             // Cooperative cancellation: re-throw so structured
             // concurrency still sees the cancel; [guarded] puts the
@@ -410,6 +420,7 @@ class DiarizeSessionUseCase(
             if (!currentCoroutineContext().isActive) throw CancellationException("diarization cancelled", t)
             Log.w(TAG, "Diarization failed for session $sessionId", t)
             repository.setStatus(sessionId, SessionStatus.DIARIZATION_FAILED)
+            onFinished(sessionId)
         }
     }
 

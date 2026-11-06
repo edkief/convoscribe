@@ -8,28 +8,21 @@ import com.convoscribe.TAG
 import com.convoscribe.data.ActionItemEntity
 import com.convoscribe.data.MessageKind
 import com.convoscribe.data.MessageRole
-import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.data.TalkingPointEntity
-import com.convoscribe.data.TranscriptFormatter
-import com.convoscribe.data.TranscriptLine
 import com.convoscribe.llm.ActionItemsParser
 import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
-import com.convoscribe.llm.LongSummariser
 import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.MarkNotesWriter
-import com.convoscribe.llm.PromptBuilder
+import com.convoscribe.llm.SessionSummariser
 import com.convoscribe.llm.SummaryStep
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.llm.toUserMessage
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.ui.UiText
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -142,16 +135,20 @@ data class SummaryUiState(
  *   [writeNotes] and [cancelNotes] do nothing without it, which the
  *   tests that don't cover notes rely on.
  * @param autoTitler names the session from a new summary (issue #32);
- *   nothing happens without it.
+ *   nothing happens without it. Only used by the default [summariser].
+ * @param summariser runs the summary (issue #29); the app passes its
+ *   shared one, tests get one built from the other parameters.
  */
 class SummaryViewModel(
     private val sessionId: Long,
     private val repository: SessionRepository,
-    private val chatClient: ChatClient,
+    chatClient: ChatClient,
     private val settings: SettingsRepository,
     private val templates: SummaryTemplateStore,
     private val markNotes: MarkNotesWriter? = null,
-    private val autoTitler: AutoTitler? = null
+    autoTitler: AutoTitler? = null,
+    private val summariser: SessionSummariser =
+        SessionSummariser(repository, chatClient, settings, templates, autoTitler)
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SummaryUiState> =
@@ -245,64 +242,24 @@ class SummaryViewModel(
     fun summarise() {
         if (_state.value.running) return
         job = viewModelScope.launch {
-            val lines = buildLines()
-            val transcript = TranscriptFormatter.toText(lines)
-            if (transcript.isBlank()) {
-                _state.value = _state.value.copy(error = UiText.res(R.string.session_summary_empty_error))
-                return@launch
-            }
-            val maxChars = settings.settings.value.maxTranscriptChars
-            val template = SummaryTemplates.resolve(_state.value.selectedKey, templates.getUserTemplates())
-            val marks = TranscriptFormatter.marks(repository.getMarks(sessionId))
-
-            _state.value = _state.value.copy(
-                streaming = "",
-                running = true,
-                error = null,
-                step = null
-            )
-
             val accumulated = StringBuilder()
-            val onToken: (String) -> Unit = { token ->
-                accumulated.append(token)
-                // The action items' JSON block (issue #31) is never shown.
-                _state.value = _state.value.copy(streaming = ActionItemsParser.visible(accumulated.toString()))
-            }
-            val recordedOn = repository.getSession(sessionId)?.createdAt?.let(::recordingDate)
             try {
-                if (transcript.length <= maxChars) {
-                    chatClient.stream(PromptBuilder.summary(transcript, maxChars, template.body, marks, recordedOn))
-                        .collect { onToken(it) }
-                } else {
-                    LongSummariser.summarise(
-                        client = chatClient,
-                        lines = lines,
-                        maxChars = maxChars,
-                        body = template.body,
-                        marks = marks,
-                        onStep = { step -> _state.update { it.copy(step = step) } },
-                        onToken = onToken,
-                        recordedOn = recordedOn
-                    )
-                }
-
-                val parsed = ActionItemsParser.split(accumulated.toString(), knownNames())
-                val full = parsed.prose
-                // Persist the new summary only when every call
-                // completed normally and the last produced at least
-                // one token. An empty run leaves the previous saved
-                // value untouched.
-                if (full.isNotEmpty()) {
-                    repository.replaceExtractedItems(sessionId, parsed.items)
-                    repository.clearMessages(sessionId, MessageKind.SUMMARY)
-                    repository.addMessage(
-                        sessionId = sessionId,
-                        kind = MessageKind.SUMMARY,
-                        role = MessageRole.ASSISTANT,
-                        content = full,
-                        templateName = template.name
-                    )
-                    autoTitler?.onSummarySaved(sessionId, full)
+                val outcome = summariser.summarise(
+                    sessionId = sessionId,
+                    templateKey = _state.value.selectedKey,
+                    onStarted = {
+                        _state.value = _state.value.copy(streaming = "", running = true, error = null, step = null)
+                    },
+                    onToken = { token ->
+                        accumulated.append(token)
+                        // The action items' JSON block (issue #31) is never shown.
+                        _state.value = _state.value.copy(streaming = ActionItemsParser.visible(accumulated.toString()))
+                    },
+                    onStep = { step -> _state.update { it.copy(step = step) } }
+                )
+                if (outcome == SessionSummariser.Outcome.EMPTY_TRANSCRIPT) {
+                    _state.value = _state.value.copy(error = UiText.res(R.string.session_summary_empty_error))
+                    return@launch
                 }
                 _state.value = _state.value.copy(running = false, streaming = "", step = null)
             } catch (_: kotlinx.coroutines.CancellationException) {
@@ -380,26 +337,5 @@ class SummaryViewModel(
     /** Stop writing notes, or dismiss a failure; the notes already written stay. */
     fun cancelNotes() {
         markNotes?.cancel(sessionId)
-    }
-
-    /**
-     * The persisted segments + speakers as transcript lines.
-     * Pulls both lists from the repository; runs on the
-     * dispatcher [viewModelScope] picks (`Dispatchers.Main.immediate`
-     * for tests with `setMain`).
-     */
-    private suspend fun buildLines(): List<TranscriptLine> =
-        TranscriptFormatter.lines(repository.getSegments(sessionId), repository.getSpeakers(sessionId))
-
-    /** The session's speaker names and participants, that action item owners are matched to. */
-    private suspend fun knownNames(): List<String> = (
-        repository.getSpeakers(sessionId).map { it.label } +
-            ParticipantsCodec.decode(repository.getSession(sessionId)?.participants).orEmpty()
-        ).filter { it.isNotBlank() }.distinct()
-
-    private companion object {
-        /** The local day a session recorded at [createdAt] (epoch ms) happened on. */
-        fun recordingDate(createdAt: Long): LocalDate =
-            Instant.ofEpochMilli(createdAt).atZone(ZoneId.systemDefault()).toLocalDate()
     }
 }

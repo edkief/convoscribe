@@ -21,6 +21,8 @@ import com.convoscribe.data.TranscriptMark
 import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.data.diarizationRun
 import com.convoscribe.diarization.EnrollFromSessionUseCase
+import com.convoscribe.export.ExportOptions
+import com.convoscribe.export.SessionExporter
 import com.convoscribe.ui.UiText
 import java.io.File
 import kotlinx.coroutines.CancellationException
@@ -165,7 +167,8 @@ class SessionViewModel(
     private val enrollFromSession: EnrollFromSessionUseCase? = null,
     playerFactory: ((CoroutineScope) -> AudioPlayer)? = null,
     private val audioExporter: AudioExporter? = null,
-    cueAtMs: Long? = null
+    cueAtMs: Long? = null,
+    private val transcriptExporter: SessionExporter? = null
 ) : ViewModel() {
 
     val uiState: StateFlow<SessionUiState> = repository.observeSession(sessionId)
@@ -534,6 +537,41 @@ class SessionViewModel(
         _snackbar.trySend(UiText.res(R.string.session_audio_saved))
     }
 
+    private val _transcriptExports = Channel<TranscriptExport>(Channel.BUFFERED)
+
+    /** One-shot outcomes of [exportTranscript] the screen acts on (issue #29). */
+    val transcriptExports: Flow<TranscriptExport> = _transcriptExports.receiveAsFlow()
+
+    private var transcriptJob: Job? = null
+
+    /**
+     * Export the session as [options] asks (issue #29): to the share sheet
+     * ([TranscriptExport.Share]) when [folderUri] is `null`, else into that
+     * folder, named [folderName] in the confirmation. A folder that is gone
+     * is reported as [TranscriptExport.FolderUnavailable].
+     */
+    fun exportTranscript(options: ExportOptions, folderUri: String? = null, folderName: String = "") {
+        val exporter = transcriptExporter ?: return
+        if (!options.valid || transcriptJob?.isActive == true) return
+        transcriptJob = viewModelScope.launch {
+            val result = if (folderUri == null) {
+                exporter.share(sessionId, options)
+            } else {
+                exporter.save(sessionId, options, folderUri, folderName)
+            }
+            when (result) {
+                is SessionExporter.Result.Shared -> _transcriptExports.trySend(TranscriptExport.Share(result))
+                is SessionExporter.Result.Saved ->
+                    _snackbar.trySend(UiText.res(R.string.session_export_saved, result.fileName, result.folderName))
+                SessionExporter.Result.FolderUnavailable ->
+                    _transcriptExports.trySend(TranscriptExport.FolderUnavailable)
+                SessionExporter.Result.NotFound -> Unit
+                is SessionExporter.Result.Failed ->
+                    _snackbar.trySend(UiText.res(R.string.session_export_failed, result.message))
+            }
+        }
+    }
+
     /** Abort the running export; nothing is shared or saved. */
     fun cancelExport() {
         exportJob?.cancel()
@@ -574,4 +612,13 @@ class SessionViewModel(
     override fun onCleared() {
         player?.release()
     }
+}
+
+/** What the screen does after an export (issue #29). */
+sealed interface TranscriptExport {
+    /** Hand [result] to the share sheet. */
+    data class Share(val result: SessionExporter.Result.Shared) : TranscriptExport
+
+    /** The export folder is gone: forget it and ask for it again. */
+    data object FolderUnavailable : TranscriptExport
 }

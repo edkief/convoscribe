@@ -436,6 +436,35 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun exportChoices_haveDefaultsThenPersist() {
+        val fresh = newRepository().settings.value
+        assertEquals("", fresh.exportFolderUri)
+        assertEquals("md", fresh.exportFormat)
+        assertEquals("transcript,summary,questions", fresh.exportSections)
+        assertFalse(fresh.exportToFolder)
+        newRepository().update {
+            it.copy(
+                exportFolderUri = "content://tree/notes",
+                exportFolderName = "Notes",
+                exportFormat = "pdf",
+                exportSections = "summary",
+                exportToFolder = true
+            )
+        }
+        val saved = newRepository().settings.value
+        assertEquals("content://tree/notes" to "Notes", saved.exportFolderUri to saved.exportFolderName)
+        assertEquals("pdf" to "summary", saved.exportFormat to saved.exportSections)
+        assertTrue(saved.exportToFolder)
+    }
+
+    @Test
+    fun autoSummary_isOffThenPersists() {
+        assertFalse(newRepository().settings.value.autoSummary)
+        newRepository().update { it.copy(autoSummary = true) }
+        assertTrue(newRepository().settings.value.autoSummary)
+    }
+
+    @Test
     fun cleanAudioDefault_isOffThenPersists() {
         assertFalse(newRepository().settings.value.cleanAudioDefault)
         newRepository().update { it.copy(cleanAudioDefault = true) }

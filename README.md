@@ -401,6 +401,13 @@ brings them to your other devices.
     Search has a tag filter. Settings → Search & organise → Tags renames tags
     (onto another tag's name merges them) and deletes them; the
     conversations themselves are kept.
+  - **Automatic summaries** (issue #29). With Settings → AI & summaries →
+    *Summarise conversations automatically* on (it is off by default), a
+    conversation is summarised with its template once it is finished: its
+    speakers identified, identification failed, or left for you to
+    identify (Settings → Speakers, *On demand*). It needs a
+    language model, skips a conversation that already has a summary, and
+    fails quietly (summarise by hand from the Summary tab).
   - **Automatic titles.** After the first summary, a conversation that
     still has its date as its title (*Recording 2026-03-04 09:05*) is
     renamed by the language model to a short title in its language,
@@ -422,6 +429,32 @@ brings them to your other devices.
   demand with a progress dialog you can cancel.
 - **Share transcript** to any system share-sheet target (notes app,
   email, …) and rename sessions / speakers from the overflow menu.
+- **Export a conversation** (issue #29) from the session menu
+  (*Export…*): pick a format, what to include (*Transcript and marks*;
+  *Summary, action items and talking points*; *Questions and answers*)
+  and where it goes.
+  - Formats: **plain text**; **Markdown** with YAML front matter (title,
+    date, duration, language, speakers, participants, tags), action
+    items and talking points as task lists and marks as quotes, ready
+    for a notes app such as Obsidian; **SRT** and **WebVTT** subtitles,
+    one cue per line headed by the speaker, long lines split into
+    several cues of at most two 42-character rows timed from the words;
+    **JSON** for scripts, with segments, word timings, marks, summary,
+    items, points and questions (schema in
+    [`docs/export-json.md`](docs/export-json.md)); **Word** (.docx) and
+    **PDF**, laid out with headings, lists and quotes. Subtitles hold the
+    transcript only.
+  - Destination: the **share sheet**, or **a folder** picked once with the
+    system picker (an Obsidian vault folder, Downloads, a cloud drive) and
+    remembered. Files are named `yyyy-MM-dd <title>.<ext>`; exporting
+    again replaces the file of that name, so a note stays up to date (two
+    conversations with the same day and title share one file). If the
+    folder was deleted or its access removed, the app forgets it and asks
+    for it again.
+  - The PDF uses the standard Helvetica fonts, which cover English, French
+    and the other Western European languages; common symbols outside them
+    get a stand-in (→ becomes `->`), emoji are left out and other scripts
+    print as `?`. Markdown, Word and JSON keep every character.
 - **Designed for phones and e-ink.** A teal design system (colours,
   type, shapes and spacing in `ui/theme/`) with light and dark
   themes, and an **E-ink** display mode — black on white, flat
@@ -642,7 +675,7 @@ library only loads on real hardware). The owner-side checklist
 that validates the PRD acceptance criteria is at
 [`docs/MANUAL_TEST.md`](docs/MANUAL_TEST.md) — numbered checks
 covering install, model download, both engines, recording,
-diarization, renaming, sharing, the LLM endpoint, summaries, Q&A,
+diarization, renaming, sharing and exports, the LLM endpoint, summaries, Q&A,
 French, deletion, crash recovery, performance, engine switching,
 per-conversation options, the display modes and organising
 conversations. A troubleshooting section shows how to read
@@ -800,13 +833,22 @@ one package per concern:
   followed by its `recordings/<sha256>.wav`, read in one pass),
   `PortableSettings`, and `BackupUseCase`, run by
   `service/BackupService` (`dataSync`, progress and Cancel).
+- `export/` — conversation exports (#29): `SessionExportLoader` reads an
+  `ExportSession`; pure formatters `TextExport`, `MarkdownExport`,
+  `SubtitleExport` (SRT/WebVTT), `JsonExport`, and `ExportDocument`
+  (blocks, with `MarkdownBlocks` for summaries) written by `DocxWriter`
+  and `PdfWriter` (standard Helvetica, `HelveticaMetrics`), each tested
+  with golden files under `app/src/test/resources/export/`;
+  `SessionExporter` shares or saves through `ExportFolder` (a persisted
+  Storage Access Framework tree).
 - `settings/` — `SettingsRepository` (SharedPreferences),
   `AppSettings`, `SecretStore` (EncryptedSharedPreferences) for
   the LLM API key.
 - `llm/` — `ChatClient` (OkHttp + kotlinx.serialization, SSE
   streaming), `LlmException`, `LlmMessage`, `PromptBuilder`,
   `SseParser`, `TranscriptTruncator`, `ActionItemsParser` (a summary's
-  action items, #31); `MarkNotesWriter`,
+  action items, #31); `SessionSummariser` (the Summary tab's run, and
+  automatic summaries of finished sessions, #29), `MarkNotesWriter`,
   `AutoTitler` and `TalkingPointChecker` (follows the recording and ticks
   talking points, #103, with `TalkingPointWindow` and
   `TalkingPointAnswer`) run their LLM calls on the application scope, one

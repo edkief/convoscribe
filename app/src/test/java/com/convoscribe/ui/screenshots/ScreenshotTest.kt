@@ -53,6 +53,7 @@ import com.convoscribe.enginecheck.DeviceInfo
 import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.SemanticCheckResult
+import com.convoscribe.export.ExportFormat
 import com.convoscribe.llm.Citation
 import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.SummaryTemplate
@@ -101,7 +102,10 @@ import com.convoscribe.ui.search.SearchResults
 import com.convoscribe.ui.session.ActionItemActions
 import com.convoscribe.ui.session.AskUiState
 import com.convoscribe.ui.session.CleanupUi
+import com.convoscribe.ui.session.ExportChoices
+import com.convoscribe.ui.session.ExportDialog
 import com.convoscribe.ui.session.ExportState
+import com.convoscribe.ui.session.ExportUi
 import com.convoscribe.ui.session.LineDialog
 import com.convoscribe.ui.session.LineEditActions
 import com.convoscribe.ui.session.PlaybackActions
@@ -427,6 +431,15 @@ class ScreenshotTest(private val variant: Variant) {
                 onDismiss = {}
             )
         }
+    }
+
+    /** Issue #29: the Export dialog, saving Markdown to a folder already picked. */
+    @Test
+    fun exportDialog() = captureScreen("export_dialog") {
+        ExportDialog(
+            ui = ExportUi(initial = ExportChoices(ExportFormat.MARKDOWN, toFolder = true), folderName = "Obsidian"),
+            onDismiss = {}
+        )
     }
 
     @Test

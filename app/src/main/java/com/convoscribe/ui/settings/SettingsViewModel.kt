@@ -207,6 +207,7 @@ data class SettingsUiState(
     val cleanAudioDefault: Boolean = false,
     /** Notes of marks are written once speakers are identified (issue #48); written immediately. */
     val autoMarkNotes: Boolean = true,
+    val autoSummary: Boolean = false,
     /** Conversations are named from their summary (issue #32); written immediately. */
     val autoTitle: Boolean = true,
     /** A transcription server URL is saved. */
@@ -605,6 +606,11 @@ class SettingsViewModel(
         repo.update { it.copy(autoMarkNotes = enabled) }
     }
 
+    /** Summarise finished conversations automatically (issue #29); saved immediately. */
+    fun setAutoSummary(enabled: Boolean) {
+        repo.update { it.copy(autoSummary = enabled) }
+    }
+
     /** Persist *Name conversations automatically* immediately (issue #32). */
     fun setAutoTitle(enabled: Boolean) {
         repo.update { it.copy(autoTitle = enabled) }
@@ -818,6 +824,7 @@ class SettingsViewModel(
             semanticInstalled = modelStore.isInstalled(ModelCatalog.TEXT_EMBEDDING_GEMMA),
             cleanAudioDefault = current.cleanAudioDefault,
             autoMarkNotes = current.autoMarkNotes,
+            autoSummary = current.autoSummary,
             autoTitle = current.autoTitle,
             serverConfigured = current.asrServerConfigured,
             serverAuto = current.asrServerAuto,

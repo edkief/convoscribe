@@ -1,6 +1,7 @@
 package com.convoscribe.audio
 
 import android.net.Uri
+import com.convoscribe.export.ExportNames
 import java.io.File
 import java.io.IOException
 import java.io.OutputStream
@@ -66,21 +67,11 @@ class AudioExporter(
     }
 
     companion object {
-        private const val MAX_NAME = 60
-
         /**
          * A file name for [title]: characters that are awkward in file
          * names become `_`, and the result is capped; blank titles
-         * become `recording`. Ends in `.m4a`.
+         * become `recording` (see [ExportNames.safe]). Ends in `.m4a`.
          */
-        fun fileName(title: String): String {
-            val cleaned = title.trim()
-                .replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_")
-                .replace(Regex("\\s+"), " ")
-                .trim(' ', '.', '_')
-                .take(MAX_NAME)
-                .trim(' ', '.', '_')
-            return (cleaned.ifEmpty { "recording" }) + ".m4a"
-        }
+        fun fileName(title: String): String = ExportNames.safe(title, "recording") + ".m4a"
     }
 }

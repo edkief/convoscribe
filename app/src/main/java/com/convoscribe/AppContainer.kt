@@ -38,10 +38,15 @@ import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.enginecheck.NpuAvailability
+import com.convoscribe.export.ExportFolder
+import com.convoscribe.export.SafExportFolder
+import com.convoscribe.export.SessionExportLoader
+import com.convoscribe.export.SessionExporter
 import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
+import com.convoscribe.llm.SessionSummariser
 import com.convoscribe.llm.TalkingPointChecker
 import com.convoscribe.llm.embedding.EmbeddingGemmaFactory
 import com.convoscribe.llm.embedding.SemanticIndexRunner
@@ -217,6 +222,20 @@ class AppContainer(val context: Context) {
         openOutput = { uri -> context.contentResolver.openOutputStream(uri) }
     )
 
+    /** The folder exports are saved to, through the Storage Access Framework (issue #29). */
+    val exportFolder: ExportFolder = SafExportFolder(context.contentResolver)
+
+    /**
+     * Exports a session's transcript, summary and questions (issue #29):
+     * files to share go to `exports/transcripts/` in the cache, which the
+     * FileProvider serves; saved ones to [exportFolder].
+     */
+    val sessionExporter: SessionExporter = SessionExporter(
+        loader = SessionExportLoader(sessionRepository),
+        folder = exportFolder,
+        cacheDir = File(context.cacheDir, "exports/transcripts")
+    )
+
     /**
      * V2: enrolled speakers (a name + a reference embedding) are
      * looked up after diarization to give a fresh recording
@@ -357,6 +376,7 @@ class AppContainer(val context: Context) {
         isCharging = ::isPluggedIn,
         onPending = { pendingDiarizationScheduler.sync() },
         onDiarized = { markNotesWriter.onDiarized(it) },
+        onFinished = { sessionSummariser.onFinished(it) },
         onCancelled = { pendingDiarizationScheduler.hold() }
     )
 
@@ -716,6 +736,20 @@ class AppContainer(val context: Context) {
     /** Names sessions from their summary (issue #32). */
     val autoTitler: AutoTitler =
         AutoTitler(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls)
+
+    /**
+     * Writes session summaries: from the Summary tab, and once a session
+     * is finished when *Summarise automatically* is on (issue #29).
+     */
+    val sessionSummariser: SessionSummariser = SessionSummariser(
+        sessionRepository,
+        chatClient,
+        settingsRepository,
+        summaryTemplates,
+        autoTitler,
+        applicationScope,
+        llmCalls
+    )
 
     /**
      * Ticks a recording's talking points as they come up (issue #103),

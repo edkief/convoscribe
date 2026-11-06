@@ -127,6 +127,12 @@ class SettingsRepository(
             putString(KEY_DEFAULT_SUMMARY_TEMPLATE, next.defaultSummaryTemplate)
             putBoolean(KEY_CLEAN_AUDIO_DEFAULT, next.cleanAudioDefault)
             putBoolean(KEY_AUTO_MARK_NOTES, next.autoMarkNotes)
+            putBoolean(KEY_AUTO_SUMMARY, next.autoSummary)
+            putString(KEY_EXPORT_FOLDER_URI, next.exportFolderUri)
+            putString(KEY_EXPORT_FOLDER_NAME, next.exportFolderName)
+            putString(KEY_EXPORT_FORMAT, next.exportFormat)
+            putString(KEY_EXPORT_SECTIONS, next.exportSections)
+            putBoolean(KEY_EXPORT_TO_FOLDER, next.exportToFolder)
             putBoolean(KEY_AUTO_TITLE, next.autoTitle)
             putBoolean(KEY_TALKING_POINTS_OPEN_FIRST, next.talkingPointsOpenFirst)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
@@ -254,6 +260,12 @@ class SettingsRepository(
             defaultSummaryTemplate = summaryTemplateKey(prefs.getString(KEY_DEFAULT_SUMMARY_TEMPLATE, null)),
             cleanAudioDefault = prefs.getBoolean(KEY_CLEAN_AUDIO_DEFAULT, false),
             autoMarkNotes = prefs.getBoolean(KEY_AUTO_MARK_NOTES, true),
+            autoSummary = prefs.getBoolean(KEY_AUTO_SUMMARY, false),
+            exportFolderUri = prefs.getString(KEY_EXPORT_FOLDER_URI, null).orEmpty(),
+            exportFolderName = prefs.getString(KEY_EXPORT_FOLDER_NAME, null).orEmpty(),
+            exportFormat = prefs.getString(KEY_EXPORT_FORMAT, null) ?: "md",
+            exportSections = prefs.getString(KEY_EXPORT_SECTIONS, null) ?: "transcript,summary,questions",
+            exportToFolder = prefs.getBoolean(KEY_EXPORT_TO_FOLDER, false),
             autoTitle = prefs.getBoolean(KEY_AUTO_TITLE, true),
             talkingPointsOpenFirst = prefs.getBoolean(KEY_TALKING_POINTS_OPEN_FIRST, false)
         )
@@ -356,6 +368,12 @@ class SettingsRepository(
         const val KEY_DEFAULT_SUMMARY_TEMPLATE = "defaultSummaryTemplate"
         const val KEY_CLEAN_AUDIO_DEFAULT = "cleanAudioDefault"
         const val KEY_AUTO_MARK_NOTES = "autoMarkNotes"
+        const val KEY_AUTO_SUMMARY = "autoSummary"
+        const val KEY_EXPORT_FOLDER_URI = "exportFolderUri"
+        const val KEY_EXPORT_FOLDER_NAME = "exportFolderName"
+        const val KEY_EXPORT_FORMAT = "exportFormat"
+        const val KEY_EXPORT_SECTIONS = "exportSections"
+        const val KEY_EXPORT_TO_FOLDER = "exportToFolder"
         const val KEY_AUTO_TITLE = "autoTitle"
         const val KEY_TALKING_POINTS_OPEN_FIRST = "talkingPointsOpenFirst"
     }

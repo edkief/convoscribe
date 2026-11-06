@@ -208,8 +208,9 @@ private fun LanguageModelTest(
 /**
  * "Summaries" section (issue #27): the template new conversations
  * start with (written immediately), Templates to add or edit them, and
- * whether the notes of marks are written once speakers are identified
- * (issue #48, written immediately).
+ * whether finished conversations are summarised automatically (issue
+ * #29) and the notes of marks written once speakers are identified
+ * (issue #48), both written immediately.
  */
 @Composable
 internal fun SummariesSection(
@@ -219,6 +220,8 @@ internal fun SummariesSection(
     onOpenTemplates: () -> Unit,
     autoMarkNotes: Boolean,
     onAutoMarkNotesChange: (Boolean) -> Unit,
+    autoSummary: Boolean = false,
+    onAutoSummaryChange: (Boolean) -> Unit = {},
     autoTitle: Boolean,
     onAutoTitleChange: (Boolean) -> Unit
 ) {
@@ -236,6 +239,12 @@ internal fun SummariesSection(
         NavRow(
             label = stringResource(R.string.settings_summaries_templates_row),
             onClick = onOpenTemplates
+        )
+        SwitchRow(
+            label = stringResource(R.string.settings_auto_summary_label),
+            help = stringResource(R.string.settings_auto_summary_help),
+            checked = autoSummary,
+            onCheckedChange = onAutoSummaryChange
         )
         SwitchRow(
             label = stringResource(R.string.settings_auto_mark_notes_label),
