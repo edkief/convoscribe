@@ -21,7 +21,8 @@ export type SessionEdit =
   | { kind: 'pointCovered'; id: string; covered: boolean }
   | { kind: 'point'; id: string; text: string }
   | { kind: 'pointAdd'; text: string }
-  | { kind: 'pointDelete'; id: string };
+  | { kind: 'pointDelete'; id: string }
+  | { kind: 'qaClear' };
 
 export type Json = Record<string, unknown>;
 
@@ -47,7 +48,8 @@ export function parseEdit(value: unknown): SessionEdit {
     (e.kind === 'pointCovered' && isString(e.id) && typeof e.covered === 'boolean') ||
     (e.kind === 'point' && isString(e.id) && isString(e.text)) ||
     (e.kind === 'pointAdd' && isString(e.text)) ||
-    (e.kind === 'pointDelete' && isString(e.id));
+    (e.kind === 'pointDelete' && isString(e.id)) ||
+    e.kind === 'qaClear';
   if (!ok) throw new HttpError(400, 'invalid_body');
   return e as SessionEdit;
 }
@@ -202,6 +204,14 @@ export function applyEdit(manifest: Json, edit: SessionEdit): boolean {
       points.splice(at, 1);
       // The app leaves the field out while empty.
       if (points.length === 0) delete manifest.talkingPoints;
+      return true;
+    }
+    case 'qaClear': {
+      // As `SessionRepository.clearMessages(QA)` (#118): the summaries stay. Devices keep the delete when they merge.
+      const messages: unknown[] = Array.isArray(manifest.messages) ? manifest.messages : [];
+      const kept = messages.filter((m) => !(isRecord(m) && m.kind === 'QA'));
+      if (kept.length === messages.length) return false;
+      manifest.messages = kept;
       return true;
     }
   }

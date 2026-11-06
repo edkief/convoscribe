@@ -18,7 +18,8 @@ It can also offer its users a language model and a transcription server
 (#93, see *Language model and transcription* below), so devices reach them
 with their sync key and never hold the upstream address or key. With a
 language model, the web app can also summarise a session (#117, see
-*Summarising a session* below).
+*Summarising a session* below) and answer questions about one (#118, see
+*Asking about a session* below).
 
 ## Web app
 
@@ -67,7 +68,8 @@ a phone the bar shows the logo without the name, so every button fits.
   sentence being played is highlighted and kept in view; scroll away and
   *Back to current line* returns to it. With a language model offered, the
   *Summary* tab is always there and can write the summary (*Summarising a
-  session*, below).
+  session*, below), and the *Q&A* tab is always there and can answer
+  questions (*Asking about a session*, below).
 - **Search** (`/search?q=`): finds words in your transcripts, summaries,
   session titles and speaker names, by the same rules as the app's search:
   case and accents don't matter (`reunion` finds *Réunion*), the start of a
@@ -151,6 +153,30 @@ item that repeats one you kept is left out. Devices download it at their next
 sync. If the session changed while the summary was being written, nothing is
 saved and the page asks you to reload. The model naming the session after its
 summary, as the app can, is not done here yet.
+
+### Asking about a session
+
+When the server offers a language model (#118), a session's *Q&A* tab has a
+field to ask about the conversation. Enter or *Ask* sends the question
+(Shift+Enter starts a new line), and the answer streams in under it. *Stop*
+cancels the model and saves nothing, and so does closing the page. If it
+fails, the question stays in the field to try again.
+
+The server asks the model as the app does, with the same prompts. The
+session's earlier questions and answers (the last three rounds) go with the
+question as the conversation, so a follow-up like *who said that?* works. A
+transcript longer than `LLM_MAX_TRANSCRIPT_CHARS` is answered from its parts
+most relevant to the question, and to the question before it, which are
+picked by matching words (BM25), as on a device. Such an answer says how much
+of the conversation those parts cover: *Based on 18 of 92 minutes, the parts
+most relevant to the question*.
+
+The question and the answer are saved as a web edit (*Editing a session*):
+one new revision, which devices download at their next sync. If the session
+changed while the answer was being written, nothing is saved and the page
+asks you to reload. Your question stays in the field. *Clear* removes every
+question and answer of the session, but not its summary. A device keeps the
+removal when it merges, as it does for one made in the app.
 
 ### Admin pages
 
@@ -270,7 +296,9 @@ else `Host`) with `403 cross_site`. Another owner's session or list is `404`.
 | `GET /api/web/v1/sessions/<syncId>/audio` | `?clean=1` for the cleaned recording, `?download=1` to download it; `Range: bytes=a-b` | `audio/wav`, streamed from S3 (`206` for a range), so a recording of any size never sits in memory |
 | `GET /api/web/v1/sessions/<syncId>/transcript/<format>` | `format` is `md`, `srt` or `vtt` | The transcript as a download named after the session; `404` for another format |
 | `DELETE /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n}`, the revision the page shows | `200 {"syncId","revision"}`, the session in the trash and its semantic vectors deleted. `409 conflict` if it changed since that revision, `404` if unknown or already deleted |
-| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`, and for talking points (#104) `{"kind":"pointCovered","id","covered"}`, `{"kind":"point","id","text"}`, `{"kind":"pointAdd","text"}`, `{"kind":"pointDelete","id"}`; `at` is an index in the manifest's array, `id` a point's id | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
+| `PATCH /api/web/v1/sessions/<syncId>` | JSON `{"baseRevision": n, "edit": {...}}`, with `edit` one of `{"kind":"title","title"}`, `{"kind":"tags","tags":[...]}`, `{"kind":"speaker","index","label"}`, `{"kind":"line","at","text"}`, `{"kind":"actionDone","at","done"}`, `{"kind":"action","at","text","owner","dueDate"}`, `{"kind":"actionDelete","at"}`, and for talking points (#104) `{"kind":"pointCovered","id","covered"}`, `{"kind":"point","id","text"}`, `{"kind":"pointAdd","text"}`, `{"kind":"pointDelete","id"}`, and `{"kind":"qaClear"}` to remove the questions and answers (#118); `at` is an index in the manifest's array, `id` a point's id | `200 {"syncId","revision"}`, the same revision if the edit changes nothing. `409 conflict` if it changed since that revision, `422 newer_schema` for a session from a newer app, `400 invalid_body` or `invalid_edit`, `404` if unknown or deleted |
+| `POST /api/web/v1/sessions/<syncId>/summary` | JSON `{"baseRevision": n, "template"?: key, "zone"?: tz}` (#117) | NDJSON events: `{"step"}` while a long transcript is summarised in parts, `{"text"}` with the summary so far, then `{"done":true,"revision"}` once saved or `{"error"}` (`conflict`, `empty_reply`, `upstream_*`). Before it starts, a JSON error: `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript` |
+| `POST /api/web/v1/sessions/<syncId>/questions` | JSON `{"baseRevision": n, "question"}` (#118), the question up to 4000 characters | NDJSON events: `{"text"}` with the answer so far, then `{"done":true,"revision"}` once the question and answer are saved or `{"error"}` (`conflict`, `empty_reply`, `upstream_*`). Before it starts, a JSON error: `400 invalid_body` for a blank question, `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript` |
 | `GET /api/web/v1/talking-points` | | `200 {"lists":[{"syncId","revision","name","points","createdAt","changedAt"}]}`, by name, from Postgres |
 | `POST /api/web/v1/talking-points` | JSON `{"name", "points": [...]}` | `201 {"syncId","revision"}`: a new list, as a device would push it. `400 invalid_body` for a blank name or more than 200 points |
 | `PUT /api/web/v1/talking-points/<syncId>` | JSON `{"baseRevision": n, "name", "points": [...]}` | `200 {"syncId","revision"}`, the same revision if nothing changed. Fields this server doesn't know are kept. `409 conflict` if it changed since that revision, `422 newer_schema` for a list from a newer app, `404` if unknown or deleted |
@@ -477,7 +505,7 @@ exits with the list of problems if any is missing or invalid.
 | `LLM_UPSTREAM_URL` | no | An OpenAI-compatible language model the server offers its users (#93), e.g. `http://llm.llm:8080/v1`: the base its `/chat/completions` hangs off. Blank offers none. |
 | `LLM_UPSTREAM_KEY` | no | The key sent to it, never to a device. Leave blank for an upstream that needs none. |
 | `LLM_MODEL` | no | The model devices should use, reported by `GET /api/sync/v1/config`. The web app's summaries use it too, else the first model the upstream lists. |
-| `LLM_MAX_TRANSCRIPT_CHARS` | no | How much transcript one summary call from the web app sends (#117), as the app's *Max transcript characters*: default `24000`, at least `1000`. A longer transcript is summarised in parts. |
+| `LLM_MAX_TRANSCRIPT_CHARS` | no | How much transcript one summary or question call from the web app sends (#117, #118), as the app's *Max transcript characters*: default `24000`, at least `1000`. A longer transcript is summarised in parts, and a question about it is answered from its most relevant parts. |
 | `ASR_UPSTREAM_URL`, `ASR_UPSTREAM_KEY`, `ASR_MODEL` | no | The same for an OpenAI-compatible transcription server, e.g. `http://parakeet-asr.asr:8000/v1`. A key or model without its URL is refused at startup. |
 | `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. An admin's *Run clean-up* is not affected. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |

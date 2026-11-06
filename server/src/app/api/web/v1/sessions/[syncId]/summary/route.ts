@@ -3,7 +3,8 @@ import { upstreamOf } from '@/lib/ai-proxy';
 import { env } from '@/lib/env';
 import { validZone } from '@/lib/format';
 import { baseRevisionOf, HttpError, jsonBody, syncIdParam, webAuthed } from '@/lib/http';
-import { chatStream, LlmError } from '@/lib/llm-client';
+import { chatStream } from '@/lib/llm-client';
+import { ndjsonResponse, throttled } from '@/lib/ndjson';
 import { loadForEdit, saveEdited } from '@/lib/session-edit';
 import { applySummary, summarise, summarySource, type SummaryStep } from '@/lib/summarise';
 import { listTemplates, resolveTemplate } from '@/lib/summary-templates';
@@ -41,68 +42,27 @@ export async function POST(req: Request, ctx: Ctx) {
     const source = summarySource(editable.manifest, validZone(typeof body.zone === 'string' ? body.zone : undefined));
     if (source.lines.length === 0) throw new HttpError(422, 'empty_transcript');
 
-    const abort = new AbortController();
-    req.signal.addEventListener('abort', () => abort.abort(), { once: true });
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const send = (event: Event) => {
-          if (!abort.signal.aborted) controller.enqueue(encoder.encode(JSON.stringify(event) + '\n'));
-        };
-        let shown = '';
-        let sentAt = 0;
-        try {
-          const reply = await summarise({
-            ...source,
-            maxChars: env().LLM_MAX_TRANSCRIPT_CHARS,
-            body: template.body,
-            chat: chatStream,
-            signal: abort.signal,
-            onStep: (step) => send({ step }),
-            onText: (visible) => {
-              shown = visible;
-              if (Date.now() - sentAt < TEXT_EVERY_MS) return;
-              sentAt = Date.now();
-              send({ text: visible });
-            },
-          });
-          if (abort.signal.aborted) return;
-          send({ text: shown });
-          const { prose, items } = splitSummary(reply, source.knownNames);
-          if (!prose) {
-            send({ error: 'empty_reply' });
-            return;
-          }
-          applySummary(editable.manifest, { prose, items, template, now: Date.now() });
-          const saved = await saveEdited(owner, syncId, editable);
-          send({ done: true, revision: saved.revision });
-        } catch (err) {
-          if (abort.signal.aborted) return;
-          if (err instanceof LlmError || err instanceof HttpError) {
-            send({ error: err.code });
-          } else {
-            console.error('web summary failed', err);
-            send({ error: 'internal' });
-          }
-        } finally {
-          try {
-            controller.close();
-          } catch {
-            // Already cancelled by the page.
-          }
-        }
-      },
-      cancel() {
-        abort.abort();
-      },
-    });
-    return new Response(stream, {
-      headers: {
-        'content-type': 'application/x-ndjson; charset=utf-8',
-        // Next's gzip would hold the events back.
-        'cache-control': 'no-store, no-transform',
-        'x-accel-buffering': 'no',
-      },
+    return ndjsonResponse<Event>(req, 'web summary', async (send, signal) => {
+      const text = throttled((visible) => send({ text: visible }), TEXT_EVERY_MS);
+      const reply = await summarise({
+        ...source,
+        maxChars: env().LLM_MAX_TRANSCRIPT_CHARS,
+        body: template.body,
+        chat: chatStream,
+        signal,
+        onStep: (step) => send({ step }),
+        onText: text.text,
+      });
+      if (signal.aborted) return;
+      text.flush();
+      const { prose, items } = splitSummary(reply, source.knownNames);
+      if (!prose) {
+        send({ error: 'empty_reply' });
+        return;
+      }
+      applySummary(editable.manifest, { prose, items, template, now: Date.now() });
+      const saved = await saveEdited(owner, syncId, editable);
+      send({ done: true, revision: saved.revision });
     });
   });
 }
