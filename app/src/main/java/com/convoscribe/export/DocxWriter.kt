@@ -2,6 +2,7 @@ package com.convoscribe.export
 
 import java.io.ByteArrayOutputStream
 import java.time.LocalDateTime
+import java.time.ZoneId
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -14,16 +15,18 @@ import java.util.zip.ZipOutputStream
  */
 object DocxWriter {
     /**
-     * Every entry gets this time, the earliest a zip can hold, set as a
-     * local time so the same session gives the same bytes in any time zone.
+     * Every entry gets this local time, so the same session gives the same
+     * bytes in any time zone: a zip stores local (DOS) times, and
+     * [ZipEntry.setTime] converts back in the zone the instant came from.
      */
-    private val ENTRY_TIME: LocalDateTime = LocalDateTime.of(1980, 1, 1, 0, 0)
+    private val ENTRY_TIME: LocalDateTime = LocalDateTime.of(2000, 1, 1, 12, 0)
 
     fun write(blocks: List<Block>): ByteArray {
         val bytes = ByteArrayOutputStream()
+        val entryTime = ENTRY_TIME.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
         ZipOutputStream(bytes).use { zip ->
             fun put(name: String, text: String) {
-                zip.putNextEntry(ZipEntry(name).apply { timeLocal = ENTRY_TIME })
+                zip.putNextEntry(ZipEntry(name).apply { time = entryTime })
                 zip.write(text.toByteArray(Charsets.UTF_8))
                 zip.closeEntry()
             }

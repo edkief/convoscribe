@@ -65,6 +65,13 @@ import com.convoscribe.llm.SummaryTemplates
  * #29): its speakers identified, or left for the user to identify. Only
  * when an LLM endpoint is set up and it has no summary yet.
  *
+ * [exportFolderUri] is the folder (a Storage Access Framework tree)
+ * exports are saved to (issue #29), with [exportFolderName] to show, both
+ * blank until one is picked. [exportFormat] (an
+ * [com.convoscribe.export.ExportFormat] key), [exportSections] and
+ * [exportToFolder] are the Export dialog's last choices. None of them are
+ * backed up: the folder's access belongs to this device.
+ *
  * [autoTitle] names a conversation from its summary (issue #32) while
  * it still has its date-based title, when an LLM endpoint is set up.
  *
@@ -140,6 +147,11 @@ data class AppSettings(
     val cleanAudioDefault: Boolean = false,
     val autoMarkNotes: Boolean = true,
     val autoSummary: Boolean = false,
+    val exportFolderUri: String = "",
+    val exportFolderName: String = "",
+    val exportFormat: String = "md",
+    val exportSections: String = "transcript,summary,questions",
+    val exportToFolder: Boolean = false,
     val autoTitle: Boolean = true,
     val talkingPointsOpenFirst: Boolean = false,
     val displayMode: String = DisplayMode.AUTO.key,

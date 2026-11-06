@@ -38,6 +38,10 @@ import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.enginecheck.NpuAvailability
+import com.convoscribe.export.ExportFolder
+import com.convoscribe.export.SafExportFolder
+import com.convoscribe.export.SessionExportLoader
+import com.convoscribe.export.SessionExporter
 import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
 import com.convoscribe.llm.MarkNotesWriter
@@ -216,6 +220,20 @@ class AppContainer(val context: Context) {
     val audioExporter: AudioExporter = AudioExporter(
         exportDir = File(context.cacheDir, "exports"),
         openOutput = { uri -> context.contentResolver.openOutputStream(uri) }
+    )
+
+    /** The folder exports are saved to, through the Storage Access Framework (issue #29). */
+    val exportFolder: ExportFolder = SafExportFolder(context.contentResolver)
+
+    /**
+     * Exports a session's transcript, summary and questions (issue #29):
+     * files to share go to `exports/transcripts/` in the cache, which the
+     * FileProvider serves; saved ones to [exportFolder].
+     */
+    val sessionExporter: SessionExporter = SessionExporter(
+        loader = SessionExportLoader(sessionRepository),
+        folder = exportFolder,
+        cacheDir = File(context.cacheDir, "exports/transcripts")
     )
 
     /**
