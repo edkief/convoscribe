@@ -2530,6 +2530,50 @@ width.
   button. A session without a summary has no *Summary* tab.
 - At phone width the picker and button fit without scrolling sideways.
 
+## 59. Ask about a session in the web app (issue #118)
+
+Run the server with `LLM_UPSTREAM_URL` (and `LLM_MODEL` if the upstream serves
+several models) set. You need a session with speakers and a summary but no
+questions, and a long one (over an hour) in which a name comes up once, near
+the end. Use a browser with the window wide, then at phone width.
+
+**Steps**
+
+1. Open the short session's *Q&A* tab. Type a question about what one speaker
+   said, and press Enter.
+2. Ask a follow-up that only makes sense after the first, like *Why did they
+   say that?*
+3. Ask another question and press *Stop* while the answer streams in.
+4. Open the long session's *Q&A* tab and ask about the name.
+5. Start a question, and while it streams, rename the session on a device and
+   sync.
+6. Sync a device, and open the short session's *Ask* tab in the app.
+7. On the web, choose *Clear* on the short session, then *Clear* in the
+   dialog. Sync the device.
+8. Restart the server without `LLM_UPSTREAM_URL` and reload both sessions.
+
+**Expected**
+
+- Step 1: the tab says questions and answers appear there, with a question
+  field. Your question shows with *Writing the answer…*, then the answer
+  streams in, with times like [00:12]. Once saved, the field is empty, and
+  the tab's count reads 1.
+- Step 2: the answer follows on from the first round.
+- Step 3: the question and the partial answer disappear, the question stays
+  in the field, and reloading shows only the first two rounds.
+- Step 4: the answer names the moment. Under it: *Based on N of M minutes,
+  the parts most relevant to the question*, with M the session's length.
+- Step 5: the stream ends with *Not saved: this session changed somewhere
+  else*, the *Reload* banner shows, and the question stays in the field.
+  After reloading, the device's title shows and there is no new round.
+- Step 6: the app shows the questions and answers from the web, in order,
+  and the long session's answer has the same coverage note.
+- Step 7: the tab is empty, the summary is unchanged, and after the sync the
+  app's *Ask* tab is empty too.
+- Step 8: the long session's *Q&A* tab shows its round with no field and no
+  button except *Clear*. The cleared session has no *Q&A* tab.
+- At phone width the field and buttons fit without scrolling sideways.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
