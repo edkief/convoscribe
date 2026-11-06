@@ -89,5 +89,13 @@ describe('loadEnv', () => {
       expect(() => load({ LLM_UPSTREAM_URL: 'ftp://llm' })).toThrow(/LLM_UPSTREAM_URL/);
       expect(() => load({ ASR_UPSTREAM_URL: 'not a url' })).toThrow(/ASR_UPSTREAM_URL/);
     });
+
+    it('sends 24 000 transcript characters per summary call unless told otherwise (#117)', () => {
+      expect(load({}).LLM_MAX_TRANSCRIPT_CHARS).toBe(24_000);
+      expect(load({ LLM_MAX_TRANSCRIPT_CHARS: '' }).LLM_MAX_TRANSCRIPT_CHARS).toBe(24_000);
+      expect(load({ LLM_MAX_TRANSCRIPT_CHARS: '60000' }).LLM_MAX_TRANSCRIPT_CHARS).toBe(60_000);
+      expect(() => load({ LLM_MAX_TRANSCRIPT_CHARS: '500' })).toThrow(/LLM_MAX_TRANSCRIPT_CHARS/);
+      expect(() => load({ LLM_MAX_TRANSCRIPT_CHARS: 'lots' })).toThrow(/LLM_MAX_TRANSCRIPT_CHARS/);
+    });
   });
 });
