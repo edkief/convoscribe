@@ -2485,6 +2485,51 @@ phone width.
   a field adds nothing new to a list that already has them: the field goes blank.
   At phone width the panel fits without scrolling sideways.
 
+## 58. Summarise a session in the web app (issue #117)
+
+Run the server with `LLM_UPSTREAM_URL` (and `LLM_MODEL` if the upstream serves
+several models) set. You need a session with speakers and a mark but no
+summary, a long one (over an hour), and one user template, *Standup*, written
+on a device and synced. Use a browser with the window wide, then at phone
+width.
+
+**Steps**
+
+1. Open the session without a summary. Open the *Summary* tab, keep
+   *Meeting*, and choose *Summarise*.
+2. Once it has saved, tick one action item and delete another. Choose
+   *Standup* and *Regenerate*.
+3. Choose *Regenerate* again and press *Stop* while the text streams in.
+4. Open the long session and choose *Summarise*.
+5. Start a summary, and while it streams, rename the session on a device and
+   sync.
+6. Sync a device, and open the session in the app.
+7. Restart the server without `LLM_UPSTREAM_URL` and reload the session.
+
+**Expected**
+
+- Step 1: the button reads *Summarise*. A line says the summary is being
+  written, and the text streams in with no JSON block showing. Once saved, the
+  summary shows under *Meeting* and today's time. The *Actions* tab lists its
+  items, with owners spelled as the speakers are.
+- Step 2: the button reads *Regenerate*. The new summary follows the
+  *Standup* template and replaces the first, with no *Earlier summaries*. The
+  ticked and the deleted items stay ticked and deleted; the others are
+  replaced. Reloading keeps *Standup* selected.
+- Step 3: the text disappears, and the summary from step 2 shows unchanged.
+  Reloading shows the same.
+- Step 4: the line says *Taking notes on part 1 of N…* and counts up, then
+  *Writing the summary from the notes…*, and the summary covers the whole
+  conversation, end included.
+- Step 5: the stream ends with *Not saved: this session changed somewhere
+  else*, and the *Reload* banner shows. After reloading, the device's title
+  shows and the summary is unchanged.
+- Step 6: the app shows the web summary, its template and its action items,
+  with the ones ticked and deleted in step 2 as they were.
+- Step 7: the *Summary* tab shows the saved summary with no template picker or
+  button. A session without a summary has no *Summary* tab.
+- At phone width the picker and button fit without scrolling sideways.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
