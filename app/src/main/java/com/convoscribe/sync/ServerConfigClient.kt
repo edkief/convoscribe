@@ -71,7 +71,10 @@ class ServerConfigClient(
             OfferedService(model)
         }
         val transcription = body.transcription?.let { OfferedService(it.model.orEmpty()) }
-        ServerConfigResult.Offered(ServerOffer(llm = llm, transcription = transcription, fetchedAt = now()))
+        val decision = body.decision?.let { OfferedService(it.model.orEmpty()) }
+        ServerConfigResult.Offered(
+            ServerOffer(llm = llm, transcription = transcription, decision = decision, fetchedAt = now())
+        )
     }
 
     /**
@@ -110,7 +113,11 @@ class ServerConfigClient(
     private data class ServiceBody(val model: String? = null)
 
     @Serializable
-    private data class ConfigBody(val llm: ServiceBody? = null, val transcription: ServiceBody? = null)
+    private data class ConfigBody(
+        val llm: ServiceBody? = null,
+        val transcription: ServiceBody? = null,
+        val decision: ServiceBody? = null
+    )
 
     private companion object {
         val json = Json { ignoreUnknownKeys = true }

@@ -30,6 +30,7 @@ class ServerServicesSettingsTest {
             setApiKey("own-llm-key")
             setAsrServerKey("own-asr-key")
             setSyncKey("sync-key")
+            setDecisionKey("own-decision-key")
         }
     }
 
@@ -215,6 +216,77 @@ class ServerServicesSettingsTest {
         assertNull(s.serverOffer)
         assertNull(s.llmSource)
         assertEquals("https://llm.example/v1", s.llmBaseUrlInUse)
+    }
+
+    @Test
+    fun decision_none_meansTalkingPointsGoToTheLanguageModel() {
+        val s = newRepository().settings.value
+        assertFalse(s.decisionConfigured)
+        assertFalse(s.talkingPointsByDecision)
+        assertTrue(s.decisionForTalkingPoints)
+        assertEquals("", newRepository().decisionConfig().baseUrl)
+    }
+
+    @Test
+    fun decision_ownService_isUsedWithItsOwnKey_andTrimmed() {
+        val repo = newRepository()
+        repo.update { it.copy(decisionBaseUrl = " http://laya.llama:8080/ ", decisionModel = " english ") }
+        val config = repo.decisionConfig()
+        assertEquals("http://laya.llama:8080", config.baseUrl)
+        assertEquals("english", config.model)
+        assertEquals("own-decision-key", config.apiKey)
+        assertTrue(repo.settings.value.talkingPointsByDecision)
+        // Persisted.
+        assertEquals("http://laya.llama:8080", newRepository().settings.value.decisionBaseUrl)
+    }
+
+    @Test
+    fun decision_offeredByTheServer_isUsedWithTheSyncKey() {
+        val repo = newRepository()
+        connected(repo, bothOffered.copy(decision = OfferedService("")))
+        val s = repo.settings.value
+        assertEquals(ServiceSource.SERVER, s.decisionSource)
+        assertEquals("$SERVER/api/ai/v1/decision", repo.decisionConfig().baseUrl)
+        assertEquals("", repo.decisionConfig().model)
+        assertEquals("sync-key", repo.decisionConfig().apiKey)
+        assertTrue(s.talkingPointsByDecision)
+        // The offer survives a restart.
+        assertEquals(OfferedService(""), newRepository().settings.value.serverOffer?.decision)
+    }
+
+    @Test
+    fun decision_notOfferedByTheServer_fallsBackToTheLanguageModel() {
+        val repo = newRepository()
+        connected(repo)
+        val s = repo.settings.value
+        assertEquals(ServiceSource.SERVER, s.decisionSource)
+        assertFalse(s.decisionConfigured)
+        assertFalse(s.talkingPointsByDecision)
+        assertTrue(s.llmConfigured)
+    }
+
+    @Test
+    fun decision_ownServiceKept_whenServicesAreTurnedOn() {
+        val repo = newRepository()
+        repo.update { it.copy(decisionBaseUrl = "http://laya.llama:8080") }
+        connected(repo, bothOffered.copy(decision = OfferedService("english")))
+        assertEquals(ServiceSource.OWN, repo.settings.value.decisionSource)
+        assertEquals("http://laya.llama:8080", repo.decisionConfig().baseUrl)
+        assertEquals("own-decision-key", repo.decisionConfig().apiKey)
+    }
+
+    @Test
+    fun decision_optedOut_sendsTalkingPointsToTheLanguageModel_evenFromTheServer() {
+        val repo = newRepository()
+        connected(repo, bothOffered.copy(decision = OfferedService("english")))
+        repo.update { it.copy(decisionForTalkingPoints = false) }
+        val s = repo.settings.value
+        assertTrue(s.decisionConfigured)
+        assertFalse(s.talkingPointsByDecision)
+        // Kept across a restart, and turning the services off and on again.
+        repo.update { it.copy(serverServicesEnabled = false) }
+        repo.update { it.withServerServicesOn() }
+        assertFalse(newRepository().settings.value.decisionForTalkingPoints)
     }
 
     private companion object {

@@ -199,11 +199,15 @@ class BackupRoundTripTest {
                 defaultSummaryTemplate = template,
                 numThreads = 2,
                 talkingPointCheckSeconds = 40,
-                autoSummary = true
+                autoSummary = true,
+                decisionBaseUrl = "http://laya",
+                decisionModel = "english",
+                decisionForTalkingPoints = false
             )
         }
         secrets.setApiKey("sk-super-secret-llm")
         secrets.setAsrServerKey("sk-super-secret-asr")
+        secrets.setDecisionKey("sk-super-secret-decision")
     }
 
     private suspend fun archiveOf(device: Device): ByteArray {
@@ -341,6 +345,9 @@ class BackupRoundTripTest {
 
         val s = tablet.settings.settings.value
         assertEquals("http://llm", s.llmBaseUrl)
+        assertEquals("http://laya", s.decisionBaseUrl)
+        assertEquals("english", s.decisionModel)
+        assertFalse(s.decisionForTalkingPoints)
         assertTrue(s.serverServicesEnabled)
         assertEquals(ServiceSource.SERVER, s.llmSource)
         assertEquals(ServiceSource.OWN, s.asrSource)

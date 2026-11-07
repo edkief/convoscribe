@@ -112,6 +112,14 @@ import com.convoscribe.llm.SummaryTemplates
  * user's own address, key and model are never changed by any of this.
  * None of these four is backed up.
  *
+ * [decisionBaseUrl] is a laya decision service (issue #101), the base
+ * URL where `/v1/systemone` lives (blank: none); [decisionModel] is the
+ * laya model asked for (blank: laya picks by language); its key lives
+ * in [SecretStore]. [decisionSource] picks the sync server's or the
+ * user's own, like [llmSource]. [decisionForTalkingPoints] is *Check
+ * talking points with the decision model*: off sends the checks to the
+ * language model even when a decision service is set up.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -135,6 +143,10 @@ data class AppSettings(
     val serverOffer: ServerOffer? = null,
     val llmSource: ServiceSource? = null,
     val asrSource: ServiceSource? = null,
+    val decisionBaseUrl: String = "",
+    val decisionModel: String = "",
+    val decisionSource: ServiceSource? = null,
+    val decisionForTalkingPoints: Boolean = true,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
@@ -199,6 +211,28 @@ data class AppSettings(
     /** A transcription server is set up (issue #58), the user's own or the sync server's. */
     val asrServerConfigured: Boolean get() = asrServerUrlInUse.isNotBlank()
 
+    /** The decision service in use is the sync server's (issue #101), whether or not it provides one. */
+    val decisionFromServer: Boolean
+        get() = serverServicesEnabled && decisionSource == ServiceSource.SERVER && syncServerUrl.isNotBlank()
+
+    /** Base URL of the decision service in use; blank when there is none. */
+    val decisionBaseUrlInUse: String
+        get() = when {
+            !decisionFromServer -> decisionBaseUrl
+            serverOffer?.decision != null -> syncServerUrl + SERVER_DECISION_PATH
+            else -> ""
+        }
+
+    /** Laya model asked of the decision service in use (blank: laya picks by language). */
+    val decisionModelInUse: String
+        get() = if (decisionFromServer) serverOffer?.decision?.model.orEmpty() else decisionModel
+
+    /** A decision service is set up (issue #101), the user's own or the sync server's. */
+    val decisionConfigured: Boolean get() = decisionBaseUrlInUse.isNotBlank()
+
+    /** Talking points are checked by the decision service rather than the language model. */
+    val talkingPointsByDecision: Boolean get() = decisionConfigured && decisionForTalkingPoints
+
     /** Stopped recordings and imports go to the server. */
     val asrServerAutoActive: Boolean get() = asrServerAuto && asrServerConfigured
 
@@ -219,6 +253,8 @@ data class AppSettings(
             serverServicesEnabled = true,
             llmSource = llmSource ?: if (llmBaseUrl.isBlank()) ServiceSource.SERVER else ServiceSource.OWN,
             asrSource = asrSource ?: if (firstOnServer) ServiceSource.SERVER else ServiceSource.OWN,
+            decisionSource = decisionSource
+                ?: if (decisionBaseUrl.isBlank()) ServiceSource.SERVER else ServiceSource.OWN,
             asrServerAuto = asrServerAuto && !firstOnServer
         )
     }

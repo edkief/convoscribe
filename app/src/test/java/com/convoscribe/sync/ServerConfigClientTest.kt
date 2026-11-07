@@ -66,6 +66,24 @@ class ServerConfigClientTest {
     }
 
     @Test
+    fun aDecisionService_isOffered_withABlankModelWhenUnnamed() = runBlocking {
+        server.enqueue(json("""{"llm":null,"transcription":null,"decision":{"model":null}}"""))
+
+        val result = client.fetch(base, "sync-key") as ServerConfigResult.Offered
+
+        assertEquals(OfferedService(""), result.offer.decision)
+    }
+
+    @Test
+    fun anOlderServer_withoutDecision_offersNone() = runBlocking {
+        server.enqueue(json("""{"llm":null,"transcription":null}"""))
+
+        val result = client.fetch(base, "sync-key") as ServerConfigResult.Offered
+
+        assertNull(result.offer.decision)
+    }
+
+    @Test
     fun aServiceNotOffered_isNull_andAnUnnamedTranscriptionModelIsBlank() = runBlocking {
         server.enqueue(json("""{"llm":null,"transcription":{"model":null}}"""))
 
