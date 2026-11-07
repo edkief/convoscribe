@@ -20,6 +20,9 @@ export function stubServerEnv(overrides: Record<string, string> = {}) {
     ASR_UPSTREAM_URL: '',
     ASR_UPSTREAM_KEY: '',
     ASR_MODEL: '',
+    DECISION_UPSTREAM_URL: '',
+    DECISION_UPSTREAM_KEY: '',
+    DECISION_MODEL: '',
     ...overrides,
   };
   for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);

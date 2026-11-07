@@ -6,6 +6,9 @@ import { stubServerEnv } from '@/test/env';
 import { AUTH, request, setupSyncServer } from '@/test/http';
 import { POST as transcribe } from './asr/audio/transcriptions/route';
 import { GET as asrModels } from './asr/models/route';
+import { GET as decisionHealth } from './decision/health/route';
+import { POST as decideBatch } from './decision/v1/systemone/batch/route';
+import { POST as decide } from './decision/v1/systemone/route';
 import { POST as chat } from './llm/chat/completions/route';
 import { GET as llmModels } from './llm/models/route';
 
@@ -43,6 +46,8 @@ beforeEach(() => {
     LLM_UPSTREAM_URL: `${base}/llm/v1`,
     LLM_UPSTREAM_KEY: 'llm-key',
     ASR_UPSTREAM_URL: `${base}/asr/v1`,
+    DECISION_UPSTREAM_URL: `${base}/laya`,
+    DECISION_UPSTREAM_KEY: 'laya-key',
   });
 });
 
@@ -60,6 +65,17 @@ const routes = [
       transcribe(request('/api/ai/v1/asr/audio/transcriptions', { method: 'POST', body: 'audio', ...init })),
     path: '/asr/v1/audio/transcriptions',
   },
+  {
+    name: 'POST decision/v1/systemone',
+    call: (init: Init) => decide(request('/api/ai/v1/decision/v1/systemone', { method: 'POST', body: '{}', ...init })),
+    path: '/laya/v1/systemone',
+  },
+  {
+    name: 'POST decision/v1/systemone/batch',
+    call: (init: Init) => decideBatch(request('/api/ai/v1/decision/v1/systemone/batch', { method: 'POST', body: '{}', ...init })),
+    path: '/laya/v1/systemone/batch',
+  },
+  { name: 'GET decision/health', call: (init: Init) => decisionHealth(request('/api/ai/v1/decision/health', init)), path: '/laya/health' },
 ];
 
 describe('/api/ai/v1 (#93)', () => {
@@ -89,7 +105,8 @@ describe('/api/ai/v1 (#93)', () => {
   it('sends the upstream key, or none, and never the caller’s', async () => {
     await chat(request('/api/ai/v1/llm/chat/completions', { method: 'POST', body: '{}' }));
     await transcribe(request('/api/ai/v1/asr/audio/transcriptions', { method: 'POST', body: 'x' }));
-    expect(seen.map((s) => s.authorization)).toEqual(['Bearer llm-key', undefined]);
+    await decideBatch(request('/api/ai/v1/decision/v1/systemone/batch', { method: 'POST', body: '{}' }));
+    expect(seen.map((s) => s.authorization)).toEqual(['Bearer llm-key', undefined, 'Bearer laya-key']);
   });
 
   it('passes a large recording through in full', async () => {

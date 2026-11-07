@@ -26,6 +26,11 @@ interface SecretStore {
     fun getSyncKey(): String
 
     fun setSyncKey(value: String)
+
+    /** The decision service's API key (issue #101). */
+    fun getDecisionKey(): String
+
+    fun setDecisionKey(value: String)
 }
 
 /**
@@ -68,11 +73,18 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         prefs.edit().putString(KEY_SYNC_KEY, value).apply()
     }
 
+    override fun getDecisionKey(): String = prefs.getString(KEY_DECISION_KEY, "") ?: ""
+
+    override fun setDecisionKey(value: String) {
+        prefs.edit().putString(KEY_DECISION_KEY, value).apply()
+    }
+
     private companion object {
         const val FILE_NAME = "secrets"
         const val KEY_API_KEY = "api_key"
         const val KEY_ASR_SERVER_KEY = "asr_server_key"
         const val KEY_SYNC_KEY = "sync_key"
+        const val KEY_DECISION_KEY = "decision_key"
     }
 }
 
@@ -86,6 +98,7 @@ class InMemorySecretStore : SecretStore {
     private var value: String = ""
     private var asrServerKey: String = ""
     private var syncKey: String = ""
+    private var decisionKey: String = ""
 
     override fun getApiKey(): String = value
 
@@ -103,5 +116,11 @@ class InMemorySecretStore : SecretStore {
 
     override fun setSyncKey(value: String) {
         syncKey = value
+    }
+
+    override fun getDecisionKey(): String = decisionKey
+
+    override fun setDecisionKey(value: String) {
+        decisionKey = value
     }
 }

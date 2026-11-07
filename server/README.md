@@ -203,7 +203,11 @@ they do in the app, with the same prompts:
   time to play from. A transcript longer than `LLM_MAX_TRANSCRIPT_CHARS` is
   read in parts; a point found in one part isn't asked about again. Points
   ticked or unticked by hand are neither sent nor changed, and a point already
-  ticked stays ticked.
+  ticked stays ticked. When the server has a decision service
+  (`DECISION_UPSTREAM_URL`, #101), it reads the transcript instead, a line at
+  a time as the app does (see the app README's *Decision model for talking
+  points*), in batches of 64 lines with a step for each. *Check points* then
+  shows even without a language model.
 - **Write notes**, on the *Marks* tab when a mark has no full note, or one
   written before the transcript changed: the model writes each from the mark's
   note and the transcript around it (a minute before, half a minute after).
@@ -287,7 +291,8 @@ all be stored first.
 | `GET /api/sync/v1/changes?since=<seq>&limit=<n>` | `limit` 1 to 500, default 100 | `{"changes":[…], "next", "more"}`: index entries written after `since`, oldest first. Pass `next` as `since` while `more` is true |
 
 **Language model and transcription** (#93) are offered when the operator
-sets `LLM_UPSTREAM_URL` or `ASR_UPSTREAM_URL` (see *Configuration*). The
+sets `LLM_UPSTREAM_URL` or `ASR_UPSTREAM_URL` (see *Configuration*), and a
+decision service (#101) with `DECISION_UPSTREAM_URL`. The
 server passes a fixed set of OpenAI-compatible routes to each upstream;
 nothing a caller sends picks the upstream or the path. Point the app's
 language model or transcription server address at
@@ -296,11 +301,20 @@ key as the API key.
 
 | Endpoint | Passed to the upstream as |
 |---|---|
-| `GET /api/sync/v1/config` | Not passed on. `200 {"llm": {"model"} \| null, "transcription": {"model"} \| null}`: what this server offers, `model` being `LLM_MODEL` or `ASR_MODEL` (null when not set). It never names an upstream address or key. An older server answers `404`, meaning it offers nothing |
+| `GET /api/sync/v1/config` | Not passed on. `200 {"llm": {"model"} \| null, "transcription": {"model"} \| null, "decision": {"model"} \| null}`: what this server offers, `model` being `LLM_MODEL`, `ASR_MODEL` or `DECISION_MODEL` (null when not set). It never names an upstream address or key. An older server answers `404`, meaning it offers nothing |
 | `GET /api/ai/v1/llm/models` | `GET <LLM_UPSTREAM_URL>/models` |
 | `POST /api/ai/v1/llm/chat/completions` | `POST <LLM_UPSTREAM_URL>/chat/completions` |
 | `GET /api/ai/v1/asr/models` | `GET <ASR_UPSTREAM_URL>/models` |
 | `POST /api/ai/v1/asr/audio/transcriptions` | `POST <ASR_UPSTREAM_URL>/audio/transcriptions` |
+| `POST /api/ai/v1/decision/v1/systemone` | `POST <DECISION_UPSTREAM_URL>/v1/systemone` |
+| `POST /api/ai/v1/decision/v1/systemone/batch` | `POST <DECISION_UPSTREAM_URL>/v1/systemone/batch` |
+| `GET /api/ai/v1/decision/health` | `GET <DECISION_UPSTREAM_URL>/health` |
+
+A **decision service** (#101), a laya-serve (0.4.22 or later, for the batch
+endpoint), is offered the same way when `DECISION_UPSTREAM_URL` is set: the
+app ticks talking points with it, at `https://<sync server>/api/ai/v1/decision`
+with the sync key, and the config answer gains `"decision": {"model"} | null`
+(`model` being `DECISION_MODEL`). Apps that predate it ignore the field.
 
 - The caller's `Authorization` is replaced by `Bearer <*_UPSTREAM_KEY>`, or
   dropped when no key is set (an upstream inside the cluster may need
@@ -546,6 +560,7 @@ exits with the list of problems if any is missing or invalid.
 | `LLM_MODEL` | no | The model devices should use, reported by `GET /api/sync/v1/config`. The web app's summaries use it too, else the first model the upstream lists. |
 | `LLM_MAX_TRANSCRIPT_CHARS` | no | How much transcript one summary or question call from the web app sends (#117, #118), as the app's *Max transcript characters*: default `24000`, at least `1000`. A longer transcript is summarised in parts, and a question about it is answered from its most relevant parts. |
 | `ASR_UPSTREAM_URL`, `ASR_UPSTREAM_KEY`, `ASR_MODEL` | no | The same for an OpenAI-compatible transcription server, e.g. `http://parakeet-asr.asr:8000/v1`. A key or model without its URL is refused at startup. |
+| `DECISION_UPSTREAM_URL`, `DECISION_UPSTREAM_KEY`, `DECISION_MODEL` | no | A laya decision service for talking-point checks (#101), e.g. `http://laya.llama:8080`: the base `/v1/systemone` hangs off, laya-serve 0.4.22 or later. `DECISION_MODEL` is the laya model (`english` or `multilingual`); blank lets laya pick by language. Offered to devices, and used by the web app's *Check points*. A key or model without its URL is refused at startup. |
 | `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. An admin's *Run clean-up* is not affected. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |
 

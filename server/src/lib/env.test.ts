@@ -83,6 +83,15 @@ describe('loadEnv', () => {
     it('rejects a key or model without its URL', () => {
       expect(() => load({ LLM_UPSTREAM_KEY: 'k' })).toThrow(/LLM_UPSTREAM_KEY/);
       expect(() => load({ ASR_MODEL: 'm' })).toThrow(/ASR_MODEL/);
+      expect(() => load({ DECISION_UPSTREAM_KEY: 'k' })).toThrow(/DECISION_UPSTREAM_KEY/);
+    });
+
+    it('accepts a decision service with a key and model (#101)', () => {
+      const env = load({ DECISION_UPSTREAM_URL: 'http://laya.llama:8080/', DECISION_UPSTREAM_KEY: 'k', DECISION_MODEL: 'english' });
+      expect(env.DECISION_UPSTREAM_URL).toBe('http://laya.llama:8080');
+      expect(env.DECISION_UPSTREAM_KEY).toBe('k');
+      expect(env.DECISION_MODEL).toBe('english');
+      expect(load({}).DECISION_UPSTREAM_URL).toBeUndefined();
     });
 
     it('rejects a URL that is not http(s)', () => {

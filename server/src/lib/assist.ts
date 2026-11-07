@@ -1,7 +1,9 @@
 import { cleanTitle, markNoteMessages, markWindow, parseCoveredPoints, talkingPointsBudget, talkingPointsMessages, titleMessages } from './assist-prompt';
+import { MAX_STATES, type Decide } from './decision-client';
 import type { LlmMessage } from './llm-client';
 import type { Chat } from './summarise';
 import { chunkTranscript, transcriptText, type PromptLine } from './summary-prompt';
+import { decisionCovered, decisionQuestions, decisionStates } from './talking-point-decision';
 import { sessionView, spoken } from './transcript-export';
 
 /*
@@ -90,6 +92,15 @@ export function openPoints(manifest: Json): OpenPoint[] {
     .map((p) => ({ id: p.id as string, text: p.text as string }));
 }
 
+/** The texts of a session's points the model may not tick (covered, or set by hand): they fill the decision service's questions. */
+export function settledPoints(manifest: Json): string[] {
+  const points = Array.isArray(manifest.talkingPoints) ? manifest.talkingPoints : [];
+  return points
+    .filter(isRecord)
+    .filter((p) => typeof p.text === 'string' && (p.covered === true || p.byUser === true))
+    .map((p) => p.text as string);
+}
+
 export type CheckInput = {
   lines: PromptLine[];
   points: OpenPoint[];
@@ -129,6 +140,40 @@ export async function checkPoints({ lines, points, maxChars, chat, signal, onSte
     }
   }
   return ticks;
+}
+
+export type DecisionCheckInput = {
+  lines: PromptLine[];
+  points: OpenPoint[];
+  /** The session's other points ([settledPoints]), which fill the questions. */
+  others: string[];
+  decide: Decide;
+  signal?: AbortSignal;
+  /** Called before each batch of a transcript of more than one. */
+  onStep?: (step: { part: number; parts: number }) => void;
+};
+
+/**
+ * Which of `points` the whole transcript covers, and when, asked of the
+ * server's decision service (#101) as the app's `TalkingPointChecker` does
+ * with one: a line at a time ([decisionStates]), in batches of MAX_STATES,
+ * each point at the first line where it is the sure answer. Returns the
+ * ticks by point id.
+ */
+export async function checkPointsByDecision({ lines, points, others, decide, signal, onStep }: DecisionCheckInput): Promise<Map<string, number>> {
+  const states = decisionStates(lines);
+  const questions = decisionQuestions(
+    points.map((p) => p.text),
+    others,
+  );
+  const parts = Math.ceil(states.length / MAX_STATES);
+  const answers: Awaited<ReturnType<Decide>> = [];
+  for (let part = 0; part < parts; part++) {
+    if (parts > 1) onStep?.({ part: part + 1, parts });
+    const batch = states.slice(part * MAX_STATES, (part + 1) * MAX_STATES).map((s) => s.text);
+    answers.push(...(await decide(batch, questions, signal)));
+  }
+  return new Map(decisionCovered(states, answers, points.length).map(({ number, atMs }) => [points[number - 1].id, atMs]));
 }
 
 /**

@@ -3,6 +3,7 @@ package com.convoscribe.settings
 import android.content.SharedPreferences
 import com.convoscribe.asr.server.ServerAsrConfig
 import com.convoscribe.data.ParticipantsCodec
+import com.convoscribe.decision.DecisionConfig
 import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.models.ModelCatalog
@@ -47,6 +48,8 @@ class SettingsRepository(
      *    becomes -1
      *  - thresholds clamped to 0.05..0.95
      *  - `llmBaseUrl` trimmed and trailing `/` removed
+     *  - `decisionBaseUrl` trimmed and trailing `/` removed;
+     *    `decisionModel` trimmed
      *  - `asrServerUrl` trimmed and trailing `/` removed;
      *    `asrServerModel` trimmed
      *  - `syncServerUrl` trimmed and trailing `/` removed; a different
@@ -98,10 +101,15 @@ class SettingsRepository(
             putBoolean(KEY_SERVER_SERVICES_ENABLED, next.serverServicesEnabled)
             putOrRemove(KEY_LLM_SOURCE, next.llmSource?.key)
             putOrRemove(KEY_ASR_SOURCE, next.asrSource?.key)
+            putString(KEY_DECISION_BASE_URL, next.decisionBaseUrl)
+            putString(KEY_DECISION_MODEL, next.decisionModel)
+            putOrRemove(KEY_DECISION_SOURCE, next.decisionSource?.key)
+            putBoolean(KEY_DECISION_FOR_TALKING_POINTS, next.decisionForTalkingPoints)
             val offer = next.serverOffer
             putBoolean(KEY_SERVER_OFFER, offer != null)
             putOrRemove(KEY_SERVER_OFFER_LLM_MODEL, offer?.llm?.model)
             putOrRemove(KEY_SERVER_OFFER_ASR_MODEL, offer?.transcription?.model)
+            putOrRemove(KEY_SERVER_OFFER_DECISION_MODEL, offer?.decision?.model)
             putLong(KEY_SERVER_OFFER_FETCHED_AT, offer?.fetchedAt ?: 0L)
             putInt(KEY_NUM_SPEAKERS, next.numSpeakers)
             putFloat(KEY_CLUSTER_THRESHOLD, next.clusterThreshold)
@@ -172,6 +180,13 @@ class SettingsRepository(
         secrets.setAsrServerKey(value)
     }
 
+    /** API key of the decision service (issue #101), kept apart from the others. */
+    fun decisionKey(): String = secrets.getDecisionKey()
+
+    fun setDecisionKey(value: String) {
+        secrets.setDecisionKey(value)
+    }
+
     /** API key of the sync server (issue #68); never part of what is synced. */
     fun syncKey(): String = secrets.getSyncKey()
 
@@ -204,6 +219,16 @@ class SettingsRepository(
         )
     }
 
+    /** The decision service in use (issue #101), like [llmConfig]. */
+    fun decisionConfig(): DecisionConfig {
+        val s = _settings.value
+        return DecisionConfig(
+            baseUrl = s.decisionBaseUrlInUse,
+            apiKey = if (s.decisionFromServer) syncKey() else decisionKey(),
+            model = s.decisionModelInUse
+        )
+    }
+
     private fun SharedPreferences.Editor.putOrRemove(key: String, value: String?) {
         if (value == null) remove(key) else putString(key, value)
     }
@@ -213,6 +238,7 @@ class SettingsRepository(
         return ServerOffer(
             llm = prefs.getString(KEY_SERVER_OFFER_LLM_MODEL, null)?.let(::OfferedService),
             transcription = prefs.getString(KEY_SERVER_OFFER_ASR_MODEL, null)?.let(::OfferedService),
+            decision = prefs.getString(KEY_SERVER_OFFER_DECISION_MODEL, null)?.let(::OfferedService),
             fetchedAt = prefs.getLong(KEY_SERVER_OFFER_FETCHED_AT, 0L)
         )
     }
@@ -240,6 +266,10 @@ class SettingsRepository(
             serverOffer = loadOffer(),
             llmSource = ServiceSource.fromKey(prefs.getString(KEY_LLM_SOURCE, null)),
             asrSource = ServiceSource.fromKey(prefs.getString(KEY_ASR_SOURCE, null)),
+            decisionBaseUrl = (prefs.getString(KEY_DECISION_BASE_URL, "") ?: "").trim().trimEnd('/'),
+            decisionModel = prefs.getString(KEY_DECISION_MODEL, "") ?: "",
+            decisionSource = ServiceSource.fromKey(prefs.getString(KEY_DECISION_SOURCE, null)),
+            decisionForTalkingPoints = prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS, true),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
@@ -348,6 +378,11 @@ class SettingsRepository(
         const val KEY_SERVER_OFFER = "serverOffer"
         const val KEY_SERVER_OFFER_LLM_MODEL = "serverOfferLlmModel"
         const val KEY_SERVER_OFFER_ASR_MODEL = "serverOfferAsrModel"
+        const val KEY_SERVER_OFFER_DECISION_MODEL = "serverOfferDecisionModel"
+        const val KEY_DECISION_BASE_URL = "decisionBaseUrl"
+        const val KEY_DECISION_MODEL = "decisionModel"
+        const val KEY_DECISION_SOURCE = "decisionSource"
+        const val KEY_DECISION_FOR_TALKING_POINTS = "decisionForTalkingPoints"
         const val KEY_SERVER_OFFER_FETCHED_AT = "serverOfferFetchedAt"
         const val KEY_NUM_SPEAKERS = "numSpeakers"
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
@@ -410,6 +445,8 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
     return this.normaliseNumeric().copy(
         asrServerUrl = asrServerUrl.trim().trimEnd('/'),
         asrServerModel = asrServerModel.trim(),
+        decisionBaseUrl = decisionBaseUrl.trim().trimEnd('/'),
+        decisionModel = decisionModel.trim(),
         syncServerUrl = syncUrl,
         serverServicesEnabled = serverServicesEnabled && sameServer && syncUrl.isNotBlank(),
         serverOffer = serverOffer.takeIf { sameServer },

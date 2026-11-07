@@ -64,7 +64,11 @@ data class SettingsForm(
     val serverModel: String = "",
     /** Sync server (issue #68): address and API key, saved by Save. */
     val syncUrl: String = "",
-    val syncKey: String = ""
+    val syncKey: String = "",
+    /** Decision service (issue #101): address, API key and laya model, saved by Save. */
+    val decisionUrl: String = "",
+    val decisionKey: String = "",
+    val decisionModel: String = ""
 ) {
     /**
      * Build a [SettingsForm] from a persisted [AppSettings]. The
@@ -73,23 +77,31 @@ data class SettingsForm(
      * pre-filled here for editing.
      */
     companion object {
-        fun from(settings: AppSettings, apiKey: String, serverKey: String = "", syncKey: String = ""): SettingsForm =
-            SettingsForm(
-                baseUrl = settings.llmBaseUrl,
-                apiKey = apiKey,
-                serverUrl = settings.asrServerUrl,
-                serverKey = serverKey,
-                serverModel = settings.asrServerModel,
-                syncUrl = settings.syncServerUrl,
-                syncKey = syncKey,
-                model = settings.llmModel,
-                maxChars = settings.maxTranscriptChars.toString(),
-                talkingPointSeconds = settings.talkingPointCheckSeconds.toString(),
-                numThreads = settings.numThreads,
-                numSpeakers = settings.numSpeakers,
-                clusterThreshold = settings.clusterThreshold,
-                speakerMatchThreshold = settings.speakerMatchThreshold
-            )
+        fun from(
+            settings: AppSettings,
+            apiKey: String,
+            serverKey: String = "",
+            syncKey: String = "",
+            decisionKey: String = ""
+        ): SettingsForm = SettingsForm(
+            decisionUrl = settings.decisionBaseUrl,
+            decisionKey = decisionKey,
+            decisionModel = settings.decisionModel,
+            baseUrl = settings.llmBaseUrl,
+            apiKey = apiKey,
+            serverUrl = settings.asrServerUrl,
+            serverKey = serverKey,
+            serverModel = settings.asrServerModel,
+            syncUrl = settings.syncServerUrl,
+            syncKey = syncKey,
+            model = settings.llmModel,
+            maxChars = settings.maxTranscriptChars.toString(),
+            talkingPointSeconds = settings.talkingPointCheckSeconds.toString(),
+            numThreads = settings.numThreads,
+            numSpeakers = settings.numSpeakers,
+            clusterThreshold = settings.clusterThreshold,
+            speakerMatchThreshold = settings.speakerMatchThreshold
+        )
     }
 }
 
@@ -234,6 +246,16 @@ data class SettingsUiState(
     val llmSource: ServiceSource = ServiceSource.OWN,
     /** Whether the transcription server in use is the server's or the user's own. */
     val asrSource: ServiceSource = ServiceSource.OWN,
+    /** Whether the decision service in use is the server's or the user's own (issue #101). */
+    val decisionSource: ServiceSource = ServiceSource.OWN,
+    /** A decision service is set up, the user's own or the server's. */
+    val decisionConfigured: Boolean = false,
+    /** *Check talking points with the decision model*; written immediately. */
+    val decisionForTalkingPoints: Boolean = true,
+    /** `true` while [SettingsViewModel.testDecision] is in flight. */
+    val decisionTesting: Boolean = false,
+    /** Last decision service test: [ConnectionTestResult.Connected] names the laya model that answered. */
+    val decisionTestResult: ConnectionTestResult? = null,
     /** Turning the server's services on, while it is under way. */
     val servicesCheck: ServicesCheck? = null
 )
@@ -273,6 +295,9 @@ data class SettingsUiState(
  *   connection test. Injected so tests can pass a fake.
  * @param listServerModels the transcription server's model ids, for
  *   [testServer] (issue #58).
+ * @param pingDecision one small decision from the decision service in
+ *   use, returning the laya model that answered, for [testDecision]
+ *   (issue #101).
  * @param modelStore on-disk model store, used to check
  *   installation and to free space when the user deletes the
  *   French bundle.
@@ -292,7 +317,8 @@ class SettingsViewModel(
     syncStatus: StateFlow<SyncStatus>? = null,
     private val fetchServerOffer: suspend (url: String, key: String) -> ServerConfigResult =
         { _, _ -> ServerConfigResult.Failed("not available") },
-    private val refreshServerOffer: suspend () -> Unit = {}
+    private val refreshServerOffer: suspend () -> Unit = {},
+    private val pingDecision: suspend () -> String = { "" }
 ) : ViewModel() {
 
     private val _state: MutableStateFlow<SettingsUiState>
@@ -300,7 +326,7 @@ class SettingsViewModel(
 
     init {
         val current = repo.settings.value
-        val form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey(), repo.syncKey())
+        val form = formOf(current)
         val initial = computeModelState(
             current = current,
             base = SettingsUiState(
@@ -376,7 +402,9 @@ class SettingsViewModel(
                 asrLanguage = _state.value.asrLanguage,
                 asrServerUrl = form.serverUrl,
                 asrServerModel = form.serverModel,
-                syncServerUrl = form.syncUrl
+                syncServerUrl = form.syncUrl,
+                decisionBaseUrl = form.decisionUrl,
+                decisionModel = form.decisionModel
             )
         }
         if (_state.value.asrEngine != current.asrEngine) {
@@ -386,6 +414,7 @@ class SettingsViewModel(
         }
         repo.setApiKey(form.apiKey)
         repo.setAsrServerKey(form.serverKey)
+        repo.setDecisionKey(form.decisionKey)
         if (keyChanged && repo.settings.value.serverServicesEnabled) {
             viewModelScope.launch { refreshServerOffer() }
         }
@@ -399,7 +428,7 @@ class SettingsViewModel(
         _state.value = computeModelState(
             current = refreshed,
             base = _state.value.copy(
-                form = SettingsForm.from(refreshed, repo.apiKey(), repo.asrServerKey(), repo.syncKey()),
+                form = formOf(refreshed),
                 saved = true
             )
         )
@@ -415,7 +444,7 @@ class SettingsViewModel(
         _state.value = computeModelState(
             current = current,
             base = _state.value.copy(
-                form = SettingsForm.from(current, repo.apiKey(), repo.asrServerKey(), repo.syncKey()),
+                form = formOf(current),
                 asrEngine = current.asrEngine,
                 asrLanguage = current.asrLanguage
             )
@@ -697,6 +726,16 @@ class SettingsViewModel(
         repo.update { it.copy(asrSource = source) }
     }
 
+    /** Use the server's decision service or the user's own (issue #101), written immediately. */
+    fun setDecisionSource(source: ServiceSource) {
+        repo.update { it.copy(decisionSource = source) }
+    }
+
+    /** *Check talking points with the decision model* (issue #101), written immediately. */
+    fun setDecisionForTalkingPoints(enabled: Boolean) {
+        repo.update { it.copy(decisionForTalkingPoints = enabled) }
+    }
+
     /** Persist *Download recordings on mobile data* immediately (issue #69). */
     fun setSyncAudioOnMobileData(enabled: Boolean) {
         repo.update { it.copy(syncAudioOnMobileData = enabled) }
@@ -779,6 +818,32 @@ class SettingsViewModel(
     }
 
     /**
+     * Like [testConnection], for the decision service (issue #101):
+     * save, then ask it one small decision. [ConnectionTestResult.Connected]
+     * carries the laya model that answered.
+     */
+    fun testDecision() {
+        if (_state.value.decisionTesting) return
+        save()
+        _state.update { it.copy(decisionTesting = true, decisionTestResult = null) }
+        viewModelScope.launch {
+            val result = runCatching { pingDecision() }
+            _state.update {
+                it.copy(
+                    decisionTesting = false,
+                    decisionTestResult = result.fold(
+                        onSuccess = { model -> ConnectionTestResult.Connected(count = 1, models = listOf(model)) },
+                        onFailure = { failure ->
+                            Log.w(TAG, "settings: decision service test failed", failure)
+                            ConnectionTestResult.Failed(failure.toUserMessage())
+                        }
+                    )
+                )
+            }
+        }
+    }
+
+    /**
      * Reset `saved` after the screen has shown its confirmation.
      * Called from the screen's `LaunchedEffect(true)` once.
      */
@@ -834,10 +899,17 @@ class SettingsViewModel(
             serverOffer = current.serverOffer,
             llmSource = current.llmSource ?: ServiceSource.OWN,
             asrSource = current.asrSource ?: ServiceSource.OWN,
+            decisionSource = current.decisionSource ?: ServiceSource.OWN,
+            decisionConfigured = current.decisionConfigured,
+            decisionForTalkingPoints = current.decisionForTalkingPoints,
             selectedLanguageModelInstalled = installed,
             selectedLanguageModelMissingBytes = if (installed) 0L else bundle.totalBytes
         )
     }
+
+    /** The form for [settings], with the keys from the encrypted store. */
+    private fun formOf(settings: AppSettings): SettingsForm =
+        SettingsForm.from(settings, repo.apiKey(), repo.asrServerKey(), repo.syncKey(), repo.decisionKey())
 
     /**
      * Compute the bytes that need to be downloaded to make the

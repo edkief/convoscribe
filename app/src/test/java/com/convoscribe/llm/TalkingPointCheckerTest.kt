@@ -7,6 +7,9 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TitleSource
+import com.convoscribe.decision.DecisionAnswer
+import com.convoscribe.decision.DecisionClient
+import com.convoscribe.decision.DecisionQuestion
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RecordingState
 import com.convoscribe.settings.InMemorySecretStore
@@ -89,12 +92,48 @@ class TalkingPointCheckerTest {
         override suspend fun listModels(): List<String> = emptyList()
     }
 
+    /**
+     * A decision service that, for each line, answers point [byWord]'s
+     * number where the line contains that word (with [probability]), and
+     * "none" otherwise; records what each call was asked.
+     */
+    private class ScriptedDecisionClient(
+        var byWord: Map<String, Int> = emptyMap(),
+        var probability: Double = 0.9,
+        var fail: Throwable? = null
+    ) : DecisionClient {
+        val calls = CopyOnWriteArrayList<Pair<List<String>, Map<String, DecisionQuestion>>>()
+
+        override suspend fun decide(
+            states: List<String>,
+            questions: Map<String, DecisionQuestion>
+        ): List<Map<String, DecisionAnswer>> {
+            calls += states to questions
+            fail?.let { throw it }
+            return states.map { state ->
+                questions.mapValues { (_, q) ->
+                    val number = byWord.entries
+                        .firstOrNull { (word, n) -> state.contains(word) && "$n" in q.options }
+                        ?.value
+                    val choice = number?.toString() ?: DecisionTalkingPoints.NONE_KEY
+                    DecisionAnswer(choice, q.options.keys.associateWith { if (it == choice) probability else 0.01 })
+                }
+            }
+        }
+
+        override suspend fun ping(): String = "english"
+    }
+
     private fun answering(text: String) = ScriptedChatClient { flow { emit(text) } }
 
     private fun failing() = ScriptedChatClient { flow { throw LlmException("HTTP 502 from llm") } }
 
-    private fun TestScope.checker(client: ChatClient, calls: Mutex = Mutex()): TalkingPointChecker {
-        val checker = TalkingPointChecker(repo, client, settings, backgroundScope, calls, timeoutMs = 60_000L)
+    private fun TestScope.checker(
+        client: ChatClient,
+        calls: Mutex = Mutex(),
+        decision: DecisionClient = ScriptedDecisionClient()
+    ): TalkingPointChecker {
+        val checker = TalkingPointChecker(repo, client, decision, settings, backgroundScope, calls, timeoutMs = 60_000L)
         checker.watch(state)
         runCurrent()
         return checker
@@ -455,6 +494,147 @@ class TalkingPointCheckerTest {
         assertEquals(1, client.calls.size)
         assertEquals(emptySet<Long>(), checker.failing.value)
         assertEquals(RecordingPhase.IDLE, state.value.phase)
+    }
+
+    private fun useDecisionService() {
+        settings.update { it.copy(decisionBaseUrl = "http://laya.test:8080") }
+    }
+
+    @Test
+    fun withADecisionService_pointsTickAtTheLineWhereTheyCameUp() = runTest(dispatcher) {
+        useDecisionService()
+        val chat = answering("[1, 2, 3]")
+        val decision = ScriptedDecisionClient(byWord = mapOf("hire" to 2))
+        checker(chat, decision = decision)
+        val id = session()
+        say(id, 5, "Let's talk money.")
+        say(id, 10, "We will hire two people.")
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+
+        assertEquals(0, chat.calls.size)
+        val (states, questions) = decision.calls.single()
+        assertEquals(listOf("[00:05] Let's talk money.", "[00:10] We will hire two people."), states)
+        val options = questions.values.single().options
+        assertEquals(listOf("1", "2", "3", "none"), options.keys.toList())
+        assertEquals("Hiring", options["2"])
+        val hiring = points(id)[1]
+        assertTrue(hiring.covered)
+        assertEquals(10_000L, hiring.coveredAtMs)
+        assertFalse(points(id)[0].covered)
+        assertFalse(points(id)[2].covered)
+    }
+
+    @Test
+    fun withADecisionService_theTickedPointsFillTheQuestion_butAreNotTickedAgain() = runTest(dispatcher) {
+        useDecisionService()
+        // Option 1 is the open point (Hiring), option 2 the ticked one (Budget).
+        val decision = ScriptedDecisionClient(byWord = mapOf("hire" to 1, "money" to 2))
+        checker(answering("[]"), decision = decision)
+        val id = session(listOf("Budget", "Hiring"))
+        repo.setTalkingPointCovered(points(id)[0].id, covered = true, atMs = 1_000L)
+        say(id, 5, "Let's talk money.")
+        say(id, 10, "We will hire two people.")
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+
+        val options = decision.calls.single().second.values.single().options
+        assertEquals(mapOf("1" to "Hiring", "2" to "Budget", "none" to DecisionTalkingPoints.NONE_TEXT), options)
+        val (budget, hiring) = points(id)
+        assertEquals(1_000L, budget.coveredAtMs)
+        assertEquals(10_000L, hiring.coveredAtMs)
+    }
+
+    @Test
+    fun withADecisionService_anUnsureAnswerTicksNothing() = runTest(dispatcher) {
+        useDecisionService()
+        val decision = ScriptedDecisionClient(byWord = mapOf("hire" to 2), probability = 0.4)
+        checker(answering("[]"), decision = decision)
+        val id = session()
+        say(id, 10, "We will hire two people.")
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+
+        assertEquals(1, decision.calls.size)
+        assertTrue(points(id).none { it.covered })
+    }
+
+    @Test
+    fun withADecisionService_noLanguageModelIsNeeded() = runTest(dispatcher) {
+        settings.update { it.copy(llmBaseUrl = "", decisionBaseUrl = "http://laya.test:8080") }
+        val decision = ScriptedDecisionClient(byWord = mapOf("Budget" to 1))
+        checker(answering("[]"), decision = decision)
+        val id = session()
+        say(id, 5, "Budget first.")
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+
+        assertTrue(points(id)[0].covered)
+    }
+
+    @Test
+    fun optedOutOfTheDecisionService_theLanguageModelChecks() = runTest(dispatcher) {
+        settings.update { it.copy(decisionBaseUrl = "http://laya.test:8080", decisionForTalkingPoints = false) }
+        val chat = answering("[1]")
+        val decision = ScriptedDecisionClient()
+        checker(chat, decision = decision)
+        val id = session()
+        say(id, 5, "Budget first.")
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+
+        assertEquals(1, chat.calls.size)
+        assertEquals(0, decision.calls.size)
+        assertTrue(points(id)[0].covered)
+    }
+
+    @Test
+    fun withADecisionService_theLanguageModelLockIsNotTaken() = runTest(dispatcher) {
+        useDecisionService()
+        val lock = Mutex()
+        val decision = ScriptedDecisionClient()
+        checker(answering("[]"), lock, decision)
+        val id = session()
+        say(id, 5, "Budget.")
+        lock.lock()
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+        assertEquals(1, decision.calls.size)
+        lock.unlock()
+    }
+
+    @Test
+    fun withADecisionService_failuresBackOffAndShowTheNote_likeTheLanguageModel() = runTest(dispatcher) {
+        useDecisionService()
+        val chat = answering("[1]")
+        val decision = ScriptedDecisionClient(byWord = mapOf("Budget" to 1), fail = LlmException("HTTP 502 from laya"))
+        val checker = checker(chat, decision = decision)
+        val id = session()
+        say(id, 5, "Budget.")
+        record(id)
+        advanceTimeBy(15_500L)
+        runCurrent()
+        assertEquals(1, decision.calls.size)
+        assertEquals(emptySet<Long>(), checker.failing.value)
+
+        advanceTimeBy(30_000L)
+        runCurrent()
+        assertEquals(2, decision.calls.size)
+        assertEquals(setOf(id), checker.failing.value)
+        // Never handed to the language model.
+        assertEquals(0, chat.calls.size)
+
+        decision.fail = null
+        advanceTimeBy(60_000L)
+        runCurrent()
+        assertEquals(emptySet<Long>(), checker.failing.value)
+        assertTrue(points(id)[0].covered)
     }
 
     @Test

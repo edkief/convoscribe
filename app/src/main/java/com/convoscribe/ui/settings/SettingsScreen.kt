@@ -102,7 +102,8 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
                     onSemanticModelChanged = container.semanticIndexScheduler::sync,
                     syncStatus = container.syncStatusStore.status,
                     fetchServerOffer = container.serverConfigClient::fetch,
-                    refreshServerOffer = { container.serverOfferRefresher.refresh() }
+                    refreshServerOffer = { container.serverOfferRefresher.refresh() },
+                    pingDecision = container.decisionClient::ping
                 )
             }
         }
@@ -287,6 +288,9 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             onTurnOffServerServices = vm::turnOffServerServices,
             onLlmSourceChange = vm::setLlmSource,
             onAsrSourceChange = vm::setAsrSource,
+            onDecisionSourceChange = vm::setDecisionSource,
+            onDecisionForTalkingPointsChange = vm::setDecisionForTalkingPoints,
+            onTestDecision = vm::testDecision,
             onSyncNow = container.syncScheduler::syncNow,
             onSyncAudioOnMobileDataChange = { on ->
                 vm.setSyncAudioOnMobileData(on)
@@ -362,6 +366,9 @@ internal class SettingsActions(
     val onTurnOffServerServices: () -> Unit = {},
     val onLlmSourceChange: (ServiceSource) -> Unit = {},
     val onAsrSourceChange: (ServiceSource) -> Unit = {},
+    val onDecisionSourceChange: (ServiceSource) -> Unit = {},
+    val onDecisionForTalkingPointsChange: (Boolean) -> Unit = {},
+    val onTestDecision: () -> Unit = {},
     val onBackup: () -> Unit = {},
     val onRestore: () -> Unit = {},
     val onCancelBackup: () -> Unit = {},
@@ -611,6 +618,7 @@ private fun SettingsPageContent(
                 offered = state.serverOffer?.llm,
                 onSourceChange = actions.onLlmSourceChange
             )
+            DecisionModelSection(state = state, actions = actions)
             SummariesSection(
                 templates = state.summaryTemplates,
                 defaultKey = state.defaultSummaryTemplate,

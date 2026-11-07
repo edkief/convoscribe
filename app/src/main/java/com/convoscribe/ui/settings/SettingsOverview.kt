@@ -163,7 +163,10 @@ private fun aiStatus(state: SettingsUiState): OverviewStatus {
         else -> UiText.res(R.string.settings_overview_llm_own)
     }
     val template = state.summaryTemplates.firstOrNull { it.key == state.defaultSummaryTemplate }?.name
-    return OverviewStatus(listOfNotNull(model, template?.let { UiText.Plain(it) }))
+    // Talking points checked by a decision service (issue #101) rather than the language model.
+    val decision = UiText.res(R.string.settings_overview_decision)
+        .takeIf { state.decisionConfigured && state.decisionForTalkingPoints }
+    return OverviewStatus(listOfNotNull(model, template?.let { UiText.Plain(it) }, decision))
 }
 
 private fun searchStatus(state: SettingsUiState): OverviewStatus {

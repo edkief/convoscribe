@@ -4,6 +4,7 @@ import android.util.Log
 import com.convoscribe.TAG
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.TranscriptFormatter
+import com.convoscribe.decision.DecisionClient
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RecordingState
 import com.convoscribe.settings.SettingsRepository
@@ -45,13 +46,19 @@ import kotlinx.coroutines.withTimeoutOrNull
  * [FAILURES_BEFORE_NOTE] failures in a row is the session put in
  * [failing], for the Record screen's quiet note; a success clears it.
  *
+ * With a decision service set up and *Check talking points with the
+ * decision model* on (issue #101), the speech goes to it instead, a line
+ * at a time ([DecisionTalkingPoints]), outside [calls]: it is not the
+ * language model. Failures are handled the same way.
+ *
  * Points ticked or unticked by hand are never sent nor changed. Nothing
- * is checked without a language model, without open points, or with
- * the interval at 0.
+ * is checked without a decision service or a language model, without
+ * open points, or with the interval at 0.
  */
 class TalkingPointChecker(
     private val repository: SessionRepository,
     private val chatClient: ChatClient,
+    private val decisionClient: DecisionClient,
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
     private val calls: Mutex = Mutex(),
@@ -139,28 +146,30 @@ class TalkingPointChecker(
     /**
      * Ask about [watching]'s open points and tick those covered. Returns
      * where the next check starts, or `null` when there was nothing to
-     * check (no language model, no open points, no new speech, or off).
+     * check (no decision service or language model, no open points, no
+     * new speech, or off).
      */
     private suspend fun check(watching: Watched): Long? {
         val current = settings.settings.value
-        if (!current.llmConfigured || current.talkingPointCheckSeconds <= 0) return null
+        val byDecision = current.talkingPointsByDecision
+        if (!byDecision && !current.llmConfigured || current.talkingPointCheckSeconds <= 0) return null
         val id = watching.sessionId
-        val open = repository.getTalkingPoints(id).filter { !it.covered && !it.byUser }
+        val all = repository.getTalkingPoints(id)
+        val open = all.filter { !it.covered && !it.byUser }
         if (open.isEmpty()) return null
         val texts = open.map { it.text }
         val lines = TranscriptFormatter.lines(repository.getSegments(id), repository.getSpeakers(id))
-        val budget = PromptBuilder.talkingPointsTranscriptBudget(texts, current.maxTranscriptChars)
+        val budget = if (byDecision) {
+            DECISION_WINDOW_CHARS
+        } else {
+            PromptBuilder.talkingPointsTranscriptBudget(texts, current.maxTranscriptChars)
+        }
         val window = TalkingPointWindow.select(lines, watching.checkedUpToMs, budget) ?: return null
-        val messages = PromptBuilder.talkingPoints(texts, window.text)
-        val answer = calls.withLock {
-            withTimeoutOrNull(timeoutMs) {
-                val out = StringBuilder()
-                chatClient.stream(messages).collect { out.append(it) }
-                out.toString()
-            }
-        } ?: throw LlmException("No answer within ${timeoutMs / 1_000} s")
-        val covered = TalkingPointAnswer.parse(answer, open.size)
-            ?: throw LlmException("Unreadable answer: ${answer.take(ANSWER_IN_ERROR_CHARS)}")
+        val covered = if (byDecision) {
+            askDecision(texts, others = (all - open.toSet()).map { it.text }, window)
+        } else {
+            askLanguageModel(texts, window)
+        }
         val ticks = covered.associate { point ->
             val atMs = point.atMs?.takeIf { it in window.firstMs..window.endMs } ?: window.lastMs
             open[point.number - 1].id to atMs
@@ -170,7 +179,44 @@ class TalkingPointChecker(
         return window.endMs
     }
 
+    /** The points of [texts] the language model says [window] covers. */
+    private suspend fun askLanguageModel(texts: List<String>, window: TalkingPointWindow): List<CoveredPoint> {
+        val messages = PromptBuilder.talkingPoints(texts, window.text)
+        val answer = calls.withLock {
+            withTimeoutOrNull(timeoutMs) {
+                val out = StringBuilder()
+                chatClient.stream(messages).collect { out.append(it) }
+                out.toString()
+            }
+        } ?: throw LlmException("No answer within ${timeoutMs / 1_000} s")
+        return TalkingPointAnswer.parse(answer, texts.size)
+            ?: throw LlmException("Unreadable answer: ${answer.take(ANSWER_IN_ERROR_CHARS)}")
+    }
+
+    /**
+     * The points of [texts] the decision service says [window] covers, a
+     * line at a time; the session's [others] fill out its questions.
+     */
+    private suspend fun askDecision(
+        texts: List<String>,
+        others: List<String>,
+        window: TalkingPointWindow
+    ): List<CoveredPoint> {
+        val states = DecisionTalkingPoints.states(window.lines)
+        val answers = withTimeoutOrNull(timeoutMs) {
+            decisionClient.decide(states.map { it.text }, DecisionTalkingPoints.questions(texts, others))
+        } ?: throw LlmException("No answer within ${timeoutMs / 1_000} s")
+        return DecisionTalkingPoints.covered(states, answers, texts.size)
+    }
+
     companion object {
+        /**
+         * How much speech one check with the decision service reads. Each
+         * line goes on its own, so this only bounds a check after a long
+         * pause in checking; the language model's is its prompt budget.
+         */
+        const val DECISION_WINDOW_CHARS: Int = 50_000
+
         /** A check waits at most this long for its answer once it has the lock. */
         const val REQUEST_TIMEOUT_MS: Long = 60_000L
 
