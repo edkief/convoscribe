@@ -112,6 +112,7 @@ import com.convoscribe.ui.session.PlaybackActions
 import com.convoscribe.ui.session.SessionBody
 import com.convoscribe.ui.session.SummaryUiState
 import com.convoscribe.ui.session.TagsUi
+import com.convoscribe.ui.settings.ConnectionTestResult
 import com.convoscribe.ui.settings.DataSection
 import com.convoscribe.ui.settings.RestoreConfirmDialog
 import com.convoscribe.ui.settings.SemanticSearchSection
@@ -1312,9 +1313,11 @@ class ScreenshotTest(private val variant: Variant) {
         asrEngine = "cpu",
         asrLanguage = "en",
         serverServicesEnabled = true,
-        serverOffer = ServerOffer(llm = OfferedService("qwen3"), transcription = null),
+        serverOffer = ServerOffer(llm = OfferedService("qwen3"), transcription = null, decision = OfferedService("")),
         llmSource = ServiceSource.SERVER,
-        asrSource = ServiceSource.SERVER
+        asrSource = ServiceSource.SERVER,
+        decisionSource = ServiceSource.SERVER,
+        decisionConfigured = true
     )
 
     private val settingsState = SettingsUiState(
@@ -1390,6 +1393,18 @@ class ScreenshotTest(private val variant: Variant) {
 
     @Test
     fun settingsServerSources() = settingsPage("settings_server_sources", SettingsPage.AI, state = serverSourcesState)
+
+    /** An own laya decision service for talking points, tested (issue #101). */
+    @Test
+    fun settingsDecisionOwn() = settingsPage(
+        "settings_decision_own",
+        SettingsPage.AI,
+        state = settingsState.copy(
+            form = settingsState.form.copy(decisionUrl = "http://laya.llama:8080"),
+            decisionConfigured = true,
+            decisionTestResult = ConnectionTestResult.Connected(count = 1, models = listOf("english"))
+        )
+    )
 
     @Test
     fun settingsSearch() = settingsPage("settings_search", SettingsPage.SEARCH)

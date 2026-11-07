@@ -109,6 +109,17 @@ class SettingsOverviewTest {
     }
 
     @Test
+    fun `talking points checked by a decision model are named, unless left to the language model`() {
+        val decision = SettingsUiState(decisionConfigured = true)
+        assertEquals(UiText.res(R.string.settings_overview_decision), status(SettingsPage.AI, decision).parts.last())
+        val optedOut = status(SettingsPage.AI, decision.copy(decisionForTalkingPoints = false))
+        assertFalse(optedOut.parts.contains(UiText.res(R.string.settings_overview_decision)))
+        assertFalse(
+            status(SettingsPage.AI, SettingsUiState()).parts.contains(UiText.res(R.string.settings_overview_decision))
+        )
+    }
+
+    @Test
     fun `no language model is stated without being a problem`() {
         val status = status(SettingsPage.AI, SettingsUiState())
         assertEquals(UiText.res(R.string.settings_overview_llm_none), status.parts.first())

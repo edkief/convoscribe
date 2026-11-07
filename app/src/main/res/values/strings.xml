@@ -381,7 +381,7 @@
     <string name="settings_llm_model_label">Model name</string>
     <string name="settings_llm_max_chars_label">Max transcript characters</string>
     <string name="settings_talking_point_check_label">Check talking points every (seconds)</string>
-    <string name="settings_talking_point_check_help">While recording, how often the latest speech is sent to the language model to tick talking points. 5 to 300; 0 turns it off.</string>
+    <string name="settings_talking_point_check_help">While recording, how often the latest speech is sent to the decision model or language model to tick talking points. 5 to 300; 0 turns it off.</string>
     <string name="settings_llm_test">Test connection</string>
     <string name="settings_llm_test_idle">Test the connection to load available models.</string>
     <string name="settings_transcription_engine">Speech engine</string>
@@ -862,7 +862,7 @@
     <string name="sync_confirm_action">Upload</string>
     <string name="sync_confirm_cancel">Cancel</string>
     <string name="server_services_label">Use this server\'s services</string>
-    <string name="server_services_help">Its language model and transcription, with the key above, if the server provides them. Separate from Sync sessions: either works without the other.</string>
+    <string name="server_services_help">Its language model, transcription and decision model, with the key above, if the server provides them. Separate from Sync sessions: either works without the other.</string>
     <string name="server_services_checking">Asking the server what it provides…</string>
     <string name="server_services_refused">The server refused the API key. Check it and try again.</string>
     <string name="server_services_failed">Couldn\'t ask the server: %1$s</string>
@@ -874,7 +874,7 @@
     <string name="server_services_confirm_provides">%1$s provides:</string>
     <string name="server_services_confirm_llm">A language model (%1$s). Transcripts are sent to it for summaries, questions, conversation names and mark notes, including automatically after a recording, and while recording to tick talking points.</string>
     <string name="server_services_confirm_asr">Transcription (%1$s). Recordings are uploaded to it when you transcribe again on the server. Improve recordings on the server stays off until you turn it on.</string>
-    <string name="server_services_confirm_none">%1$s doesn\'t provide a language model or transcription, so there is nothing to turn on. Sync sessions works as before.</string>
+    <string name="server_services_confirm_none">%1$s doesn\'t provide a language model, transcription or decision model, so there is nothing to turn on. Sync sessions works as before.</string>
     <string name="server_services_none_action">OK</string>
     <string name="server_services_confirm_footer">Anyone who controls that server can read what is sent. A language model or transcription server you set up yourself stays in use until you switch it in its section.</string>
     <string name="server_services_confirm_action">Use</string>
@@ -883,6 +883,20 @@
     <string name="service_source_server_in_use">Provided by the sync server: %1$s</string>
     <string name="service_source_llm_unavailable">The sync server doesn\'t provide a language model. Choose Specify my own to set one up.</string>
     <string name="service_source_asr_unavailable">The sync server doesn\'t provide transcription. Choose Specify my own to set one up.</string>
+    <string name="service_source_decision_unavailable">The sync server doesn\'t provide a decision model, so the language model checks talking points. Choose Specify my own to set one up.</string>
+    <!-- Decision model for talking points (issue #101) -->
+    <string name="settings_section_decision">Decision model</string>
+    <string name="settings_decision_help">A laya decision service can tick talking points while recording, in place of the language model: it is quicker and reads the transcript a line at a time. Without one, the language model checks them.</string>
+    <string name="settings_decision_own">Your own decision service</string>
+    <string name="settings_decision_url_placeholder">http://laya.example.com:8080</string>
+    <string name="settings_decision_url_cleartext">Transcripts are sent to an http:// address unencrypted. Use https:// unless the service is on a network you trust.</string>
+    <string name="settings_decision_model_placeholder">Picked by language</string>
+    <string name="settings_decision_test_connected">Connected – answered by its %1$s model</string>
+    <string name="settings_decision_for_talking_points_label">Check talking points with the decision model</string>
+    <string name="settings_decision_for_talking_points_help">Off: the language model checks them instead.</string>
+    <string name="settings_overview_decision">Talking points: decision model</string>
+    <string name="server_services_status_decision">Decision model: %1$s</string>
+    <string name="server_services_confirm_decision">A decision model (%1$s). While recording, the latest transcript lines are sent to it to tick talking points, unless you leave that to the language model.</string>
     <!-- Back up and restore (issue #25) -->
     <string name="backup_section_summary">Unless sync is on, sessions live only on this device. A backup holds every session with its recording, transcript, speakers, summaries, questions and marks, plus known voices, templates, presets and settings. API keys are never included.</string>
     <string name="backup_action">Back up sessions…</string>

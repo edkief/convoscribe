@@ -9,6 +9,7 @@ import com.convoscribe.llm.LlmException
 import com.convoscribe.llm.LlmMessage
 import com.convoscribe.models.ModelStore
 import com.convoscribe.settings.InMemorySecretStore
+import com.convoscribe.settings.ServiceSource
 import com.convoscribe.settings.SettingsRepository
 import java.io.File
 import kotlinx.coroutines.Dispatchers
@@ -80,8 +81,16 @@ class SettingsViewModelTest {
         repo: SettingsRepository = newRepo(),
         chatClient: ChatClient = FakeChatClient(models = emptyList()),
         templates: FakeSummaryTemplateStore = FakeSummaryTemplateStore(),
-        listServerModels: suspend () -> List<String> = { emptyList() }
-    ): SettingsViewModel = SettingsViewModel(repo, chatClient, modelStore, templates, listServerModels)
+        listServerModels: suspend () -> List<String> = { emptyList() },
+        pingDecision: suspend () -> String = { "" }
+    ): SettingsViewModel = SettingsViewModel(
+        repo,
+        chatClient,
+        modelStore,
+        templates,
+        listServerModels,
+        pingDecision = pingDecision
+    )
 
     @Test
     fun save_persistsFormAndApiKeyAndReloadReadsThemBack() {
@@ -209,6 +218,54 @@ class SettingsViewModelTest {
         assertEquals("p", repo.settings.value.asrServerModel)
         assertEquals("sk-asr", repo.asrServerKey())
         assertTrue(vm.state.value.serverConfigured)
+    }
+
+    @Test
+    fun saveAndTestDecision_persistsTheService_andNamesTheModelThatAnswered() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo, pingDecision = { "english" })
+        vm.update(SettingsForm(decisionUrl = "http://laya.llama:8080/", decisionKey = "laya-key", decisionModel = ""))
+
+        vm.testDecision()
+        advanceUntilIdle()
+
+        assertEquals("http://laya.llama:8080", repo.settings.value.decisionBaseUrl)
+        assertEquals("laya-key", repo.decisionKey())
+        assertTrue(vm.state.value.decisionConfigured)
+        assertFalse(vm.state.value.decisionTesting)
+        assertEquals(
+            ConnectionTestResult.Connected(count = 1, models = listOf("english")),
+            vm.state.value.decisionTestResult
+        )
+        // The form reads the saved values back.
+        assertEquals("laya-key", newVm(repo = repo).state.value.form.decisionKey)
+    }
+
+    @Test
+    fun testDecision_failureShowsTheMessage() = runTest(dispatcher) {
+        val vm = newVm(pingDecision = { throw LlmException("HTTP 404 from x: needs laya-serve 0.4.22") })
+        vm.update(SettingsForm(decisionUrl = "http://laya.llama:8080"))
+
+        vm.testDecision()
+        advanceUntilIdle()
+
+        assertEquals(
+            ConnectionTestResult.Failed("HTTP 404 from x: needs laya-serve 0.4.22"),
+            vm.state.value.decisionTestResult
+        )
+    }
+
+    @Test
+    fun decisionSourceAndTalkingPointsSwitch_writeImmediately() {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertTrue(vm.state.value.decisionForTalkingPoints)
+
+        vm.setDecisionSource(ServiceSource.SERVER)
+        vm.setDecisionForTalkingPoints(false)
+
+        assertEquals(ServiceSource.SERVER, repo.settings.value.decisionSource)
+        assertFalse(repo.settings.value.decisionForTalkingPoints)
     }
 
     @Test

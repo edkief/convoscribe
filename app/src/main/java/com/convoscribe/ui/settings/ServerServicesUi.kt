@@ -74,6 +74,12 @@ internal fun ServerServicesBlock(ui: ServerServicesUi, configured: Boolean, serv
                 offer?.transcription?.let { modelName(it) } ?: stringResource(R.string.server_services_not_available)
             )
         )
+        NoticeText(
+            text = stringResource(
+                R.string.server_services_status_decision,
+                offer?.decision?.let { modelName(it) } ?: stringResource(R.string.server_services_not_available)
+            )
+        )
     }
 }
 
@@ -87,7 +93,8 @@ private fun ServerServicesConfirm(offer: ServerOffer, serverUrl: String, onAccep
     val host = serverUrl.trim()
     val provided = listOfNotNull(
         offer.llm?.let { stringResource(R.string.server_services_confirm_llm, modelName(it)) },
-        offer.transcription?.let { stringResource(R.string.server_services_confirm_asr, modelName(it)) }
+        offer.transcription?.let { stringResource(R.string.server_services_confirm_asr, modelName(it)) },
+        offer.decision?.let { stringResource(R.string.server_services_confirm_decision, modelName(it)) }
     )
     if (provided.isEmpty()) {
         // Nothing to accept: the switch stays off, so services the server adds later are asked about then.
@@ -115,7 +122,7 @@ private fun ServerServicesConfirm(offer: ServerOffer, serverUrl: String, onAccep
 
 /**
  * The choice between the sync server's service and the user's own,
- * shown in the Language model and Transcription server sections while
+ * shown in the Language model, Transcription server and Decision model sections while
  * the server's services are on. With the server's chosen, says what it
  * provides or that it doesn't; the user's own fields are then hidden
  * but kept.
