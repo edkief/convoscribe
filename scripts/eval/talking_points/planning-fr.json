@@ -1,0 +1,113 @@
+{
+ "name": "planning-fr",
+ "description": "A planning call in French. Written for #101/#136; synthetic.",
+ "lines": [
+  {
+   "at": "00:04",
+   "speaker": "Julie",
+   "text": "Bonjour à tous, on commence ? On a pas mal de choses à voir."
+  },
+  {
+   "at": "00:10",
+   "speaker": "Marc",
+   "text": "Oui, allons-y."
+  },
+  {
+   "at": "00:14",
+   "speaker": "Julie",
+   "text": "Alors d'abord le salon de Lyon en mars. Le stand est réservé, il faut encore choisir qui y va."
+  },
+  {
+   "at": "00:27",
+   "speaker": "Marc",
+   "text": "Je peux y aller avec Sophie, on a fait celui de l'an dernier ensemble."
+  },
+  {
+   "at": "00:35",
+   "speaker": "Julie",
+   "text": "Parfait. Ensuite, les tarifs : on augmente le forfait pro de dix pour cent au premier avril."
+  },
+  {
+   "at": "00:48",
+   "speaker": "Sophie",
+   "text": "Il faudra prévenir les clients au moins un mois avant, c'est dans les conditions générales."
+  },
+  {
+   "at": "00:57",
+   "speaker": "Julie",
+   "text": "Bien vu, Sophie, tu prépares le courrier ?"
+  },
+  {
+   "at": "01:02",
+   "speaker": "Sophie",
+   "text": "Oui, je l'envoie pour relecture vendredi."
+  },
+  {
+   "at": "01:10",
+   "speaker": "Marc",
+   "text": "Au fait, le parking sera fermé lundi pour travaux."
+  },
+  {
+   "at": "01:16",
+   "speaker": "Julie",
+   "text": "D'accord, merci. Dernier point, le recrutement du stagiaire marketing : on a reçu douze candidatures."
+  },
+  {
+   "at": "01:29",
+   "speaker": "Marc",
+   "text": "J'en ai lu la moitié, il y en a deux très bonnes, je propose des entretiens la semaine prochaine."
+  },
+  {
+   "at": "01:40",
+   "speaker": "Julie",
+   "text": "Très bien. C'est tout pour aujourd'hui, merci."
+  }
+ ],
+ "points": [
+  {
+   "text": "Salon de Lyon : qui y va",
+   "covered": true,
+   "from": "00:14"
+  },
+  {
+   "text": "Hausse des tarifs du forfait pro",
+   "covered": true,
+   "from": "00:35"
+  },
+  {
+   "text": "Courrier aux clients sur les nouveaux tarifs",
+   "covered": true,
+   "from": "00:48"
+  },
+  {
+   "text": "Fermeture du parking",
+   "covered": true,
+   "from": "01:10"
+  },
+  {
+   "text": "Recrutement du stagiaire marketing",
+   "covered": true,
+   "from": "01:16"
+  },
+  {
+   "text": "Budget publicitaire du deuxième trimestre",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Migration du site web",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Bilan de l'année dernière",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Formation des commerciaux",
+   "covered": false,
+   "from": null
+  }
+ ]
+}

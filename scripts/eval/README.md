@@ -1,5 +1,7 @@
 # Speaker-attribution evaluation
 
+(For talking-point checks, see [`talking_points/`](talking_points/README.md).)
+
 `eval_speakers.py` runs ConvoScribe's transcription and speaker identification on a desktop, with
 the same models and settings as the app, and scores how many words are given to the right
 speaker. Use it to tune the clustering threshold and to check changes to speaker attribution.

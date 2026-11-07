@@ -1,0 +1,158 @@
+{
+ "name": "weekly-sync",
+ "description": "A weekly team sync (English), with a raised-then-parked topic. Written for #101/#136; synthetic.",
+ "lines": [
+  {
+   "at": "00:05",
+   "speaker": "Alice",
+   "text": "Okay, let's get started. Thanks everyone for joining the weekly sync."
+  },
+  {
+   "at": "00:12",
+   "speaker": "Bob",
+   "text": "Sure. Can you hear me okay? My mic was acting up earlier."
+  },
+  {
+   "at": "00:18",
+   "speaker": "Alice",
+   "text": "Yes, you're fine. So first up, I wanted to go over where we are with the mobile release."
+  },
+  {
+   "at": "00:31",
+   "speaker": "Bob",
+   "text": "Right, so the build is green, QA signed off on Tuesday, and we're planning to push it to the store on Friday."
+  },
+  {
+   "at": "00:45",
+   "speaker": "Carol",
+   "text": "One thing on that, the crash on older Android versions is fixed but I'd like one more day of beta data before we roll to a hundred percent."
+  },
+  {
+   "at": "01:02",
+   "speaker": "Alice",
+   "text": "That's fair. Let's do a staged rollout, ten percent Friday, and widen on Monday if crash rates look normal."
+  },
+  {
+   "at": "01:15",
+   "speaker": "Bob",
+   "text": "Works for me."
+  },
+  {
+   "at": "01:20",
+   "speaker": "Alice",
+   "text": "Next, hiring. We still have the backend role open."
+  },
+  {
+   "at": "01:28",
+   "speaker": "Carol",
+   "text": "I did three interviews this week. One strong candidate, she has a lot of Postgres experience, I'd like to move her to the onsite."
+  },
+  {
+   "at": "01:41",
+   "speaker": "Alice",
+   "text": "Great, let's schedule that for next week. Bob, can you be on the panel?"
+  },
+  {
+   "at": "01:47",
+   "speaker": "Bob",
+   "text": "Yes, put me down for the system design part."
+  },
+  {
+   "at": "01:55",
+   "speaker": "Alice",
+   "text": "Okay. By the way, the coffee machine on the third floor is broken again, so don't bother going up there."
+  },
+  {
+   "at": "02:03",
+   "speaker": "Carol",
+   "text": "Ha, noted."
+  },
+  {
+   "at": "02:10",
+   "speaker": "Bob",
+   "text": "Should we talk about the cloud bill? It went up quite a bit last month."
+  },
+  {
+   "at": "02:16",
+   "speaker": "Alice",
+   "text": "Let's park that, I don't have the numbers yet. Maybe next week."
+  },
+  {
+   "at": "02:22",
+   "speaker": "Carol",
+   "text": "Also I wanted to mention the customer from Lyon complained again about export to PDF being slow."
+  },
+  {
+   "at": "02:35",
+   "speaker": "Bob",
+   "text": "We profiled it, the slow part is the font embedding. I have a fix that caches the fonts, it brings a fifty page export from twenty seconds down to three."
+  },
+  {
+   "at": "02:50",
+   "speaker": "Alice",
+   "text": "Nice, let's get that into the release after this one. Carol, can you let the customer know it's coming?"
+  },
+  {
+   "at": "02:58",
+   "speaker": "Carol",
+   "text": "Will do."
+  },
+  {
+   "at": "03:05",
+   "speaker": "Alice",
+   "text": "Anything else? Okay, I think that's it, thanks all."
+  }
+ ],
+ "points": [
+  {
+   "text": "Mobile release date and rollout plan",
+   "covered": true,
+   "from": "00:31"
+  },
+  {
+   "text": "Backend hiring: next steps for candidates",
+   "covered": true,
+   "from": "01:28"
+  },
+  {
+   "text": "Cloud costs: why the bill went up and how to cut it",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "PDF export performance complaint",
+   "covered": true,
+   "from": "02:22"
+  },
+  {
+   "text": "Office coffee machine",
+   "covered": true,
+   "from": "01:55"
+  },
+  {
+   "text": "Q3 roadmap priorities",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Security audit findings",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Team offsite location and dates",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Who is on the interview panel",
+   "covered": true,
+   "from": "01:41"
+  },
+  {
+   "text": "Customer churn in the enterprise segment",
+   "covered": false,
+   "from": null
+  }
+ ]
+}
