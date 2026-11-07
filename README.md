@@ -356,6 +356,11 @@ brings them to your other devices.
   each time, up to 5 minutes. After two failures in a row, the card says
   quietly that checks aren't working and to tick by hand. The note goes
   once a check succeeds.
+  With a **decision model** set up (Settings → AI & summaries → *Decision
+  model*, issue #101), a laya decision service does these checks instead,
+  and no language model is needed for them. See *Decision model for
+  talking points* below. *Check talking points with the decision model*
+  (on by default) hands them back to the language model.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -851,8 +856,11 @@ one package per concern:
   automatic summaries of finished sessions, #29), `MarkNotesWriter`,
   `AutoTitler` and `TalkingPointChecker` (follows the recording and ticks
   talking points, #103, with `TalkingPointWindow` and
-  `TalkingPointAnswer`) run their LLM calls on the application scope, one
+  `TalkingPointAnswer`, or `DecisionTalkingPoints` with a decision
+  model, #101) run their LLM calls on the application scope, one
   at a time.
+- `decision/` — `DecisionClient` / `HttpDecisionClient`, laya-serve's
+  `/v1/systemone/batch` (#101), and `DecisionConfig`.
 - `recording/` — `RecordingController` (the audio + ASR loop),
   `RecordingState`, `RecordingStore`, `SessionRecovery` (the
   crash-recovery boot pass).
@@ -918,6 +926,50 @@ The endpoint is contacted only by `llm/ChatClient.kt`. The
 streaming path uses server-sent events (`data: {…}\n\n` chunks)
 and surfaces partial tokens to the UI as soon as the SSE parser
 sees the `delta.content` field.
+
+## Decision model for talking points
+
+Settings → AI & summaries → **Decision model** (issue #101) sets up a
+[laya](https://huggingface.co/convaiinnovations/laya) decision service
+(`laya-serve` 0.4.22 or later) to tick talking points while recording,
+in place of the language model. laya answers typed questions about a
+short text in one pass, in tens of milliseconds, and never writes text,
+so there is nothing to parse.
+
+- **Base URL** — where laya-serve answers, without a path, e.g.
+  `http://laya.example.com:8080`. With the sync server's services on,
+  choose **Sync server's** instead (see below).
+- **API key** — optional (laya-serve's `LAYA_API_KEY`), stored apart
+  from the other keys.
+- **Model** — the laya model, `english` or `multilingual`; blank lets
+  laya pick by the language of each line.
+- **Test connection** saves, then asks one small decision and names the
+  model that answered.
+- **Check talking points with the decision model** — on by default once
+  one is set up, the sync server's included. Off sends the checks to the
+  language model as before.
+
+Without a decision model, or with that switch off, the language model
+checks talking points exactly as described above. A check with laya is
+timed, retried and reported the same way; it doesn't wait for the
+language model's other work.
+
+How a check asks laya (`llm/DecisionTalkingPoints.kt`): every
+transcript line since the last check is a state of its own, and the
+points not covered yet go to it as `choice` questions, at most 5 points
+each, spread evenly, plus *none of these*. Each question is filled up to
+5 points with the conversation's points already ticked, which are never
+ticked again. A point is ticked at the first line where it is the answer
+with a probability of at least 0.5. All lines go in one
+`POST /v1/systemone/batch` call (64 lines per call).
+
+Why this way: the English laya model reads only about 320 tokens of
+text per question and silently drops the rest, and asking about a whole
+stretch of transcript was near chance. A line at a time, it judged 29 of
+34 points right over three test meetings (one in French), ticking 2 of
+17 points that weren't discussed. With only one or two options per
+question it ticked far too many (8 of 17), hence the filling.
+Calibrating this on real recordings is #132.
 
 ## Transcription server
 
@@ -1013,20 +1065,21 @@ typed in (#94):
 1. In Settings → *Server & sync*, enter the address and API key as for sync.
 2. Turn on **Use this server's services**. The app asks the server what
    it provides (`GET /api/sync/v1/config`), then shows one confirmation
-   naming the server, its language model and its transcription, and
-   what goes to each: transcripts to the language model (summaries,
-   questions, names and mark notes, also automatically, and while
-   recording to tick talking points), and recordings
-   to transcription only when you transcribe again on the server.
-   Nothing is sent to either before you accept.
-3. *Language model* and *Transcription server* now each offer **Sync
-   server's** or **Specify my own**. A service you hadn't set up starts
+   naming the server, its language model, its transcription and its
+   decision model (#101), and what goes to each: transcripts to the
+   language model (summaries, questions, names and mark notes, also
+   automatically, and while recording to tick talking points), recordings
+   to transcription only when you transcribe again on the server, and
+   the latest transcript lines to the decision model while recording to
+   tick talking points. Nothing is sent to any before you accept.
+3. *Language model*, *Transcription server* and *Decision model* now
+   each offer **Sync server's** or **Specify my own**. A service you hadn't set up starts
    on the server's; one you had keeps your own until you switch.
    *Improve recordings on the server* stays off until you turn it on.
 
 This is separate from *Sync sessions*: either works without the other,
 and turning one off leaves the other as it is. The app reaches the
-services at `/api/ai/v1/llm` and `/api/ai/v1/asr` on the sync server with
+services at `/api/ai/v1/llm`, `/api/ai/v1/asr` and `/api/ai/v1/decision` on the sync server with
 the sync key; the upstream addresses and keys stay on the server, and
 your own keys are never sent there.
 

@@ -2719,6 +2719,53 @@ loads subtitles (VLC), and apps that open DOCX and PDF.
   and *Summarise* still works.
 - Step 11: the summary is not replaced.
 
+## 62. Talking points ticked by a decision model (issue #101)
+
+Needs a laya decision service (laya-serve 0.4.22 or later, e.g.
+`http://laya.llama:8080`), a language model, and for steps 6 and 7 a sync
+server with `DECISION_UPSTREAM_URL` set to it.
+
+**Steps**
+
+1. Settings → AI & summaries → *Decision model* → *Your own decision service*:
+   enter the laya address, leave Model blank, *Test connection*.
+2. Enter `http://laya.llama:8080/v1` (a wrong path) and *Test connection*; then
+   put the right address back and test again.
+3. Record with the points *Mobile release*, *Backend hiring*, *Coffee machine*,
+   *Security audit* and *Team offsite*. Talk about the release date for a few
+   sentences, then hiring, then mention that the coffee machine is broken. Say
+   nothing about the audit or the offsite. Watch logcat on `talking points`.
+4. Turn *Check talking points with the decision model* off, and record with the
+   same points while talking about the release.
+5. Turn it back on. Stop laya (or enter an address that does not answer) and
+   record with points for two minutes while talking; then make it answer again.
+6. On a device connected to the sync server, turn on *Use this server's
+   services*. Then, in *Decision model*, choose *Sync server's* and record as in
+   step 3.
+7. In the web app, open a session with open talking points and *Check points*.
+   Then remove `DECISION_UPSTREAM_URL`, restart the server, and *Check points*
+   again.
+
+**Expected**
+
+- Step 1: *Connected – answered by its english model* (or *multilingual*). The
+  *Check talking points with the decision model* switch appears, on.
+- Step 2: the test fails with HTTP 404 and says the decision service needs
+  laya-serve 0.4.22 or later.
+- Step 3: the release, hiring and coffee machine points tick within about half a
+  minute each, at the line where they came up; the audit and offsite stay
+  unticked. Checks are logged without waiting on the language model.
+- Step 4: the language model ticks the release point, as in section 54.
+- Step 5: as section 54 step 5: no dialog, the quiet note after about 45 seconds,
+  and points tick again once laya answers. The language model is not used in
+  the meantime.
+- Step 6: the confirmation names a decision model; the Server & sync status lists
+  *Decision model: the server's default model*. The points tick as in step 3.
+  Settings → overview shows *Talking points: decision model* on the AI row.
+- Step 7: with the decision service, the check takes a second or two and ticks the
+  points discussed; a long session shows its batches as steps. Without it, the
+  language model checks as in section 60.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
