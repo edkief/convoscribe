@@ -396,4 +396,65 @@ class WavRoundTripTest {
         assertEquals(1.5f / 32_768f, samples[1], 1e-6f)
         assertEquals(15_000f / 32_768f, samples[10_000], 1e-6f)
     }
+
+    // --- buffered decoding (issue #134) -----------------------------
+
+    /** Every sample value, negatives included, so the decoding is fully checked. */
+    private fun ramp(size: Int) = ShortArray(size) { i -> (i * 37 - 32_768).toShort() }
+
+    @Test
+    fun readMono16k_acrossManyBuffers_withPartialLastBuffer_decodesEverySample() {
+        val file = tmp.newFile("long.wav")
+        val samples = ramp(1_001)
+        writeWav(file, AudioSpec.SAMPLE_RATE, channels = 1, bitsPerSample = 16, samples = samples)
+
+        // 6-byte buffer: 3 samples per read, 1 left for the last read.
+        val read = WavReader.readMono16k(file, bufferBytes = 6)
+
+        assertEquals(samples.map { it / 32_768f }, read.toList())
+        assertEquals(read.toList(), WavReader.readMono16k(file).toList())
+    }
+
+    @Test
+    fun readMono16k_bufferLargerThanPayload_readsOnce() {
+        val file = tmp.newFile("short.wav")
+        val samples = ramp(5)
+        writeWav(file, AudioSpec.SAMPLE_RATE, channels = 1, bitsPerSample = 16, samples = samples)
+
+        assertEquals(samples.map { it / 32_768f }, WavReader.readMono16k(file, bufferBytes = 1_024).toList())
+    }
+
+    @Test
+    fun readMono16k_overReportedDataSize_smallBuffer_readsBytesOnDisk() {
+        val file = tmp.newFile("overreported.wav")
+        val samples = ramp(301)
+        writeWav(file, AudioSpec.SAMPLE_RATE, channels = 1, bitsPerSample = 16, samples = samples)
+        // The header claims far more audio than the file holds.
+        RandomAccessFile(file, "rw").use { raf ->
+            raf.seek(40)
+            raf.write(ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(1_000_000).array())
+        }
+
+        assertEquals(samples.map { it / 32_768f }, WavReader.readMono16k(file, bufferBytes = 8).toList())
+    }
+
+    @Test
+    fun readMono16k_otherRate_smallBuffer_matchesDefaultBuffer() {
+        val file = tmp.newFile("clip24k-buffered.wav")
+        writeWav(file, sampleRate = 24_000, channels = 1, bitsPerSample = 16, samples = ramp(2_401))
+
+        val buffered = WavReader.readMono16k(file, bufferBytes = 10)
+
+        assertEquals(1_600, buffered.size)
+        assertEquals(WavReader.readMono16k(file).toList(), buffered.toList())
+    }
+
+    @Test
+    fun readMono16k_rejectsOddOrEmptyBuffer() {
+        val file = tmp.newFile("any.wav")
+        writeWav(file, AudioSpec.SAMPLE_RATE, channels = 1, bitsPerSample = 16, samples = ramp(4))
+
+        assertThrows(IllegalArgumentException::class.java) { WavReader.readMono16k(file, bufferBytes = 3) }
+        assertThrows(IllegalArgumentException::class.java) { WavReader.readMono16k(file, bufferBytes = 0) }
+    }
 }
