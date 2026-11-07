@@ -117,7 +117,7 @@ type Batch = { states: string[]; questions: Record<string, { type: string; crite
  * A fake laya decision service: for each line, the point whose text a word
  * of `byWord` names wins where the line contains that word, else none.
  */
-describe('POST /api/web/v1/sessions/<syncId>/points with a decision service (#101)', () => {
+describe('POST /api/web/v1/sessions/<syncId>/points with a decision service (#101, #136)', () => {
   let server: Server;
   let base = '';
   let calls: Batch[] = [];
@@ -163,8 +163,25 @@ describe('POST /api/web/v1/sessions/<syncId>/points with a decision service (#10
     calls = [];
     byWord = {};
     status = 200;
-    stubServerEnv({ LLM_UPSTREAM_URL: process.env.LLM_UPSTREAM_URL!, LLM_MODEL: 'm', DECISION_UPSTREAM_URL: base, ...env });
+    stubServerEnv({ LLM_UPSTREAM_URL: process.env.LLM_UPSTREAM_URL!, LLM_MODEL: 'm', DECISION_UPSTREAM_URL: base, DECISION_FOR_TALKING_POINTS: 'on', ...env });
   };
+
+  it('uses the language model, not the decision service, unless switched on (#136)', async () => {
+    withDecision({ DECISION_FOR_TALKING_POINTS: '' });
+    byWord = { 'how are you': 'How Bob is' };
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { talkingPoints: POINTS }));
+    expect(await events(await check('s1', { baseRevision: pushed.revision }))).toEqual([{ done: true, revision: pushed.revision + 1, ticked: 1 }]);
+    expect(calls).toHaveLength(0);
+    expect(llm.calls).toHaveLength(1);
+  });
+
+  it('is not offered with a decision service alone unless switched on (#136)', async () => {
+    withDecision({ LLM_UPSTREAM_URL: '', LLM_MODEL: '', DECISION_FOR_TALKING_POINTS: 'off' });
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { talkingPoints: POINTS }));
+    const res = await check('s1', { baseRevision: pushed.revision });
+    expect(res.status).toBe(404);
+    expect(calls).toHaveLength(0);
+  });
 
   it('asks the decision service a line at a time, not the language model, and ticks at the line', async () => {
     withDecision({ DECISION_MODEL: 'english' });

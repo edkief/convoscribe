@@ -1,5 +1,6 @@
 import { fetch as undiciFetch } from 'undici';
 import { agent, upstreamOf } from './ai-proxy';
+import { env } from './env';
 import { LlmError } from './llm-client';
 
 /** A `choice` question for the decision service (#101): the text it answers, and its options as label to description. */
@@ -10,6 +11,16 @@ export type DecisionAnswer = { choice: string; probabilities: Record<string, num
 
 /** Every question asked of each state, in order: one record of answers per state. */
 export type Decide = (states: string[], questions: Record<string, DecisionQuestion>, signal?: AbortSignal) => Promise<Record<string, DecisionAnswer>[]>;
+
+/**
+ * Whether the web app's talking-point check goes to the decision service
+ * rather than the language model: only when the server has one and
+ * `DECISION_FOR_TALKING_POINTS` is on (#136), since laya as shipped ticks
+ * points before they come up on real recordings.
+ */
+export function talkingPointsByDecision(): boolean {
+  return env().DECISION_FOR_TALKING_POINTS === 'on' && !!upstreamOf('decision');
+}
 
 /** States per call: laya-serve's batch endpoint takes at most 64. */
 export const MAX_STATES = 64;

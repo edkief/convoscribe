@@ -72,6 +72,9 @@ const schema = z
     DECISION_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
     DECISION_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
     DECISION_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
+    // Whether the web app's talking-point check uses the decision service rather than the
+    // language model (#136). Off: laya ticked points before they came up on real recordings.
+    DECISION_FOR_TALKING_POINTS: z.preprocess(blankToUndefined, z.enum(['on', 'off']).default('off')),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === 'api-key' && !env.SYNC_API_KEY) {

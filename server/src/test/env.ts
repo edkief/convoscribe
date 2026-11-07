@@ -24,6 +24,7 @@ export function stubServerEnv(overrides: Record<string, string> = {}) {
     DECISION_UPSTREAM_URL: '',
     DECISION_UPSTREAM_KEY: '',
     DECISION_MODEL: '',
+    DECISION_FOR_TALKING_POINTS: '',
     ...overrides,
   };
   for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);

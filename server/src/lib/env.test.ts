@@ -119,5 +119,12 @@ describe('loadEnv', () => {
       expect(() => load({ ...url, LLM_LOW_REASONING: 'null' })).toThrow(/LLM_LOW_REASONING/);
       expect(() => load({ LLM_LOW_REASONING: '{"reasoning_effort":"low"}' })).toThrow(/LLM_LOW_REASONING/);
     });
+
+    it('checks talking points with the decision service only when switched on (#136)', () => {
+      expect(load({}).DECISION_FOR_TALKING_POINTS).toBe('off');
+      expect(load({ DECISION_FOR_TALKING_POINTS: '' }).DECISION_FOR_TALKING_POINTS).toBe('off');
+      expect(load({ DECISION_FOR_TALKING_POINTS: 'on' }).DECISION_FOR_TALKING_POINTS).toBe('on');
+      expect(() => load({ DECISION_FOR_TALKING_POINTS: 'yes' })).toThrow(/DECISION_FOR_TALKING_POINTS/);
+    });
   });
 });

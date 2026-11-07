@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { upstreamOf } from '@/lib/ai-proxy';
+import { talkingPointsByDecision } from '@/lib/decision-client';
 import { formatBytes, formatDateTime, formatLength } from '@/lib/format';
 import { listTemplates, resolveTemplate } from '@/lib/summary-templates';
 import { KNOWN_SCHEMA, marksByLine, spoken, timestamp, type Message, type SessionView } from '@/lib/transcript-export';
@@ -80,8 +81,8 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
   };
   // The smaller actions (#119) read the transcript.
   const assist = llm && lines.length > 0 ? { syncId } : null;
-  // Talking points can also be checked by a decision service alone (#101).
-  const pointCheck = !newer && (llm || !!upstreamOf('decision')) && lines.length > 0 ? { syncId } : null;
+  // Talking points can also be checked by a decision service alone, when switched on (#101, #136).
+  const pointCheck = !newer && (llm || talkingPointsByDecision()) && lines.length > 0 ? { syncId } : null;
   const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm }, assist, pointCheck);
 
   return (
