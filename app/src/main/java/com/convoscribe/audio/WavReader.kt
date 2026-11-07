@@ -30,21 +30,38 @@ object WavReader {
      * 16 kHz as a `FloatArray` in `[-1.0, 1.0]`, resampling if the
      * file uses another rate.
      *
+     * The PCM bytes are decoded through a small fixed buffer, so the
+     * only large allocation is the returned array (issue #134).
+     * Holding the whole payload as bytes as well added half as much
+     * again: ~690 MB at the peak for a 2-hour recording, more than a
+     * typical large heap.
+     *
      * @throws IllegalArgumentException if the file is not a WAV, the
-     *   `fmt ` chunk is missing, or it is not mono 16-bit PCM.
+     *   `fmt ` chunk is missing, it is not mono 16-bit PCM, or it has
+     *   more samples than an array can hold.
      */
-    fun readMono16k(file: File): FloatArray {
+    fun readMono16k(file: File): FloatArray = readMono16k(file, READ_BUFFER_BYTES)
+
+    /** [readMono16k] with a read buffer of [bufferBytes] (even, > 0), so tests can force many reads. */
+    internal fun readMono16k(file: File, bufferBytes: Int): FloatArray {
+        require(bufferBytes >= 2 && bufferBytes % 2 == 0) { "bufferBytes must be even and >= 2" }
         RandomAccessFile(file, "r").use { raf ->
             val info = inspect(raf, file)
-            val byteCount = info.dataBytes.toInt()
-            val raw = ByteArray(byteCount)
+            val nSamples = info.dataBytes / 2
+            require(nSamples <= Int.MAX_VALUE) {
+                "WAV has $nSamples samples; too many to load at once: ${file.absolutePath}"
+            }
+            val out = FloatArray(nSamples.toInt())
+            val raw = ByteArray(bufferBytes)
             raf.seek(info.dataOffset)
-            raf.readFully(raw)
-            val bb = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
-            val nSamples = byteCount / 2
-            val out = FloatArray(nSamples)
-            for (i in 0 until nSamples) {
-                out[i] = bb.short / 32_768f
+            var filled = 0
+            while (filled < out.size) {
+                val want = minOf(raw.size, (out.size - filled) * 2)
+                raf.readFully(raw, 0, want)
+                val bb = ByteBuffer.wrap(raw, 0, want).order(ByteOrder.LITTLE_ENDIAN)
+                repeat(want / 2) {
+                    out[filled++] = bb.short / 32_768f
+                }
             }
             return if (info.sampleRate == AudioSpec.SAMPLE_RATE) {
                 out
@@ -53,6 +70,9 @@ object WavReader {
             }
         }
     }
+
+    /** Bytes [readMono16k] decodes per read. */
+    private const val READ_BUFFER_BYTES = 64 * 1024
 
     /**
      * Number of 16 kHz samples [readChunks16k] hands out for [file].
