@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -37,12 +38,18 @@ import okhttp3.Response
  * [temperature] is forwarded verbatim. The OpenAI default (1.0) is
  * high; we ship 0.3 to bias towards deterministic summaries, but
  * the settings screen may eventually let the user dial it.
+ *
+ * [headers] are added to each chat request and [extraBody]'s fields to
+ * its JSON (never over `messages` or `stream`): a talking-point check's
+ * way of asking for little reasoning (issue #136, [TalkingPointReasoning]).
  */
 data class LlmConfig(
     val baseUrl: String,
     val apiKey: String,
     val model: String,
-    val temperature: Double = 0.3
+    val temperature: Double = 0.3,
+    val headers: Map<String, String> = emptyMap(),
+    val extraBody: JsonObject = JsonObject(emptyMap())
 )
 
 /**
@@ -118,7 +125,8 @@ class OpenAiChatClient(
             )
         }
 
-        val requestBody = requestJson.toString()
+        val extra = cfg.extraBody.filterKeys { it !in RESERVED_FIELDS }
+        val requestBody = JsonObject(requestJson + extra).toString()
             .toRequestBody(JSON_MEDIA_TYPE)
 
         val request = Request.Builder()
@@ -129,6 +137,7 @@ class OpenAiChatClient(
                 if (cfg.apiKey.isNotBlank()) {
                     header("Authorization", "Bearer ${cfg.apiKey}")
                 }
+                cfg.headers.forEach { (name, value) -> header(name, value) }
             }
             .post(requestBody)
             .build()
@@ -262,5 +271,8 @@ class OpenAiChatClient(
 
     private companion object {
         val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
+        /** Fields [LlmConfig.extraBody] may not replace: the client streams the messages it was given. */
+        val RESERVED_FIELDS = setOf("messages", "stream")
     }
 }

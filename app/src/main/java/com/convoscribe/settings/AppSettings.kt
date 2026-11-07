@@ -120,6 +120,12 @@ import com.convoscribe.llm.SummaryTemplates
  * talking points with the decision model*: off sends the checks to the
  * language model even when a decision service is set up.
  *
+ * [talkingPointLowReasoning] asks the user's own language model for
+ * little reasoning in talking-point checks, with
+ * [talkingPointExtraFields] (a JSON object, blank for none) added to
+ * those requests for models with their own switch (issue #136). The
+ * sync server's model is asked the server's way instead.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -147,6 +153,8 @@ data class AppSettings(
     val decisionModel: String = "",
     val decisionSource: ServiceSource? = null,
     val decisionForTalkingPoints: Boolean = true,
+    val talkingPointLowReasoning: Boolean = false,
+    val talkingPointExtraFields: String = "",
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,

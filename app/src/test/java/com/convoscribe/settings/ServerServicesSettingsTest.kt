@@ -2,6 +2,7 @@ package com.convoscribe.settings
 
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
+import com.convoscribe.llm.TalkingPointReasoning
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -287,6 +288,49 @@ class ServerServicesSettingsTest {
         repo.update { it.copy(serverServicesEnabled = false) }
         repo.update { it.withServerServicesOn() }
         assertFalse(newRepository().settings.value.decisionForTalkingPoints)
+    }
+
+    @Test
+    fun talkingPoints_serversModel_isAskedForLowReasoningByTheHeaderOnly() {
+        val repo = newRepository()
+        connected(repo)
+        repo.update { it.copy(talkingPointLowReasoning = true, talkingPointExtraFields = """{"x": 1}""") }
+        val config = repo.llmConfig(forTalkingPoints = true)
+        assertEquals("$SERVER/api/ai/v1/llm", config.baseUrl)
+        assertEquals(mapOf(TalkingPointReasoning.HEADER to "low"), config.headers)
+        // The user's own fields are for their own model, never the server's.
+        assertTrue(config.extraBody.isEmpty())
+        assertTrue(repo.llmConfig().headers.isEmpty())
+    }
+
+    @Test
+    fun talkingPoints_ownModel_getsTheFieldsOnlyWhenTheUserAsks() {
+        val repo = newRepository()
+        repo.update { withOwnEndpoints(it) }
+        assertEquals(repo.llmConfig(), repo.llmConfig(forTalkingPoints = true))
+
+        val extra = """{"reasoning_effort": null, "chat_template_kwargs": {"enable_thinking": false}}"""
+        repo.update { it.copy(talkingPointLowReasoning = true, talkingPointExtraFields = " $extra ") }
+        val config = repo.llmConfig(forTalkingPoints = true)
+        assertTrue(config.headers.isEmpty())
+        assertEquals("""{"chat_template_kwargs":{"enable_thinking":false}}""", config.extraBody.toString())
+        assertTrue(repo.llmConfig().extraBody.isEmpty())
+        // Persisted, trimmed.
+        val reloaded = newRepository().settings.value
+        assertTrue(reloaded.talkingPointLowReasoning)
+        assertEquals(extra, reloaded.talkingPointExtraFields)
+    }
+
+    @Test
+    fun talkingPoints_extraFieldsThatAreNotAJsonObject_keepTheSavedOnes() {
+        val repo = newRepository()
+        repo.update { it.copy(talkingPointExtraFields = """{"a": 1}""") }
+        for (bad in listOf("{a: 1", "[1]", "\"low\"", "null")) {
+            repo.update { it.copy(talkingPointExtraFields = bad) }
+            assertEquals("""{"a": 1}""", repo.settings.value.talkingPointExtraFields)
+        }
+        repo.update { it.copy(talkingPointExtraFields = " ") }
+        assertEquals("", repo.settings.value.talkingPointExtraFields)
     }
 
     private companion object {

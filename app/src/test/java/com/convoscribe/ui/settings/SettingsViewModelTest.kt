@@ -193,6 +193,24 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun save_talkingPointLowReasoningAndExtraFields_invalidJsonKeepsTheSavedFields() {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertFalse(vm.state.value.form.talkingPointLowReasoning)
+        val fields = """{"chat_template_kwargs": {"enable_thinking": false}}"""
+        vm.update(vm.state.value.form.copy(talkingPointLowReasoning = true, talkingPointExtraFields = fields))
+        vm.save()
+        assertTrue(repo.settings.value.talkingPointLowReasoning)
+        assertEquals(fields, repo.settings.value.talkingPointExtraFields)
+
+        vm.update(vm.state.value.form.copy(talkingPointExtraFields = "{enable_thinking: false"))
+        vm.save()
+        assertEquals(fields, repo.settings.value.talkingPointExtraFields)
+        // The form shows what was kept.
+        assertEquals(fields, vm.state.value.form.talkingPointExtraFields)
+    }
+
+    @Test
     fun testConnection_withFakeModelsListsPopulatesTestResultAndAvailableModels() = runTest(dispatcher) {
         val fake = FakeChatClient(models = listOf("m1", "m2"))
         val repo = newRepo()

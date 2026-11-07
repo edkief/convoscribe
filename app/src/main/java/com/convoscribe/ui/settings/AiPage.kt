@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.convoscribe.R
 import com.convoscribe.llm.SummaryTemplate
+import com.convoscribe.llm.TalkingPointReasoning
 import com.convoscribe.settings.OfferedService
 import com.convoscribe.settings.ServiceSource
 import com.convoscribe.ui.components.Disclosure
@@ -263,10 +264,12 @@ internal fun SummariesSection(
 
 /**
  * The language model's expert settings: how much of a transcript is
- * sent, and how often talking points are checked while recording.
+ * sent, how often talking points are checked while recording, and how
+ * those checks ask for little reasoning (issue #136): set here for the
+ * user's own model, by the server for its own ([llmFromServer]).
  */
 @Composable
-internal fun AiAdvanced(form: SettingsForm, onFormChange: (SettingsForm) -> Unit) {
+internal fun AiAdvanced(form: SettingsForm, llmFromServer: Boolean, onFormChange: (SettingsForm) -> Unit) {
     Disclosure(
         title = stringResource(R.string.settings_advanced),
         summary = stringResource(R.string.settings_ai_advanced_summary, form.maxChars, form.talkingPointSeconds),
@@ -289,5 +292,42 @@ internal fun AiAdvanced(form: SettingsForm, onFormChange: (SettingsForm) -> Unit
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             modifier = Modifier.fillMaxWidth()
         )
+        if (llmFromServer) {
+            SupportingText(text = stringResource(R.string.settings_talking_point_reasoning_server))
+        } else {
+            SwitchRow(
+                label = stringResource(R.string.settings_talking_point_low_reasoning_label),
+                help = stringResource(R.string.settings_talking_point_low_reasoning_help),
+                checked = form.talkingPointLowReasoning,
+                onCheckedChange = { onFormChange(form.copy(talkingPointLowReasoning = it)) }
+            )
+            if (form.talkingPointLowReasoning) {
+                val invalid = TalkingPointReasoning.parseFields(form.talkingPointExtraFields) == null
+                OutlinedTextField(
+                    value = form.talkingPointExtraFields,
+                    onValueChange = { onFormChange(form.copy(talkingPointExtraFields = it)) },
+                    label = { Text(text = stringResource(R.string.settings_talking_point_extra_fields_label)) },
+                    placeholder = { Text(text = EXTRA_FIELDS_EXAMPLE) },
+                    isError = invalid,
+                    supportingText = {
+                        Text(
+                            text = stringResource(
+                                if (invalid) {
+                                    R.string.settings_talking_point_extra_fields_invalid
+                                } else {
+                                    R.string.settings_talking_point_extra_fields_help
+                                }
+                            )
+                        )
+                    },
+                    minLines = 2,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
     }
 }
+
+/** What the extra fields look like, for a llama.cpp model with a thinking switch. */
+private const val EXTRA_FIELDS_EXAMPLE = "{\"chat_template_kwargs\": {\"enable_thinking\": false}}"
