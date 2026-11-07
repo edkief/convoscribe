@@ -71,6 +71,18 @@ describe('chatStream', () => {
     expect(JSON.parse(seen[0].body)).toEqual({ model: 'big', stream: true, temperature: 0.3, messages: [{ role: 'user', content: 'Hi' }] });
   });
 
+  it('asks for low reasoning the server’s way only when told to (#136)', async () => {
+    handler = (_req, _body, res) => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end(sse('ok'));
+    };
+    stubServerEnv({ LLM_UPSTREAM_URL: `${base}/v1`, LLM_MODEL: 'big', LLM_LOW_REASONING: '{"chat_template_kwargs":{"enable_thinking":false}}' });
+    await collect(chatStream([{ role: 'user', content: 'a' }], undefined, { lowReasoning: true }));
+    await collect(chatStream([{ role: 'user', content: 'a' }]));
+    expect(JSON.parse(seen[0].body).chat_template_kwargs).toEqual({ enable_thinking: false });
+    expect(JSON.parse(seen[1].body).chat_template_kwargs).toBeUndefined();
+  });
+
   it('takes the first listed model when none is set, once', async () => {
     stubServerEnv({ LLM_UPSTREAM_URL: `${base}/v1` });
     handler = (req, _body, res) => {

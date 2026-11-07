@@ -6,6 +6,7 @@ import com.convoscribe.data.ParticipantsCodec
 import com.convoscribe.decision.DecisionConfig
 import com.convoscribe.llm.LlmConfig
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.llm.TalkingPointReasoning
 import com.convoscribe.models.ModelCatalog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,6 +76,8 @@ class SettingsRepository(
      *  - `diarizationStepSeconds` clamped to 0.5..10 (the window is 10 s)
      *  - `floatingShape` must be a [FloatingShape.key] or `null`;
      *    anything else keeps the previous value
+     *  - `talkingPointExtraFields` trimmed; anything but blank or a JSON
+     *    object keeps the previous value
      *  - `defaultSummaryTemplate` trimmed; blank becomes Meeting. A
      *    deleted user template is not caught here (they live in
      *    Room); it resolves to Meeting when used
@@ -105,6 +108,9 @@ class SettingsRepository(
             putString(KEY_DECISION_MODEL, next.decisionModel)
             putOrRemove(KEY_DECISION_SOURCE, next.decisionSource?.key)
             putBoolean(KEY_DECISION_FOR_TALKING_POINTS, next.decisionForTalkingPoints)
+            putBoolean(KEY_DECISION_FOR_TALKING_POINTS_CHOSEN, true)
+            putBoolean(KEY_TALKING_POINT_LOW_REASONING, next.talkingPointLowReasoning)
+            putString(KEY_TALKING_POINT_EXTRA_FIELDS, next.talkingPointExtraFields)
             val offer = next.serverOffer
             putBoolean(KEY_SERVER_OFFER, offer != null)
             putOrRemove(KEY_SERVER_OFFER_LLM_MODEL, offer?.llm?.model)
@@ -198,15 +204,25 @@ class SettingsRepository(
      * The language model in use (issue #94): the sync server's, with the
      * sync key, or the user's own with theirs. Never mixes the two, so
      * the user's key is not sent to the server, nor the sync key to
-     * their endpoint.
+     * their endpoint. [forTalkingPoints] is the config of a talking-point
+     * check, which asks for little reasoning (issue #136).
      */
-    fun llmConfig(): LlmConfig {
+    fun llmConfig(forTalkingPoints: Boolean = false): LlmConfig {
         val s = _settings.value
-        return LlmConfig(
+        val config = LlmConfig(
             baseUrl = s.llmBaseUrlInUse,
             apiKey = if (s.llmFromServer) syncKey() else apiKey(),
             model = s.llmModelInUse
         )
+        // A talking-point check asks for little reasoning (issue #136):
+        // the server's way through it, or as the user set it for their own.
+        return when {
+            !forTalkingPoints -> config
+            s.llmFromServer -> config.copy(headers = mapOf(TalkingPointReasoning.HEADER to TalkingPointReasoning.LOW))
+            s.talkingPointLowReasoning ->
+                config.copy(extraBody = TalkingPointReasoning.ownEndpointFields(s.talkingPointExtraFields))
+            else -> config
+        }
     }
 
     /** The transcription server in use (issue #94), like [llmConfig]. */
@@ -269,7 +285,9 @@ class SettingsRepository(
             decisionBaseUrl = (prefs.getString(KEY_DECISION_BASE_URL, "") ?: "").trim().trimEnd('/'),
             decisionModel = prefs.getString(KEY_DECISION_MODEL, "") ?: "",
             decisionSource = ServiceSource.fromKey(prefs.getString(KEY_DECISION_SOURCE, null)),
-            decisionForTalkingPoints = prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS, true),
+            decisionForTalkingPoints = loadDecisionForTalkingPoints(),
+            talkingPointLowReasoning = prefs.getBoolean(KEY_TALKING_POINT_LOW_REASONING, false),
+            talkingPointExtraFields = prefs.getString(KEY_TALKING_POINT_EXTRA_FIELDS, null).orEmpty(),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
@@ -322,6 +340,17 @@ class SettingsRepository(
             llmBaseUrl = raw.llmBaseUrl.trim().trimEnd('/')
         )
     }
+
+    /**
+     * *Check talking points with the decision model* was on by default,
+     * and every save stored it, so a stored `on` from before issue #136
+     * says nothing about the user's choice. Treat it as off once; any
+     * value saved since (which sets [KEY_DECISION_FOR_TALKING_POINTS_CHOSEN])
+     * is the user's.
+     */
+    private fun loadDecisionForTalkingPoints(): Boolean =
+        prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS_CHOSEN, false) &&
+            prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS, false)
 
     /**
      * Installs from before the threshold was tuned stored the old
@@ -383,6 +412,9 @@ class SettingsRepository(
         const val KEY_DECISION_MODEL = "decisionModel"
         const val KEY_DECISION_SOURCE = "decisionSource"
         const val KEY_DECISION_FOR_TALKING_POINTS = "decisionForTalkingPoints"
+        const val KEY_DECISION_FOR_TALKING_POINTS_CHOSEN = "decisionForTalkingPointsChosen"
+        const val KEY_TALKING_POINT_LOW_REASONING = "talkingPointLowReasoning"
+        const val KEY_TALKING_POINT_EXTRA_FIELDS = "talkingPointExtraFields"
         const val KEY_SERVER_OFFER_FETCHED_AT = "serverOfferFetchedAt"
         const val KEY_NUM_SPEAKERS = "numSpeakers"
         const val KEY_CLUSTER_THRESHOLD = "clusterThreshold"
@@ -447,6 +479,9 @@ private fun AppSettings.validatedAgainst(previous: AppSettings): AppSettings {
         asrServerModel = asrServerModel.trim(),
         decisionBaseUrl = decisionBaseUrl.trim().trimEnd('/'),
         decisionModel = decisionModel.trim(),
+        talkingPointExtraFields = talkingPointExtraFields.trim()
+            .takeIf { TalkingPointReasoning.parseFields(it) != null }
+            ?: previous.talkingPointExtraFields,
         syncServerUrl = syncUrl,
         serverServicesEnabled = serverServicesEnabled && sameServer && syncUrl.isNotBlank(),
         serverOffer = serverOffer.takeIf { sameServer },

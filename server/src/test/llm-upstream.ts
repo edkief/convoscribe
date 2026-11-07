@@ -24,21 +24,23 @@ export const answer =
 /**
  * A fake language model for the web app's language-model routes, set up as
  * the server's upstream before each test: `calls` collects the messages of
- * each chat call, and `reply` (reset to `initial` before each test) answers it.
+ * each chat call, `bodies` its whole request, and `reply` (reset to
+ * `initial` before each test) answers it.
  */
 export function fakeLlm(initial: Reply, env: Record<string, string> = {}) {
   let server: Server;
   let base = '';
-  const llm = { calls: [] as ChatMessage[][], reply: initial };
+  const llm = { calls: [] as ChatMessage[][], bodies: [] as Record<string, unknown>[], reply: initial };
 
   beforeAll(async () => {
     server = createServer((req: IncomingMessage, res) => {
       let body = '';
       req.on('data', (chunk: Buffer) => (body += chunk.toString()));
       req.on('end', () => {
-        const { messages } = JSON.parse(body) as { messages: ChatMessage[] };
-        llm.calls.push(messages);
-        void llm.reply(messages, res);
+        const parsed = JSON.parse(body) as { messages: ChatMessage[] };
+        llm.calls.push(parsed.messages);
+        llm.bodies.push(parsed);
+        void llm.reply(parsed.messages, res);
       });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -53,6 +55,7 @@ export function fakeLlm(initial: Reply, env: Record<string, string> = {}) {
 
   beforeEach(() => {
     llm.calls = [];
+    llm.bodies = [];
     llm.reply = initial;
     resetLlmClient();
     vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -118,7 +118,15 @@ import com.convoscribe.llm.SummaryTemplates
  * in [SecretStore]. [decisionSource] picks the sync server's or the
  * user's own, like [llmSource]. [decisionForTalkingPoints] is *Check
  * talking points with the decision model*: off sends the checks to the
- * language model even when a decision service is set up.
+ * language model even when a decision service is set up. It is off by
+ * default and experimental (issue #136): on real recordings laya as
+ * shipped ticked points before they came up.
+ *
+ * [talkingPointLowReasoning] asks the user's own language model for
+ * little reasoning in talking-point checks, with
+ * [talkingPointExtraFields] (a JSON object, blank for none) added to
+ * those requests for models with their own switch (issue #136). The
+ * sync server's model is asked the server's way instead.
  *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
@@ -146,7 +154,9 @@ data class AppSettings(
     val decisionBaseUrl: String = "",
     val decisionModel: String = "",
     val decisionSource: ServiceSource? = null,
-    val decisionForTalkingPoints: Boolean = true,
+    val decisionForTalkingPoints: Boolean = false,
+    val talkingPointLowReasoning: Boolean = false,
+    val talkingPointExtraFields: String = "",
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,

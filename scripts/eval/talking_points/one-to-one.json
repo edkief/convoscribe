@@ -1,0 +1,173 @@
+{
+ "name": "one-to-one",
+ "description": "A manager 1:1 (English) with near-miss points: words that appear without the topic. Written for #101/#136; synthetic.",
+ "lines": [
+  {
+   "at": "00:03",
+   "speaker": "Sam",
+   "text": "Hey, how was the long weekend?"
+  },
+  {
+   "at": "00:07",
+   "speaker": "Priya",
+   "text": "Good, we went hiking, the weather was perfect. You?"
+  },
+  {
+   "at": "00:12",
+   "speaker": "Sam",
+   "text": "Pretty quiet. Okay, I have a few things on my list today."
+  },
+  {
+   "at": "00:20",
+   "speaker": "Sam",
+   "text": "First, the promotion case. I submitted your packet to the committee on Thursday, and they meet on the twentieth."
+  },
+  {
+   "at": "00:34",
+   "speaker": "Priya",
+   "text": "Thanks. Is there anything else they'll want from me, like a self review?"
+  },
+  {
+   "at": "00:41",
+   "speaker": "Sam",
+   "text": "No, the self review you wrote last month is in there. I'll let you know as soon as I hear."
+  },
+  {
+   "at": "00:52",
+   "speaker": "Priya",
+   "text": "Great. Can we talk about the on-call rotation? I've been paged four nights in a row and it's getting rough."
+  },
+  {
+   "at": "01:05",
+   "speaker": "Sam",
+   "text": "Yeah, that's not okay. Let's move you off the rotation for two weeks and I'll ask Diego to cover."
+  },
+  {
+   "at": "01:18",
+   "speaker": "Priya",
+   "text": "That would help a lot."
+  },
+  {
+   "at": "01:22",
+   "speaker": "Sam",
+   "text": "The budget meeting is right after this, so I need to keep this short today."
+  },
+  {
+   "at": "01:30",
+   "speaker": "Priya",
+   "text": "Sure. One quick thing, I'd like to go to the Kotlin conference in May, it's in Copenhagen."
+  },
+  {
+   "at": "01:41",
+   "speaker": "Sam",
+   "text": "Send me the cost estimate with flights and the hotel and I'll approve it from the training budget."
+  },
+  {
+   "at": "01:50",
+   "speaker": "Priya",
+   "text": "Will do."
+  },
+  {
+   "at": "01:55",
+   "speaker": "Sam",
+   "text": "Last thing, how are you feeling about the migration project? Any blockers?"
+  },
+  {
+   "at": "02:03",
+   "speaker": "Priya",
+   "text": "Mostly fine. The blocker is that we still don't have access to the new database cluster, I've asked infra twice."
+  },
+  {
+   "at": "02:15",
+   "speaker": "Sam",
+   "text": "I'll escalate that with their manager today."
+  },
+  {
+   "at": "02:20",
+   "speaker": "Priya",
+   "text": "Thanks. Oh and I'll be out on Friday for a dentist appointment."
+  },
+  {
+   "at": "02:26",
+   "speaker": "Sam",
+   "text": "No problem, just put it in the calendar."
+  }
+ ],
+ "points": [
+  {
+   "text": "Promotion case status",
+   "covered": true,
+   "from": "00:20"
+  },
+  {
+   "text": "On-call load and paging",
+   "covered": true,
+   "from": "00:52"
+  },
+  {
+   "text": "Conference travel request",
+   "covered": true,
+   "from": "01:30"
+  },
+  {
+   "text": "Blockers on the migration project",
+   "covered": true,
+   "from": "01:55"
+  },
+  {
+   "text": "Time off on Friday",
+   "covered": true,
+   "from": "02:20"
+  },
+  {
+   "text": "Team budget for next year",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Performance review feedback for Diego",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Weekend plans",
+   "covered": true,
+   "from": "00:03"
+  },
+  {
+   "text": "Salary and compensation",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Code review turnaround times",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Switching Priya to a different team",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Hiring a new SRE",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Weather",
+   "covered": false,
+   "from": null
+  },
+  {
+   "text": "Database access for the migration",
+   "covered": true,
+   "from": "02:03"
+  },
+  {
+   "text": "Learning Kotlin",
+   "covered": false,
+   "from": null
+  }
+ ]
+}

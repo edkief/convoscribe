@@ -382,6 +382,12 @@
     <string name="settings_llm_max_chars_label">Max transcript characters</string>
     <string name="settings_talking_point_check_label">Check talking points every (seconds)</string>
     <string name="settings_talking_point_check_help">While recording, how often the latest speech is sent to the decision model or language model to tick talking points. 5 to 300; 0 turns it off.</string>
+    <string name="settings_talking_point_low_reasoning_label">Ask for low reasoning in talking-point checks</string>
+    <string name="settings_talking_point_low_reasoning_help">Live checks need an answer within seconds, and a model that reasons at length is slower and stricter about points only partly covered. Sends reasoning_effort \"low\", plus any extra fields below. Off: the model\'s default.</string>
+    <string name="settings_talking_point_extra_fields_label">Extra request fields (JSON)</string>
+    <string name="settings_talking_point_extra_fields_help">Added to talking-point requests, for models with their own way of turning reasoning down. A field set to null is removed, e.g. {\"reasoning_effort\": null}.</string>
+    <string name="settings_talking_point_extra_fields_invalid">Not a JSON object: saving keeps the fields saved before.</string>
+    <string name="settings_talking_point_reasoning_server">Talking-point checks ask the sync server\'s language model for low reasoning, the way the server is set up for it.</string>
     <string name="settings_llm_test">Test connection</string>
     <string name="settings_llm_test_idle">Test the connection to load available models.</string>
     <string name="settings_transcription_engine">Speech engine</string>
@@ -892,8 +898,8 @@
     <string name="settings_decision_url_cleartext">Transcripts are sent to an http:// address unencrypted. Use https:// unless the service is on a network you trust.</string>
     <string name="settings_decision_model_placeholder">Picked by language</string>
     <string name="settings_decision_test_connected">Connected – answered by its %1$s model</string>
-    <string name="settings_decision_for_talking_points_label">Check talking points with the decision model</string>
-    <string name="settings_decision_for_talking_points_help">Off: the language model checks them instead.</string>
+    <string name="settings_decision_for_talking_points_label">Check talking points with the decision model (experimental)</string>
+    <string name="settings_decision_for_talking_points_help">Off by default: on real recordings the decision model ticked points before they came up. Off: the language model checks them instead.</string>
     <string name="settings_overview_decision">Talking points: decision model</string>
     <string name="server_services_status_decision">Decision model: %1$s</string>
     <string name="server_services_confirm_decision">A decision model (%1$s). While recording, the latest transcript lines are sent to it to tick talking points, unless you leave that to the language model.</string>

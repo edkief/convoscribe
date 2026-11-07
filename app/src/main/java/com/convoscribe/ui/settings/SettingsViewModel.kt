@@ -54,6 +54,9 @@ data class SettingsForm(
     val maxChars: String = "24000",
     /** Seconds between talking-point checks while recording (issue #103); 0 is off. */
     val talkingPointSeconds: String = SettingsRepository.DEFAULT_TALKING_POINT_CHECK_SECONDS.toString(),
+    /** Talking-point checks ask the user's own language model for low reasoning, with these extra JSON fields (issue #136). */
+    val talkingPointLowReasoning: Boolean = false,
+    val talkingPointExtraFields: String = "",
     val numThreads: Int = 4,
     val numSpeakers: Int = -1,
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
@@ -97,6 +100,8 @@ data class SettingsForm(
             model = settings.llmModel,
             maxChars = settings.maxTranscriptChars.toString(),
             talkingPointSeconds = settings.talkingPointCheckSeconds.toString(),
+            talkingPointLowReasoning = settings.talkingPointLowReasoning,
+            talkingPointExtraFields = settings.talkingPointExtraFields,
             numThreads = settings.numThreads,
             numSpeakers = settings.numSpeakers,
             clusterThreshold = settings.clusterThreshold,
@@ -250,8 +255,8 @@ data class SettingsUiState(
     val decisionSource: ServiceSource = ServiceSource.OWN,
     /** A decision service is set up, the user's own or the server's. */
     val decisionConfigured: Boolean = false,
-    /** *Check talking points with the decision model*; written immediately. */
-    val decisionForTalkingPoints: Boolean = true,
+    /** *Check talking points with the decision model*, experimental and off by default (issue #136); written immediately. */
+    val decisionForTalkingPoints: Boolean = false,
     /** `true` while [SettingsViewModel.testDecision] is in flight. */
     val decisionTesting: Boolean = false,
     /** Last decision service test: [ConnectionTestResult.Connected] names the laya model that answered. */
@@ -395,6 +400,9 @@ class SettingsViewModel(
                 llmModel = form.model,
                 maxTranscriptChars = parsedChars,
                 talkingPointCheckSeconds = parsedPointSeconds,
+                // Invalid JSON keeps the saved fields; the field shows why.
+                talkingPointLowReasoning = form.talkingPointLowReasoning,
+                talkingPointExtraFields = form.talkingPointExtraFields,
                 numThreads = form.numThreads,
                 numSpeakers = form.numSpeakers,
                 clusterThreshold = form.clusterThreshold,

@@ -715,6 +715,15 @@ class AppContainer(val context: Context) {
         settingsRepository.llmConfig()
     }
 
+    /**
+     * [chatClient] for talking-point checks: the same model, asked for
+     * little reasoning (issue #136), the sync server's way or as the user
+     * set it for their own. Every other call keeps the model's default.
+     */
+    val talkingPointChatClient: ChatClient = OpenAiChatClient(llmHttpClient) {
+        settingsRepository.llmConfig(forTalkingPoints = true)
+    }
+
     /** The decision service in use (issue #101): a laya call takes well under a second. */
     val decisionHttpClient: OkHttpClient = httpClient.newBuilder()
         .readTimeout(60, TimeUnit.SECONDS)
@@ -770,7 +779,7 @@ class AppContainer(val context: Context) {
     val talkingPointChecker: TalkingPointChecker =
         TalkingPointChecker(
             sessionRepository,
-            chatClient,
+            talkingPointChatClient,
             decisionClient,
             settingsRepository,
             applicationScope,

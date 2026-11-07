@@ -2,6 +2,9 @@ package com.convoscribe.llm
 
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -109,6 +112,36 @@ class OpenAiChatClientTest {
 
         val recorded = server.takeRequest()
         assertEquals("Bearer k", recorded.getHeader("Authorization"))
+    }
+
+    @Test
+    fun stream_sendsTheConfigsHeadersAndExtraFields_butNeverOverTheMessagesOrStream() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Content-Type", "text/event-stream")
+                .setBody("data: [DONE]\n\n")
+        )
+        val extra = Json.parseToJsonElement(
+            """{"chat_template_kwargs":{"enable_thinking":false},"stream":false,"messages":[]}"""
+        ).jsonObject
+        val client = OpenAiChatClient(http) {
+            LlmConfig(
+                baseUrl = server.url("/v1").toString(),
+                apiKey = "",
+                model = "m",
+                headers = mapOf(TalkingPointReasoning.HEADER to "low"),
+                extraBody = extra
+            )
+        }
+        client.stream(listOf(LlmMessage(LlmMessage.ROLE_USER, "hi"))).toList()
+
+        val recorded = server.takeRequest()
+        assertEquals("low", recorded.getHeader(TalkingPointReasoning.HEADER))
+        val sent = Json.parseToJsonElement(recorded.body.readUtf8()).jsonObject
+        assertEquals("""{"enable_thinking":false}""", sent["chat_template_kwargs"].toString())
+        assertEquals("true", sent["stream"].toString())
+        assertEquals(1, sent["messages"]!!.jsonArray.size)
     }
 
     @Test

@@ -1,5 +1,5 @@
 import { fetch as undiciFetch } from 'undici';
-import { agent, upstreamOf } from './ai-proxy';
+import { agent, upstreamOf, withLowReasoning } from './ai-proxy';
 
 /** One turn of a chat with the language model, as the app's `LlmMessage`. */
 export type LlmMessage = { role: 'system' | 'user' | 'assistant'; content: string };
@@ -39,14 +39,21 @@ export async function resolveModel(signal?: AbortSignal): Promise<string | undef
  * Stream the answer to `messages` from the server's language model, as the
  * app's `OpenAiChatClient.stream` does: each item is a piece of the reply's
  * text. Aborting `signal` cancels the upstream call. Failures throw
- * [LlmError], with the detail only in the log.
+ * [LlmError], with the detail only in the log. `lowReasoning` asks the model
+ * for little reasoning the server's way (`LLM_LOW_REASONING`, #136), as a
+ * device's talking-point check does through the proxy.
  */
-export async function* chatStream(messages: LlmMessage[], signal?: AbortSignal): AsyncGenerator<string> {
+export async function* chatStream(
+  messages: LlmMessage[],
+  signal?: AbortSignal,
+  options: { lowReasoning?: boolean } = {},
+): AsyncGenerator<string> {
   const model = await resolveModel(signal);
+  const request = { ...(model ? { model } : {}), stream: true, temperature: TEMPERATURE, messages };
   const res = await call('/chat/completions', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'text/event-stream' },
-    body: JSON.stringify({ ...(model ? { model } : {}), stream: true, temperature: TEMPERATURE, messages }),
+    body: JSON.stringify(options.lowReasoning ? withLowReasoning(request) : request),
     signal,
   });
   if (!res.body) return;

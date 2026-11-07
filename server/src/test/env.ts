@@ -17,12 +17,14 @@ export function stubServerEnv(overrides: Record<string, string> = {}) {
     LLM_UPSTREAM_URL: '',
     LLM_UPSTREAM_KEY: '',
     LLM_MODEL: '',
+    LLM_LOW_REASONING: '',
     ASR_UPSTREAM_URL: '',
     ASR_UPSTREAM_KEY: '',
     ASR_MODEL: '',
     DECISION_UPSTREAM_URL: '',
     DECISION_UPSTREAM_KEY: '',
     DECISION_MODEL: '',
+    DECISION_FOR_TALKING_POINTS: '',
     ...overrides,
   };
   for (const [name, value] of Object.entries(values)) vi.stubEnv(name, value);

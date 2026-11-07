@@ -631,7 +631,11 @@ private fun SettingsPageContent(
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
             )
-            AiAdvanced(form = state.form, onFormChange = actions.onFormChange)
+            AiAdvanced(
+                form = state.form,
+                llmFromServer = state.serverServicesEnabled && state.llmSource == ServiceSource.SERVER,
+                onFormChange = actions.onFormChange
+            )
         }
         SettingsPage.SEARCH -> {
             SemanticSearchSection(
