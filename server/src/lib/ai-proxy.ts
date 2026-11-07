@@ -46,6 +46,29 @@ export function agent(): Agent {
 /** Request headers passed upstream; everything else, the caller's key included, stays here. */
 const FORWARDED_REQUEST_HEADERS = ['content-type', 'content-length', 'accept'];
 
+/**
+ * The header a device sends with a chat completion that wants little
+ * reasoning (#136), value `low`: a talking-point check. The server, not the
+ * device, knows how its model is asked for that (`LLM_LOW_REASONING`); the
+ * header itself is never passed upstream.
+ */
+export const LOW_REASONING_HEADER = 'x-convoscribe-reasoning';
+
+/** Whether `req` asks for little reasoning and the server says how to ask its model for it (#136). */
+export function wantsLowReasoning(req: Request): boolean {
+  return req.headers.get(LOW_REASONING_HEADER)?.trim().toLowerCase() === 'low' && !!env().LLM_LOW_REASONING;
+}
+
+/**
+ * `body`, a chat completion request, with `LLM_LOW_REASONING`'s fields added
+ * on top (#136): theirs win, so the server decides how its model is asked.
+ * Unchanged when the server sets none.
+ */
+export function withLowReasoning<T extends Record<string, unknown>>(body: T): T {
+  const fields = env().LLM_LOW_REASONING;
+  return fields ? { ...body, ...fields } : body;
+}
+
 /** Upstream answers passed back as they are: the caller's request was at fault. */
 const PASSED_THROUGH_ERRORS = new Set([400, 404, 413, 422, 429]);
 
@@ -55,18 +78,22 @@ const PASSED_THROUGH_ERRORS = new Set([400, 404, 413, 422, 429]);
  * dropped when there is none), both bodies stream without buffering, and
  * the caller going away cancels the upstream call. Failures the caller
  * can't fix answer `502` with a code and no upstream detail; the detail
- * goes to the server log.
+ * goes to the server log. `body`, when given, is sent instead of `req`'s
+ * (a request the server rewrote).
  */
 export async function proxyToUpstream<S extends Service>(
   req: Request,
   service: S,
   path: UpstreamPath[S],
+  body?: string,
 ): Promise<Response> {
   const upstream = upstreamOf(service);
   if (!upstream) throw new HttpError(404, 'not_offered');
 
   const headers: Record<string, string> = {};
   for (const name of FORWARDED_REQUEST_HEADERS) {
+    // A body rewritten here has a length of its own.
+    if (body !== undefined && name === 'content-length') continue;
     const value = req.headers.get(name);
     if (value !== null) headers[name] = value;
   }
@@ -75,14 +102,14 @@ export async function proxyToUpstream<S extends Service>(
   headers['accept-encoding'] = 'identity';
 
   const label = `${service}${path}`;
-  const hasBody = req.method !== 'GET' && req.method !== 'HEAD' && req.body !== null;
+  const hasBody = body !== undefined || (req.method !== 'GET' && req.method !== 'HEAD' && req.body !== null);
   let res;
   try {
     res = await undiciFetch(`${upstream.url}${path}`, {
       method: req.method,
       headers,
       // The web stream undici's types name is the same class Node gives route handlers.
-      body: hasBody ? (req.body as unknown as UndiciBody) : undefined,
+      body: body ?? (hasBody ? (req.body as unknown as UndiciBody) : undefined),
       duplex: 'half',
       signal: req.signal,
       redirect: 'manual',

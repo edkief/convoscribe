@@ -18,14 +18,25 @@ type Init = RequestInit & { headers?: Record<string, string> };
 
 let server: Server;
 let base: string;
-let seen: { url?: string; authorization?: string; bytes: number }[];
+let seen: { url?: string; authorization?: string; bytes: number; body: string; hint?: string; contentLength?: string }[];
 
 beforeAll(async () => {
   server = createServer((req: IncomingMessage, res) => {
     let bytes = 0;
-    req.on('data', (chunk: Buffer) => (bytes += chunk.length));
+    const small: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => {
+      if (bytes < 1024 * 1024) small.push(chunk);
+      bytes += chunk.length;
+    });
     req.on('end', () => {
-      seen.push({ url: req.url, authorization: req.headers.authorization, bytes });
+      seen.push({
+        url: req.url,
+        authorization: req.headers.authorization,
+        bytes,
+        body: bytes < 1024 * 1024 ? Buffer.concat(small).toString('utf8') : '',
+        hint: req.headers['x-convoscribe-reasoning'] as string | undefined,
+        contentLength: req.headers['content-length'],
+      });
       res.writeHead(200, { 'content-type': 'application/json' });
       res.end(JSON.stringify({ path: req.url, bytes }));
     });
@@ -130,5 +141,47 @@ describe('/api/ai/v1 (#93)', () => {
     );
     expect(res.status).toBe(200);
     expect((await res.json()).bytes).toBe(size);
+  });
+});
+
+describe('low reasoning for talking-point checks (#136)', () => {
+  const GLIMMER = '{"chat_template_kwargs":{"reasoning_strength":"none"}}';
+  const sent = { model: 'm', stream: true, messages: [{ role: 'user', content: 'hi' }] };
+  const ask = (headers: Record<string, string>, body: string = JSON.stringify(sent)) =>
+    chat(request('/api/ai/v1/llm/chat/completions', { method: 'POST', body, headers: { 'content-type': 'application/json', ...headers } }));
+  const withGlimmer = () => stubServerEnv({ LLM_UPSTREAM_URL: `${base}/llm/v1`, LLM_LOW_REASONING: GLIMMER });
+
+  it('adds the server’s fields to a request marked for low reasoning, and drops the mark', async () => {
+    withGlimmer();
+    const res = await ask({ 'x-convoscribe-reasoning': 'low' });
+    expect(res.status).toBe(200);
+    expect(JSON.parse(seen[0].body)).toEqual({ ...sent, chat_template_kwargs: { reasoning_strength: 'none' } });
+    expect(seen[0].hint).toBeUndefined();
+    expect(Number(seen[0].contentLength)).toBe(Buffer.byteLength(seen[0].body));
+  });
+
+  it('lets the server’s fields win over the device’s', async () => {
+    stubServerEnv({ LLM_UPSTREAM_URL: `${base}/llm/v1`, LLM_LOW_REASONING: '{"reasoning_effort":"low"}' });
+    await ask({ 'x-convoscribe-reasoning': 'low' }, JSON.stringify({ ...sent, reasoning_effort: 'high' }));
+    expect(JSON.parse(seen[0].body).reasoning_effort).toBe('low');
+  });
+
+  it('passes a request through untouched without the mark, or when the server sets nothing', async () => {
+    withGlimmer();
+    await ask({});
+    stubServerEnv({ LLM_UPSTREAM_URL: `${base}/llm/v1` });
+    await ask({ 'x-convoscribe-reasoning': 'low' });
+    expect(seen.map((s) => JSON.parse(s.body))).toEqual([sent, sent]);
+    expect(seen.map((s) => s.hint)).toEqual([undefined, undefined]);
+  });
+
+  it('refuses a marked request whose body is not a JSON object, without calling upstream', async () => {
+    withGlimmer();
+    for (const body of ['not json', '[1]', 'null']) {
+      const res = await ask({ 'x-convoscribe-reasoning': 'low' }, body);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'invalid_body' });
+    }
+    expect(seen).toHaveLength(0);
   });
 });

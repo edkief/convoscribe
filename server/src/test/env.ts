@@ -17,6 +17,7 @@ export function stubServerEnv(overrides: Record<string, string> = {}) {
     LLM_UPSTREAM_URL: '',
     LLM_UPSTREAM_KEY: '',
     LLM_MODEL: '',
+    LLM_LOW_REASONING: '',
     ASR_UPSTREAM_URL: '',
     ASR_UPSTREAM_KEY: '',
     ASR_MODEL: '',

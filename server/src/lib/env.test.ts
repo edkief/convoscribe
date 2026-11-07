@@ -106,5 +106,18 @@ describe('loadEnv', () => {
       expect(() => load({ LLM_MAX_TRANSCRIPT_CHARS: '500' })).toThrow(/LLM_MAX_TRANSCRIPT_CHARS/);
       expect(() => load({ LLM_MAX_TRANSCRIPT_CHARS: 'lots' })).toThrow(/LLM_MAX_TRANSCRIPT_CHARS/);
     });
+
+    it('reads how to ask the language model for low reasoning as a JSON object (#136)', () => {
+      const url = { LLM_UPSTREAM_URL: 'https://llm.example.com/v1' };
+      expect(load(url).LLM_LOW_REASONING).toBeUndefined();
+      expect(load({ ...url, LLM_LOW_REASONING: '' }).LLM_LOW_REASONING).toBeUndefined();
+      expect(load({ ...url, LLM_LOW_REASONING: '{"chat_template_kwargs":{"reasoning_strength":"none"}}' }).LLM_LOW_REASONING).toEqual({
+        chat_template_kwargs: { reasoning_strength: 'none' },
+      });
+      expect(() => load({ ...url, LLM_LOW_REASONING: 'low' })).toThrow(/LLM_LOW_REASONING/);
+      expect(() => load({ ...url, LLM_LOW_REASONING: '["low"]' })).toThrow(/LLM_LOW_REASONING/);
+      expect(() => load({ ...url, LLM_LOW_REASONING: 'null' })).toThrow(/LLM_LOW_REASONING/);
+      expect(() => load({ LLM_LOW_REASONING: '{"reasoning_effort":"low"}' })).toThrow(/LLM_LOW_REASONING/);
+    });
   });
 });

@@ -16,9 +16,10 @@ type Event = { step: { part: number; parts: number } } | { done: true; revision:
  * *Check points* (#119): the server's language model reads the whole
  * transcript, in parts when it is over `LLM_MAX_TRANSCRIPT_CHARS`, and ticks
  * the talking points it finds covered, with where, as the app's
- * `TalkingPointChecker` does while recording. When the server has a decision
- * service (#101), that reads it instead, a line at a time, in batches. Points ticked or unticked by
- * hand are neither sent nor changed. The JSON body is `{ "baseRevision": n }`.
+ * `TalkingPointChecker` does while recording, asking it for little reasoning
+ * (#136). When the server has a decision service (#101), that reads it
+ * instead, a line at a time, in batches. Points ticked or unticked by hand are neither sent nor
+ * changed. The JSON body is `{ "baseRevision": n }`.
  * A request that can't start is a JSON error; once started, the answer is
  * NDJSON: `step` before each part of a long transcript, then `done` with the
  * revision and how many points were ticked (no new revision for none), or
@@ -41,7 +42,14 @@ export async function POST(req: Request, ctx: Ctx) {
       const onStep = (step: { part: number; parts: number }) => send({ step });
       const ticks = byDecision
         ? await checkPointsByDecision({ lines, points, others: settledPoints(editable.manifest), decide, signal, onStep })
-        : await checkPoints({ lines, points, maxChars: env().LLM_MAX_TRANSCRIPT_CHARS, chat: chatStream, signal, onStep });
+        : await checkPoints({
+            lines,
+            points,
+            maxChars: env().LLM_MAX_TRANSCRIPT_CHARS,
+            chat: (messages, abort) => chatStream(messages, abort, { lowReasoning: true }),
+            signal,
+            onStep,
+          });
       if (signal.aborted) return;
       if (!ticks) {
         send({ error: 'unreadable_reply' });

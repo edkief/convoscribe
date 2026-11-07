@@ -7,6 +7,22 @@ const httpUrl = z
   .url({ protocol: /^https?$/ })
   .transform((value) => value.replace(/\/+$/, ''));
 
+// A JSON object, written as JSON text: fields the server adds to some requests.
+const jsonObject = z.string().transform((text, ctx) => {
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    ctx.addIssue({ code: 'custom', message: 'not valid JSON' });
+    return z.NEVER;
+  }
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    ctx.addIssue({ code: 'custom', message: 'must be a JSON object, e.g. {"reasoning_effort":"low"}' });
+    return z.NEVER;
+  }
+  return value as Record<string, unknown>;
+});
+
 const schema = z
   .object({
     DATABASE_URL: z.url(),
@@ -43,6 +59,10 @@ const schema = z
     // How much transcript the web app's summaries send in one call (#117), the
     // app's *Max transcript characters*; a longer one is summarised in parts.
     LLM_MAX_TRANSCRIPT_CHARS: z.preprocess(blankToUndefined, z.coerce.number().int().min(1000).default(24000)),
+    // How the language model is asked for little reasoning (#136), for talking-point
+    // checks: fields merged into those requests, since every model has its own switch,
+    // e.g. {"chat_template_kwargs":{"enable_thinking":false}}. Unset leaves them as sent.
+    LLM_LOW_REASONING: z.preprocess(blankToUndefined, jsonObject.optional()),
     ASR_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
     ASR_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
     ASR_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
@@ -59,6 +79,9 @@ const schema = z
     }
     if (env.AUTH_MODE === 'authz-proxy' && !env.AUTHZ_PROXY_URL) {
       ctx.addIssue({ code: 'custom', path: ['AUTHZ_PROXY_URL'], message: 'required when AUTH_MODE=authz-proxy' });
+    }
+    if (env.LLM_LOW_REASONING && !env.LLM_UPSTREAM_URL) {
+      ctx.addIssue({ code: 'custom', path: ['LLM_LOW_REASONING'], message: 'needs LLM_UPSTREAM_URL' });
     }
     for (const service of ['LLM', 'ASR', 'DECISION'] as const) {
       if (env[`${service}_UPSTREAM_URL`]) continue;

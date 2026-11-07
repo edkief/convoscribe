@@ -42,6 +42,13 @@ describe('POST /api/web/v1/sessions/<syncId>/points (#119)', () => {
     expect(manifest.talkingPoints).toEqual([POINTS[0], { ...POINTS[1], covered: true, coveredAtMs: 4000 }, POINTS[2], POINTS[3], POINTS[4]]);
   });
 
+  it('asks the language model for low reasoning the server’s way (#136)', async () => {
+    stubServerEnv({ LLM_UPSTREAM_URL: process.env.LLM_UPSTREAM_URL!, LLM_MODEL: 'm', LLM_LOW_REASONING: '{"chat_template_kwargs":{"reasoning_strength":"none"}}' });
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { talkingPoints: POINTS }));
+    await events(await check('s1', { baseRevision: pushed.revision }));
+    expect(llm.bodies[0].chat_template_kwargs).toEqual({ reasoning_strength: 'none' });
+  });
+
   it('ticks a point at the last line of the part when the time given is outside it', async () => {
     const pushed = await pushManifest(OWNER, sessionManifest('s1', { talkingPoints: [point('a', 'Greetings')] }));
     llm.reply = answer('[{"point": 1, "at": "45:00"}]');
