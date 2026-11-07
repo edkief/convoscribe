@@ -28,6 +28,8 @@ import com.convoscribe.data.SummaryTemplateRepository
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.data.TalkingPointListRepository
 import com.convoscribe.data.TalkingPointListStore
+import com.convoscribe.decision.DecisionClient
+import com.convoscribe.decision.HttpDecisionClient
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
@@ -713,6 +715,16 @@ class AppContainer(val context: Context) {
         settingsRepository.llmConfig()
     }
 
+    /** The decision service in use (issue #101): a laya call takes well under a second. */
+    val decisionHttpClient: OkHttpClient = httpClient.newBuilder()
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    /** Talks to the decision service Settings uses, the user's own or the sync server's (issue #101). */
+    val decisionClient: DecisionClient = HttpDecisionClient(decisionHttpClient) {
+        settingsRepository.decisionConfig()
+    }
+
     /** Asks the sync server what it provides (issue #94), for Settings and [serverOfferRefresher]. */
     val serverConfigClient: ServerConfigClient = ServerConfigClient(httpClient)
 
@@ -756,7 +768,14 @@ class AppContainer(val context: Context) {
      * following [recordingController] for the life of the app.
      */
     val talkingPointChecker: TalkingPointChecker =
-        TalkingPointChecker(sessionRepository, chatClient, settingsRepository, applicationScope, llmCalls).also {
+        TalkingPointChecker(
+            sessionRepository,
+            chatClient,
+            decisionClient,
+            settingsRepository,
+            applicationScope,
+            llmCalls
+        ).also {
             it.watch(recordingController.state)
         }
 
