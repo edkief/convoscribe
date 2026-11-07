@@ -80,7 +80,9 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
   };
   // The smaller actions (#119) read the transcript.
   const assist = llm && lines.length > 0 ? { syncId } : null;
-  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm }, assist);
+  // Talking points can also be checked by a decision service alone (#101).
+  const pointCheck = !newer && (llm || !!upstreamOf('decision')) && lines.length > 0 ? { syncId } : null;
+  const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm }, assist, pointCheck);
 
   return (
     <SessionEditor syncId={syncId} revision={meta.revision} editable={!newer}>
@@ -174,6 +176,7 @@ function panels(
   summarise: { syncId: string; templates: { key: string; name: string }[]; selected: string } | null,
   qa: { syncId: string; ask: boolean },
   assist: { syncId: string } | null,
+  pointCheck: { syncId: string } | null,
 ): Tab[] {
   const tabs: Tab[] = [];
   const summaries = [...view.summaries].reverse();
@@ -240,7 +243,7 @@ function panels(
       id: 'points',
       label: 'Talking points',
       count: view.talkingPoints.length ? view.talkingPoints.filter((p) => !p.covered).length : undefined,
-      content: <TalkingPointList points={view.talkingPoints} check={assist} />,
+      content: <TalkingPointList points={view.talkingPoints} check={pointCheck} />,
     });
   }
   return tabs;

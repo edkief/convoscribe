@@ -1,5 +1,6 @@
 import { upstreamOf } from '@/lib/ai-proxy';
-import { applyTicks, checkPoints, openPoints, promptLines } from '@/lib/assist';
+import { applyTicks, checkPoints, checkPointsByDecision, openPoints, promptLines, settledPoints } from '@/lib/assist';
+import { decide } from '@/lib/decision-client';
 import { env } from '@/lib/env';
 import { baseRevisionOf, HttpError, jsonBody, syncIdParam, webAuthed } from '@/lib/http';
 import { chatStream } from '@/lib/llm-client';
@@ -15,7 +16,8 @@ type Event = { step: { part: number; parts: number } } | { done: true; revision:
  * *Check points* (#119): the server's language model reads the whole
  * transcript, in parts when it is over `LLM_MAX_TRANSCRIPT_CHARS`, and ticks
  * the talking points it finds covered, with where, as the app's
- * `TalkingPointChecker` does while recording. Points ticked or unticked by
+ * `TalkingPointChecker` does while recording. When the server has a decision
+ * service (#101), that reads it instead, a line at a time, in batches. Points ticked or unticked by
  * hand are neither sent nor changed. The JSON body is `{ "baseRevision": n }`.
  * A request that can't start is a JSON error; once started, the answer is
  * NDJSON: `step` before each part of a long transcript, then `done` with the
@@ -26,7 +28,8 @@ export async function POST(req: Request, ctx: Ctx) {
   return webAuthed(req, async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const baseRevision = baseRevisionOf(await jsonBody(req, 4096));
-    if (!upstreamOf('llm')) throw new HttpError(404, 'not_offered');
+    const byDecision = !!upstreamOf('decision');
+    if (!byDecision && !upstreamOf('llm')) throw new HttpError(404, 'not_offered');
 
     const editable = await loadForEdit(owner, syncId, baseRevision);
     const points = openPoints(editable.manifest);
@@ -35,7 +38,10 @@ export async function POST(req: Request, ctx: Ctx) {
     if (lines.length === 0) throw new HttpError(422, 'empty_transcript');
 
     return ndjsonResponse<Event>(req, 'web talking points', async (send, signal) => {
-      const ticks = await checkPoints({ lines, points, maxChars: env().LLM_MAX_TRANSCRIPT_CHARS, chat: chatStream, signal, onStep: (step) => send({ step }) });
+      const onStep = (step: { part: number; parts: number }) => send({ step });
+      const ticks = byDecision
+        ? await checkPointsByDecision({ lines, points, others: settledPoints(editable.manifest), decide, signal, onStep })
+        : await checkPoints({ lines, points, maxChars: env().LLM_MAX_TRANSCRIPT_CHARS, chat: chatStream, signal, onStep });
       if (signal.aborted) return;
       if (!ticks) {
         send({ error: 'unreadable_reply' });
