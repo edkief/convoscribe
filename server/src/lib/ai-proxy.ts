@@ -4,16 +4,18 @@ import { HttpError } from './http';
 
 /**
  * The upstreams the server offers its users (#93): a language model and a
- * transcription server, each an OpenAI-compatible API set in the
- * environment. Callers reach them only through the fixed routes under
- * /api/ai/v1; nothing a caller sends picks the upstream or its path.
+ * transcription server, each an OpenAI-compatible API, and a laya decision
+ * service (#101), all set in the environment. Callers reach them only
+ * through the fixed routes under /api/ai/v1; nothing a caller sends picks
+ * the upstream or its path.
  */
-export type Service = 'llm' | 'asr';
+export type Service = 'llm' | 'asr' | 'decision';
 
 /** The paths a caller may reach on each upstream. */
 export type UpstreamPath = {
   llm: '/models' | '/chat/completions';
   asr: '/models' | '/audio/transcriptions';
+  decision: '/v1/systemone' | '/v1/systemone/batch' | '/health';
 };
 
 export type Upstream = { url: string; key?: string; model?: string };
@@ -21,10 +23,11 @@ export type Upstream = { url: string; key?: string; model?: string };
 /** The configured upstream for `service`, or null when the server offers none. */
 export function upstreamOf(service: Service): Upstream | null {
   const config = env();
-  const [url, key, model] =
-    service === 'llm'
-      ? [config.LLM_UPSTREAM_URL, config.LLM_UPSTREAM_KEY, config.LLM_MODEL]
-      : [config.ASR_UPSTREAM_URL, config.ASR_UPSTREAM_KEY, config.ASR_MODEL];
+  const [url, key, model] = {
+    llm: [config.LLM_UPSTREAM_URL, config.LLM_UPSTREAM_KEY, config.LLM_MODEL],
+    asr: [config.ASR_UPSTREAM_URL, config.ASR_UPSTREAM_KEY, config.ASR_MODEL],
+    decision: [config.DECISION_UPSTREAM_URL, config.DECISION_UPSTREAM_KEY, config.DECISION_MODEL],
+  }[service];
   return url ? { url, key, model } : null;
 }
 

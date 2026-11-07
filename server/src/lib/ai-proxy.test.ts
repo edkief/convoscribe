@@ -65,9 +65,13 @@ describe('upstreamOf', () => {
   it('reports each configured upstream, and null for one that is not', () => {
     expect(upstreamOf('llm')).toEqual({ url: base, key: UPSTREAM_KEY, model: 'small' });
     expect(upstreamOf('asr')).toEqual({ url: base, key: undefined, model: undefined });
+    expect(upstreamOf('decision')).toBeNull();
+    stubServerEnv({ DECISION_UPSTREAM_URL: 'http://laya.llama:8080', DECISION_MODEL: 'english' });
+    expect(upstreamOf('decision')).toEqual({ url: 'http://laya.llama:8080', key: undefined, model: 'english' });
     stubServerEnv();
     expect(upstreamOf('llm')).toBeNull();
     expect(upstreamOf('asr')).toBeNull();
+    expect(upstreamOf('decision')).toBeNull();
   });
 });
 

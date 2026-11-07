@@ -46,6 +46,12 @@ const schema = z
     ASR_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
     ASR_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
     ASR_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
+    // A laya decision service (#101), for talking-point checks: its base URL
+    // (where /v1/systemone lives), an optional key and an optional model
+    // (english, multilingual; none lets laya pick by language).
+    DECISION_UPSTREAM_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
+    DECISION_UPSTREAM_KEY: z.preprocess(blankToUndefined, z.string().optional()),
+    DECISION_MODEL: z.preprocess(blankToUndefined, z.string().optional()),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === 'api-key' && !env.SYNC_API_KEY) {
@@ -54,7 +60,7 @@ const schema = z
     if (env.AUTH_MODE === 'authz-proxy' && !env.AUTHZ_PROXY_URL) {
       ctx.addIssue({ code: 'custom', path: ['AUTHZ_PROXY_URL'], message: 'required when AUTH_MODE=authz-proxy' });
     }
-    for (const service of ['LLM', 'ASR'] as const) {
+    for (const service of ['LLM', 'ASR', 'DECISION'] as const) {
       if (env[`${service}_UPSTREAM_URL`]) continue;
       for (const name of [`${service}_UPSTREAM_KEY`, `${service}_MODEL`] as const) {
         if (env[name] !== undefined) {
