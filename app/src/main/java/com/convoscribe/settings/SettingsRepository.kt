@@ -108,6 +108,7 @@ class SettingsRepository(
             putString(KEY_DECISION_MODEL, next.decisionModel)
             putOrRemove(KEY_DECISION_SOURCE, next.decisionSource?.key)
             putBoolean(KEY_DECISION_FOR_TALKING_POINTS, next.decisionForTalkingPoints)
+            putBoolean(KEY_DECISION_FOR_TALKING_POINTS_CHOSEN, true)
             putBoolean(KEY_TALKING_POINT_LOW_REASONING, next.talkingPointLowReasoning)
             putString(KEY_TALKING_POINT_EXTRA_FIELDS, next.talkingPointExtraFields)
             val offer = next.serverOffer
@@ -284,7 +285,7 @@ class SettingsRepository(
             decisionBaseUrl = (prefs.getString(KEY_DECISION_BASE_URL, "") ?: "").trim().trimEnd('/'),
             decisionModel = prefs.getString(KEY_DECISION_MODEL, "") ?: "",
             decisionSource = ServiceSource.fromKey(prefs.getString(KEY_DECISION_SOURCE, null)),
-            decisionForTalkingPoints = prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS, true),
+            decisionForTalkingPoints = loadDecisionForTalkingPoints(),
             talkingPointLowReasoning = prefs.getBoolean(KEY_TALKING_POINT_LOW_REASONING, false),
             talkingPointExtraFields = prefs.getString(KEY_TALKING_POINT_EXTRA_FIELDS, null).orEmpty(),
             numSpeakers = prefs.getInt(KEY_NUM_SPEAKERS, -1),
@@ -339,6 +340,17 @@ class SettingsRepository(
             llmBaseUrl = raw.llmBaseUrl.trim().trimEnd('/')
         )
     }
+
+    /**
+     * *Check talking points with the decision model* was on by default,
+     * and every save stored it, so a stored `on` from before issue #136
+     * says nothing about the user's choice. Treat it as off once; any
+     * value saved since (which sets [KEY_DECISION_FOR_TALKING_POINTS_CHOSEN])
+     * is the user's.
+     */
+    private fun loadDecisionForTalkingPoints(): Boolean =
+        prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS_CHOSEN, false) &&
+            prefs.getBoolean(KEY_DECISION_FOR_TALKING_POINTS, false)
 
     /**
      * Installs from before the threshold was tuned stored the old
@@ -400,6 +412,7 @@ class SettingsRepository(
         const val KEY_DECISION_MODEL = "decisionModel"
         const val KEY_DECISION_SOURCE = "decisionSource"
         const val KEY_DECISION_FOR_TALKING_POINTS = "decisionForTalkingPoints"
+        const val KEY_DECISION_FOR_TALKING_POINTS_CHOSEN = "decisionForTalkingPointsChosen"
         const val KEY_TALKING_POINT_LOW_REASONING = "talkingPointLowReasoning"
         const val KEY_TALKING_POINT_EXTRA_FIELDS = "talkingPointExtraFields"
         const val KEY_SERVER_OFFER_FETCHED_AT = "serverOfferFetchedAt"

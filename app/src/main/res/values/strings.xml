@@ -898,8 +898,8 @@
     <string name="settings_decision_url_cleartext">Transcripts are sent to an http:// address unencrypted. Use https:// unless the service is on a network you trust.</string>
     <string name="settings_decision_model_placeholder">Picked by language</string>
     <string name="settings_decision_test_connected">Connected – answered by its %1$s model</string>
-    <string name="settings_decision_for_talking_points_label">Check talking points with the decision model</string>
-    <string name="settings_decision_for_talking_points_help">Off: the language model checks them instead.</string>
+    <string name="settings_decision_for_talking_points_label">Check talking points with the decision model (experimental)</string>
+    <string name="settings_decision_for_talking_points_help">Off by default: on real recordings the decision model ticked points before they came up. Off: the language model checks them instead.</string>
     <string name="settings_overview_decision">Talking points: decision model</string>
     <string name="server_services_status_decision">Decision model: %1$s</string>
     <string name="server_services_confirm_decision">A decision model (%1$s). While recording, the latest transcript lines are sent to it to tick talking points, unless you leave that to the language model.</string>

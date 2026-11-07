@@ -496,8 +496,9 @@ class TalkingPointCheckerTest {
         assertEquals(RecordingPhase.IDLE, state.value.phase)
     }
 
+    /** A decision service, switched on: it is experimental and off by default (issue #136). */
     private fun useDecisionService() {
-        settings.update { it.copy(decisionBaseUrl = "http://laya.test:8080") }
+        settings.update { it.copy(decisionBaseUrl = "http://laya.test:8080", decisionForTalkingPoints = true) }
     }
 
     @Test
@@ -564,7 +565,8 @@ class TalkingPointCheckerTest {
 
     @Test
     fun withADecisionService_noLanguageModelIsNeeded() = runTest(dispatcher) {
-        settings.update { it.copy(llmBaseUrl = "", decisionBaseUrl = "http://laya.test:8080") }
+        useDecisionService()
+        settings.update { it.copy(llmBaseUrl = "") }
         val decision = ScriptedDecisionClient(byWord = mapOf("Budget" to 1))
         checker(answering("[]"), decision = decision)
         val id = session()
@@ -577,8 +579,9 @@ class TalkingPointCheckerTest {
     }
 
     @Test
-    fun optedOutOfTheDecisionService_theLanguageModelChecks() = runTest(dispatcher) {
-        settings.update { it.copy(decisionBaseUrl = "http://laya.test:8080", decisionForTalkingPoints = false) }
+    fun decisionServiceNotSwitchedOn_theLanguageModelChecks() = runTest(dispatcher) {
+        // Off by default (issue #136).
+        settings.update { it.copy(decisionBaseUrl = "http://laya.test:8080") }
         val chat = answering("[1]")
         val decision = ScriptedDecisionClient()
         checker(chat, decision = decision)

@@ -277,13 +277,14 @@ class SettingsViewModelTest {
     fun decisionSourceAndTalkingPointsSwitch_writeImmediately() {
         val repo = newRepo()
         val vm = newVm(repo = repo)
-        assertTrue(vm.state.value.decisionForTalkingPoints)
+        // Experimental, so off until turned on (issue #136).
+        assertFalse(vm.state.value.decisionForTalkingPoints)
 
         vm.setDecisionSource(ServiceSource.SERVER)
-        vm.setDecisionForTalkingPoints(false)
+        vm.setDecisionForTalkingPoints(true)
 
         assertEquals(ServiceSource.SERVER, repo.settings.value.decisionSource)
-        assertFalse(repo.settings.value.decisionForTalkingPoints)
+        assertTrue(repo.settings.value.decisionForTalkingPoints)
     }
 
     @Test

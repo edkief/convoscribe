@@ -224,7 +224,7 @@ class ServerServicesSettingsTest {
         val s = newRepository().settings.value
         assertFalse(s.decisionConfigured)
         assertFalse(s.talkingPointsByDecision)
-        assertTrue(s.decisionForTalkingPoints)
+        assertFalse(s.decisionForTalkingPoints)
         assertEquals("", newRepository().decisionConfig().baseUrl)
     }
 
@@ -236,6 +236,9 @@ class ServerServicesSettingsTest {
         assertEquals("http://laya.llama:8080", config.baseUrl)
         assertEquals("english", config.model)
         assertEquals("own-decision-key", config.apiKey)
+        // Experimental and off until the user turns it on (issue #136).
+        assertFalse(repo.settings.value.talkingPointsByDecision)
+        repo.update { it.copy(decisionForTalkingPoints = true) }
         assertTrue(repo.settings.value.talkingPointsByDecision)
         // Persisted.
         assertEquals("http://laya.llama:8080", newRepository().settings.value.decisionBaseUrl)
@@ -250,7 +253,9 @@ class ServerServicesSettingsTest {
         assertEquals("$SERVER/api/ai/v1/decision", repo.decisionConfig().baseUrl)
         assertEquals("", repo.decisionConfig().model)
         assertEquals("sync-key", repo.decisionConfig().apiKey)
-        assertTrue(s.talkingPointsByDecision)
+        assertFalse(s.talkingPointsByDecision)
+        repo.update { it.copy(decisionForTalkingPoints = true) }
+        assertTrue(repo.settings.value.talkingPointsByDecision)
         // The offer survives a restart.
         assertEquals(OfferedService(""), newRepository().settings.value.serverOffer?.decision)
     }
@@ -277,16 +282,34 @@ class ServerServicesSettingsTest {
     }
 
     @Test
-    fun decision_optedOut_sendsTalkingPointsToTheLanguageModel_evenFromTheServer() {
+    fun decision_offByDefault_sendsTalkingPointsToTheLanguageModel_evenFromTheServer() {
         val repo = newRepository()
         connected(repo, bothOffered.copy(decision = OfferedService("english")))
-        repo.update { it.copy(decisionForTalkingPoints = false) }
         val s = repo.settings.value
         assertTrue(s.decisionConfigured)
         assertFalse(s.talkingPointsByDecision)
-        // Kept across a restart, and turning the services off and on again.
+    }
+
+    @Test
+    fun decision_optedIn_isKept_acrossRestartsAndTheServicesTurnedOffAndOn() {
+        val repo = newRepository()
+        connected(repo, bothOffered.copy(decision = OfferedService("english")))
+        repo.update { it.copy(decisionForTalkingPoints = true) }
         repo.update { it.copy(serverServicesEnabled = false) }
         repo.update { it.withServerServicesOn() }
+        assertTrue(newRepository().settings.value.decisionForTalkingPoints)
+        assertTrue(newRepository().settings.value.talkingPointsByDecision)
+    }
+
+    @Test
+    fun decision_storedOnBeforeIssue136_loadsOffOnce_thenTheUsersChoiceIsKept() {
+        // Every save stored the old default (on), chosen or not.
+        prefs.edit().putBoolean(SettingsRepository.KEY_DECISION_FOR_TALKING_POINTS, true).apply()
+        val repo = newRepository()
+        assertFalse(repo.settings.value.decisionForTalkingPoints)
+        repo.update { it.copy(decisionForTalkingPoints = true) }
+        assertTrue(newRepository().settings.value.decisionForTalkingPoints)
+        newRepository().update { it.copy(decisionForTalkingPoints = false) }
         assertFalse(newRepository().settings.value.decisionForTalkingPoints)
     }
 

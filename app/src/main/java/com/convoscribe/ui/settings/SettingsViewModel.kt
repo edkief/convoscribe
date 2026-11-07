@@ -255,8 +255,8 @@ data class SettingsUiState(
     val decisionSource: ServiceSource = ServiceSource.OWN,
     /** A decision service is set up, the user's own or the server's. */
     val decisionConfigured: Boolean = false,
-    /** *Check talking points with the decision model*; written immediately. */
-    val decisionForTalkingPoints: Boolean = true,
+    /** *Check talking points with the decision model*, experimental and off by default (issue #136); written immediately. */
+    val decisionForTalkingPoints: Boolean = false,
     /** `true` while [SettingsViewModel.testDecision] is in flight. */
     val decisionTesting: Boolean = false,
     /** Last decision service test: [ConnectionTestResult.Connected] names the laya model that answered. */
