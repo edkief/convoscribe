@@ -356,11 +356,16 @@ brings them to your other devices.
   each time, up to 5 minutes. After two failures in a row, the card says
   quietly that checks aren't working and to tick by hand. The note goes
   once a check succeeds.
-  With a **decision model** set up (Settings → AI & summaries → *Decision
-  model*, issue #101), a laya decision service does these checks instead,
-  and no language model is needed for them. See *Decision model for
-  talking points* below. *Check talking points with the decision model*
-  (on by default) hands them back to the language model.
+  These checks ask the language model for **low reasoning** (issue #136):
+  a model that reasons at length answers in 30 s or more and turns down
+  points that were only partly covered. With the sync server's model, the
+  server decides how its model is asked (`LLM_LOW_REASONING`, see the
+  server README). With your own, turn on *Ask for low reasoning in
+  talking-point checks* (see *Language model* below).
+  A **decision model** (Settings → AI & summaries → *Decision model*,
+  issue #101) can do these checks instead, with no language model needed.
+  It is experimental and off by default: see *Decision model for talking
+  points* below.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -921,6 +926,21 @@ the fields below are *Specify my own*:
   turns automatic ticking off. Shorter mostly resends speech the last
   check already read; a slow model sets the real pace, since checks never
   overlap.
+- **Ask for low reasoning in talking-point checks** — off by default.
+  On, talking-point checks (and only those) send `reasoning_effort:
+  "low"` with your **Extra request fields** on top: a JSON object for a
+  model with its own switch, a field set to `null` removing it. Many local
+  models ignore `reasoning_effort`, so give them theirs, e.g. for
+  llama.cpp `{"chat_template_kwargs": {"enable_thinking": false}}` (Qwen3)
+  or `{"chat_template_kwargs": {"reasoning_strength": "none"}}` (Muse
+  Glimmer). A model that refuses `reasoning_effort` (OpenAI's that don't
+  reason) needs `{"reasoning_effort": null}`, or leave this off. Text that
+  isn't a JSON object is shown as an error and not saved. With the sync
+  server's language model, this is set on the server instead.
+
+  Why: replaying a real 38-minute recording the way live checks run, a
+  30B model with its default reasoning got 4 of 11 points right at 28 s a
+  check, and 7 of 11 at 4.5 s a check with the least reasoning it allows.
 
 The endpoint is contacted only by `llm/ChatClient.kt`. The
 streaming path uses server-sent events (`data: {…}\n\n` chunks)
@@ -945,9 +965,11 @@ so there is nothing to parse.
   laya pick by the language of each line.
 - **Test connection** saves, then asks one small decision and names the
   model that answered.
-- **Check talking points with the decision model** — on by default once
-  one is set up, the sync server's included. Off sends the checks to the
-  language model as before.
+- **Check talking points with the decision model (experimental)** — off
+  by default (issue #136), the sync server's decision service included.
+  On sends the checks to laya instead of the language model. Installs from
+  before #136 had it on without choosing it, so it is turned off once on
+  upgrade.
 
 Without a decision model, or with that switch off, the language model
 checks talking points exactly as described above. A check with laya is
@@ -969,7 +991,14 @@ stretch of transcript was near chance. A line at a time, it judged 29 of
 34 points right over three test meetings (one in French), ticking 2 of
 17 points that weren't discussed. With only one or two options per
 question it ticked far too many (8 of 17), hence the filling.
-Calibrating this on real recordings is #132.
+
+Why it is now experimental (#136): replayed the way live checks run over
+a real 38-minute recording with 11 points, laya ticked only 3 at the
+right time and 8 minutes before they came up. Each of about 90 checks
+over a meeting is a chance to tick a point too early, and it adds up.
+The language model with low reasoning got 7 to 9 of 11 with no early
+ticks. Running laya on the device, fine-tuned for talking points, is #138;
+comparing it with TypeSafe Jev is #139.
 
 ## Transcription server
 

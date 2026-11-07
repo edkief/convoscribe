@@ -2723,7 +2723,10 @@ loads subtitles (VLC), and apps that open DOCX and PDF.
 
 Needs a laya decision service (laya-serve 0.4.22 or later, e.g.
 `http://laya.llama:8080`), a language model, and for steps 6 and 7 a sync
-server with `DECISION_UPSTREAM_URL` set to it.
+server with `DECISION_UPSTREAM_URL` set to it and
+`DECISION_FOR_TALKING_POINTS=on`. Since #136 the decision model is
+experimental and off by default: turn *Check talking points with the decision
+model (experimental)* on after step 1.
 
 **Steps**
 
@@ -2749,7 +2752,8 @@ server with `DECISION_UPSTREAM_URL` set to it.
 **Expected**
 
 - Step 1: *Connected – answered by its english model* (or *multilingual*). The
-  *Check talking points with the decision model* switch appears, on.
+  *Check talking points with the decision model (experimental)* switch appears,
+  off.
 - Step 2: the test fails with HTTP 404 and says the decision service needs
   laya-serve 0.4.22 or later.
 - Step 3: the release, hiring and coffee machine points tick within about half a
@@ -2765,6 +2769,47 @@ server with `DECISION_UPSTREAM_URL` set to it.
 - Step 7: with the decision service, the check takes a second or two and ticks the
   points discussed; a long session shows its batches as steps. Without it, the
   language model checks as in section 60.
+
+## 63. Talking-point checks ask for low reasoning (issue #136)
+
+Needs a reasoning language model behind llama.cpp (e.g. Muse Glimmer 30B or
+Qwen3), reachable directly and through a sync server you can restart. For
+step 5, an install from before #136 with a decision service set up.
+
+**Steps**
+
+1. Settings → AI & summaries → your own language model. In *Advanced*, leave
+   *Ask for low reasoning in talking-point checks* off. Record with three points
+   and talk about one for a minute. Note how long each check takes in logcat
+   (`talking points`), or in the model server's log.
+2. Turn *Ask for low reasoning* on. Type `{"chat_template_kwargs": {` in *Extra
+   request fields*, then complete it to the model's switch, e.g.
+   `{"chat_template_kwargs": {"reasoning_strength": "none"}}` for Glimmer or
+   `{"chat_template_kwargs": {"enable_thinking": false}}` for Qwen3. Save, and
+   record as in step 1.
+3. On a device using the sync server's language model, open *Advanced*. Record
+   as in step 1 with the server's `LLM_LOW_REASONING` unset.
+4. Set the server's `LLM_LOW_REASONING` to the model's switch (as in step 2),
+   restart the server, and record as in step 1. In the web app, *Check points*
+   on a session with open points.
+5. Upgrade the old install to this build and open Settings → AI & summaries →
+   *Decision model*.
+
+**Expected**
+
+- Step 1: checks take as long as the model's full reasoning (tens of seconds
+  for a 30B reasoning model).
+- Step 2: while the JSON is incomplete, the field shows *Not a JSON object:
+  saving keeps the fields saved before*. Once complete, the error goes, and
+  checks take a few seconds. Summaries, questions and titles are as slow as
+  before: only talking-point checks change.
+- Step 3: *Advanced* shows no reasoning switch, only a line saying the server
+  sets this. Checks take as long as in step 1: the server passes them through.
+- Step 4: checks take a few seconds, as in step 2; the web app's *Check points*
+  is quick too. The model server never sees an `X-Convoscribe-Reasoning`
+  header.
+- Step 5: *Check talking points with the decision model (experimental)* is off,
+  and the language model ticks points. Turning it on sticks across restarts.
 
 ## Troubleshooting
 

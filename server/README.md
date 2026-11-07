@@ -203,11 +203,14 @@ they do in the app, with the same prompts:
   time to play from. A transcript longer than `LLM_MAX_TRANSCRIPT_CHARS` is
   read in parts; a point found in one part isn't asked about again. Points
   ticked or unticked by hand are neither sent nor changed, and a point already
-  ticked stays ticked. When the server has a decision service
-  (`DECISION_UPSTREAM_URL`, #101), it reads the transcript instead, a line at
+  ticked stays ticked. The model is asked for low reasoning the server's way
+  (`LLM_LOW_REASONING`, #136), as a device's live check is. When the server
+  has a decision service (`DECISION_UPSTREAM_URL`, #101) and
+  `DECISION_FOR_TALKING_POINTS=on`, it reads the transcript instead, a line at
   a time as the app does (see the app README's *Decision model for talking
   points*), in batches of 64 lines with a step for each. *Check points* then
-  shows even without a language model.
+  shows even without a language model. It is off by default: laya as shipped
+  ticks points before they come up on real recordings.
 - **Write notes**, on the *Marks* tab when a mark has no full note, or one
   written before the transcript changed: the model writes each from the mark's
   note and the transcript around it (a minute before, half a minute after).
@@ -320,6 +323,16 @@ with the sync key, and the config answer gains `"decision": {"model"} | null`
   dropped when no key is set (an upstream inside the cluster may need
   none). Only `Content-Type`, `Content-Length` and `Accept` are passed
   on, and only `Content-Type` comes back.
+- **Low reasoning (#136).** A device marks its talking-point checks with
+  `X-Convoscribe-Reasoning: low`, since a live check needs an answer in
+  seconds. With `LLM_LOW_REASONING` set, the server merges that JSON object
+  into such a chat completion, its fields winning, and sends the rewritten
+  body (so this one request is read whole first). Each model has its own
+  switch, and only the server knows which model it runs; devices never send
+  model-specific fields here. Without `LLM_LOW_REASONING`, or without the
+  header, the request passes through untouched. The header itself is never
+  passed upstream. A marked request whose body isn't a JSON object is
+  refused with `400 invalid_body`.
 - Both bodies stream: answers arrive token by token
   (`Cache-Control: no-transform`), and a recording passes through without
   being held in memory. A caller going away, or *Stop generating*, cancels
@@ -558,9 +571,11 @@ exits with the list of problems if any is missing or invalid.
 | `LLM_UPSTREAM_URL` | no | An OpenAI-compatible language model the server offers its users (#93), e.g. `http://llm.llm:8080/v1`: the base its `/chat/completions` hangs off. Blank offers none. |
 | `LLM_UPSTREAM_KEY` | no | The key sent to it, never to a device. Leave blank for an upstream that needs none. |
 | `LLM_MODEL` | no | The model devices should use, reported by `GET /api/sync/v1/config`. The web app's summaries use it too, else the first model the upstream lists. |
+| `LLM_LOW_REASONING` | no | How talking-point checks ask the language model for little reasoning (#136): a JSON object merged into those chat requests, from devices (marked `X-Convoscribe-Reasoning: low`) and from the web app's *Check points*. Every model has its own switch, e.g. `{"chat_template_kwargs":{"reasoning_strength":"none"}}` (Muse Glimmer on llama.cpp), `{"chat_template_kwargs":{"enable_thinking":false}}` (Qwen3 on llama.cpp), `{"reasoning_effort":"low"}` (OpenAI's reasoning models). Change it with the model. Unset sends them as they come. Anything but a JSON object, or set without `LLM_UPSTREAM_URL`, is refused at startup. |
 | `LLM_MAX_TRANSCRIPT_CHARS` | no | How much transcript one summary or question call from the web app sends (#117, #118), as the app's *Max transcript characters*: default `24000`, at least `1000`. A longer transcript is summarised in parts, and a question about it is answered from its most relevant parts. |
 | `ASR_UPSTREAM_URL`, `ASR_UPSTREAM_KEY`, `ASR_MODEL` | no | The same for an OpenAI-compatible transcription server, e.g. `http://parakeet-asr.asr:8000/v1`. A key or model without its URL is refused at startup. |
-| `DECISION_UPSTREAM_URL`, `DECISION_UPSTREAM_KEY`, `DECISION_MODEL` | no | A laya decision service for talking-point checks (#101), e.g. `http://laya.llama:8080`: the base `/v1/systemone` hangs off, laya-serve 0.4.22 or later. `DECISION_MODEL` is the laya model (`english` or `multilingual`); blank lets laya pick by language. Offered to devices, and used by the web app's *Check points*. A key or model without its URL is refused at startup. |
+| `DECISION_UPSTREAM_URL`, `DECISION_UPSTREAM_KEY`, `DECISION_MODEL` | no | A laya decision service for talking-point checks (#101), e.g. `http://laya.llama:8080`: the base `/v1/systemone` hangs off, laya-serve 0.4.22 or later. `DECISION_MODEL` is the laya model (`english` or `multilingual`); blank lets laya pick by language. Offered to devices, and used by the web app's *Check points* when `DECISION_FOR_TALKING_POINTS` is on. A key or model without its URL is refused at startup. |
+| `DECISION_FOR_TALKING_POINTS` | no | `on` or `off` (default `off`, #136): whether the web app's *Check points* uses the decision service rather than the language model. Experimental: on a real recording, laya as shipped ticked most points before they came up. Devices choose for themselves in Settings, also off by default. |
 | `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. An admin's *Run clean-up* is not affected. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |
 
