@@ -509,6 +509,22 @@ class SettingsViewModelTest {
     }
 
     @Test
+    fun liveAssist_isOffAndBothSwitchesPersist() = runTest(dispatcher) {
+        val repo = newRepo()
+        val vm = newVm(repo = repo)
+        assertFalse(vm.state.value.liveAssistDefault)
+        assertFalse(vm.state.value.liveAssistSemantic)
+
+        vm.setLiveAssistDefault(true)
+        vm.setLiveAssistSemantic(true)
+        advanceUntilIdle()
+        assertTrue(repo.settings.value.liveAssistDefault)
+        assertTrue(repo.settings.value.liveAssistSemantic)
+        assertTrue(vm.state.value.liveAssistDefault)
+        assertTrue(vm.state.value.liveAssistSemantic)
+    }
+
+    @Test
     fun autoTitle_isOnAndTurningItOffPersists() = runTest(dispatcher) {
         val repo = newRepo()
         val vm = newVm(repo = repo)

@@ -131,6 +131,14 @@ import com.convoscribe.llm.SummaryTemplates
  * those requests for models with their own switch (issue #136). The
  * sync server's model is asked the server's way instead.
  *
+ * [liveAssistDefault] turns *Live assist* on when a recording starts
+ * (issue #50): questions asked aloud are answered from the
+ * conversation and past sessions, which sends recent transcript text
+ * to the language model while recording. [liveAssistSemantic] also
+ * matches past sessions by meaning for it, with the semantic search
+ * model, which costs CPU next to live transcription; it depends on the
+ * device, so it is not backed up.
+ *
  * Field defaults match a fresh install on first launch; values are
  * written to a `SharedPreferences` file by [SettingsRepository] and
  * reloaded on construction.
@@ -180,6 +188,8 @@ data class AppSettings(
     val exportToFolder: Boolean = false,
     val autoTitle: Boolean = true,
     val talkingPointsOpenFirst: Boolean = false,
+    val liveAssistDefault: Boolean = false,
+    val liveAssistSemantic: Boolean = false,
     val displayMode: String = DisplayMode.AUTO.key,
     val dynamicColor: Boolean = false,
     val floatingControl: Boolean = true,

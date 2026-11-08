@@ -351,6 +351,11 @@
     <string name="settings_auto_mark_notes_label">Write notes for marks automatically</string>
     <string name="settings_auto_title_label">Name conversations automatically</string>
     <string name="settings_auto_title_help">After the first summary, the language model gives a conversation that still has its date as its title a short name. A title you typed is never changed.</string>
+    <string name="settings_section_live_assist">Live assist</string>
+    <string name="settings_live_assist_default_label">Live assist on by default</string>
+    <string name="settings_live_assist_default_help">While recording, questions asked aloud get a short answer on the Record screen, from earlier in the conversation and from past sessions. The last minutes of the transcript are sent to the language model as you speak, not only when you ask for a summary. You can turn it on or off for each recording.</string>
+    <string name="settings_live_assist_semantic_label">Match past sessions by meaning</string>
+    <string name="settings_live_assist_semantic_help">Live assist also uses the semantic search model to find past sessions that say the same thing in other words. It runs on this device during the recording, next to transcription; leave it off on slower devices.</string>
     <string name="settings_auto_mark_notes_help">Once a conversation\'s speakers are identified, the language model turns each mark\'s note into a full note from what was said around it. The Summary tab can always write them.</string>
     <string name="settings_summaries_default_help">New conversations start with this template. You can change it before recording, or on the Summary tab.</string>
     <string name="settings_summaries_templates_row">Templates</string>

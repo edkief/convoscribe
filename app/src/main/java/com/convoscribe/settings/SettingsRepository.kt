@@ -150,6 +150,8 @@ class SettingsRepository(
             putBoolean(KEY_EXPORT_TO_FOLDER, next.exportToFolder)
             putBoolean(KEY_AUTO_TITLE, next.autoTitle)
             putBoolean(KEY_TALKING_POINTS_OPEN_FIRST, next.talkingPointsOpenFirst)
+            putBoolean(KEY_LIVE_ASSIST_DEFAULT, next.liveAssistDefault)
+            putBoolean(KEY_LIVE_ASSIST_SEMANTIC, next.liveAssistSemantic)
             val participants = ParticipantsCodec.encode(next.defaultParticipants)
             if (participants == null) {
                 remove(
@@ -317,7 +319,9 @@ class SettingsRepository(
             exportSections = prefs.getString(KEY_EXPORT_SECTIONS, null) ?: "transcript,summary,questions",
             exportToFolder = prefs.getBoolean(KEY_EXPORT_TO_FOLDER, false),
             autoTitle = prefs.getBoolean(KEY_AUTO_TITLE, true),
-            talkingPointsOpenFirst = prefs.getBoolean(KEY_TALKING_POINTS_OPEN_FIRST, false)
+            talkingPointsOpenFirst = prefs.getBoolean(KEY_TALKING_POINTS_OPEN_FIRST, false),
+            liveAssistDefault = prefs.getBoolean(KEY_LIVE_ASSIST_DEFAULT, false),
+            liveAssistSemantic = prefs.getBoolean(KEY_LIVE_ASSIST_SEMANTIC, false)
         )
         // On load we don't have a "previous" value; if the persisted
         // asrLanguage is not en/fr we fall back to "en". The stored
@@ -446,6 +450,8 @@ class SettingsRepository(
         const val KEY_EXPORT_TO_FOLDER = "exportToFolder"
         const val KEY_AUTO_TITLE = "autoTitle"
         const val KEY_TALKING_POINTS_OPEN_FIRST = "talkingPointsOpenFirst"
+        const val KEY_LIVE_ASSIST_DEFAULT = "liveAssistDefault"
+        const val KEY_LIVE_ASSIST_SEMANTIC = "liveAssistSemantic"
     }
 }
 
