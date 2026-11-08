@@ -95,6 +95,9 @@ class RecordingService : Service() {
      */
     private var wakeLock: PowerManager.WakeLock? = null
 
+    /** [SystemClock.elapsedRealtime] when [wakeLock] was taken; `null` without one. */
+    private var wakeLockAcquiredAtMs: Long? = null
+
     /**
      * Job that follows [RecordingController.state] to update the
      * notification text and to detect an error-driven idle.
@@ -796,8 +799,15 @@ class RecordingService : Service() {
         )
     }
 
+    /**
+     * Take a fresh wake lock, replacing any held one (issue #124), so
+     * its timeout counts from now and not from an earlier job's
+     * acquire: a recording started while an earlier session's
+     * speakers are identified must not inherit that session's lock.
+     * The new lock is held before the old one is given back, so the
+     * CPU is never left without one in between.
+     */
     private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
         val pm = getSystemService<PowerManager>() ?: return
         val lock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -808,12 +818,18 @@ class RecordingService : Service() {
             // the lock will free in ~1 h and stop pinning the CPU.
             acquire(WAKE_LOCK_TIMEOUT_MS)
         }
+        val previous = wakeLock
         wakeLock = lock
+        wakeLockAcquiredAtMs = SystemClock.elapsedRealtime()
+        if (previous?.isHeld == true) {
+            runCatching { previous.release() }
+        }
     }
 
     private fun releaseWakeLock() {
         val lock = wakeLock ?: return
         wakeLock = null
+        wakeLockAcquiredAtMs = null
         if (lock.isHeld) {
             runCatching { lock.release() }
         }
@@ -1012,7 +1028,11 @@ class RecordingService : Service() {
         /** `requestCode` for the cancel-speaker-identification pending intent. */
         private const val REQUEST_CANCEL_DIARIZE = 1008
 
-        /** Upper bound on the wake-lock acquired for one session. */
+        /**
+         * Safety-net timeout of each wake lock, in case the process is
+         * killed without releasing it. Long recordings renew theirs
+         * before it runs out.
+         */
         private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
         /** Throttle window for notification text refreshes. */
