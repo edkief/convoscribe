@@ -2920,6 +2920,46 @@ NPU engine (Nemotron) on the phone.
 - Step 10: the recording starts with live assist on. The restored device has
   *Live assist on by default* on and *Match past sessions by meaning* off.
 
+## 65. Services per user and upstream status (issue #145)
+
+Use a sync server from this release behind authz-proxy, with a language
+model, transcription server and decision service set up, an admin, and *U*,
+who is not an admin and has a device syncing with the server's language
+model and at least one synced session.
+
+**Steps**
+
+1. As the admin, open *Status*.
+2. Point `ASR_UPSTREAM_URL` at an address nothing answers on (or stop the
+   transcription server), restart, and reload *Status*. Put it back.
+3. Open *Users*. Look at *U*'s services.
+4. Tap *Model* on *U*'s row. On *U*'s device, open Settings → *Server &
+   sync* and refresh what the server offers; then open a session in the web
+   app as *U*.
+5. Tap *Sync* on *U*'s row. On the device, *Sync now*. In *U*'s browser,
+   reload the library.
+6. Tap *Use default* on *U*'s row. *Sync now* on the device and reload *U*'s
+   browser.
+7. Set `DEFAULT_USER_SERVICES=sync`, restart, and sign in as a user the
+   server hasn't seen before. Reset it afterwards.
+
+**Expected**
+
+- Step 1: Postgres, S3, authz-proxy, the language model (with its model),
+  transcription and the decision service, each *Reachable* with a time.
+  Without a decision service set up, it says *Not configured*.
+- Step 2: transcription *Unreachable*, the rest unchanged; the page shows no
+  address or error text, and the server's log says why.
+- Step 3: every pill lit, and *Default* beside them.
+- Step 4: the pill goes dark and *Use default* appears. The device no
+  longer offers the server's language model; the session page has no
+  *Summary* or *Q&A* model actions, no sparkle by the title. Sync still works.
+- Step 5: the device's sync stops with `HTTP 403` and says the account
+  doesn't include sync; the browser shows *No sessions here for you*. The
+  admin still reaches the admin pages.
+- Step 6: everything lit again; sync completes and the library is back.
+- Step 7: the new user's row shows only *Sync* lit, with *Default*.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
