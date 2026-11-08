@@ -74,6 +74,16 @@ import kotlinx.coroutines.withContext
  * session is left pending the same way, [onCancelled] is called, and
  * the run returns instead of throwing so its caller finishes cleanly.
  *
+ * ## While recording (issue #123)
+ *
+ * With *Identify speakers while recording* off, speaker identification
+ * gives way to an open recording ([recordingOpen]):
+ * [giveWayToRecording] stops the run in progress, and no run starts
+ * while the recording is open. Each such session is left pending, as
+ * after a cancel but without holding the charging job, and set aside;
+ * [resumeSetAside] picks them up once the recording has ended. Should
+ * the app die first, they stay pending for the charging job or the user.
+ *
  * Any other throwable is swallowed: the
  * session status is moved to [SessionStatus.DIARIZATION_FAILED]
  * and the exception is logged with `Log.w` so the recording
@@ -120,6 +130,8 @@ import kotlinx.coroutines.withContext
  * @property onCancelled called when the user cancelled a run
  *   ([cancel]), before the session is pending again, so the charging
  *   job is held until the next charge.
+ * @property recordingOpen whether a recording session is open (starting,
+ *   recording, paused or stopping), for [yieldsToRecording].
  */
 class DiarizeSessionUseCase(
     private val repository: SessionRepository,
@@ -134,13 +146,74 @@ class DiarizeSessionUseCase(
     private val onPending: () -> Unit = {},
     private val onDiarized: (Long) -> Unit = {},
     private val onFinished: (Long) -> Unit = {},
-    private val onCancelled: () -> Unit = {}
+    private val onCancelled: () -> Unit = {},
+    private val recordingOpen: () -> Boolean = { false }
 ) {
     private val lock = Mutex()
 
     /** The run holding the engine, so [cancel] can stop it. */
     @Volatile
     private var current: Job? = null
+
+    /** [current] is being stopped by [giveWayToRecording], not by the user. */
+    @Volatile
+    private var yielding = false
+
+    /**
+     * Sessions set aside for a recording (issue #123), by id: how to pick
+     * each one up again in [resumeSetAside]. Guarded by itself.
+     */
+    private val setAside = LinkedHashMap<Long, Resume>()
+
+    /**
+     * How a set-aside session is picked up: a [manual] run (*Identify
+     * speakers now*, an import) runs whatever the *Identify speakers*
+     * setting says, with its [numSpeakers]; an automatic one follows it.
+     */
+    private data class Resume(val manual: Boolean, val numSpeakers: Int? = null)
+
+    /**
+     * Speaker identification waits for the open recording (issue #123):
+     * *Identify speakers while recording* is off and [recordingOpen].
+     */
+    fun yieldsToRecording(): Boolean = !settings.settings.value.speakerIdWhileRecording && recordingOpen()
+
+    /**
+     * Stop the run in progress for the recording that just started, when
+     * [yieldsToRecording] (issue #123): its session is left pending and
+     * set aside for [resumeSetAside]; the run returns normally. `false`
+     * when nothing was stopped.
+     */
+    fun giveWayToRecording(): Boolean {
+        if (!yieldsToRecording()) return false
+        val run = current ?: return false
+        yielding = true
+        run.cancel()
+        return true
+    }
+
+    /**
+     * Identify the speakers of the sessions set aside for a recording
+     * (issue #123), once it has ended: a manual run in any case, an
+     * automatic one if the *Identify speakers* setting runs now and the
+     * session is still pending; otherwise it stays pending for the
+     * charging job or the user. Waits for the engine like any run; a
+     * recording opened meanwhile sets them aside again.
+     */
+    suspend fun resumeSetAside() {
+        val entries = synchronized(setAside) { setAside.toList().also { setAside.clear() } }
+        for ((sessionId, resume) in entries) {
+            Log.i(TAG, "diarization resumed after recording session=$sessionId manual=${resume.manual}")
+            when {
+                resume.manual -> runGuarded(sessionId, {}, resume.numSpeakers, resume)
+                runsNow() -> runIfPending(sessionId)
+                else -> Unit
+            }
+        }
+    }
+
+    /** Whether any session waits for [resumeSetAside]. */
+    fun hasSetAside(): Boolean = synchronized(setAside) { setAside.isNotEmpty() }
 
     /**
      * Stop the run in progress, if any (issue #64); `false` when none
@@ -169,7 +242,7 @@ class DiarizeSessionUseCase(
             defer(sessionId)
             return false
         }
-        run(sessionId, onProgress)
+        runGuarded(sessionId, onProgress, numSpeakers = null, Resume(manual = false))
         return true
     }
 
@@ -190,7 +263,7 @@ class DiarizeSessionUseCase(
      * downloading from the sync server (issue #69; it waits for the
      * next run). The charging job's entry point.
      */
-    suspend fun runIfPending(sessionId: Long, onProgress: (Float) -> Unit = {}): Boolean = guarded(sessionId) {
+    suspend fun runIfPending(sessionId: Long, onProgress: (Float) -> Unit = {}): Boolean = guarded(sessionId, null) {
         val session = repository.getSession(sessionId)
         if (session?.status != SessionStatus.DIARIZATION_PENDING || repository.audioDownloading(session.syncId)) {
             false
@@ -238,7 +311,11 @@ class DiarizeSessionUseCase(
      * also the manual entry point. Waits for a run in progress.
      */
     suspend fun run(sessionId: Long, onProgress: (Float) -> Unit = {}, numSpeakers: Int? = null) {
-        guarded(sessionId) { diarize(sessionId, onProgress, numSpeakers) }
+        runGuarded(sessionId, onProgress, numSpeakers, Resume(manual = true, numSpeakers))
+    }
+
+    private suspend fun runGuarded(sessionId: Long, onProgress: (Float) -> Unit, numSpeakers: Int?, resume: Resume) {
+        guarded(sessionId, resume) { diarize(sessionId, onProgress, numSpeakers) }
     }
 
     /**
@@ -247,9 +324,19 @@ class DiarizeSessionUseCase(
      * pending unless it already has a result, and [onPending] is
      * called. A [cancel] by the user returns `null`; a cancelled
      * caller still gets the exception.
+     *
+     * While [yieldsToRecording] the run does not start, and one stopped
+     * by [giveWayToRecording] returns `null` too: either way the session
+     * is pending and, with a [resume], set aside (issue #123). The
+     * charging job passes none; its sessions are pending already.
      */
-    private suspend fun <T> guarded(sessionId: Long, block: suspend () -> T): T? = try {
+    private suspend fun <T> guarded(sessionId: Long, resume: Resume?, block: suspend () -> T): T? = try {
         lock.withLock {
+            yielding = false
+            if (yieldsToRecording()) {
+                setAsideForRecording(sessionId, resume)
+                return@withLock null
+            }
             coroutineScope {
                 val run = async { block() }
                 current = run
@@ -261,18 +348,50 @@ class DiarizeSessionUseCase(
             }
         }
     } catch (ce: CancellationException) {
-        val byUser = currentCoroutineContext().isActive
+        val callerActive = currentCoroutineContext().isActive
+        val forRecording = callerActive && yielding
+        val byUser = callerActive && !forRecording
+        yielding = false
         withContext(NonCancellable) {
             if (byUser) onCancelled()
             val status = repository.getSession(sessionId)?.status
             if (status in INTERRUPTIBLE) {
                 repository.setStatus(sessionId, SessionStatus.DIARIZATION_PENDING)
-                Log.i(TAG, "diarization interrupted session=$sessionId byUser=$byUser; pending again")
+                Log.i(
+                    TAG,
+                    "diarization interrupted session=$sessionId byUser=$byUser forRecording=$forRecording; " +
+                        "pending again"
+                )
                 onPending()
             }
+            if (forRecording) remember(sessionId, resume)
         }
-        if (!byUser) throw ce
+        if (!callerActive) throw ce
         null
+    }
+
+    /**
+     * Leave [sessionId] pending for the open recording (issue #123),
+     * unless it already has a result, and remember it for
+     * [resumeSetAside].
+     */
+    private suspend fun setAsideForRecording(sessionId: Long, resume: Resume?) {
+        val status = repository.getSession(sessionId)?.status
+        if (status in INTERRUPTIBLE && status != SessionStatus.DIARIZATION_PENDING) {
+            repository.setStatus(sessionId, SessionStatus.DIARIZATION_PENDING)
+            onPending()
+        }
+        Log.i(TAG, "diarization set aside for a recording session=$sessionId")
+        remember(sessionId, resume)
+    }
+
+    private fun remember(sessionId: Long, resume: Resume?) {
+        if (resume == null) return
+        synchronized(setAside) {
+            // A manual request outranks an automatic one for the same session.
+            val previous = setAside[sessionId]
+            setAside[sessionId] = if (previous?.manual == true && !resume.manual) previous else resume
+        }
     }
 
     private suspend fun diarize(sessionId: Long, onProgress: (Float) -> Unit, numSpeakers: Int?) {

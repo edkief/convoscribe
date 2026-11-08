@@ -202,6 +202,8 @@ data class SettingsUiState(
     val updateIncludePrereleases: Boolean = false,
     /** [com.convoscribe.settings.SpeakerIdMode.key] (issue #11); written immediately. */
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    /** Identify speakers while a recording is open (issue #123); written immediately. */
+    val speakerIdWhileRecording: Boolean = true,
     /** [com.convoscribe.settings.SemanticIndexMode.key] (issue #65); written immediately. */
     val semanticIndexMode: String = SemanticIndexMode.CHARGING.key,
     /** Voice model key ([ModelCatalog.diarizationEmbeddings]); written immediately. */
@@ -577,6 +579,15 @@ class SettingsViewModel(
         repo.update { it.copy(speakerIdMode = mode) }
     }
 
+    /**
+     * Persist *Identify speakers while recording* immediately (issue
+     * #123). It applies from the next recording: one already open keeps
+     * what it started with until the next speaker identification.
+     */
+    fun setSpeakerIdWhileRecording(enabled: Boolean) {
+        repo.update { it.copy(speakerIdWhileRecording = enabled) }
+    }
+
     /** Persist when sessions are indexed for semantic search (issue #65); the job is rescheduled to match. */
     fun setSemanticIndexMode(mode: String) {
         repo.update { it.copy(semanticIndexMode = mode) }
@@ -885,6 +896,7 @@ class SettingsViewModel(
             updateCheckAuto = current.updateCheckAuto,
             updateIncludePrereleases = current.updateIncludePrereleases,
             speakerIdMode = current.speakerIdMode,
+            speakerIdWhileRecording = current.speakerIdWhileRecording,
             semanticIndexMode = current.semanticIndexMode,
             diarizationEmbedding = current.diarizationEmbedding,
             diarizationEmbeddingInstalled = modelStore.isInstalled(

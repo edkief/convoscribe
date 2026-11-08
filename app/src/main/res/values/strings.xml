@@ -408,6 +408,8 @@
     <string name="settings_speakers_id_mode_charging">Charging</string>
     <string name="settings_speakers_id_mode_manual">On demand</string>
     <string name="settings_speakers_id_mode_help">Identifying speakers keeps the processor busy for a while and uses some battery. Auto: as soon as the transcript is done. Charging: at once if plugged in, otherwise the next time you charge, even with ConvoScribe closed. On demand: only when you tap Identify speakers now in a session.</string>
+    <string name="settings_speakers_while_recording_label">Identify speakers while recording</string>
+    <string name="settings_speakers_while_recording_help">On: an earlier session\'s speakers go on being identified while you record. Off: that stops when you start recording and picks up once you stop. Turn it off if the live transcript lags or the phone gets hot while recording.</string>
     <string name="settings_speakers_automatic">Automatic</string>
     <string name="settings_speakers_count">%1$d</string>
     <string name="settings_speakers_threshold_label">Clustering threshold</string>

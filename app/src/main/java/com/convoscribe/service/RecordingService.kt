@@ -278,6 +278,30 @@ class RecordingService : Service() {
         controller().start(scope, resumeSessionId, options)
         startStateObserver()
         startOverlayObserver()
+        // With *Identify speakers while recording* off, an earlier
+        // session's speaker identification stops until the recording
+        // ends (issue #123); resumeSetAside() picks it up then.
+        diarizerUseCase().giveWayToRecording()
+    }
+
+    /**
+     * Once a recording has ended, identify the speakers of the sessions
+     * set aside for it (issue #123), as a job of its own so they need not
+     * wait for the stopped session's server transcript.
+     */
+    private fun resumeSetAside() {
+        val diarizer = diarizerUseCase()
+        if (!diarizer.hasSetAside()) return
+        processing++
+        acquireWakeLock()
+        scope.launch {
+            try {
+                diarizer.resumeSetAside()
+            } finally {
+                processing--
+            }
+            stopIfIdle()
+        }
     }
 
     /** Start is waiting for a re-transcription on the phone to stop (issue #123); see [ServiceWork.starting]. */
@@ -329,6 +353,7 @@ class RecordingService : Service() {
                 // diarization needs it again.
                 acquireWakeLock()
                 val completedId = controller.stop()
+                resumeSetAside()
                 // Mic capture has ended; the service stays in the
                 // foreground but switches to a `dataSync` type while
                 // diarization runs. The microphone is no longer in use,
@@ -866,6 +891,7 @@ class RecordingService : Service() {
                     // showing a dead service. Earlier sessions' work
                     // still going keeps the service, under its own
                     // notification (#121, #123).
+                    resumeSetAside()
                     stopIfIdle()
                 }
             }

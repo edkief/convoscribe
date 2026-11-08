@@ -98,8 +98,9 @@ data class SessionEntry(val updatedAt: Long, val manifest: SessionManifest)
  * The settings a backup carries: those that make sense on another
  * device. The API keys live apart, in [com.convoscribe.settings.SecretStore],
  * and are never read. The ASR engine and thread count are left out
- * since they depend on the device, and so is whether the
- * floating-control prompt was shown.
+ * since they depend on the device, as is *Identify speakers while
+ * recording* (issue #123), and so is whether the floating-control
+ * prompt was shown.
  */
 @Serializable
 data class PortableSettings(
