@@ -1726,6 +1726,11 @@ button.t-mark-time:hover {
   display: grid;
 }
 
+.auth-actions {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .auth-form label {
   margin-bottom: 0.35rem;
   font-size: 0.85rem;
@@ -2267,6 +2272,61 @@ button.t-mark-time:hover {
 .quota-form .saved {
   color: var(--success);
   font-size: 0.82rem;
+}
+
+.services-form {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.service-boxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.85rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.service-boxes label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.service-boxes input {
+  accent-color: var(--accent);
+}
+
+.service-boxes .not-offered {
+  color: var(--text-3);
+}
+
+.services-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.services-default {
+  color: var(--text-3);
+  font-size: 0.82rem;
+}
+
+.services-actions .saved {
+  color: var(--success);
+  font-size: 0.82rem;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .admin-cards {

@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 import { listTalkingPointLists } from '@/lib/talking-point-index';
-import { requireIdentity } from '@/lib/web-identity';
+import { requireService } from '@/lib/web-identity';
 import { TalkingPointLists } from '../../_components/TalkingPointLists';
 
 export const metadata: Metadata = { title: 'Talking points' };
@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: 'Talking points' };
  * Read from Postgres; every change reaches your devices at their next sync.
  */
 export default async function TalkingPointsPage() {
-  const { owner } = await requireIdentity();
+  const { owner } = await requireService('sync');
   const lists = await listTalkingPointLists(owner);
   return (
     <div className="page library">

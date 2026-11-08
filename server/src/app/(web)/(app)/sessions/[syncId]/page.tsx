@@ -6,7 +6,7 @@ import { talkingPointsByDecision } from '@/lib/decision-client';
 import { formatBytes, formatDateTime, formatLength } from '@/lib/format';
 import { listTemplates, resolveTemplate } from '@/lib/summary-templates';
 import { KNOWN_SCHEMA, marksByLine, spoken, timestamp, type Message, type SessionView } from '@/lib/transcript-export';
-import { pageLocale, requireIdentity } from '@/lib/web-identity';
+import { pageLocale, requireIdentity, requireService } from '@/lib/web-identity';
 import { readSession } from '@/lib/web-session';
 import { ActionList } from '../../../_components/ActionList';
 import { DownloadMenu, type Download } from '../../../_components/DownloadMenu';
@@ -41,10 +41,11 @@ export async function generateMetadata({ params }: PageProps<'/sessions/[syncId]
  * (`?tab=summary`, with `&earlier=1` for an older one). When the server
  * offers a language model, the Summary tab can write the summary (#117)
  * and the Q&A tab can ask about the session (#118); the model can also name
- * the session, tick its talking points and write its marks' full notes (#119).
+ * the session, tick its talking points and write its marks' full notes (#119),
+ * for a user given the language model (#145).
  */
 export default async function SessionPage({ params, searchParams }: PageProps<'/sessions/[syncId]'>) {
-  const { owner } = await requireIdentity();
+  const { owner, services } = await requireService('sync');
   const { syncId } = await params;
   if (!SYNC_ID.test(syncId)) notFound();
   const session = await readSession(owner, syncId);
@@ -71,8 +72,9 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
     { href: `${base}/transcript/vtt`, label: 'Subtitles', detail: 'WebVTT' },
   ];
   const newer = (view.schema ?? 0) > KNOWN_SCHEMA;
-  // Summarising is a web edit, so only for a session this server can edit.
-  const llm = !newer && !!upstreamOf('llm');
+  // Summarising is a web edit, so only for a session this server can edit, and
+  // only for a user given the language model (#145).
+  const llm = !newer && !!upstreamOf('llm') && services.has('llm');
   const templates = llm ? await listTemplates(owner) : null;
   const summarise = templates && {
     syncId,
@@ -82,7 +84,8 @@ export default async function SessionPage({ params, searchParams }: PageProps<'/
   // The smaller actions (#119) read the transcript.
   const assist = llm && lines.length > 0 ? { syncId } : null;
   // Talking points can also be checked by a decision service alone, when switched on (#101, #136).
-  const pointCheck = !newer && (llm || talkingPointsByDecision()) && lines.length > 0 ? { syncId } : null;
+  const pointCheck =
+    !newer && (llm || (talkingPointsByDecision() && services.has('decision'))) && lines.length > 0 ? { syncId } : null;
   const tabs = panels(view, when, tones, earlier === '1', !newer, summarise, { syncId, ask: llm }, assist, pointCheck);
 
   return (

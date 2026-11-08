@@ -1,5 +1,6 @@
 import { cookies, headers } from 'next/headers';
 import { notFound, redirect } from 'next/navigation';
+import { servicesOf, type AccessService } from './access';
 import { resolveIdentity, type Identity } from './auth';
 import { preferredLocale, validZone } from './format';
 import { noteActivity } from './owners';
@@ -28,6 +29,20 @@ export async function requireAdmin(): Promise<Identity> {
   const identity = await requireIdentity();
   if (!identity.isAdmin) notFound();
   return identity;
+}
+
+/**
+ * The signed-in browser behind a library page, and what they may use
+ * (#145). Someone not given `service` goes to the page that says so; the
+ * library's pages need `sync`, since they show what was synced.
+ */
+export async function requireService(
+  service: AccessService,
+): Promise<Identity & { services: ReadonlySet<AccessService> }> {
+  const identity = await requireIdentity();
+  const services = await servicesOf(identity.owner);
+  if (!services.has(service)) redirect('/no-access');
+  return { ...identity, services };
 }
 
 /** The cookie the browser's IANA time zone is kept in, for dates and date filters. */

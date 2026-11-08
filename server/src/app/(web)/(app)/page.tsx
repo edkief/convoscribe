@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { dayLabel, dayStart, formatLength, formatTime, today } from '@/lib/format';
 import { decodeCursor, encodeCursor, listSessions, listTags, type SessionListItem } from '@/lib/session-index';
-import { pageLocale, requireIdentity } from '@/lib/web-identity';
+import { pageLocale, requireService } from '@/lib/web-identity';
 import { AvatarStack } from '../_components/Avatar';
 import { IconCheckCircle, IconClock, IconMic } from '../_components/Icons';
 
@@ -16,7 +16,7 @@ const one = (value: string | string[] | undefined) => (Array.isArray(value) ? va
  * index.
  */
 export default async function LibraryPage({ searchParams }: PageProps<'/'>) {
-  const { owner } = await requireIdentity();
+  const { owner } = await requireService('sync');
   const { zone, locale } = await pageLocale();
   const params = await searchParams;
   const tag = one(params.tag);
