@@ -14,6 +14,7 @@ import com.convoscribe.data.Preset
 import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.diarization.SpeakerMatcher
+import com.convoscribe.llm.LiveAssistState
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.RecordingController
@@ -119,6 +120,22 @@ class RecordViewModelTest {
             talkingPointLists = lists,
             failingChecks = failing
         )
+
+    @Test
+    fun liveAssist_isOfferedOnlyWithALanguageModel() = runTest(dispatcher) {
+        val vm = newViewModel()
+        val job = launch { vm.assistAvailable.collect {} }
+        assertFalse(vm.assistAvailable.value)
+        settings.update { it.copy(llmBaseUrl = "http://llm/v1", llmModel = "m") }
+        assertTrue(vm.assistAvailable.value)
+
+        // Without an open session there is nothing to turn on, pin or dismiss.
+        vm.setAssist(true)
+        vm.pinCard(1L)
+        vm.dismissCard(1L)
+        assertEquals(LiveAssistState(), vm.assist.value)
+        job.cancel()
+    }
 
     @Test
     fun applyPreset_fillsTheOptionsAndIsShownAsActiveUntilEdited() = runTest(dispatcher) {

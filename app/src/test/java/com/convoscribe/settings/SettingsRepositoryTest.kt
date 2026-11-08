@@ -76,6 +76,8 @@ class SettingsRepositoryTest {
         assertEquals(24000, s.maxTranscriptChars)
         assertEquals(15, s.talkingPointCheckSeconds)
         assertEquals(false, s.talkingPointsOpenFirst)
+        assertEquals(false, s.liveAssistDefault)
+        assertEquals(false, s.liveAssistSemantic)
         assertEquals("en", s.asrLanguage)
         // CPU until the engine check has verified the NPU on the device.
         assertEquals("cpu", s.asrEngine)
@@ -151,6 +153,9 @@ class SettingsRepositoryTest {
         assertEquals(10, newRepository().settings.value.talkingPointCheckSeconds)
         repo.update { it.copy(talkingPointsOpenFirst = true) }
         assertEquals(true, newRepository().settings.value.talkingPointsOpenFirst)
+        repo.update { it.copy(liveAssistDefault = true, liveAssistSemantic = true) }
+        assertEquals(true, newRepository().settings.value.liveAssistDefault)
+        assertEquals(true, newRepository().settings.value.liveAssistSemantic)
     }
 
     @Test

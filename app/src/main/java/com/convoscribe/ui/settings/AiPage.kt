@@ -263,6 +263,41 @@ internal fun SummariesSection(
 }
 
 /**
+ * "Live assist" section (issue #50): whether recordings start with live
+ * assist on, and, once the semantic search model is installed, whether
+ * it matches past sessions by meaning as well as by words. Both are
+ * written immediately.
+ */
+@Composable
+internal fun LiveAssistSection(
+    enabled: Boolean,
+    onEnabledChange: (Boolean) -> Unit,
+    semanticInstalled: Boolean,
+    semantic: Boolean,
+    onSemanticChange: (Boolean) -> Unit
+) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_live_assist)
+    ) {
+        SwitchRow(
+            label = stringResource(R.string.settings_live_assist_default_label),
+            help = stringResource(R.string.settings_live_assist_default_help),
+            checked = enabled,
+            onCheckedChange = onEnabledChange
+        )
+        if (semanticInstalled) {
+            SwitchRow(
+                label = stringResource(R.string.settings_live_assist_semantic_label),
+                help = stringResource(R.string.settings_live_assist_semantic_help),
+                checked = semantic,
+                onCheckedChange = onSemanticChange
+            )
+        }
+    }
+}
+
+/**
  * The language model's expert settings: how much of a transcript is
  * sent, how often talking points are checked while recording, and how
  * those checks ask for little reasoning (issue #136): set here for the

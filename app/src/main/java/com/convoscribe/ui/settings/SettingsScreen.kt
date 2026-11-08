@@ -309,6 +309,8 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             onAutoMarkNotesChange = vm::setAutoMarkNotes,
             onAutoSummaryChange = vm::setAutoSummary,
             onAutoTitleChange = vm::setAutoTitle,
+            onLiveAssistDefaultChange = vm::setLiveAssistDefault,
+            onLiveAssistSemanticChange = vm::setLiveAssistSemantic,
             onBackup = { whenFree { createBackup.launch(backupFileName) } },
             onRestore = { whenFree { pickBackup.launch(arrayOf(BACKUP_MIME, "application/octet-stream")) } },
             onCancelBackup = { context.startService(BackupService.cancelIntent(context)) },
@@ -357,6 +359,8 @@ internal class SettingsActions(
     val onAutoMarkNotesChange: (Boolean) -> Unit = {},
     val onAutoSummaryChange: (Boolean) -> Unit = {},
     val onAutoTitleChange: (Boolean) -> Unit = {},
+    val onLiveAssistDefaultChange: (Boolean) -> Unit = {},
+    val onLiveAssistSemanticChange: (Boolean) -> Unit = {},
     val onTestServer: () -> Unit = {},
     val onServerAutoChange: (Boolean) -> Unit = {},
     val onSyncEnabledChange: (Boolean) -> Unit = {},
@@ -634,6 +638,13 @@ private fun SettingsPageContent(
                 onAutoSummaryChange = actions.onAutoSummaryChange,
                 autoTitle = state.autoTitle,
                 onAutoTitleChange = actions.onAutoTitleChange
+            )
+            LiveAssistSection(
+                enabled = state.liveAssistDefault,
+                onEnabledChange = actions.onLiveAssistDefaultChange,
+                semanticInstalled = state.semanticInstalled,
+                semantic = state.liveAssistSemantic,
+                onSemanticChange = actions.onLiveAssistSemanticChange
             )
             AiAdvanced(
                 form = state.form,

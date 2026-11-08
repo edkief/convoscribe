@@ -425,8 +425,12 @@ object PromptBuilder {
      * by a blank line, and within a session consecutive chunks joined
      * by a newline and the others by [EXCERPT_GAP].
      */
-    fun questionAcrossSessions(excerpts: CrossExcerpts, history: List<LlmMessage>, question: String): List<LlmMessage> {
-        val text = excerpts.sessions.joinToString(separator = "\n\n") { session ->
+    fun questionAcrossSessions(excerpts: CrossExcerpts, history: List<LlmMessage>, question: String): List<LlmMessage> =
+        qa(QA_ACROSS_PREFIX + acrossText(excerpts), history, question)
+
+    /** [excerpts] as [questionAcrossSessions] and [liveAssist] send them. */
+    private fun acrossText(excerpts: CrossExcerpts): String =
+        excerpts.sessions.joinToString(separator = "\n\n") { session ->
             buildString {
                 append("## ").append(session.title).append(" — ").append(session.date)
                 append(" (").append(session.language).append(")\n")
@@ -442,7 +446,47 @@ object PromptBuilder {
                 }
             }
         }
-        return qa(QA_ACROSS_PREFIX + text, history, question)
+
+    /**
+     * System prompt of live assist (issue #50). The model decides
+     * whether the line is a question worth answering and answers it in
+     * one go; [NONE_ANSWER] is the contract with [AssistAnswer]. The
+     * citation format is [QA_ACROSS_PREFIX]'s, which [CitationParser]
+     * reads.
+     */
+    const val LIVE_ASSIST_SYSTEM: String =
+        "You help someone during a live conversation, silently: they read your reply on their screen. " +
+            "You get the last minutes of the conversation, the line just said, and excerpts from earlier " +
+            "in this conversation and from past conversations, each under a heading " +
+            "`## <title> — <date> (<language>)`; lines start with their time, like [12:34]. " +
+            "If the line is not a real question someone wants answered (a rhetorical question, small talk, " +
+            "an instruction), or if the excerpts and the recent conversation do not answer it, reply with " +
+            "exactly NONE. Otherwise answer in at most 2 short sentences, in the language of the line, " +
+            "using only what the excerpts and the recent conversation say, then cite where the answer " +
+            "comes from as (<title>, <date>, mm:ss), with the title and date exactly as in the heading. " +
+            "No preamble, no reasoning, nothing else."
+
+    /** What the model replies when there is nothing to show (issue #50). */
+    const val NONE_ANSWER: String = "NONE"
+
+    /**
+     * Messages for live assist (issue #50): [LIVE_ASSIST_SYSTEM] with
+     * the [excerpts] after it, then the [recent] transcript lines and
+     * the [line] that may be a question.
+     */
+    fun liveAssist(line: String, recent: String, excerpts: CrossExcerpts): List<LlmMessage> {
+        val system = if (excerpts.sessions.isEmpty()) {
+            LIVE_ASSIST_SYSTEM + "\n\nExcerpts: none."
+        } else {
+            LIVE_ASSIST_SYSTEM + "\n\nExcerpts:\n" + acrossText(excerpts)
+        }
+        return listOf(
+            LlmMessage(LlmMessage.ROLE_SYSTEM, system),
+            LlmMessage(
+                LlmMessage.ROLE_USER,
+                "Recent conversation:\n" + recent.ifBlank { "(nothing yet)" } + "\n\nLine just said:\n" + line.trim()
+            )
+        )
     }
 
     /** [system], the recent user/assistant turns of [history], then the trimmed [question]. */

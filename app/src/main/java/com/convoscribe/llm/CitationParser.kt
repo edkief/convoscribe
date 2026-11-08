@@ -50,6 +50,12 @@ object CitationParser {
         )
     }.distinct().toList()
 
+    /** [answer] without its citations, for showing it on its own (issue #50). */
+    fun strip(answer: String): String = CITATION.replace(answer, "")
+        .replace(Regex("[ \\t]+([.,;:!?])"), "$1")
+        .replace(Regex("[ \\t]{2,}"), " ")
+        .trim()
+
     /**
      * The session cited as [title] on [date]: the one with that title
      * (ignoring case and accents), or the only one sent for that day.

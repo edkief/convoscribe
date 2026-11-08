@@ -48,6 +48,21 @@ class FloatingControlUiTest {
     }
 
     @Test
+    fun onlyExpanded_showsLiveAssistAnswers() {
+        for (eink in listOf(true, false)) {
+            for (shape in listOf(FloatingShape.MINIMAL, FloatingShape.STANDARD)) {
+                assertEquals(
+                    "$shape never redraws for an answer",
+                    FloatingControlUi.of(recording, shape, eink, answers = 0),
+                    FloatingControlUi.of(recording, shape, eink, answers = 2)
+                )
+            }
+            assertNull(FloatingControlUi.of(recording, FloatingShape.EXPANDED, eink, answers = 0).answers)
+            assertEquals(2, FloatingControlUi.of(recording, FloatingShape.EXPANDED, eink, answers = 2).answers)
+        }
+    }
+
+    @Test
     fun minimal_changesOnPauseAndResume() {
         val paused = recording.copy(phase = RecordingPhase.PAUSED)
         assertNotEquals(ui(recording, FloatingShape.MINIMAL), ui(paused, FloatingShape.MINIMAL))

@@ -200,6 +200,8 @@ class BackupRoundTripTest {
                 numThreads = 2,
                 talkingPointCheckSeconds = 40,
                 autoSummary = true,
+                liveAssistDefault = true,
+                liveAssistSemantic = true,
                 decisionBaseUrl = "http://laya",
                 decisionModel = "english",
                 decisionForTalkingPoints = false
@@ -265,6 +267,8 @@ class BackupRoundTripTest {
         assertEquals("llama", settings.llmModel)
         assertEquals(40, settings.talkingPointCheckSeconds)
         assertTrue(settings.autoSummary)
+        assertTrue(settings.liveAssistDefault)
+        assertFalse("semantic matching depends on the device", settings.liveAssistSemantic)
         assertEquals(templateKey, settings.defaultSummaryTemplate)
         assertEquals("device-specific settings are not restored", 4, settings.numThreads)
         assertEquals("", tablet.secrets.getApiKey())

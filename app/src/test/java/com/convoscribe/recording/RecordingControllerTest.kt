@@ -871,6 +871,32 @@ class RecordingControllerTest {
     }
 
     @Test
+    fun mark_atAnEarlierMoment_staysWithinTheRecordedTime() = runTest {
+        val h = buildHarness()
+        h.controller.start(this)
+        advanceUntilIdle()
+        val id = h.controller.state.value.sessionId!!
+        repeat(5) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        h.controller.mark("Q: when?\nA: soon", atMs = 120L)
+        h.controller.mark("later than now", atMs = 9_000L)
+        h.controller.mark("before the start", atMs = -5L)
+
+        assertEquals(
+            listOf(
+                FakeRecordingStore.Mark(id, 120L, "Q: when?\nA: soon"),
+                FakeRecordingStore.Mark(id, 500L, "later than now"),
+                FakeRecordingStore.Mark(id, 0L, "before the start")
+            ),
+            h.store.marks
+        )
+        assertEquals(3, h.controller.state.value.markCount)
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
     fun mark_onAContinuedSession_followsTheEarlierAudioAndCountsItsMarks() = runTest {
         val store = FakeRecordingStore(tmp.root)
         existingRecording(store, sessionId = 7L, ms = 600, language = "en")

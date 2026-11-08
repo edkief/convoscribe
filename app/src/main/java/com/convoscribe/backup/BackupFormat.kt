@@ -99,7 +99,8 @@ data class SessionEntry(val updatedAt: Long, val manifest: SessionManifest)
  * device. The API keys live apart, in [com.convoscribe.settings.SecretStore],
  * and are never read. The ASR engine and thread count are left out
  * since they depend on the device, as is *Identify speakers while
- * recording* (issue #123), and so is whether the floating-control
+ * recording* (issue #123) and live assist's semantic matching (issue
+ * #50), and so is whether the floating-control
  * prompt was shown.
  */
 @Serializable
@@ -131,6 +132,8 @@ data class PortableSettings(
     val autoSummary: Boolean = false,
     val autoTitle: Boolean,
     val talkingPointsOpenFirst: Boolean = false,
+    /** Older backups have none (issue #50): they restore with live assist off. */
+    val liveAssistDefault: Boolean = false,
     val displayMode: String,
     val dynamicColor: Boolean,
     val floatingControl: Boolean,
@@ -169,6 +172,7 @@ data class PortableSettings(
             autoSummary = autoSummary,
             autoTitle = autoTitle,
             talkingPointsOpenFirst = talkingPointsOpenFirst,
+            liveAssistDefault = liveAssistDefault,
             displayMode = displayMode,
             dynamicColor = dynamicColor,
             floatingControl = floatingControl,
@@ -206,6 +210,7 @@ data class PortableSettings(
                 autoSummary = settings.autoSummary,
                 autoTitle = settings.autoTitle,
                 talkingPointsOpenFirst = settings.talkingPointsOpenFirst,
+                liveAssistDefault = settings.liveAssistDefault,
                 displayMode = settings.displayMode,
                 dynamicColor = settings.dynamicColor,
                 floatingControl = settings.floatingControl,

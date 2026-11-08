@@ -36,11 +36,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -326,7 +328,10 @@ class RecordingService : Service() {
                 if (controller().state.value.phase == RecordingPhase.PAUSED) handleResume() else handlePause()
             },
             onStop = ::handleStop,
-            onShapeChange = { shape -> container.settingsRepository.update { it.copy(floatingShape = shape.key) } }
+            onShapeChange = { shape -> container.settingsRepository.update { it.copy(floatingShape = shape.key) } },
+            answers = container.liveAssistant.state
+                .map { it.cards.size }
+                .stateIn(scope, SharingStarted.Eagerly, container.liveAssistant.state.value.cards.size)
         ).also { floatingControl = it }
         overlayObserver = combine(
             controller().state.map { it.phase.active }.distinctUntilChanged(),

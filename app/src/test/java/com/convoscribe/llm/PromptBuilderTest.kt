@@ -440,6 +440,41 @@ class PromptBuilderTest {
     }
 
     @Test
+    fun liveAssist_sendsTheExcerptsThenTheRecentTalkAndTheLine() {
+        val excerpts = CrossExcerpts(
+            listOf(
+                SessionExcerpts(
+                    1L,
+                    "Weekly",
+                    "2026-10-01",
+                    "en",
+                    listOf(TranscriptChunk("line 1", 1_000L, 2_000L, 1, 1, 1L)),
+                    emptyList()
+                )
+            )
+        )
+        val messages = PromptBuilder.liveAssist("  When is the launch?  ", "[00:05] Hello.", excerpts)
+
+        assertEquals(
+            PromptBuilder.LIVE_ASSIST_SYSTEM + "\n\nExcerpts:\n## Weekly — 2026-10-01 (en)\nline 1",
+            messages[0].content
+        )
+        assertEquals(
+            "Recent conversation:\n[00:05] Hello.\n\nLine just said:\nWhen is the launch?",
+            messages[1].content
+        )
+        assertEquals(2, messages.size)
+        assertTrue(PromptBuilder.LIVE_ASSIST_SYSTEM.contains("exactly ${PromptBuilder.NONE_ANSWER}"))
+    }
+
+    @Test
+    fun liveAssist_saysSoWhenThereIsNothingYet() {
+        val messages = PromptBuilder.liveAssist("When is the launch?", "", CrossExcerpts(emptyList()))
+        assertEquals(PromptBuilder.LIVE_ASSIST_SYSTEM + "\n\nExcerpts: none.", messages[0].content)
+        assertTrue(messages[1].content.startsWith("Recent conversation:\n(nothing yet)"))
+    }
+
+    @Test
     fun talkingPoints_numbersTheOpenPointsThenSendsTheTranscript() {
         val messages = PromptBuilder.talkingPoints(listOf("Budget", "Hiring"), "[00:20] We need more people.")
 

@@ -381,6 +381,39 @@ brings them to your other devices.
   issue #101) can do these checks instead, with no language model needed.
   It is experimental and off by default: see *Decision model for talking
   points* below.
+- **Live assist** (issue #50) — while recording, a question asked aloud
+  ("what did we agree last time on the launch date?") gets a short answer
+  on the Record screen, drawn from earlier in the conversation and from
+  past sessions. It is opt-in: the *Live assist* switch on the Record
+  screen turns it on for this recording, and Settings → AI & summaries →
+  *Live assist on by default* starts every recording with it on (off by
+  default). It needs a language model, and **sends the last minutes of
+  speech to it while you record**, not only when you ask for a summary.
+  Turning it on first checks the language model answers (3 s); if not,
+  the switch says *Endpoint not reachable* and stays off.
+  Each new transcript line goes through a cheap on-device filter
+  (English and French: a `?`, or a question word or inverted verb at the
+  start, at least 4 words, rhetorical tags like *…, right?* or
+  *n'est-ce pas ?* left out), so most lines never reach the model. A
+  line that passes goes, with the last 2 minutes of transcript and
+  excerpts from earlier in this session and from past sessions (found as
+  in *Ask across sessions*), to the language model with low reasoning,
+  which either answers in at most two sentences with where it comes from,
+  or says there is nothing to answer, and nothing is shown. One question
+  is asked at a time, a new answer appears at most every 20 s, and a
+  question gets 15 s in all. Answers appear whole (no streaming), newest
+  on top, at most 3, so e-ink redraws once per answer. **Pin** keeps one
+  as a mark at the moment of the question, with `Q: … / A: …` as its
+  note, so it shows in the transcript, Marks and summaries; the others
+  are dropped at Stop. If the language model stops answering mid-meeting,
+  live assist says it is paused and the next question tries again; the
+  recording and transcription are never affected. The expanded floating
+  control shows how many answers are waiting; the minimal and standard
+  shapes don't change. With the semantic search model installed,
+  *Match past sessions by meaning* also finds past sessions that say the
+  same thing in other words; it runs on the device next to
+  transcription, so it is off by default and not backed up. Nothing is
+  spoken, and live speakers aren't known, so answers don't say who asked.
 - **Summary templates** — pick how a summary is laid out: *Meeting*
   (the default: overview, key points, decisions, action items),
   *Interview*, *Lecture / talk notes*, *1:1*, *Client / patient visit*
@@ -878,7 +911,9 @@ one package per concern:
   talking points, #103, with `TalkingPointWindow` and
   `TalkingPointAnswer`, or `DecisionTalkingPoints` with a decision
   model, #101) run their LLM calls on the application scope, one
-  at a time.
+  at a time. `LiveAssistant` (#50) follows the recording too: lines that
+  pass `QuestionFilter` are answered from `CrossSessionRetriever`
+  excerpts (`SearchAssistSources`) and read back by `AssistAnswer`.
 - `decision/` — `DecisionClient` / `HttpDecisionClient`, laya-serve's
   `/v1/systemone/batch` (#101), and `DecisionConfig`.
 - `recording/` — `RecordingController` (the audio + ASR loop),
@@ -1112,7 +1147,8 @@ typed in (#94):
    naming the server, its language model, its transcription and its
    decision model (#101), and what goes to each: transcripts to the
    language model (summaries, questions, names and mark notes, also
-   automatically, and while recording to tick talking points), recordings
+   automatically, and while recording to tick talking points and, with
+  live assist on, to answer questions), recordings
    to transcription only when you transcribe again on the server, and
    the latest transcript lines to the decision model while recording to
    tick talking points. Nothing is sent to any before you accept.

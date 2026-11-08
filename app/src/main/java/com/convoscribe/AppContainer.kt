@@ -46,12 +46,15 @@ import com.convoscribe.export.SessionExportLoader
 import com.convoscribe.export.SessionExporter
 import com.convoscribe.llm.AutoTitler
 import com.convoscribe.llm.ChatClient
+import com.convoscribe.llm.LiveAssistant
 import com.convoscribe.llm.MarkNotesWriter
 import com.convoscribe.llm.OpenAiChatClient
+import com.convoscribe.llm.SearchAssistSources
 import com.convoscribe.llm.SessionSummariser
 import com.convoscribe.llm.TalkingPointChecker
 import com.convoscribe.llm.embedding.EmbeddingGemmaFactory
 import com.convoscribe.llm.embedding.SemanticIndexRunner
+import com.convoscribe.llm.embedding.SemanticSearch
 import com.convoscribe.llm.embedding.TextEmbedderFactory
 import com.convoscribe.models.ModelDownloadManager
 import com.convoscribe.models.ModelDownloader
@@ -785,6 +788,26 @@ class AppContainer(val context: Context) {
             settingsRepository,
             applicationScope,
             llmCalls
+        ).also {
+            it.watch(recordingController.state)
+        }
+
+    /**
+     * Answers questions asked aloud while recording (issue #50), with
+     * the talking-point checks' low-reasoning client for speed,
+     * following [recordingController] for the life of the app.
+     */
+    val liveAssistant: LiveAssistant =
+        LiveAssistant(
+            repository = sessionRepository,
+            sources = SearchAssistSources(sessionSearch, sessionRepository) {
+                SemanticSearch(database.semanticIndexDao(), textEmbedderFactory)
+            },
+            chatClient = talkingPointChatClient,
+            settings = settingsRepository,
+            mark = { note, atMs -> recordingController.mark(note, atMs) },
+            scope = applicationScope,
+            calls = llmCalls
         ).also {
             it.watch(recordingController.state)
         }

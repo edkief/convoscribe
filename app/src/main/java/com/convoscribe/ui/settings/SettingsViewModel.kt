@@ -229,6 +229,10 @@ data class SettingsUiState(
     val autoSummary: Boolean = false,
     /** Conversations are named from their summary (issue #32); written immediately. */
     val autoTitle: Boolean = true,
+    /** Live assist is on when a recording starts (issue #50); written immediately. */
+    val liveAssistDefault: Boolean = false,
+    /** Live assist matches past sessions by meaning too (issue #50); written immediately. */
+    val liveAssistSemantic: Boolean = false,
     /** A transcription server URL is saved. */
     val serverConfigured: Boolean = false,
     /** Improve recordings and imports on the server (issue #58); written immediately. */
@@ -664,6 +668,16 @@ class SettingsViewModel(
         repo.update { it.copy(autoTitle = enabled) }
     }
 
+    /** Persist *Live assist on by default* immediately (issue #50). */
+    fun setLiveAssistDefault(enabled: Boolean) {
+        repo.update { it.copy(liveAssistDefault = enabled) }
+    }
+
+    /** Persist live assist's *Match past sessions by meaning* immediately (issue #50). */
+    fun setLiveAssistSemantic(enabled: Boolean) {
+        repo.update { it.copy(liveAssistSemantic = enabled) }
+    }
+
     /** Persist *Improve recordings on the server* immediately (issue #58). */
     fun setServerAuto(enabled: Boolean) {
         repo.update { it.copy(asrServerAuto = enabled) }
@@ -911,6 +925,8 @@ class SettingsViewModel(
             autoMarkNotes = current.autoMarkNotes,
             autoSummary = current.autoSummary,
             autoTitle = current.autoTitle,
+            liveAssistDefault = current.liveAssistDefault,
+            liveAssistSemantic = current.liveAssistSemantic,
             serverConfigured = current.asrServerConfigured,
             serverAuto = current.asrServerAuto,
             syncEnabled = current.syncEnabled,

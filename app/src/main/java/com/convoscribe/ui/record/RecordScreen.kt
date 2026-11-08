@@ -61,6 +61,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.enginecheck.LiveCleanupVerdict
+import com.convoscribe.llm.LiveAssistState
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.models.ModelCatalog
@@ -140,7 +141,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
                     presetStore = container.presets,
                     talkingPointLists = container.talkingPointLists,
                     sessionPoints = container.sessionRepository,
-                    failingChecks = container.talkingPointChecker.failing
+                    failingChecks = container.talkingPointChecker.failing,
+                    assistant = container.liveAssistant
                 )
             }
         }
@@ -158,6 +160,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val livePoints by vm.livePoints.collectAsStateWithLifecycle()
     val pointChecksFailing by vm.pointChecksFailing.collectAsStateWithLifecycle()
     val pointsOpenFirst by vm.pointsOpenFirst.collectAsStateWithLifecycle()
+    val assist by vm.assist.collectAsStateWithLifecycle()
+    val assistAvailable by vm.assistAvailable.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
     val startOptions = options.takeIf { resumeSessionId == null }
@@ -271,6 +275,13 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             onAddLive = vm::addLivePoint,
             onOpenFirstChange = vm::setPointsOpenFirst
         ),
+        // Shown with a language model, or while a session it was on for is open.
+        assist = assist.takeIf { assistAvailable || it.enabled || it.cards.isNotEmpty() },
+        assistActions = LiveAssistActions(
+            onEnabledChange = vm::setAssist,
+            onPin = vm::pinCard,
+            onDismiss = vm::dismissCard
+        ),
         cleanup = remember { container.audioCleanerFactory.isAvailable() }.takeIf { it }?.let {
             val engine = ModelCatalog.effectiveEngine(
                 options.language,
@@ -383,6 +394,8 @@ internal fun RecordBody(
     pointChecksFailing: Boolean = false,
     pointsOpenFirst: Boolean = false,
     pointActions: TalkingPointActions = TalkingPointActions(),
+    assist: LiveAssistState? = null,
+    assistActions: LiveAssistActions = LiveAssistActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
     inputLevel: Float = 0f,
@@ -480,6 +493,16 @@ internal fun RecordBody(
                             .weight(1f)
                             .widthIn(max = AppTheme.sizes.contentMaxWidth)
                     )
+                    if (phase.active && assist != null) {
+                        // At most half the room: the transcript keeps the rest.
+                        LiveAssistPanel(
+                            state = assist,
+                            actions = assistActions,
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .widthIn(max = AppTheme.sizes.contentMaxWidth)
+                        )
+                    }
                 }
                 if (startNotice != null && phase == RecordingPhase.IDLE) {
                     NoticeText(text = startNotice, modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth))

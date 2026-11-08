@@ -89,4 +89,15 @@ class CitationParserTest {
         val citation = CitationParser.parse("(The meeting, 2026-09-12, 00:00)", excerpts).single()
         assertEquals(2L, citation.sessionId)
     }
+
+    @Test
+    fun strip_removesCitationsAndTheSpaceBeforePunctuation() {
+        assertEquals(
+            "Budget is 40k. Bob agreed.",
+            CitationParser.strip(
+                "Budget is 40k (Weekly, Acme, 2026-10-01, [01:00]). Bob agreed (Weekly, Acme, 2026-10-01, 01:15)."
+            )
+        )
+        assertEquals("Nothing cited (yet).", CitationParser.strip("Nothing cited (yet)."))
+    }
 }

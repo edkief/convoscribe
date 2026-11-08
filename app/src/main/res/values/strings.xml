@@ -12,6 +12,10 @@
     <string name="overlay_expand">Show more</string>
     <string name="overlay_collapse">Show less</string>
     <string name="overlay_listening">Listening…</string>
+    <plurals name="overlay_answers">
+        <item quantity="one">%d answer</item>
+        <item quantity="other">%d answers</item>
+    </plurals>
     <string name="tile_label">ConvoScribe</string>
     <string name="preset_picker_title">Start recording with</string>
     <string name="preset_picker_empty">Save presets on the Record screen or in Settings → Search &amp; organise to start them from here.</string>
@@ -333,6 +337,15 @@
     <string name="record_talking_points_none">No talking points. Add one below.</string>
     <string name="record_talking_points_open_first">Not covered first</string>
     <string name="record_talking_points_check_failing">Can\'t check talking points automatically right now. Tick them by hand.</string>
+    <string name="record_assist_label">Live assist</string>
+    <string name="record_assist_help">Answers questions asked aloud from this conversation and past ones. Sends the last minutes of speech to the language model while recording.</string>
+    <string name="record_assist_help_on">Recent speech is sent to the language model.</string>
+    <string name="record_assist_checking">Checking the language model…</string>
+    <string name="record_assist_unreachable">Endpoint not reachable. Live assist is off.</string>
+    <string name="record_assist_paused">Paused: the language model stopped answering. The next question tries again.</string>
+    <string name="record_assist_listening">Listening for questions.</string>
+    <string name="record_assist_pin">Pin</string>
+    <string name="record_assist_dismiss">Dismiss</string>
     <string name="presets_title">Presets</string>
     <string name="presets_explanation">A preset keeps the options of a recurring conversation: language, speakers, participants, a title, tags and the summary template. Pick it on the Record screen.</string>
     <string name="presets_new">New preset</string>
@@ -351,6 +364,11 @@
     <string name="settings_auto_mark_notes_label">Write notes for marks automatically</string>
     <string name="settings_auto_title_label">Name conversations automatically</string>
     <string name="settings_auto_title_help">After the first summary, the language model gives a conversation that still has its date as its title a short name. A title you typed is never changed.</string>
+    <string name="settings_section_live_assist">Live assist</string>
+    <string name="settings_live_assist_default_label">Live assist on by default</string>
+    <string name="settings_live_assist_default_help">While recording, questions asked aloud get a short answer on the Record screen, from earlier in the conversation and from past sessions. The last minutes of the transcript are sent to the language model as you speak, not only when you ask for a summary. You can turn it on or off for each recording.</string>
+    <string name="settings_live_assist_semantic_label">Match past sessions by meaning</string>
+    <string name="settings_live_assist_semantic_help">Live assist also uses the semantic search model to find past sessions that say the same thing in other words. It runs on this device during the recording, next to transcription; leave it off on slower devices.</string>
     <string name="settings_auto_mark_notes_help">Once a conversation\'s speakers are identified, the language model turns each mark\'s note into a full note from what was said around it. The Summary tab can always write them.</string>
     <string name="settings_summaries_default_help">New conversations start with this template. You can change it before recording, or on the Summary tab.</string>
     <string name="settings_summaries_templates_row">Templates</string>
@@ -879,7 +897,7 @@
     <string name="server_services_default_model">the server\'s default model</string>
     <string name="server_services_confirm_title">Use this server\'s services?</string>
     <string name="server_services_confirm_provides">%1$s provides:</string>
-    <string name="server_services_confirm_llm">A language model (%1$s). Transcripts are sent to it for summaries, questions, conversation names and mark notes, including automatically after a recording, and while recording to tick talking points.</string>
+    <string name="server_services_confirm_llm">A language model (%1$s). Transcripts are sent to it for summaries, questions, conversation names and mark notes, including automatically after a recording, and while recording to tick talking points and, with live assist on, to answer questions.</string>
     <string name="server_services_confirm_asr">Transcription (%1$s). Recordings are uploaded to it when you transcribe again on the server. Improve recordings on the server stays off until you turn it on.</string>
     <string name="server_services_confirm_none">%1$s doesn\'t provide a language model, transcription or decision model, so there is nothing to turn on. Sync sessions works as before.</string>
     <string name="server_services_none_action">OK</string>

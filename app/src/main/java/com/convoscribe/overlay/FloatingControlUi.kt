@@ -15,11 +15,15 @@ import com.convoscribe.settings.FloatingShape
  *   `null` when the shape shows no time
  * @property transcript the end of the transcript ([transcriptTail]),
  *   or `null` when the shape shows none or nothing is transcribed yet
+ * @property answers live-assist answers waiting on the Record screen
+ *   (issue #50), or `null` when there are none or the shape shows none:
+ *   only the expanded shape does, so the others never redraw for one
  */
 data class FloatingControlUi(
     val paused: Boolean,
     val elapsedMs: Long? = null,
-    val transcript: String? = null
+    val transcript: String? = null,
+    val answers: Int? = null
 ) {
     companion object {
         /**
@@ -27,13 +31,16 @@ data class FloatingControlUi(
          * text being recognised ([RecordingState.partialText]) only
          * outside e-ink ([eink]), so that on e-ink it changes once per
          * sentence rather than per word. [maxChars] is the transcript
-         * budget, smaller with a larger font ([maxCharsFor]).
+         * budget, smaller with a larger font ([maxCharsFor]). [answers] is
+         * the number of live-assist cards (issue #50), shown by the
+         * expanded shape only.
          */
         fun of(
             state: RecordingState,
             shape: FloatingShape,
             eink: Boolean,
-            maxChars: Int = MAX_CHARS
+            maxChars: Int = MAX_CHARS,
+            answers: Int = 0
         ): FloatingControlUi {
             val paused = state.phase == RecordingPhase.PAUSED
             val seconds = state.elapsedMs / 1_000L * 1_000L
@@ -45,7 +52,8 @@ data class FloatingControlUi(
                     FloatingControlUi(
                         paused,
                         elapsedMs = seconds,
-                        transcript = transcriptTail(state.finalLines, partial, maxChars)
+                        transcript = transcriptTail(state.finalLines, partial, maxChars),
+                        answers = answers.takeIf { it > 0 }
                     )
                 }
             }
