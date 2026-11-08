@@ -181,11 +181,24 @@ lines appear below the partial as the recognizer closes them
    screen off.
 2. Wait 30 seconds.
 3. Turn the screen back on.
+4. *Long recording (issue #124, optional).* Start a recording, turn
+   the screen off and leave it recording for more than an hour.
+   Every so often, run `adb shell dumpsys power | grep ConvoScribe`.
+5. Stop the recording, and while its speakers are identified, start
+   a new one. Pause it, then run the same command.
 
 **Expected** — the persistent recording notification is visible
 throughout; tapping it brings the app back to the recording screen
 with the session still in `RECORDING`; the **Stop** action on the
 notification stops the session.
+
+- Step 4: a `ConvoScribe:recording` wake lock is listed throughout
+  the recording, also after the first hour (it is renewed every half
+  hour), and the audio has no gap. Devices that refuse the lock (see
+  *Boox / Onyx* in the README) list none; skip the step there.
+- Step 5: the lock is still listed while the earlier session's
+  speakers are identified, and goes away once they are, while the new
+  session stays paused.
 
 ## 6. Post-stop diarization
 
