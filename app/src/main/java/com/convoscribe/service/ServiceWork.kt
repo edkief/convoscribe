@@ -39,4 +39,36 @@ internal data class ServiceWork(
     /** Nothing holds the service: it may give back the wake lock, leave the foreground and stop. */
     val idle: Boolean
         get() = phase == RecordingPhase.IDLE && !retranscribing && !importing && processing == 0
+
+    /**
+     * Something needs the CPU, so the service keeps its wake lock
+     * (issue #124): a session is starting, recording or stopping, or
+     * a re-transcription, an import or a speaker identification runs.
+     * A paused session alone does not; nothing is processed then.
+     */
+    val needsWakeLock: Boolean
+        get() = phase == RecordingPhase.LOADING ||
+            phase == RecordingPhase.RECORDING ||
+            phase == RecordingPhase.STOPPING ||
+            retranscribing ||
+            importing ||
+            processing > 0
 }
+
+/**
+ * Safety-net timeout of each wake lock [RecordingService] takes, in
+ * case the process is killed without releasing it (issue #124).
+ */
+internal const val RECORDING_WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
+
+/** Age at which a recording renews its wake lock: half the timeout, well before it runs out. */
+internal const val RECORDING_WAKE_LOCK_RENEW_AFTER_MS = RECORDING_WAKE_LOCK_TIMEOUT_MS / 2
+
+/**
+ * Whether a recording should take a fresh wake lock now (issue #124):
+ * it holds none ([acquiredAtMs] is `null`) or the one it holds was
+ * taken [RECORDING_WAKE_LOCK_RENEW_AFTER_MS] or more before [nowMs]. Both times
+ * are `SystemClock.elapsedRealtime()` values.
+ */
+internal fun wakeLockRenewalDue(acquiredAtMs: Long?, nowMs: Long): Boolean =
+    acquiredAtMs == null || nowMs - acquiredAtMs >= RECORDING_WAKE_LOCK_RENEW_AFTER_MS

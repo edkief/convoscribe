@@ -60,8 +60,11 @@ import kotlinx.coroutines.launch
  *     see, mark (issue #30), pause / resume and stop the recording
  *     without re-opening the app;
  *  3. hold a partial [android.os.PowerManager.WakeLock] so the
- *     CPU stays awake during the capture loop (released while the
- *     session is paused, when there is nothing to process);
+ *     CPU stays awake during the capture loop: a fresh one on each
+ *     Start and Resume, renewed every half hour of recording so its
+ *     one-hour safety timeout never cuts a long recording short
+ *     (issue #124), and released while the session is paused, when
+ *     there is nothing to process;
  *  4. observe [RecordingController.state] and tear everything down
  *     when the controller reports an `IDLE` + `error` so a failing
  *     session does not silently leave the service in the
@@ -94,6 +97,9 @@ class RecordingService : Service() {
      * between chunks. `null` outside an active session.
      */
     private var wakeLock: PowerManager.WakeLock? = null
+
+    /** [SystemClock.elapsedRealtime] when [wakeLock] was taken; `null` without one. */
+    private var wakeLockAcquiredAtMs: Long? = null
 
     /**
      * Job that follows [RecordingController.state] to update the
@@ -392,8 +398,11 @@ class RecordingService : Service() {
     /**
      * Pause the session (issue #7). The service stays in the
      * microphone-typed foreground so Resume can reopen the mic from
-     * the background; the wake lock is released since nothing runs
-     * while paused. A no-op when no session is recording.
+     * the background. The wake lock is released since the paused
+     * session processes nothing, unless other work still needs it,
+     * such as an earlier session's speakers being identified (issue
+     * #124); [stopIfIdle] releases it once that ends. A no-op when no
+     * session is recording.
      */
     private fun handlePause() {
         val controller = controller()
@@ -403,7 +412,7 @@ class RecordingService : Service() {
         }
         scope.launch {
             controller.pause()
-            if (controller.state.value.phase == RecordingPhase.PAUSED) releaseWakeLock()
+            if (controller.state.value.phase == RecordingPhase.PAUSED) releaseWakeLockIfUnneeded()
         }
     }
 
@@ -447,6 +456,8 @@ class RecordingService : Service() {
         ensureNotificationChannel()
         // A recording open meanwhile keeps its own notification.
         showDiarizingOrRecording()
+        // Speaker identification is heavy work; keep the CPU awake for it.
+        acquireWakeLock()
         scope.launch {
             processing++
             try {
@@ -543,6 +554,11 @@ class RecordingService : Service() {
      */
     private fun idle(): Boolean = work().idle
 
+    /** Give back the wake lock unless something still needs the CPU ([ServiceWork.needsWakeLock]). */
+    private fun releaseWakeLockIfUnneeded() {
+        if (!work().needsWakeLock) releaseWakeLock()
+    }
+
     /**
      * Give back the wake lock, leave the foreground and stop, but only
      * when nothing holds the service ([idle]). The one way every job
@@ -550,7 +566,12 @@ class RecordingService : Service() {
      * one is open would cancel its capture (issue #121).
      */
     private fun stopIfIdle() {
-        if (!idle()) return
+        if (!idle()) {
+            // A job ended while the session is paused: nothing else
+            // may need the lock now (issue #124).
+            releaseWakeLockIfUnneeded()
+            return
+        }
         releaseWakeLock()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -751,6 +772,13 @@ class RecordingService : Service() {
                 val changed = state.phase != lastPhase || state.markCount != lastMarks
                 lastPhase = state.phase
                 lastMarks = state.markCount
+                // A recording longer than the lock's timeout takes a
+                // fresh lock well before it runs out (issue #124).
+                if (state.phase == RecordingPhase.RECORDING &&
+                    wakeLockRenewalDue(wakeLockAcquiredAtMs, SystemClock.elapsedRealtime())
+                ) {
+                    acquireWakeLock()
+                }
                 // LOADING / STOPPING: the start / stop paths own the
                 // notification.
                 if (state.phase.active) {
@@ -796,8 +824,15 @@ class RecordingService : Service() {
         )
     }
 
+    /**
+     * Take a fresh wake lock, replacing any held one (issue #124), so
+     * its timeout counts from now and not from an earlier job's
+     * acquire: a recording started while an earlier session's
+     * speakers are identified must not inherit that session's lock.
+     * The new lock is held before the old one is given back, so the
+     * CPU is never left without one in between.
+     */
     private fun acquireWakeLock() {
-        if (wakeLock?.isHeld == true) return
         val pm = getSystemService<PowerManager>() ?: return
         val lock = pm.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK,
@@ -806,14 +841,20 @@ class RecordingService : Service() {
             // Set a generous timeout as a safety net: even if
             // releaseWakeLock() is missed (e.g. process killed),
             // the lock will free in ~1 h and stop pinning the CPU.
-            acquire(WAKE_LOCK_TIMEOUT_MS)
+            acquire(RECORDING_WAKE_LOCK_TIMEOUT_MS)
         }
+        val previous = wakeLock
         wakeLock = lock
+        wakeLockAcquiredAtMs = SystemClock.elapsedRealtime()
+        if (previous?.isHeld == true) {
+            runCatching { previous.release() }
+        }
     }
 
     private fun releaseWakeLock() {
         val lock = wakeLock ?: return
         wakeLock = null
+        wakeLockAcquiredAtMs = null
         if (lock.isHeld) {
             runCatching { lock.release() }
         }
@@ -1011,9 +1052,6 @@ class RecordingService : Service() {
 
         /** `requestCode` for the cancel-speaker-identification pending intent. */
         private const val REQUEST_CANCEL_DIARIZE = 1008
-
-        /** Upper bound on the wake-lock acquired for one session. */
-        private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
         /** Throttle window for notification text refreshes. */
         private const val NOTIFICATION_REFRESH_PERIOD_MS = 1_000L
