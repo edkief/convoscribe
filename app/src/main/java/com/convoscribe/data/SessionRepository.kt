@@ -193,6 +193,17 @@ class SessionRepository(
         )
     )
 
+    override suspend fun appendToSegment(segmentId: Long, text: String, endMs: Long, tokens: List<TimedToken>) {
+        val segment = segmentDao.get(segmentId) ?: return
+        segmentDao.update(
+            segment.copy(
+                text = segment.text.trimEnd() + text.trim(),
+                endMs = maxOf(segment.endMs, endMs),
+                tokens = TokenTimingCodec.encode(TokenTimingCodec.decode(segment.tokens) + tokens)
+            )
+        )
+    }
+
     override suspend fun addMark(sessionId: Long, atMs: Long, note: String?): Long = markDao.insert(
         MarkEntity(
             sessionId = sessionId,

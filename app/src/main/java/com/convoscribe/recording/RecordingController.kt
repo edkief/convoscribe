@@ -209,6 +209,7 @@ class RecordingController(
                 // The recognizer's timestamps start at 0 for this
                 // run; shift them past the audio already in the file.
                 segmentOffsetMs = samplesToMs(wav.samplesWritten)
+                lastSegmentId = null
                 // Stash the handles so [stop] (which runs on the
                 // caller's scope, not this launched one) can call
                 // [StreamingTranscriber.finish] and close the WAV
@@ -546,11 +547,20 @@ class RecordingController(
     private var segmentOffsetMs: Long = 0L
 
     /**
+     * The segment the last line of this run was saved as, for a
+     * punctuation-only final to be joined to (issue #147); `null`
+     * before the run's first line.
+     */
+    private var lastSegmentId: Long? = null
+
+    /**
      * Apply a list of [TranscriptEvent]s to the published state and
      * persist any closed utterances through [RecordingStore].
      * Partial events overwrite the placeholder; final events are
      * written to Room *before* the UI appends them so a crash
-     * mid-emission does not lose data.
+     * mid-emission does not lose data. A final made only of
+     * punctuation is joined to the run's previous line, on screen and
+     * in its segment, instead of becoming a line of its own (issue #147).
      */
     private suspend fun applyEvents(events: List<TranscriptEvent>) {
         if (events.isEmpty()) return
@@ -561,27 +571,37 @@ class RecordingController(
         // `finalLines` are always in lockstep.
         val finals = events.filterIsInstance<TranscriptEvent.Final>()
         val sessionId = _state.value.sessionId
-        if (sessionId != null) {
-            for (final in finals) {
-                if (final.text.isNotBlank()) {
-                    store.addSegment(
-                        sessionId = sessionId,
-                        startMs = final.startMs + segmentOffsetMs,
-                        endMs = final.endMs + segmentOffsetMs,
-                        text = final.text,
-                        tokens = final.tokens.map { it.copy(ms = it.ms + segmentOffsetMs) }
-                    )
-                }
+        // Whether each final, in order, is joined to the line before it.
+        val joined = finals.map { final ->
+            if (sessionId == null || final.text.isBlank()) return@map false
+            val tokens = final.tokens.map { it.copy(ms = it.ms + segmentOffsetMs) }
+            val previous = lastSegmentId
+            if (previous != null && isPunctuationOnly(final.text)) {
+                store.appendToSegment(previous, final.text, final.endMs + segmentOffsetMs, tokens)
+                true
+            } else {
+                lastSegmentId = store.addSegment(
+                    sessionId = sessionId,
+                    startMs = final.startMs + segmentOffsetMs,
+                    endMs = final.endMs + segmentOffsetMs,
+                    text = final.text,
+                    tokens = tokens
+                )
+                false
             }
         }
         _state.update { current ->
             var partial = current.partialText
             val lines = current.finalLines.toMutableList()
+            val joins = joined.iterator()
             for (event in events) {
                 when (event) {
                     is TranscriptEvent.Partial -> partial = event.text
                     is TranscriptEvent.Final -> {
-                        if (event.text.isNotBlank()) {
+                        val join = joins.next()
+                        if (join && lines.isNotEmpty()) {
+                            lines[lines.lastIndex] = lines.last().trimEnd() + event.text.trim()
+                        } else if (event.text.isNotBlank()) {
                             lines += event.text
                         }
                         partial = ""
@@ -593,6 +613,12 @@ class RecordingController(
     }
 
     private companion object {
+        /**
+         * A final with no letter or digit: punctuation the recognizer
+         * decoded from the silence after a line (a lone `?`, issue #147).
+         */
+        fun isPunctuationOnly(text: String): Boolean = text.none { it.isLetterOrDigit() }
+
         /** Error of a session whose job was cancelled from outside (issue #122). */
         const val UNEXPECTED_STOP = "Recording stopped unexpectedly"
     }

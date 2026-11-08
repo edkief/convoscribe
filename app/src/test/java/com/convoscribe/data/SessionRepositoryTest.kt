@@ -85,6 +85,26 @@ class SessionRepositoryTest {
     }
 
     @Test
+    fun appendToSegment_addsTheTextTimingsAndEnd() = runTest {
+        val id = repo.createSession(title = "Test", language = "en")
+        val segment = repo.addSegment(
+            id,
+            startMs = 0,
+            endMs = 1000,
+            text = "Which platform",
+            tokens = listOf(TimedToken(" Which", 100), TimedToken(" platform", 600))
+        )
+
+        repo.appendToSegment(segment, "?", endMs = 1800, tokens = listOf(TimedToken("?", 1700)))
+        repo.appendToSegment(segment + 99, "?", endMs = 2000)
+
+        val row = repo.getSegments(id).single()
+        assertEquals("Which platform?", row.text)
+        assertEquals(1800L, row.endMs)
+        assertEquals(listOf(100L, 600L, 1700L), TokenTimingCodec.decode(row.tokens).map { it.ms })
+    }
+
+    @Test
     fun observeSegments_emitsViaFlowWhenNewRowsArrive() = runTest {
         val id = repo.createSession(title = "Test", language = "en")
         repo.addSegment(id, startMs = 0, endMs = 100, text = "a")
