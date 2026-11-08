@@ -2894,6 +2894,9 @@ NPU engine (Nemotron) on the phone.
    meaning* and ask a question in other words than the past session used.
 10. Turn on *Live assist on by default*; start a recording; back up and
     restore on another device.
+11. With live assist on, say a question as the second sentence of a line and
+    pause before its end, e.g. "I can't remember. Can you remind me whether we
+    support private link" … (2 s) … (issue #147).
 
 **Expected**
 
@@ -2919,6 +2922,9 @@ NPU engine (Nemotron) on the phone.
 - Step 9: the past session is found and cited. Transcription keeps up.
 - Step 10: the recording starts with live assist on. The restored device has
   *Live assist on by default* on and *Match past sessions by meaning* off.
+- Step 11: a card appears for the question. If the recognizer writes a `?`
+  after the pause, it ends the question's line on the Record screen and in the
+  saved transcript; there is no line holding only `?`.
 
 ## Troubleshooting
 

@@ -392,9 +392,13 @@ brings them to your other devices.
   Turning it on first checks the language model answers (3 s); if not,
   the switch says *Endpoint not reachable* and stays off.
   Each new transcript line goes through a cheap on-device filter
-  (English and French: a `?`, or a question word or inverted verb at the
-  start, at least 4 words, rhetorical tags like *…, right?* or
-  *n'est-ce pas ?* left out), so most lines never reach the model. A
+  (English and French: a sentence of the line ends in `?` or starts with a
+  question word or inverted verb, so *I can't remember. Can you remind me
+  whether…* counts; at least 4 words, rhetorical tags like *…, right?* or
+  *n'est-ce pas ?* left out), so most lines never reach the model. When
+  the recognizer closes the `?` after a pause as a line of its own, the
+  recorder joins it to the line before (in the saved transcript too), and
+  that line is checked again (issue #147). A
   line that passes goes, with the last 2 minutes of transcript and
   excerpts from earlier in this session and from past sessions (found as
   in *Ask across sessions*), to the language model with low reasoning,
