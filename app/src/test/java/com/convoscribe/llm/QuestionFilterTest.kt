@@ -112,4 +112,25 @@ class QuestionFilterTest {
     fun curlyApostrophesAreRead() {
         yes("Qu’est-ce qu’on avait décidé pour le budget", "What’s the plan for the launch")
     }
+
+    @Test
+    fun aQuestionAfterTheFirstSentenceCounts() {
+        yes(
+            "So we remind me? Can you remind me which cloud platform we were going to use for IESB",
+            "I can't remember. Can you remind me whether we support private link",
+            "Okay that's done. What did we agree on the launch date",
+            "On a fini le budget. Est-ce que le client a validé la maquette"
+        )
+    }
+
+    @Test
+    fun sentencesThatAreNotQuestionsStayOut() {
+        no(
+            "So we remind me?",
+            "That's done. Thanks everyone for coming today.",
+            "Do this before Friday. Then send it to legal please.",
+            "We said Tuesday for the launch, right? Okay.",
+            "Really? I think the budget is fine"
+        )
+    }
 }
