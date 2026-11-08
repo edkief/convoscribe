@@ -26,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -46,7 +47,8 @@ import com.convoscribe.ui.theme.AppTheme
  *    and the recorded time, then the same buttons.
  *  * [FloatingShape.EXPANDED]: the standard row above the end of the
  *    transcript, in a card of fixed size so the window does not jump
- *    as sentences arrive.
+ *    as sentences arrive, and a badge of live-assist answers waiting
+ *    (issue #50) when there are any.
  *
  * Every shape ends with an expand / collapse arrow that calls
  * [onShapeChange] with [FloatingShape.next]. Tapping the status part
@@ -91,6 +93,7 @@ internal fun FloatingControlContent(
                     .widthIn(min = AppTheme.sizes.floatingExpandedWidth)
             ) {
                 ControlRow(shape, ui, onOpen, onMark, onPauseResume, onStop, onShapeChange)
+                ui.answers?.let { AnswersBadge(count = it, onOpen = onOpen) }
                 Text(
                     text = ui.transcript ?: stringResource(R.string.overlay_listening),
                     modifier = Modifier.padding(start = spacing.m, end = spacing.m, bottom = spacing.m),
@@ -104,6 +107,26 @@ internal fun FloatingControlContent(
         } else {
             ControlRow(shape, ui, onOpen, onMark, onPauseResume, onStop, onShapeChange)
         }
+    }
+}
+
+/** Live-assist answers waiting (issue #50); opens the Record screen, where they are. */
+@Composable
+private fun AnswersBadge(count: Int, onOpen: () -> Unit) {
+    val spacing = AppTheme.spacing
+    Surface(
+        onClick = onOpen,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
+        border = if (AppTheme.isEink) BorderStroke(AppTheme.sizes.outline, MaterialTheme.colorScheme.outline) else null,
+        modifier = Modifier.padding(start = spacing.m, bottom = spacing.xs)
+    ) {
+        Text(
+            text = pluralStringResource(R.plurals.overlay_answers, count, count),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = spacing.m, vertical = spacing.xs)
+        )
     }
 }
 

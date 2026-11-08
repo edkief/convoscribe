@@ -1137,7 +1137,13 @@ class ScreenshotTest(private val variant: Variant) {
             )) {
                 FloatingControlContent(
                     shape = FloatingShape.EXPANDED,
-                    ui = FloatingControlUi(paused = false, elapsedMs = 754_000L, transcript = transcript),
+                    ui = FloatingControlUi(
+                        paused = false,
+                        elapsedMs = 754_000L,
+                        transcript = transcript,
+                        // The first with a live-assist answer waiting (issue #50).
+                        answers = if (transcript != null) 1 else null
+                    ),
                     onOpen = {},
                     onMark = {},
                     onPauseResume = {},
