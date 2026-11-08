@@ -36,6 +36,17 @@ describe('loadEnv', () => {
     expect(() => loadEnv({ AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey })).toThrow(/DATABASE_URL[\s\S]*S3_BUCKET/);
   });
 
+  it('gives users every service unless DEFAULT_USER_SERVICES says otherwise (#145)', () => {
+    const services = (value: string) =>
+      loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, DEFAULT_USER_SERVICES: value }).DEFAULT_USER_SERVICES;
+    expect(services('')).toEqual(['sync', 'llm', 'asr', 'decision']);
+    expect(loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey }).DEFAULT_USER_SERVICES).toHaveLength(4);
+    expect(services(' LLM, sync ,')).toEqual(['sync', 'llm']);
+    expect(services('none')).toEqual([]);
+    expect(() => services('sync,web')).toThrow(/DEFAULT_USER_SERVICES/);
+    expect(() => services(',')).toThrow(/DEFAULT_USER_SERVICES/);
+  });
+
   it('parses S3_FORCE_PATH_STYLE=false', () => {
     const env = loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, S3_FORCE_PATH_STYLE: 'false' });
     expect(env.S3_FORCE_PATH_STYLE).toBe(false);

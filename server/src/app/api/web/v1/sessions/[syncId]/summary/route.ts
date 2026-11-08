@@ -1,4 +1,5 @@
 import { splitSummary } from '@/lib/action-items';
+import { assertService } from '@/lib/access';
 import { upstreamOf } from '@/lib/ai-proxy';
 import { applyAutoTitle, suggestTitle } from '@/lib/assist';
 import { env } from '@/lib/env';
@@ -32,12 +33,13 @@ type Event = { step: SummaryStep | 'naming' } | { text: string } | { done: true;
  * as one revision. Closing the request cancels the model and saves nothing.
  */
 export async function POST(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const body = await jsonBody(req, 4096);
     const baseRevision = baseRevisionOf(body);
     if (body.template !== undefined && body.template !== null && typeof body.template !== 'string') throw new HttpError(400, 'invalid_body');
     if (!upstreamOf('llm')) throw new HttpError(404, 'not_offered');
+    await assertService(owner, 'llm');
 
     const editable = await loadForEdit(owner, syncId, baseRevision);
     const templates = await listTemplates(owner);

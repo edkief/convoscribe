@@ -218,8 +218,9 @@ export const sessionText = pgTable(
 );
 
 /**
- * Everyone seen by this server (#79, decision 8; #82): when, and how much
- * they may store. A row appears on a user's first authenticated request.
+ * Everyone seen by this server (#79, decision 8; #82): when, how much they
+ * may store, and what they may use (#145). A row appears on a user's first
+ * authenticated request.
  */
 export const owners = pgTable('owners', {
   owner: text('owner').primaryKey(),
@@ -227,6 +228,8 @@ export const owners = pgTable('owners', {
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
   /** The most an owner may store, in bytes; null is unlimited. */
   quotaBytes: bigint('quota_bytes', { mode: 'number' }),
+  /** The services an admin gave the owner (#145); null is `DEFAULT_USER_SERVICES`. */
+  services: text('services').array(),
 });
 
 /** One run of storage clean-up (#81), with what it removed or, dry, would remove. */

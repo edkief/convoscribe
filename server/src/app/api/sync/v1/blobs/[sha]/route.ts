@@ -7,7 +7,7 @@ type Ctx = RouteContext<'/api/sync/v1/blobs/[sha]'>;
 // Whether a blob is stored, so a device never sends it twice. A blob found
 // is claimed, so clean-up keeps it for the push that will refer to it (#81).
 export async function HEAD(req: Request, ctx: Ctx) {
-  return authed(req, async (owner) => {
+  return authed(req, 'sync', async (owner) => {
     const size = await claimBlob(owner, sha256Param((await ctx.params).sha));
     if (size === null) return new Response(null, { status: 404 });
     return new Response(null, { status: 200, headers: { 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
@@ -16,7 +16,7 @@ export async function HEAD(req: Request, ctx: Ctx) {
 
 // A blob's bytes; `Range` lets an interrupted download resume.
 export async function GET(req: Request, ctx: Ctx) {
-  return authed(req, async (owner) => {
+  return authed(req, 'sync', async (owner) => {
     const sha = sha256Param((await ctx.params).sha);
     const size = await blobSize(owner, sha);
     if (size === null) throw new HttpError(404, 'not_found');

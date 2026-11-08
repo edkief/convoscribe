@@ -2,6 +2,8 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TALKING_POINTS_SYSTEM } from '@/lib/assist-prompt';
+import { setServices } from '@/lib/access';
+import { noteActivity } from '@/lib/owners';
 import { stubServerEnv } from '@/test/env';
 import { ctx, request, setupSyncServer } from '@/test/http';
 import { answer, events, fakeLlm, manifestOf } from '@/test/llm-upstream';
@@ -181,6 +183,25 @@ describe('POST /api/web/v1/sessions/<syncId>/points with a decision service (#10
     const res = await check('s1', { baseRevision: pushed.revision });
     expect(res.status).toBe(404);
     expect(calls).toHaveLength(0);
+  });
+
+  it('uses only what the user was given (#145)', async () => {
+    withDecision();
+    byWord = { 'how are you': 'How Bob is' };
+    await noteActivity(OWNER);
+    const pushed = await pushManifest(OWNER, sessionManifest('s1', { talkingPoints: POINTS }));
+    // Without the decision service, the language model checks them.
+    await setServices(OWNER, ['sync', 'llm']);
+    expect(await events(await check('s1', { baseRevision: pushed.revision }))).toEqual([{ done: true, revision: pushed.revision + 1, ticked: 1 }]);
+    expect(calls).toHaveLength(0);
+    expect(llm.calls).toHaveLength(1);
+    // With neither, nothing does.
+    await setServices(OWNER, ['sync']);
+    const res = await check('s1', { baseRevision: pushed.revision + 1 });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'service_not_allowed', service: 'decision' });
+    withDecision({ DECISION_FOR_TALKING_POINTS: 'off' });
+    expect(await (await check('s1', { baseRevision: pushed.revision + 1 })).json()).toEqual({ error: 'service_not_allowed', service: 'llm' });
   });
 
   it('asks the decision service a line at a time, not the language model, and ticks at the line', async () => {

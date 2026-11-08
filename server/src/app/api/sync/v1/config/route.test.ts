@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { setServices } from '@/lib/access';
+import { noteActivity } from '@/lib/owners';
 import { stubServerEnv } from '@/test/env';
 import { request, setupSyncServer } from '@/test/http';
 import { GET } from './route';
@@ -34,5 +36,28 @@ describe('GET /api/sync/v1/config (#93)', () => {
       const res = await config({ authorization });
       expect(res.status).toBe(401);
     }
+  });
+
+  describe('offers only what the user was given (#145)', () => {
+    const everything = {
+      LLM_UPSTREAM_URL: 'http://llm.internal:8080/v1',
+      LLM_MODEL: 'qwen3-8b',
+      ASR_UPSTREAM_URL: 'http://parakeet-asr.asr:8000/v1',
+      DECISION_UPSTREAM_URL: 'http://laya.llama:8080',
+    };
+
+    it('leaves out a service an admin did not give the user', async () => {
+      stubServerEnv(everything);
+      await noteActivity('default');
+      await setServices('default', ['sync', 'asr']);
+      expect(await (await config()).json()).toEqual({ llm: null, transcription: { model: null }, decision: null });
+    });
+
+    it('answers a user without sync too, from the default', async () => {
+      stubServerEnv({ ...everything, DEFAULT_USER_SERVICES: 'llm' });
+      const res = await config();
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ llm: { model: 'qwen3-8b' }, transcription: null, decision: null });
+    });
   });
 });

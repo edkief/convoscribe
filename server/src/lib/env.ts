@@ -23,6 +23,25 @@ const jsonObject = z.string().transform((text, ctx) => {
   return value as Record<string, unknown>;
 });
 
+/**
+ * What a user may be given (#145): syncing sessions and library items, and
+ * each upstream the server offers. The ids are those of the /api/ai/v1 paths.
+ */
+export const ACCESS_SERVICES = ['sync', 'llm', 'asr', 'decision'] as const;
+export type AccessService = (typeof ACCESS_SERVICES)[number];
+
+// A comma-separated list of services, or `none`.
+const serviceList = z.string().transform((text, ctx) => {
+  const names = text.split(',').map((name) => name.trim().toLowerCase()).filter(Boolean);
+  if (names.length === 1 && names[0] === 'none') return [] as AccessService[];
+  const unknown = names.filter((name) => !(ACCESS_SERVICES as readonly string[]).includes(name));
+  if (unknown.length > 0 || names.length === 0) {
+    ctx.addIssue({ code: 'custom', message: `a comma-separated list of ${ACCESS_SERVICES.join(', ')}, or none` });
+    return z.NEVER;
+  }
+  return ACCESS_SERVICES.filter((service) => names.includes(service));
+});
+
 const schema = z
   .object({
     DATABASE_URL: z.url(),
@@ -75,6 +94,8 @@ const schema = z
     // Whether the web app's talking-point check uses the decision service rather than the
     // language model (#136). Off: laya ticked points before they came up on real recordings.
     DECISION_FOR_TALKING_POINTS: z.preprocess(blankToUndefined, z.enum(['on', 'off']).default('off')),
+    // The services of a user an admin has not given any (#145); every service when unset.
+    DEFAULT_USER_SERVICES: z.preprocess(blankToUndefined, serviceList.default([...ACCESS_SERVICES])),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_MODE === 'api-key' && !env.SYNC_API_KEY) {

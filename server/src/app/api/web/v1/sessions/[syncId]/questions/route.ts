@@ -1,3 +1,4 @@
+import { assertService } from '@/lib/access';
 import { upstreamOf } from '@/lib/ai-proxy';
 import { answerQuestion, applyQa, QUESTION_MAX, questionSource } from '@/lib/ask';
 import { env } from '@/lib/env';
@@ -25,13 +26,14 @@ type Event = { text: string } | { done: true; revision: number } | { error: stri
  * the model and saves nothing.
  */
 export async function POST(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const body = await jsonBody(req, 32 * 1024);
     const baseRevision = baseRevisionOf(body);
     const question = typeof body.question === 'string' ? body.question.trim().slice(0, QUESTION_MAX).trim() : '';
     if (!question) throw new HttpError(400, 'invalid_body');
     if (!upstreamOf('llm')) throw new HttpError(404, 'not_offered');
+    await assertService(owner, 'llm');
 
     const editable = await loadForEdit(owner, syncId, baseRevision);
     const source = questionSource(editable.manifest);

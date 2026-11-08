@@ -1,3 +1,4 @@
+import { assertService } from '@/lib/access';
 import { upstreamOf } from '@/lib/ai-proxy';
 import { applyMarkNotes, marksToWrite, promptLines, writeMarkNotes } from '@/lib/assist';
 import { env } from '@/lib/env';
@@ -21,10 +22,11 @@ type Event = { progress: { done: number; total: number } } | { done: true; revis
  * Closing the request saves nothing.
  */
 export async function POST(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const baseRevision = baseRevisionOf(await jsonBody(req, 4096));
     if (!upstreamOf('llm')) throw new HttpError(404, 'not_offered');
+    await assertService(owner, 'llm');
 
     const editable = await loadForEdit(owner, syncId, baseRevision);
     const marks = marksToWrite(editable.manifest);

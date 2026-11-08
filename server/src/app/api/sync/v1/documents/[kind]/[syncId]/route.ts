@@ -23,7 +23,7 @@ const metaHeaders = (meta: DocumentMeta): Record<string, string> => ({
 
 // The current manifest, with its revision in Sync-* headers; 410 for a deleted document.
 export async function GET(req: Request, ctx: Ctx) {
-  return authed(req, async (owner) => {
+  return authed(req, 'sync', async (owner) => {
     const { kind, syncId } = await params(ctx);
     const meta = await getDocumentMeta(owner, kind, syncId);
     if (!meta) throw new HttpError(404, 'not_found');
@@ -43,7 +43,7 @@ export async function GET(req: Request, ctx: Ctx) {
  * conflict rule.
  */
 export async function PUT(req: Request, ctx: Ctx) {
-  return authed(req, async (owner) => {
+  return authed(req, 'sync', async (owner) => {
     const { kind, syncId } = await params(ctx);
     const push = {
       baseRevision: intHeader(req, 'sync-base-revision'),
@@ -70,7 +70,7 @@ export async function PUT(req: Request, ctx: Ctx) {
  * the change feed.
  */
 export async function DELETE(req: Request, ctx: Ctx) {
-  return authed(req, async (owner) => {
+  return authed(req, 'sync', async (owner) => {
     const { kind, syncId } = await params(ctx);
     const deletedDurationMs = req.headers.has('sync-duration-ms') ? intHeader(req, 'sync-duration-ms') : null;
     const meta = await deleteDocument(owner, kind, syncId, intHeader(req, 'sync-base-revision'), deletedDurationMs);

@@ -12,7 +12,7 @@ const FORMATS: Record<string, { type: string; render: (view: SessionView) => str
 
 /** A session's transcript as a download (#80): `md`, `srt` or `vtt`. */
 export async function GET(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const { syncId, format } = await ctx.params;
     const kind = Object.hasOwn(FORMATS, format) ? FORMATS[format] : undefined;
     if (!kind) throw new HttpError(404, 'unknown_format');

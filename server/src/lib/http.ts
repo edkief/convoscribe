@@ -1,4 +1,5 @@
 import type { Identity } from './auth';
+import type { AccessService } from './env';
 
 /** An error a route answers with as `{ error, ...details }` and `status`. */
 export class HttpError extends Error {
@@ -113,14 +114,25 @@ export function parseRange(header: string | null, size: number): { start: number
   return { start, end };
 }
 
-/** Resolve the caller's owner, answer 401 without one, and run `handler` with HttpErrors mapped. */
-export async function authed(req: Request, handler: (owner: string) => Promise<Response>): Promise<Response> {
+/**
+ * Resolve the caller's owner, answer 401 without one, refuse with `403
+ * service_not_allowed` an owner not given `service` (#145; null for a route
+ * every user may call), and run `handler` with HttpErrors mapped.
+ */
+export async function authed(
+  req: Request,
+  service: AccessService | null,
+  handler: (owner: string) => Promise<Response>,
+): Promise<Response> {
   const { resolveOwner, unauthorized } = await import('./auth');
   const owner = await resolveOwner(req);
   if (!owner) return unauthorized();
   const { noteActivity } = await import('./owners');
   await noteActivity(owner);
-  return handle(() => handler(owner));
+  return handle(async () => {
+    if (service) await (await import('./access')).assertService(owner, service);
+    return handler(owner);
+  });
 }
 
 /**
@@ -147,24 +159,33 @@ const SAFE_METHODS = new Set(['GET', 'HEAD']);
 /**
  * For the web app's routes (#80): refuse a state-changing request from
  * another site with `403 cross_site`, resolve the browser's identity (401
- * without one), and run `handler` with HttpErrors mapped.
+ * without one), refuse a user not given `service` as [authed] does (#145),
+ * and run `handler` with HttpErrors mapped. The library's routes need
+ * `sync`, since they show what was synced.
  */
-export async function webAuthed(req: Request, handler: (identity: Identity) => Promise<Response>): Promise<Response> {
+export async function webAuthed(
+  req: Request,
+  service: AccessService | null,
+  handler: (identity: Identity) => Promise<Response>,
+): Promise<Response> {
   if (!SAFE_METHODS.has(req.method) && !sameOrigin(req)) return new HttpError(403, 'cross_site').toResponse();
   const { resolveIdentity } = await import('./auth');
   const identity = await resolveIdentity(req);
   if (!identity) return new HttpError(401, 'unauthorized').toResponse();
   const { noteActivity } = await import('./owners');
   await noteActivity(identity.owner);
-  return handle(() => handler(identity));
+  return handle(async () => {
+    if (service) await (await import('./access')).assertService(identity.owner, service);
+    return handler(identity);
+  });
 }
 
 /**
  * For the admin API (#82): [webAuthed], then `403 forbidden` for anyone but
- * an admin.
+ * an admin. Admins keep it whatever services they were given.
  */
 export async function adminAuthed(req: Request, handler: (identity: Identity) => Promise<Response>): Promise<Response> {
-  return webAuthed(req, async (identity) => {
+  return webAuthed(req, null, async (identity) => {
     if (!identity.isAdmin) throw new HttpError(403, 'forbidden');
     return handler(identity);
   });

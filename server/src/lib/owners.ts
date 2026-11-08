@@ -1,5 +1,6 @@
 import { desc, eq, sql, type SQL } from 'drizzle-orm';
 import { owners } from '@/db/schema';
+import { normaliseServices, type AccessService } from './access';
 import { db } from './db';
 import { HttpError } from './http';
 
@@ -59,6 +60,8 @@ export type OwnerUsage = {
   trashed: number;
   bytes: number;
   quotaBytes: number | null;
+  /** The services an admin gave them (#145); null when they have the default. */
+  services: AccessService[] | null;
   firstSeenAt: number;
   lastSeenAt: number;
 };
@@ -72,6 +75,7 @@ export async function listOwners(): Promise<OwnerUsage[]> {
       trashed: sql<number>`(select count(*)::int from documents d where d.owner = owners.owner and d.kind = 'session' and d.deleted and d.trashed_at is not null)`,
       bytes: usageOf(sql`owners.owner`),
       quotaBytes: owners.quotaBytes,
+      services: owners.services,
       firstSeenAt: owners.firstSeenAt,
       lastSeenAt: owners.lastSeenAt,
     })
@@ -79,6 +83,7 @@ export async function listOwners(): Promise<OwnerUsage[]> {
     .orderBy(desc(owners.lastSeenAt), owners.owner);
   return rows.map((row) => ({
     ...row,
+    services: row.services && normaliseServices(row.services),
     bytes: Number(row.bytes),
     firstSeenAt: row.firstSeenAt.getTime(),
     lastSeenAt: row.lastSeenAt.getTime(),

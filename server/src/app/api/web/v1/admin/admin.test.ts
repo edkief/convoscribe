@@ -153,7 +153,7 @@ describe('what admins see (#82)', () => {
     }
     const { users } = JSON.parse(bodies[0]) as { users: Record<string, unknown>[] };
     const alice = users.find((u) => u.owner === 'alice')!;
-    expect(Object.keys(alice).sort()).toEqual(['bytes', 'firstSeenAt', 'lastSeenAt', 'owner', 'quotaBytes', 'sessions', 'trashed']);
+    expect(Object.keys(alice).sort()).toEqual(['bytes', 'firstSeenAt', 'lastSeenAt', 'owner', 'quotaBytes', 'services', 'sessions', 'trashed']);
     expect(alice).toMatchObject({ sessions: 1, trashed: 0 });
   });
 });

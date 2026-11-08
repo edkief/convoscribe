@@ -1,7 +1,9 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { ACCESS_SERVICES, setServices } from '@/lib/access';
 import { resetAiProxy } from '@/lib/ai-proxy';
+import { noteActivity } from '@/lib/owners';
 import { stubServerEnv } from '@/test/env';
 import { AUTH, request, setupSyncServer } from '@/test/http';
 import { POST as transcribe } from './asr/audio/transcriptions/route';
@@ -111,6 +113,16 @@ describe('/api/ai/v1 (#93)', () => {
     const res = await call({ headers: AUTH });
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: 'not_offered' });
+  });
+
+  it.each(routes)('$name is 403 for a user not given its service, and never calls upstream (#145)', async ({ call, path }) => {
+    const service = { llm: 'llm', asr: 'asr', laya: 'decision' }[path.split('/')[1]]!;
+    await noteActivity('default');
+    await setServices('default', ACCESS_SERVICES.filter((s) => s !== service));
+    const res = await call({});
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: 'service_not_allowed', service });
+    expect(seen).toHaveLength(0);
   });
 
   it('sends the upstream key, or none, and never the caller’s', async () => {

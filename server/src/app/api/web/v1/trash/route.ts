@@ -6,5 +6,5 @@ import { webAuthed } from '@/lib/http';
  * clean-up frees its storage on its next run.
  */
 export async function DELETE(req: Request) {
-  return webAuthed(req, async ({ owner }) => Response.json({ purged: await purgeTrash({ owner }) }));
+  return webAuthed(req, 'sync', async ({ owner }) => Response.json({ purged: await purgeTrash({ owner }) }));
 }

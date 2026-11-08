@@ -50,6 +50,13 @@
       "when": 1793746284237,
       "tag": "0006_talking_point_lists",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794147328757,
+      "tag": "0007_user_services",
+      "breakpoints": true
     }
   ]
 }

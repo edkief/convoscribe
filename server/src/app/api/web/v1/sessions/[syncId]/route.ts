@@ -10,7 +10,7 @@ type Ctx = RouteContext<'/api/web/v1/sessions/[syncId]'>;
  * for the page to reload, and never deleted unseen.
  */
 export async function DELETE(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const meta = await deleteSessionFromWeb(owner, syncId, baseRevisionOf(await jsonBody(req, 1024)));
     return Response.json({ syncId, revision: meta.revision });
@@ -24,7 +24,7 @@ export async function DELETE(req: Request, ctx: Ctx) {
  * one to send next.
  */
 export async function PATCH(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const body = await jsonBody(req, 64 * 1024);
     const meta = await editSession(owner, syncId, baseRevisionOf(body), parseEdit(body.edit));

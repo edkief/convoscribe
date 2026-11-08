@@ -33,15 +33,15 @@ describe('webAuthed', () => {
 
   it('refuses a state-changing request from another site before anything else', async () => {
     stubServerEnv();
-    const res = await webAuthed(post({ origin: 'https://evil.example', cookie: cookie() }), ok);
+    const res = await webAuthed(post({ origin: 'https://evil.example', cookie: cookie() }), null, ok);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: 'cross_site' });
   });
 
   it('lets a same-site request or a read through once signed in, and answers 401 otherwise', async () => {
     stubServerEnv();
-    expect((await webAuthed(post({ origin: 'http://server', cookie: cookie() }), ok)).status).toBe(200);
-    expect((await webAuthed(new Request('http://server/x', { headers: { cookie: cookie() } }), ok)).status).toBe(200);
-    expect((await webAuthed(new Request('http://server/x'), ok)).status).toBe(401);
+    expect((await webAuthed(post({ origin: 'http://server', cookie: cookie() }), null, ok)).status).toBe(200);
+    expect((await webAuthed(new Request('http://server/x', { headers: { cookie: cookie() } }), null, ok)).status).toBe(200);
+    expect((await webAuthed(new Request('http://server/x'), null, ok)).status).toBe(401);
   });
 });

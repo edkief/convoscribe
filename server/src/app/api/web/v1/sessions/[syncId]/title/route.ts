@@ -1,3 +1,4 @@
+import { assertService } from '@/lib/access';
 import { upstreamOf } from '@/lib/ai-proxy';
 import { applySuggestedTitle, suggestTitle, titleSource } from '@/lib/assist';
 import { baseRevisionOf, HttpError, jsonBody, syncIdParam, webAuthed } from '@/lib/http';
@@ -19,10 +20,11 @@ type Event = { done: true; revision: number; title: string } | { error: string }
  * revision and the title, or `error`. Closing the request saves nothing.
  */
 export async function POST(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const baseRevision = baseRevisionOf(await jsonBody(req, 4096));
     if (!upstreamOf('llm')) throw new HttpError(404, 'not_offered');
+    await assertService(owner, 'llm');
 
     const editable = await loadForEdit(owner, syncId, baseRevision);
     const source = titleSource(editable.manifest);
