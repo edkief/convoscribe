@@ -333,6 +333,15 @@
     <string name="record_talking_points_none">No talking points. Add one below.</string>
     <string name="record_talking_points_open_first">Not covered first</string>
     <string name="record_talking_points_check_failing">Can\'t check talking points automatically right now. Tick them by hand.</string>
+    <string name="record_assist_label">Live assist</string>
+    <string name="record_assist_help">Answers questions asked aloud from this conversation and past ones. Sends the last minutes of speech to the language model while recording.</string>
+    <string name="record_assist_help_on">Recent speech is sent to the language model.</string>
+    <string name="record_assist_checking">Checking the language model…</string>
+    <string name="record_assist_unreachable">Endpoint not reachable. Live assist is off.</string>
+    <string name="record_assist_paused">Paused: the language model stopped answering. The next question tries again.</string>
+    <string name="record_assist_listening">Listening for questions.</string>
+    <string name="record_assist_pin">Pin</string>
+    <string name="record_assist_dismiss">Dismiss</string>
     <string name="presets_title">Presets</string>
     <string name="presets_explanation">A preset keeps the options of a recurring conversation: language, speakers, participants, a title, tags and the summary template. Pick it on the Record screen.</string>
     <string name="presets_new">New preset</string>

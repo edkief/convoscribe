@@ -54,7 +54,10 @@ import com.convoscribe.enginecheck.EngineCheckResult
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.SemanticCheckResult
 import com.convoscribe.export.ExportFormat
+import com.convoscribe.llm.AssistCard
+import com.convoscribe.llm.AssistStatus
 import com.convoscribe.llm.Citation
+import com.convoscribe.llm.LiveAssistState
 import com.convoscribe.llm.MarkNotesProgress
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
@@ -550,6 +553,44 @@ class ScreenshotTest(private val variant: Variant) {
             inputLevel = 0.4f,
             livePoints = SESSION_POINTS,
             pointChecksFailing = true,
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    /** Live assist (issue #50) with two answers, the newest on top. */
+    @Test
+    fun recordLiveAssist() = capture("record_live_assist") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            assist = LiveAssistState(sessionId = 1L, enabled = true, cards = ASSIST_CARDS),
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    /** Live assist paused after the endpoint stopped answering (issue #50). */
+    @Test
+    fun recordLiveAssistPaused() = capture("record_live_assist_paused") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            assist = LiveAssistState(sessionId = 1L, enabled = true, status = AssistStatus.PAUSED),
             onBack = {},
             onStart = {},
             onStop = {}
@@ -1904,6 +1945,23 @@ class ScreenshotTest(private val variant: Variant) {
             "So the first thing on the agenda is the release date.",
             "We said the end of the month, but QA needs another week.",
             "That's fine as long as the e-ink build is ready too."
+        )
+
+        private val ASSIST_CARDS = listOf(
+            AssistCard(
+                id = 2L,
+                question = "Who signs off on the QA plan this time",
+                answer = "Marie does; she asked for the test report by Thursday.",
+                cites = listOf(Citation(9L, "QA sync", "2026-10-28", atMs = 312_000L)),
+                questionAtMs = 740_000L
+            ),
+            AssistCard(
+                id = 1L,
+                question = "What did we agree last time on the launch date?",
+                answer = "The launch was set for March 3, with a beta two weeks before.",
+                cites = listOf(Citation(5L, "Planning", "2026-10-01", atMs = 72_000L)),
+                questionAtMs = 610_000L
+            )
         )
 
         private val SPEAKERS = listOf(

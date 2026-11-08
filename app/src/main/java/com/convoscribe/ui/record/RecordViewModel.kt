@@ -12,6 +12,8 @@ import com.convoscribe.data.TalkingPointEntity
 import com.convoscribe.data.TalkingPointList
 import com.convoscribe.data.TalkingPointListStore
 import com.convoscribe.data.TalkingPoints
+import com.convoscribe.llm.LiveAssistState
+import com.convoscribe.llm.LiveAssistant
 import com.convoscribe.llm.SummaryTemplate
 import com.convoscribe.llm.SummaryTemplates
 import com.convoscribe.recording.ConversationOptions
@@ -64,7 +66,10 @@ import kotlinx.coroutines.launch
  *    [options] ([attachList], [addPoint], [removePoint]); once the
  *    session is open, [livePoints] are its own, ticked with
  *    [togglePoint] and added with [addLivePoint]. [pointChecksFailing]
- *    says when their automatic checks keep failing (issue #103).
+ *    says when their automatic checks keep failing (issue #103);
+ *  - live assist (issue #50): [assist] is the open session's, shown
+ *    when [assistAvailable], turned on and off with [setAssist], its
+ *    cards kept with [pinCard] or dropped with [dismissCard].
  * Constructed by
  * [com.convoscribe.ui.AppNavHost]'s `viewModelFactory` reading
  * `AppContainer.recordingController` so the singleton lives across
@@ -82,7 +87,8 @@ class RecordViewModel(
     private val presetStore: PresetStore? = null,
     talkingPointLists: TalkingPointListStore? = null,
     private val sessionPoints: SessionTalkingPoints? = null,
-    failingChecks: Flow<Set<Long>> = flowOf(emptySet())
+    failingChecks: Flow<Set<Long>> = flowOf(emptySet()),
+    private val assistant: LiveAssistant? = null
 ) : ViewModel() {
 
     private val recordingController = controller
@@ -144,6 +150,31 @@ class RecordViewModel(
     val pointChecksFailing: StateFlow<Boolean> = combine(controller.state, failingChecks, ::checksFailing)
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Live assist of the open session (issue #50). */
+    val assist: StateFlow<LiveAssistState> = assistant?.state ?: MutableStateFlow(LiveAssistState()).asStateFlow()
+
+    /** A language model is set up, so live assist can be offered (issue #50). */
+    val assistAvailable: StateFlow<Boolean> = settings.settings
+        .map { it.llmConfigured }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), settings.settings.value.llmConfigured)
+
+    /** Turn live assist on (after a probe of the endpoint) or off for the open session. */
+    fun setAssist(enabled: Boolean) {
+        assistant?.setEnabled(enabled)
+    }
+
+    /** Keep live-assist card [cardId] as a mark at its question. */
+    fun pinCard(cardId: Long) {
+        val assistant = assistant ?: return
+        viewModelScope.launch { assistant.pin(cardId) }
+    }
+
+    /** Drop live-assist card [cardId]. */
+    fun dismissCard(cardId: Long) {
+        assistant?.dismiss(cardId)
+    }
 
     /** Start from [preset]'s options, or from the Settings defaults for `null`; the talking points stay. */
     fun applyPreset(preset: Preset?) {
