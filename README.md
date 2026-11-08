@@ -49,6 +49,20 @@ brings them to your other devices.
   to *Speakers pending* with its transcript intact. Cancelled while
   charging, nothing is identified automatically until the charger is
   unplugged and plugged in again; *Identify speakers now* still works.
+  *Identify speakers while recording* (on by default) lets an earlier
+  session's speakers be identified while you record the next one. Turn
+  it off if the live transcript lags or the phone gets hot while
+  recording: identification then stops when you start recording, the
+  session shows *Speakers pending*, and it picks up once you stop
+  (following *Identify speakers*). This setting is not in backups, since
+  it depends on the phone.
+- **Record at once, whatever else is running.** Start is never held back
+  by an earlier session's work. The server transcript after Stop and
+  an import carry on, and their notification comes back once you stop;
+  while you record, the notification and the floating control are the
+  recording's. A re-transcription on the phone is stopped when you
+  start, and the Record screen says so first. The session keeps its
+  previous transcript, and you can re-transcribe it later.
 - **Speed up speaker identification** (to compare, issue #56).
   Settings → Speakers → Advanced → *Voice model*: **ResNet34** (default) or
   **CAM++**, a lighter model (29 MB download, offered there). Known
@@ -76,7 +90,8 @@ brings them to your other devices.
 - **Re-transcribe in another language** from the session menu: the
   stored audio is transcribed again in the background, with progress
   and Cancel, and speakers are re-identified. Cancelling or a failure
-  keeps the previous transcript.
+  keeps the previous transcript; so does starting a recording while it
+  runs on the phone.
 - **Transcribe on your own server (optional).** Point Settings →
   Recording & transcription → *Transcription on a server* → *Your own server*
   at a self-hosted, OpenAI-compatible
