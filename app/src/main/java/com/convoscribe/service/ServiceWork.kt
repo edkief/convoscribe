@@ -39,6 +39,20 @@ internal data class ServiceWork(
     /** Nothing holds the service: it may give back the wake lock, leave the foreground and stop. */
     val idle: Boolean
         get() = phase == RecordingPhase.IDLE && !retranscribing && !importing && processing == 0
+
+    /**
+     * Something needs the CPU, so the service keeps its wake lock
+     * (issue #124): a session is starting, recording or stopping, or
+     * a re-transcription, an import or a speaker identification runs.
+     * A paused session alone does not; nothing is processed then.
+     */
+    val needsWakeLock: Boolean
+        get() = phase == RecordingPhase.LOADING ||
+            phase == RecordingPhase.RECORDING ||
+            phase == RecordingPhase.STOPPING ||
+            retranscribing ||
+            importing ||
+            processing > 0
 }
 
 /**

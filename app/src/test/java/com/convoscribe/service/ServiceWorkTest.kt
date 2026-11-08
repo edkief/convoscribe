@@ -5,7 +5,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** When [RecordingService] may stop (issue #121). */
+/** When [RecordingService] may stop (issue #121) and when it keeps its wake lock (issue #124). */
 class ServiceWorkTest {
 
     private val nothing = ServiceWork(
@@ -74,5 +74,34 @@ class ServiceWorkTest {
         // Two sessions stopped back to back: the first job ends while
         // the second still waits for the speaker engine.
         assertFalse(nothing.copy(processing = 1).idle)
+    }
+
+    @Test
+    fun needsWakeLock_whileASessionStartsRecordsOrStops() {
+        for (phase in listOf(RecordingPhase.LOADING, RecordingPhase.RECORDING, RecordingPhase.STOPPING)) {
+            assertTrue("$phase", nothing.copy(phase = phase).needsWakeLock)
+        }
+    }
+
+    @Test
+    fun noWakeLock_whenNothingRunsOrTheSessionIsOnlyPaused() {
+        assertFalse(nothing.needsWakeLock)
+        assertFalse(nothing.copy(phase = RecordingPhase.PAUSED).needsWakeLock)
+    }
+
+    @Test
+    fun needsWakeLock_whileAJobRuns() {
+        assertTrue(nothing.copy(retranscribing = true).needsWakeLock)
+        assertTrue(nothing.copy(importing = true).needsWakeLock)
+        assertTrue(nothing.copy(processing = 1).needsWakeLock)
+    }
+
+    @Test
+    fun pausingWhileAnEarlierSessionsSpeakersAreIdentified_keepsTheWakeLock() {
+        val paused = nothing.copy(phase = RecordingPhase.PAUSED, processing = 1)
+        assertTrue(paused.needsWakeLock)
+        // Once that identification ends, the paused session gives it back.
+        assertFalse(paused.copy(processing = 0).needsWakeLock)
+        assertFalse(paused.copy(processing = 0).idle)
     }
 }

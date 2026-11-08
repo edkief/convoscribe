@@ -398,8 +398,11 @@ class RecordingService : Service() {
     /**
      * Pause the session (issue #7). The service stays in the
      * microphone-typed foreground so Resume can reopen the mic from
-     * the background; the wake lock is released since nothing runs
-     * while paused. A no-op when no session is recording.
+     * the background. The wake lock is released since the paused
+     * session processes nothing, unless other work still needs it,
+     * such as an earlier session's speakers being identified (issue
+     * #124); [stopIfIdle] releases it once that ends. A no-op when no
+     * session is recording.
      */
     private fun handlePause() {
         val controller = controller()
@@ -409,7 +412,7 @@ class RecordingService : Service() {
         }
         scope.launch {
             controller.pause()
-            if (controller.state.value.phase == RecordingPhase.PAUSED) releaseWakeLock()
+            if (controller.state.value.phase == RecordingPhase.PAUSED) releaseWakeLockIfUnneeded()
         }
     }
 
@@ -453,6 +456,8 @@ class RecordingService : Service() {
         ensureNotificationChannel()
         // A recording open meanwhile keeps its own notification.
         showDiarizingOrRecording()
+        // Speaker identification is heavy work; keep the CPU awake for it.
+        acquireWakeLock()
         scope.launch {
             processing++
             try {
@@ -549,6 +554,11 @@ class RecordingService : Service() {
      */
     private fun idle(): Boolean = work().idle
 
+    /** Give back the wake lock unless something still needs the CPU ([ServiceWork.needsWakeLock]). */
+    private fun releaseWakeLockIfUnneeded() {
+        if (!work().needsWakeLock) releaseWakeLock()
+    }
+
     /**
      * Give back the wake lock, leave the foreground and stop, but only
      * when nothing holds the service ([idle]). The one way every job
@@ -556,7 +566,12 @@ class RecordingService : Service() {
      * one is open would cancel its capture (issue #121).
      */
     private fun stopIfIdle() {
-        if (!idle()) return
+        if (!idle()) {
+            // A job ended while the session is paused: nothing else
+            // may need the lock now (issue #124).
+            releaseWakeLockIfUnneeded()
+            return
+        }
         releaseWakeLock()
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
