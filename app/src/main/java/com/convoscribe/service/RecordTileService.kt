@@ -61,7 +61,6 @@ class RecordTileService : TileService() {
         when {
             container().recordingController.state.value.phase.active ->
                 startService(RecordingService.togglePauseIntent(this))
-            busy() -> Unit
             isLocked -> unlockAndRun { startNewRecording() }
             else -> startNewRecording()
         }
@@ -90,7 +89,7 @@ class RecordTileService : TileService() {
         val phase = container().recordingController.state.value.phase
         tile.state = when {
             phase.active -> Tile.STATE_ACTIVE
-            phase != RecordingPhase.IDLE || busy() -> Tile.STATE_UNAVAILABLE
+            phase != RecordingPhase.IDLE -> Tile.STATE_UNAVAILABLE
             else -> Tile.STATE_INACTIVE
         }
         tile.label = getString(R.string.tile_label)
@@ -110,9 +109,6 @@ class RecordTileService : TileService() {
         )
         tile.updateTile()
     }
-
-    /** An import or re-transcription holds the recorder; a recording cannot start. */
-    private fun busy(): Boolean = container().retranscribeUseCase.isRunning || container().importAudioUseCase.isRunning
 
     private fun container() = (application as ConvoApp).container
 }

@@ -17,9 +17,10 @@ import com.convoscribe.service.RecordingService
  * with the Settings defaults and closes at once.
  *
  * When a recording cannot start straight away (no microphone
- * permission yet, the default language's models are missing, or
- * another job holds the recorder), it opens the Record screen
- * instead, which asks for the permission or explains.
+ * permission yet, the default language's models are missing, or a
+ * session is still starting or stopping), it opens the Record screen
+ * instead, which asks for the permission or explains. Work for an
+ * earlier session never holds it back (issue #123).
  */
 class RecordTrampolineActivity : ComponentActivity() {
 
@@ -38,7 +39,7 @@ class RecordTrampolineActivity : ComponentActivity() {
         /**
          * Whether a new recording in [language] can start without the
          * Record screen: the microphone is allowed, the language's
-         * models are on disk and nothing else holds the recorder.
+         * models are on disk and no session is open.
          */
         fun canStartNow(activity: ComponentActivity, language: String): Boolean {
             val container = (activity.applicationContext as ConvoApp).container
@@ -48,9 +49,9 @@ class RecordTrampolineActivity : ComponentActivity() {
             val modelsReady = container.modelStore
                 .missing(ModelCatalog.requiredFor(language, settings.asrEngine))
                 .isEmpty()
-            val free = container.recordingController.state.value.phase == RecordingPhase.IDLE &&
-                !container.retranscribeUseCase.isRunning &&
-                !container.importAudioUseCase.isRunning
+            // An earlier session's re-transcription, import or speakers
+            // never hold a new recording back (issue #123).
+            val free = container.recordingController.state.value.phase == RecordingPhase.IDLE
             return micGranted && modelsReady && free
         }
     }

@@ -28,18 +28,22 @@ import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
+import com.convoscribe.recording.RetranscribeUseCase
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Foreground service that keeps the [RecordingController] alive
@@ -222,10 +226,8 @@ class RecordingService : Service() {
         // nothing else. The controller's `start` is also idempotent
         // (it no-ops unless phase is IDLE).
         val controller = controller()
-        // One heavy job at a time: a re-transcription keeps the
-        // foreground (and the CPU) until it ends. The Record screen
-        // disables Start meanwhile; this guards a stray intent.
-        if (retranscribeJob != null || importJob != null) return
+        // Work for an earlier session never holds a recording back
+        // (issue #123): it carries on, or gives way below.
         ensureNotificationChannel()
         // A START for an already open session (e.g. a second tap)
         // must still promote the service, but keeps its live text.
@@ -247,10 +249,39 @@ class RecordingService : Service() {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         )
         acquireWakeLock()
-        controller.start(scope, resumeSessionId, options)
+        // A second tap while the re-transcription below is stopping.
+        if (starting) return
+        // A re-transcription on the phone stops first, so two recognizers
+        // (possibly two NPU sessions) never run at once; the session keeps
+        // its transcript. One on the server carries on.
+        val onDevice = retranscribeJob?.takeIf {
+            controller.state.value.phase == RecordingPhase.IDLE &&
+                (application as ConvoApp).container.retranscribeUseCase.runsOnDevice
+        }
+        if (onDevice == null) {
+            beginRecording(resumeSessionId, options)
+            return
+        }
+        starting = true
+        scope.launch {
+            try {
+                onDevice.cancelAndJoin()
+            } finally {
+                starting = false
+            }
+            beginRecording(resumeSessionId, options)
+        }
+    }
+
+    /** Open the session and follow it (notification, wake lock, floating control). */
+    private fun beginRecording(resumeSessionId: Long?, options: ConversationOptions?) {
+        controller().start(scope, resumeSessionId, options)
         startStateObserver()
         startOverlayObserver()
     }
+
+    /** Start is waiting for a re-transcription on the phone to stop (issue #123); see [ServiceWork.starting]. */
+    private var starting = false
 
     /**
      * Keep the floating control in step with the session, the
@@ -396,12 +427,21 @@ class RecordingService : Service() {
 
     /**
      * Transcribe the just-stopped [sessionId] again on the server when
-     * [com.convoscribe.recording.RetranscribeUseCase.wantsServer], and wait for it. Shows the
+     * [RetranscribeUseCase.wantsServer], and wait for it. Shows the
      * re-transcription notification with its progress meanwhile.
      */
     private suspend fun improveOnServer(sessionId: Long) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
         if (!useCase.wantsServer(sessionId)) return
+        // One re-transcription at a time (issue #123): a session stopped
+        // while an earlier one's server transcript runs waits for it.
+        // Meanwhile that one's notification replaces the recording's.
+        if (retranscribeLock.isLocked) showForeground()
+        retranscribeLock.withLock { transcribeOnServer(useCase, sessionId) }
+    }
+
+    /** [improveOnServer]'s run, as the [retranscribeJob], holding [retranscribeLock]. */
+    private suspend fun transcribeOnServer(useCase: RetranscribeUseCase, sessionId: Long) {
         val job = scope.launch {
             val progress = useCase.state
                 .onEach { state ->
@@ -503,6 +543,13 @@ class RecordingService : Service() {
     private var retranscribeJob: Job? = null
 
     /**
+     * Held by the running re-transcription (issue #123): the
+     * [RetranscribeUseCase]
+     * follows one run, and [retranscribeJob] names one.
+     */
+    private val retranscribeLock = Mutex()
+
+    /**
      * Re-transcribe [sessionId] in [language], then re-identify its
      * speakers, in a `dataSync` foreground with a progress
      * notification and a Cancel action. Refused while a recording or
@@ -514,7 +561,7 @@ class RecordingService : Service() {
      */
     private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean, onServer: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
-        if (!work().acceptsJob || useCase.isRunning) return
+        if (!work().acceptsJob || useCase.isRunning || !retranscribeLock.tryLock()) return
         acquireWakeLock()
         retranscribeJob = scope.launch {
             var started = false
@@ -546,6 +593,7 @@ class RecordingService : Service() {
             } finally {
                 progress.cancel()
                 retranscribeJob = null
+                retranscribeLock.unlock()
                 // A recording or a speaker identification still going
                 // keeps the wake lock and the foreground.
                 stopIfIdle()
@@ -566,7 +614,8 @@ class RecordingService : Service() {
         phase = controller().state.value.phase,
         retranscribing = retranscribeJob != null,
         importing = importJob != null,
-        processing = processing
+        processing = processing,
+        starting = starting
     )
 
     /**
