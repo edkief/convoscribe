@@ -256,6 +256,7 @@ class SyncClient(
     private fun unexpected(answer: Answer): SyncException {
         val hint = when (answer.code) {
             401 -> " (check the sync API key)"
+            403 -> if ("service_not_allowed" in answer.text) NO_SYNC_HINT else ""
             413 -> " (the reverse proxy refused the size; allow at least 8 MB)"
             507 -> " (your storage quota on the server is reached; free up space or ask the admin to raise it)"
             else -> ""
@@ -307,6 +308,9 @@ class SyncClient(
         val JSON_TYPE = "application/json".toMediaType()
         val OCTET_TYPE = "application/octet-stream".toMediaType()
         const val CHUNK_BYTES = 64 * 1024
+
+        /** A 403 `service_not_allowed`: the server's admin didn't give this account sync (issue #145). */
+        const val NO_SYNC_HINT = " (your account on the server doesn't include sync; ask its admin to give you sync)"
 
         fun gzip(bytes: ByteArray): ByteArray = ByteArrayOutputStream().also { out ->
             GZIPOutputStream(out).use { it.write(bytes) }
