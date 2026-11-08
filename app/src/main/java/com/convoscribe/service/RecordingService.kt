@@ -60,8 +60,11 @@ import kotlinx.coroutines.launch
  *     see, mark (issue #30), pause / resume and stop the recording
  *     without re-opening the app;
  *  3. hold a partial [android.os.PowerManager.WakeLock] so the
- *     CPU stays awake during the capture loop (released while the
- *     session is paused, when there is nothing to process);
+ *     CPU stays awake during the capture loop: a fresh one on each
+ *     Start and Resume, renewed every half hour of recording so its
+ *     one-hour safety timeout never cuts a long recording short
+ *     (issue #124), and released while the session is paused, when
+ *     there is nothing to process;
  *  4. observe [RecordingController.state] and tear everything down
  *     when the controller reports an `IDLE` + `error` so a failing
  *     session does not silently leave the service in the
@@ -754,6 +757,13 @@ class RecordingService : Service() {
                 val changed = state.phase != lastPhase || state.markCount != lastMarks
                 lastPhase = state.phase
                 lastMarks = state.markCount
+                // A recording longer than the lock's timeout takes a
+                // fresh lock well before it runs out (issue #124).
+                if (state.phase == RecordingPhase.RECORDING &&
+                    wakeLockRenewalDue(wakeLockAcquiredAtMs, SystemClock.elapsedRealtime())
+                ) {
+                    acquireWakeLock()
+                }
                 // LOADING / STOPPING: the start / stop paths own the
                 // notification.
                 if (state.phase.active) {
@@ -816,7 +826,7 @@ class RecordingService : Service() {
             // Set a generous timeout as a safety net: even if
             // releaseWakeLock() is missed (e.g. process killed),
             // the lock will free in ~1 h and stop pinning the CPU.
-            acquire(WAKE_LOCK_TIMEOUT_MS)
+            acquire(RECORDING_WAKE_LOCK_TIMEOUT_MS)
         }
         val previous = wakeLock
         wakeLock = lock
@@ -1027,13 +1037,6 @@ class RecordingService : Service() {
 
         /** `requestCode` for the cancel-speaker-identification pending intent. */
         private const val REQUEST_CANCEL_DIARIZE = 1008
-
-        /**
-         * Safety-net timeout of each wake lock, in case the process is
-         * killed without releasing it. Long recordings renew theirs
-         * before it runs out.
-         */
-        private const val WAKE_LOCK_TIMEOUT_MS = 60L * 60L * 1_000L // 1 h
 
         /** Throttle window for notification text refreshes. */
         private const val NOTIFICATION_REFRESH_PERIOD_MS = 1_000L
