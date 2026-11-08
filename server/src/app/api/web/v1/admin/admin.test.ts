@@ -153,7 +153,7 @@ describe('what admins see (#82)', () => {
     }
     const { users } = JSON.parse(bodies[0]) as { users: Record<string, unknown>[] };
     const alice = users.find((u) => u.owner === 'alice')!;
-    expect(Object.keys(alice).sort()).toEqual(['bytes', 'firstSeenAt', 'lastSeenAt', 'owner', 'quotaBytes', 'sessions', 'trashed']);
+    expect(Object.keys(alice).sort()).toEqual(['bytes', 'firstSeenAt', 'lastSeenAt', 'owner', 'quotaBytes', 'services', 'sessions', 'trashed']);
     expect(alice).toMatchObject({ sessions: 1, trashed: 0 });
   });
 });
@@ -180,6 +180,31 @@ describe('setting a quota (#82)', () => {
   });
 });
 
+describe('choosing what a user may use (#145)', () => {
+  const userOf = async () =>
+    ((await (await usersGet(request('/x'))).json()) as { users: { owner: string; quotaBytes: number | null; services: string[] | null }[] }).users.find(
+      (u) => u.owner === 'alice',
+    )!;
+
+  it('stores the services, keeping the quota, and null is the default again', async () => {
+    await noteActivity('alice');
+    expect((await put({ owner: 'alice', quotaBytes: 5000 })).status).toBe(200);
+    expect((await put({ owner: 'alice', services: ['llm', 'sync'] })).status).toBe(200);
+    expect(await userOf()).toMatchObject({ quotaBytes: 5000, services: ['sync', 'llm'] });
+    expect((await put({ owner: 'alice', services: [] })).status).toBe(200);
+    expect((await userOf()).services).toEqual([]);
+    expect((await put({ owner: 'alice', services: null })).status).toBe(200);
+    expect(await userOf()).toMatchObject({ quotaBytes: 5000, services: null });
+  });
+
+  it('refuses an unknown service and someone not seen', async () => {
+    await noteActivity('alice');
+    expect((await put({ owner: 'alice', services: ['sync', 'web'] })).status).toBe(400);
+    expect((await put({ owner: 'alice', services: 'sync' })).status).toBe(400);
+    expect((await put({ owner: 'nobody', services: ['sync'] })).status).toBe(404);
+  });
+});
+
 describe('clean-up from the admin API (#82)', () => {
   it('starts a preview in the background, refusing a second while it runs', async () => {
     await db().insert(cleanupRuns).values({ dryRun: false, trigger: 'scheduled' });
@@ -200,6 +225,8 @@ describe('status from the admin API (#82)', () => {
   it('reports both reachable and the storage figures', async () => {
     const body = (await (await statusGet(request('/x'))).json()) as Record<string, unknown>;
     expect(body).toMatchObject({ postgres: { ok: true }, s3: { ok: true }, storage: { total: 0 } });
+    // Upstreams the server is not set up with (#145).
+    expect(body).toMatchObject({ authzProxy: null, llm: null, asr: null, decision: null });
     expect(JSON.stringify(body)).not.toMatch(/secret|S3_|bucket/i);
   });
 });

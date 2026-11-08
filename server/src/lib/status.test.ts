@@ -1,4 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { createServer, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { resetAiProxy } from './ai-proxy';
+import { stubServerEnv } from '@/test/env';
 import { setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest, storeBlob } from '@/test/sessions';
 import { uploadParts, uploads, documents } from '@/db/schema';
@@ -6,7 +10,7 @@ import { eq } from 'drizzle-orm';
 import { blobStore, setBlobStore, type BlobStore } from './blob-store';
 import { db, setDb, type Db } from './db';
 import { deleteDocument, purgeTrash } from './documents';
-import { checkStore, serverStatus, storageBreakdown } from './status';
+import { checkAuthzProxy, checkStore, checkUpstream, serverStatus, storageBreakdown } from './status';
 
 setupSyncServer();
 
@@ -100,5 +104,91 @@ describe('serverStatus (#82)', () => {
     expect(status).toMatchObject({ postgres: { ok: false }, s3: { ok: true }, storage: null });
     expect(JSON.stringify(status)).not.toMatch(/password|admin/);
     warn.mockRestore();
+  });
+});
+
+describe('upstreams on the status page (#145)', () => {
+  let server: Server;
+  let base = '';
+  let seen: { url?: string; authorization?: string }[] = [];
+  /** What the fake upstream answers each path with. */
+  let statusOf: (url: string) => number = () => 200;
+
+  beforeAll(async () => {
+    server = createServer((req, res) => {
+      seen.push({ url: req.url, authorization: req.headers.authorization });
+      res.writeHead(statusOf(req.url ?? ''), { 'content-type': 'application/json' });
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    await resetAiProxy();
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  const configure = (overrides: Record<string, string> = {}) => {
+    seen = [];
+    statusOf = () => 200;
+    stubServerEnv({
+      LLM_UPSTREAM_URL: `${base}/llm/v1`,
+      LLM_UPSTREAM_KEY: 'llm-key',
+      LLM_MODEL: 'muse',
+      ASR_UPSTREAM_URL: `${base}/asr/v1`,
+      DECISION_UPSTREAM_URL: `${base}/laya`,
+      ...overrides,
+    });
+  };
+
+  it('asks each upstream a cheap question, with its key, and names its model', async () => {
+    configure();
+    const status = await serverStatus();
+    expect(status.llm).toMatchObject({ ok: true, model: 'muse' });
+    expect(status.asr).toMatchObject({ ok: true, model: null });
+    expect(status.decision).toMatchObject({ ok: true, model: null });
+    expect(status.authzProxy).toBeNull();
+    expect(seen).toEqual(
+      expect.arrayContaining([
+        { url: '/llm/v1/models', authorization: 'Bearer llm-key' },
+        { url: '/asr/v1/models', authorization: undefined },
+        { url: '/laya/health', authorization: undefined },
+      ]),
+    );
+  });
+
+  it('is null for an upstream the server is not set up with', async () => {
+    configure({ ASR_UPSTREAM_URL: '', DECISION_UPSTREAM_URL: '' });
+    const status = await serverStatus();
+    expect(status.asr).toBeNull();
+    expect(status.decision).toBeNull();
+    expect(status.llm?.ok).toBe(true);
+  });
+
+  it('counts a refused key or an error as unreachable, and says why only in the log', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    configure();
+    statusOf = (url) => (url.startsWith('/llm') ? 401 : 500);
+    expect(await checkUpstream('llm')).toMatchObject({ ok: false, model: 'muse' });
+    expect(await checkUpstream('decision')).toMatchObject({ ok: false });
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/language model unreachable: answered 401, check its key/);
+    warn.mockRestore();
+  });
+
+  it('counts an upstream nothing listens on as unreachable', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    configure({ LLM_UPSTREAM_URL: 'http://127.0.0.1:1/v1' });
+    expect((await checkUpstream('llm'))?.ok).toBe(false);
+    warn.mockRestore();
+  });
+
+  it('checks authz-proxy’s keys in that mode only', async () => {
+    configure({ AUTH_MODE: 'authz-proxy', AUTHZ_PROXY_URL: base, SYNC_API_KEY: '' });
+    expect((await checkAuthzProxy())?.ok).toBe(true);
+    expect(seen).toContainEqual({ url: '/.well-known/jwks.json', authorization: undefined });
+    configure();
+    expect(await checkAuthzProxy()).toBeNull();
   });
 });

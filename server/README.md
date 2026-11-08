@@ -11,8 +11,9 @@ rule* below), so every device settles on the same version. It also serves a
 web app (#80, see *Web app* below) where you sign in from a browser to
 read, search, play and download your sessions (#83), delete them, and restore
 them from the trash (#81, see *Trash and clean-up* below). Admins also see who uses
-the server and how much they store, whether its storage can be reached, and
-run clean-up and set quotas (#82, see *Admin pages* below).
+the server and how much they store, whether its storage and the services it
+offers can be reached, run clean-up, set quotas, and choose what each user may
+use (#82, #145, see *Admin pages* below).
 
 It can also offer its users a language model and a transcription server
 (#93, see *Language model and transcription* below), so devices reach them
@@ -230,9 +231,16 @@ bytes and times, and never another user's titles, transcripts or audio.
 
 - **Users** (`/admin/users`): everyone seen by this server, with their
   sessions, what is in their trash, the bytes they store, their last
-  activity (noted at most every 5 minutes, from devices and the web app) and
-  their quota.
-- **Status** (`/admin/status`): whether Postgres and S3 can be reached;
+  activity (noted at most every 5 minutes, from devices and the web app),
+  their quota, and the services they may use (#145, see *Services per
+  user*).
+- **Status** (`/admin/status`): whether Postgres and S3 can be reached, and
+  (#145) the language model, transcription and decision service, each with
+  its model or *Not configured*, and authz-proxy in that mode. Each
+  upstream is asked a cheap question (`GET /models`, the decision service's
+  `/health`, authz-proxy's `/.well-known/jwks.json`) with its key, every
+  time the page loads, and must answer `2xx` within 5 s; a refused key
+  counts as unreachable;
   bytes stored across all users, split into live, in the trash, unreferenced
   and in unfinished uploads; and clean-up, with its daily mode, when it last
   ran, what it removed, and *Preview* and *Run clean-up*. Why a dependency
@@ -254,6 +262,36 @@ recording the server already holds still counts as stored, and manifests are
 never refused, so edits and deletes always work, and an upload whose parts all
 arrived can still finish. Uploads running at once can pass the quota by about a
 part each.
+
+**Services per user (#145).** Each user may be given any of four services:
+**Sync** (devices syncing, and the web app's library, which shows what was
+synced), **Model** (the language model), **Transcription** and **Decision**
+(the decision service). On the *Users* page a pill per service lights up when
+the user has it, and a tap switches it and saves; a dashed pill is a service
+this server isn't set up with, which can still be given for when it is.
+Until an admin chooses, a user has `DEFAULT_USER_SERVICES` (every service
+when unset, so a server upgraded to this keeps working as before), and *Use
+default* goes back to it. A user only appears once they have signed in or
+synced, so set the default to start new users on less, e.g. `sync`. A change
+applies to the user's next request.
+
+A service a user isn't given:
+
+- answers `403 {"error":"service_not_allowed","service":"<id>"}` on its
+  routes, `sync` for `/api/sync/v1/*` and the web app's library routes, and
+  `llm`, `asr` or `decision` for `/api/ai/v1/<id>/*`. A wrong key is still
+  `401` first. `GET /api/sync/v1/config` and `whoami` answer every user;
+- is left out of the user's `GET /api/sync/v1/config`, so the app doesn't
+  offer it;
+- without sync, the web app's pages send the user to a page saying their
+  account doesn't include sync; an admin keeps the admin pages. The app's
+  sync stops and its error says to ask the admin;
+- without the language model, a session's model actions (*Summarise*,
+  *Q&A*, *Suggest title*, *Check points*, *Write notes*) are hidden and their
+  routes answer `403`. *Check points* uses the decision service only for a
+  user given it, and otherwise the language model.
+
+The `api-key` mode's one user is the admin, and can be limited the same way.
 
 ## API
 
@@ -304,7 +342,7 @@ key as the API key.
 
 | Endpoint | Passed to the upstream as |
 |---|---|
-| `GET /api/sync/v1/config` | Not passed on. `200 {"llm": {"model"} \| null, "transcription": {"model"} \| null, "decision": {"model"} \| null}`: what this server offers, `model` being `LLM_MODEL`, `ASR_MODEL` or `DECISION_MODEL` (null when not set). It never names an upstream address or key. An older server answers `404`, meaning it offers nothing |
+| `GET /api/sync/v1/config` | Not passed on. `200 {"llm": {"model"} \| null, "transcription": {"model"} \| null, "decision": {"model"} \| null}`: what this server offers the caller, `model` being `LLM_MODEL`, `ASR_MODEL` or `DECISION_MODEL` (null when not set); a service the caller wasn't given is null (#145), and the route answers users without sync too. It never names an upstream address or key. An older server answers `404`, meaning it offers nothing |
 | `GET /api/ai/v1/llm/models` | `GET <LLM_UPSTREAM_URL>/models` |
 | `POST /api/ai/v1/llm/chat/completions` | `POST <LLM_UPSTREAM_URL>/chat/completions` |
 | `GET /api/ai/v1/asr/models` | `GET <ASR_UPSTREAM_URL>/models` |
@@ -338,7 +376,8 @@ with the sync key, and the config answer gains `"decision": {"model"} | null`
   being held in memory. A caller going away, or *Stop generating*, cancels
   the upstream call. The server waits up to 15 minutes for the upstream to
   answer or to send more, as the app does.
-- A service with no upstream answers `404 not_offered`.
+- A service with no upstream answers `404 not_offered`, and one the user
+  wasn't given `403 service_not_allowed` (#145, see *Services per user*).
 - An upstream `400`, `404`, `413`, `422` or `429` is passed back as it is:
   the request was at fault. Anything else answers `502` with
   `upstream_rejected` (the upstream refused its key: `401` or `403`),
@@ -350,7 +389,9 @@ with the sync key, and the config answer gains `"decision": {"model"} | null`
 **Web** routes are what the web app's pages call. They take the browser's
 sign-in (a Bearer key works too), answer `401` without it, and refuse a
 `POST`, `PUT`, `PATCH` or `DELETE` whose `Origin` is not this server (`X-Forwarded-Host`,
-else `Host`) with `403 cross_site`. Another owner's session or list is `404`.
+else `Host`) with `403 cross_site`. Another owner's session or list is `404`. Every route
+but sign-in, sign-out and the admin API needs sync (#145), and the model
+actions the model they use; without it, `403 service_not_allowed`.
 
 | Endpoint | Request | Response |
 |---|---|---|
@@ -372,9 +413,9 @@ else `Host`) with `403 cross_site`. Another owner's session or list is `404`.
 | `POST /api/web/v1/sessions/<syncId>/summary` | JSON `{"baseRevision": n, "template"?: key, "zone"?: tz}`: a template key (`meeting`, …, or `user:<name>`; else the session's, else Meeting) and the browser's IANA time zone (#117) | NDJSON, one event a line: `{"step": {"part","parts"} \| "combining" \| "writing"}` while a long transcript is summarised in parts, `{"step": "naming"}` while a session with its default title is named (#119), `{"text"}` with the summary so far (without its action items), then `{"done": true, "revision"}` once saved or `{"error"}`: `conflict` if the session changed meanwhile, `empty_reply`, or an upstream code as for the AI proxy. Nothing is saved without `done`. Before the stream starts: `404 not_offered` without a language model, `409 conflict`, `422 newer_schema` or `empty_transcript`, `404` if unknown or deleted |
 | `POST /api/web/v1/sessions/<syncId>/restore` | | `200 {"syncId","revision"}`: the session is live again as a new revision. `404 not_in_trash` once purged, after 30 days, or for a session deleted before the trash existed |
 | `DELETE /api/web/v1/trash` | | `200 {"purged"}`: every session in the trash removed for good |
-| `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","firstSeenAt","lastSeenAt"}]}` |
-| `PUT /api/web/v1/admin/users` | Admin. JSON `{"owner", "quotaBytes": n}`, null for no limit | `200` with the same, `404 unknown_owner` for someone not seen |
-| `GET /api/web/v1/admin/status` | Admin | `200 {"postgres":{"ok","latencyMs"},"s3":{"ok","latencyMs"},"storage":{"live","trash","unreferenced","uploads","total"}}`; `storage` is null while Postgres is down |
+| `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","services","firstSeenAt","lastSeenAt"}]}`; `services` is null for a user on the default (#145) |
+| `PUT /api/web/v1/admin/users` | Admin. JSON `{"owner", "quotaBytes"?: n, "services"?: [...]}`, at least one of them: `quotaBytes` null for no limit, `services` a list of `sync`, `llm`, `asr`, `decision`, or null for the default (#145) | `200` with the same, `400 invalid_body` for an unknown service, `404 unknown_owner` for someone not seen |
+| `GET /api/web/v1/admin/status` | Admin | `200 {"postgres":{"ok","latencyMs"},"s3":{"ok","latencyMs"},"authzProxy","llm","asr","decision","storage":{"live","trash","unreferenced","uploads","total"}}`: `authzProxy` is `{"ok","latencyMs"}` in that mode, each upstream `{"ok","latencyMs","model"}`, and either null when not configured (#145); `storage` is null while Postgres is down |
 | `GET /api/web/v1/admin/cleanup` | Admin | `200 {"mode","run":{"running","last"},"preview":{"running","last"}}`: each `last` has `trigger`, `startedAt`, `finishedAt`, `report` and `failed`, never the error text |
 | `POST /api/web/v1/admin/cleanup` | Admin. JSON `{"dryRun": bool}` | `202 {"id"}`: started in the background; `409 cleanup_running` while one of the same kind is going |
 
@@ -576,6 +617,7 @@ exits with the list of problems if any is missing or invalid.
 | `ASR_UPSTREAM_URL`, `ASR_UPSTREAM_KEY`, `ASR_MODEL` | no | The same for an OpenAI-compatible transcription server, e.g. `http://parakeet-asr.asr:8000/v1`. A key or model without its URL is refused at startup. |
 | `DECISION_UPSTREAM_URL`, `DECISION_UPSTREAM_KEY`, `DECISION_MODEL` | no | A laya decision service for talking-point checks (#101), e.g. `http://laya.llama:8080`: the base `/v1/systemone` hangs off, laya-serve 0.4.22 or later. `DECISION_MODEL` is the laya model (`english` or `multilingual`); blank lets laya pick by language. Offered to devices, and used by the web app's *Check points* when `DECISION_FOR_TALKING_POINTS` is on. A key or model without its URL is refused at startup. |
 | `DECISION_FOR_TALKING_POINTS` | no | `on` or `off` (default `off`, #136): whether the web app's *Check points* uses the decision service rather than the language model. Experimental: on a real recording, laya as shipped ticked most points before they came up. Devices choose for themselves in Settings, also off by default. |
+| `DEFAULT_USER_SERVICES` | no | The services of a user an admin hasn't chosen any for (#145): a comma-separated list of `sync`, `llm`, `asr` and `decision`, or `none`. Blank gives every service. An unknown name is refused at startup. See *Services per user*. |
 | `CLEANUP` | no | The daily storage clean-up: `on` (default), `dry-run` (report only) or `off`. An admin's *Run clean-up* is not affected. See *Trash and clean-up*. |
 | `PORT` | no | Default `3000`. |
 

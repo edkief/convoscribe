@@ -3,5 +3,5 @@ import { authed } from '@/lib/http';
 
 // The server's decision service upstream (#101): one laya decision.
 export async function POST(req: Request) {
-  return authed(req, () => proxyToUpstream(req, 'decision', '/v1/systemone'));
+  return authed(req, 'decision', () => proxyToUpstream(req, 'decision', '/v1/systemone'));
 }

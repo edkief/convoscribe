@@ -310,13 +310,14 @@ class SyncEngine(
 
         /**
          * Record [e]; true when every other call would fail the same way
-         * (no network, or a key the server refuses), so the run stops.
+         * (no network, a key the server refuses, or an account it doesn't
+         * give sync, issue #145), so the run stops.
          */
         private fun fail(e: SyncException): Boolean {
             Log.w(TAG, "sync: ${e.message}", e)
             waiting++
             error = e.message
-            offline = e.offline || e.code == 401
+            offline = e.offline || e.code == 401 || e.code == 403
             return offline
         }
 

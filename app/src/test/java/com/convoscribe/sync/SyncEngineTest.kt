@@ -289,6 +289,18 @@ class SyncEngineTest {
     }
 
     @Test
+    fun anAccountWithoutSyncIsNamedInTheError() = runTest {
+        finishedSession("Refused", audio = ByteArray(1024) { 1 })
+        fake.intercept = {
+            MockResponse().setResponseCode(403).setBody("{\"error\":\"service_not_allowed\",\"service\":\"sync\"}")
+        }
+
+        assertEquals(SyncOutcome.RETRY, engine.run())
+
+        assertTrue(status.status.value.lastError!!.contains("doesn't include sync; ask its admin"))
+    }
+
+    @Test
     fun aFullQuotaIsNamedInTheErrorAndOtherSessionsStillSync() = runTest {
         val refused = finishedSession("Long", audio = ByteArray(1024) { 1 })
         val fits = finishedSession("Short", audio = ByteArray(1024) { 2 })

@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { formatDateTime, formatLength } from '@/lib/format';
 import { listTrash } from '@/lib/trash';
 import { TRASH_DAYS } from '@/lib/documents';
-import { pageLocale, requireIdentity } from '@/lib/web-identity';
+import { pageLocale, requireService } from '@/lib/web-identity';
 import { IconClock, IconTrash } from '../../_components/Icons';
 import { EmptyTrash, RestoreSession } from '../../_components/TrashActions';
 
@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: 'Trash' };
  * 30 days, each restorable to the library and to every device.
  */
 export default async function TrashPage() {
-  const { owner } = await requireIdentity();
+  const { owner } = await requireService('sync');
   const { zone, locale } = await pageLocale();
   const items = await listTrash(owner);
   const date = (ms: number) => formatDateTime(ms, zone, locale);

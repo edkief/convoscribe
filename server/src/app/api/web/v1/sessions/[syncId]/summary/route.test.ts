@@ -6,6 +6,7 @@ import { getDocumentMeta, readManifest } from '@/lib/documents';
 import { resetLlmClient } from '@/lib/llm-client';
 import { TITLE_SYSTEM } from '@/lib/assist-prompt';
 import { PART_NOTES_SYSTEM } from '@/lib/summary-prompt';
+import { setServices } from '@/lib/access';
 import { stubServerEnv } from '@/test/env';
 import { ctx, request, setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest } from '@/test/sessions';
@@ -246,6 +247,10 @@ describe('POST /api/web/v1/sessions/<syncId>/summary (#117)', () => {
     expect((await summarise('s1', { baseRevision: pushed.revision }, { ...ORIGIN, authorization: 'Bearer wrong' })).status).toBe(401);
     stubServerEnv();
     expect(await status(await summarise('s1', { baseRevision: pushed.revision }))).toEqual([404, 'not_offered']);
+    // A user not given the language model (#145).
+    stubServerEnv({ LLM_UPSTREAM_URL: `${base}/v1`, LLM_MODEL: 'm' });
+    await setServices(OWNER, ['sync']);
+    expect(await status(await summarise('s1', { baseRevision: pushed.revision }))).toEqual([403, 'service_not_allowed']);
     expect(calls).toEqual([]);
   });
 });

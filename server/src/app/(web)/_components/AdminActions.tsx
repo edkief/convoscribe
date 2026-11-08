@@ -1,10 +1,89 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { SERVICE_LABELS } from '@/lib/service-labels';
+import { IconChecklist, IconMic, IconSparkle, IconSync } from './Icons';
 import { ConfirmButton, send } from './TrashActions';
 
 const GB = 1_000_000_000;
+
+type Service = keyof typeof SERVICE_LABELS;
+const SERVICE_SHORT: Record<Service, string> = { sync: 'Sync', llm: 'Model', asr: 'Transcription', decision: 'Decision' };
+const SERVICES = Object.keys(SERVICE_LABELS) as Service[];
+
+const SERVICE_ICONS: Record<Service, (p: { size?: number }) => ReactNode> = {
+  sync: IconSync,
+  llm: IconSparkle,
+  asr: IconMic,
+  decision: IconChecklist,
+};
+
+/**
+ * What a user may use (#145): a pill per service, saved as soon as it is
+ * switched, and *Use default* to go back to `DEFAULT_USER_SERVICES`. A
+ * service the server isn't set up with shows dashed, and can still be given
+ * for when it is. Keyed by what is stored, so a refresh shows it.
+ */
+export function ServicesEditor(props: {
+  owner: string;
+  services: Service[] | null;
+  defaults: Service[];
+  offered: Record<Service, boolean>;
+}) {
+  const { owner, services, defaults, offered } = props;
+  const router = useRouter();
+  const [chosen, setChosen] = useState<Service[]>(services ?? defaults);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async (value: Service[] | null) => {
+    const before = chosen;
+    setChosen(value ?? defaults);
+    setBusy(true);
+    const message = await send('/api/web/v1/admin/users', 'PUT', { owner, services: value }, {});
+    setBusy(false);
+    setError(message);
+    if (message) setChosen(before);
+    else router.refresh();
+  };
+  return (
+    <div className="services" role="group" aria-label={`Services of ${owner}`}>
+      {SERVICES.map((service) => {
+        const on = chosen.includes(service);
+        const Icon = SERVICE_ICONS[service];
+        const label = SERVICE_LABELS[service];
+        return (
+          <button
+            key={service}
+            type="button"
+            className={`service-pill${on ? ' on' : ''}${offered[service] ? '' : ' not-offered'}`}
+            aria-pressed={on}
+            disabled={busy}
+            title={`${label}: ${on ? 'given' : 'not given'}${offered[service] ? '' : ' (not set up on this server)'}`}
+            onClick={() => void save(SERVICES.filter((s) => (s === service ? !on : chosen.includes(s))))}
+          >
+            <Icon size={14} />
+            {SERVICE_SHORT[service]}
+          </button>
+        );
+      })}
+      {services === null ? (
+        <span className="services-default" title="DEFAULT_USER_SERVICES">
+          Default
+        </span>
+      ) : (
+        <button type="button" className="link-button services-reset" disabled={busy} onClick={() => void save(null)}>
+          Use default
+        </button>
+      )}
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
+  );
+}
 
 /** A user's quota, in GB as storage is sold; empty is unlimited (#82). */
 export function QuotaEditor({ owner, quotaBytes }: { owner: string; quotaBytes: number | null }) {

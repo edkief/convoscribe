@@ -27,7 +27,7 @@ async function recording(owner: string, syncId: string, clean: boolean) {
  * `?clean=1` is the cleaned recording, `?download=1` makes it a download.
  */
 export async function GET(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const query = new URL(req.url).searchParams;
     const clean = query.get('clean') === '1';

@@ -292,7 +292,10 @@ brings them to your other devices.
   user's session count, storage and last activity, never their titles,
   transcripts or audio, and can set a storage quota: over it, new
   recordings stop uploading and Settings says the quota was reached,
-  while edits and deletes still sync (#82). **Remove from this device** (in a session's menu) frees space here and keeps
+  while edits and deletes still sync (#82). The server's admin can also
+  choose what each account may use (#145): without sync, Settings says
+  the account doesn't include it, and a language model, transcription or
+  decision service the account isn't given isn't offered to the app. **Remove from this device** (in a session's menu) frees space here and keeps
   it on the server, where it shows greyed as *On server* in the list
   until you tap *Download*. Recordings move in parts of about 8 MB, so
   an interrupted upload or download resumes where it stopped and never

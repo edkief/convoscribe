@@ -4,7 +4,7 @@ import { dayLabel, formatLength, formatTime } from '@/lib/format';
 import { decodeCursor, encodeCursor } from '@/lib/session-index';
 import { searchSessions, type LineMatch, type SearchMatch } from '@/lib/session-search';
 import { timestamp } from '@/lib/transcript-export';
-import { pageLocale, requireIdentity } from '@/lib/web-identity';
+import { pageLocale, requireService } from '@/lib/web-identity';
 import { Highlighted } from '../../_components/Highlighted';
 import { IconClock, IconSearch } from '../../_components/Icons';
 
@@ -113,7 +113,7 @@ function Result({ session, day, time }: { session: SearchMatch; day: string; tim
  * Postgres.
  */
 export default async function SearchPage({ searchParams }: PageProps<'/search'>) {
-  const { owner } = await requireIdentity();
+  const { owner } = await requireService('sync');
   const { zone, locale } = await pageLocale();
   const params = await searchParams;
   const q = one(params.q)?.trim() ?? '';

@@ -5,7 +5,7 @@ const MAX_LIMIT = 500;
 
 // Documents written after `since` (a `seq`), oldest first; page with `next` while `more`.
 export async function GET(req: Request) {
-  return authed(req, async (owner) => {
+  return authed(req, 'sync', async (owner) => {
     const url = new URL(req.url);
     const since = Number(url.searchParams.get('since') ?? 0);
     const limit = Number(url.searchParams.get('limit') ?? 100);

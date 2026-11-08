@@ -1,3 +1,4 @@
+import { notAllowed, servicesOf } from '@/lib/access';
 import { upstreamOf } from '@/lib/ai-proxy';
 import { applyTicks, checkPoints, checkPointsByDecision, openPoints, promptLines, settledPoints } from '@/lib/assist';
 import { decide, talkingPointsByDecision } from '@/lib/decision-client';
@@ -19,7 +20,8 @@ type Event = { step: { part: number; parts: number } } | { done: true; revision:
  * `TalkingPointChecker` does while recording, asking it for little reasoning
  * (#136). When the server has a decision service (#101) and
  * `DECISION_FOR_TALKING_POINTS` is on, that reads it instead, a line at a
- * time, in batches. Points ticked or unticked by hand are neither sent nor
+ * time, in batches. Either needs the user to have been given it (#145).
+ * Points ticked or unticked by hand are neither sent nor
  * changed. The JSON body is `{ "baseRevision": n }`.
  * A request that can't start is a JSON error; once started, the answer is
  * NDJSON: `step` before each part of a long transcript, then `done` with the
@@ -27,11 +29,14 @@ type Event = { step: { part: number; parts: number } } | { done: true; revision:
  * `error`. Closing the request saves nothing.
  */
 export async function POST(req: Request, ctx: Ctx) {
-  return webAuthed(req, async ({ owner }) => {
+  return webAuthed(req, 'sync', async ({ owner }) => {
     const syncId = syncIdParam((await ctx.params).syncId);
     const baseRevision = baseRevisionOf(await jsonBody(req, 4096));
-    const byDecision = talkingPointsByDecision();
+    // The decision service reads it when switched on and the user may use it (#145); else the language model.
+    const services = await servicesOf(owner);
+    const byDecision = talkingPointsByDecision() && services.has('decision');
     if (!byDecision && !upstreamOf('llm')) throw new HttpError(404, 'not_offered');
+    if (!byDecision && !services.has('llm')) throw notAllowed(talkingPointsByDecision() ? 'decision' : 'llm');
 
     const editable = await loadForEdit(owner, syncId, baseRevision);
     const points = openPoints(editable.manifest);
