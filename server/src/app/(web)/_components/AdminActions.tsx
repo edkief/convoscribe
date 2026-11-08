@@ -1,19 +1,29 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { SERVICE_LABELS } from '@/lib/service-labels';
+import { IconChecklist, IconMic, IconSparkle, IconSync } from './Icons';
 import { ConfirmButton, send } from './TrashActions';
 
 const GB = 1_000_000_000;
 
 type Service = keyof typeof SERVICE_LABELS;
+const SERVICE_SHORT: Record<Service, string> = { sync: 'Sync', llm: 'Model', asr: 'Transcription', decision: 'Decision' };
 const SERVICES = Object.keys(SERVICE_LABELS) as Service[];
 
+const SERVICE_ICONS: Record<Service, (p: { size?: number }) => ReactNode> = {
+  sync: IconSync,
+  llm: IconSparkle,
+  asr: IconMic,
+  decision: IconChecklist,
+};
+
 /**
- * What a user may use (#145): a box per service, *Save* to give them exactly
- * those, and *Use default* to go back to `DEFAULT_USER_SERVICES`. A service
- * the server isn't set up with can still be given, for when it is.
+ * What a user may use (#145): a pill per service, saved as soon as it is
+ * switched, and *Use default* to go back to `DEFAULT_USER_SERVICES`. A
+ * service the server isn't set up with shows dashed, and can still be given
+ * for when it is. Keyed by what is stored, so a refresh shows it.
  */
 export function ServicesEditor(props: {
   owner: string;
@@ -26,64 +36,52 @@ export function ServicesEditor(props: {
   const [chosen, setChosen] = useState<Service[]>(services ?? defaults);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
   const save = async (value: Service[] | null) => {
-    setSaved(false);
+    const before = chosen;
+    setChosen(value ?? defaults);
     setBusy(true);
     const message = await send('/api/web/v1/admin/users', 'PUT', { owner, services: value }, {});
     setBusy(false);
     setError(message);
-    setSaved(!message);
-    if (!message) {
-      if (value === null) setChosen(defaults);
-      router.refresh();
-    }
+    if (message) setChosen(before);
+    else router.refresh();
   };
   return (
-    <form
-      className="services-form"
-      onSubmit={(event: FormEvent) => {
-        event.preventDefault();
-        void save(chosen);
-      }}
-    >
-      <fieldset className="service-boxes">
-        <legend className="visually-hidden">Services of {owner}</legend>
-        {SERVICES.map((service) => (
-          <label key={service} title={offered[service] ? undefined : 'This server is not set up with it'}>
-            <input
-              type="checkbox"
-              checked={chosen.includes(service)}
-              onChange={(event) => {
-                setSaved(false);
-                setChosen((current) =>
-                  SERVICES.filter((s) => (s === service ? event.target.checked : current.includes(s))),
-                );
-              }}
-            />
-            <span className={offered[service] ? undefined : 'not-offered'}>{SERVICE_LABELS[service]}</span>
-          </label>
-        ))}
-      </fieldset>
-      <div className="services-actions">
-        <button type="submit" className="button" disabled={busy}>
-          Save
-        </button>
-        {services === null ? (
-          <span className="services-default">Default</span>
-        ) : (
-          <button type="button" className="link-button" disabled={busy} onClick={() => void save(null)}>
-            Use default
+    <div className="services" role="group" aria-label={`Services of ${owner}`}>
+      {SERVICES.map((service) => {
+        const on = chosen.includes(service);
+        const Icon = SERVICE_ICONS[service];
+        const label = SERVICE_LABELS[service];
+        return (
+          <button
+            key={service}
+            type="button"
+            className={`service-pill${on ? ' on' : ''}${offered[service] ? '' : ' not-offered'}`}
+            aria-pressed={on}
+            disabled={busy}
+            title={`${label}: ${on ? 'given' : 'not given'}${offered[service] ? '' : ' (not set up on this server)'}`}
+            onClick={() => void save(SERVICES.filter((s) => (s === service ? !on : chosen.includes(s))))}
+          >
+            <Icon size={14} />
+            {SERVICE_SHORT[service]}
           </button>
-        )}
-        {saved && <span className="saved">Saved</span>}
-        {error && (
-          <span className="inline-error" role="alert">
-            {error}
-          </span>
-        )}
-      </div>
-    </form>
+        );
+      })}
+      {services === null ? (
+        <span className="services-default" title="DEFAULT_USER_SERVICES">
+          Default
+        </span>
+      ) : (
+        <button type="button" className="link-button services-reset" disabled={busy} onClick={() => void save(null)}>
+          Use default
+        </button>
+      )}
+      {error && (
+        <span className="inline-error" role="alert">
+          {error}
+        </span>
+      )}
+    </div>
   );
 }
 

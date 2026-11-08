@@ -32,9 +32,9 @@ export default async function AdminUsersPage() {
           <p className="page-intro">
             Everyone who has used this server. Stored bytes include the trash and unfinished uploads. Over quota, a
             user’s devices can’t upload new recordings, but edits and deletes still work. A user may use only the
-            services ticked: without sync, their devices can’t sync and the web app shows them nothing. Until you choose,
-            a user has the default ({defaultText}; <code>DEFAULT_USER_SERVICES</code>). Greyed services are not set up
-            on this server.
+            services lit up, and a tap switches one; without sync, their devices can’t sync and the web app shows them
+            nothing. Until you choose, a user has the default ({defaultText}; <code>DEFAULT_USER_SERVICES</code>).
+            Dashed services are not set up on this server.
           </p>
         </div>
       </header>
@@ -73,7 +73,9 @@ export default async function AdminUsersPage() {
                   <QuotaEditor owner={user.owner} quotaBytes={user.quotaBytes} />
                 </td>
                 <td>
-                  <ServicesEditor owner={user.owner} services={user.services} defaults={defaults} offered={offered} />
+                  <ServicesEditor
+                    key={user.services?.join(',') ?? 'default'}
+                    owner={user.owner} services={user.services} defaults={defaults} offered={offered} />
                 </td>
               </tr>
             ))}

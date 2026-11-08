@@ -59,6 +59,13 @@ export const IconDatabase = (p: IconProps) => (
   </Icon>
 );
 
+export const IconSync = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M19.5 12a7.5 7.5 0 0 1-13 5.1M4.5 12a7.5 7.5 0 0 1 13-5.1" />
+    <path d="M17.5 3v4h-4M6.5 21v-4h4" />
+  </Icon>
+);
+
 export const IconLogOut = (p: IconProps) => (
   <Icon {...p}>
     <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 16l-4-4 4-4M6 12h10" />
