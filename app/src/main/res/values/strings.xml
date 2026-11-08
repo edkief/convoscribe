@@ -897,7 +897,7 @@
     <string name="server_services_default_model">the server\'s default model</string>
     <string name="server_services_confirm_title">Use this server\'s services?</string>
     <string name="server_services_confirm_provides">%1$s provides:</string>
-    <string name="server_services_confirm_llm">A language model (%1$s). Transcripts are sent to it for summaries, questions, conversation names and mark notes, including automatically after a recording, and while recording to tick talking points.</string>
+    <string name="server_services_confirm_llm">A language model (%1$s). Transcripts are sent to it for summaries, questions, conversation names and mark notes, including automatically after a recording, and while recording to tick talking points and, with live assist on, to answer questions.</string>
     <string name="server_services_confirm_asr">Transcription (%1$s). Recordings are uploaded to it when you transcribe again on the server. Improve recordings on the server stays off until you turn it on.</string>
     <string name="server_services_confirm_none">%1$s doesn\'t provide a language model, transcription or decision model, so there is nothing to turn on. Sync sessions works as before.</string>
     <string name="server_services_none_action">OK</string>

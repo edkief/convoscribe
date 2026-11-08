@@ -2863,6 +2863,63 @@ step 5, an install from before #136 with a decision service set up.
 - Step 5: *Check talking points with the decision model (experimental)* is off,
   and the language model ticks points. Turning it on sticks across restarts.
 
+## 64. Live assist (issue #50)
+
+Needs a language model you can stop and start (your own endpoint is easiest),
+two or three past sessions where a decision was said out loud (e.g. "we set the
+launch to March 3"), the Boox (e-ink, CPU engine) and a phone. For step 7, the
+NPU engine (Nemotron) on the phone.
+
+**Steps**
+
+1. Settings → AI & summaries → *Live assist*: check *Live assist on by default*
+   is off. With no language model set up, start a recording.
+2. Set up the language model and start a recording. Turn on *Live assist*.
+3. Ask aloud a question a past session answers ("What did we agree last time on
+   the launch date?"), then one this recording answered a few minutes earlier,
+   then a rhetorical one ("That went well, right?"), a statement and small talk
+   ("How are you?").
+4. Ask two questions within 10 s of each other. Then *Pin* one card and
+   *Dismiss* another. Stop, and open the session.
+5. Record again with live assist on, and stop the language model's server (or
+   turn off Wi-Fi to a home server) mid-recording. Ask a question, keep talking
+   for a minute, then start the server again and ask another.
+6. With the language model stopped, turn *Live assist* off and on again.
+7. On each device and engine (Boox CPU English, CPU French, phone NPU), say five
+   questions and note in logcat (`live assist`) or on screen whether the
+   transcript lines end in `?`.
+8. With the floating control on, leave ConvoScribe while recording with an
+   answer showing, and switch the control between its three shapes.
+9. With the semantic search model installed, turn on *Match past sessions by
+   meaning* and ask a question in other words than the past session used.
+10. Turn on *Live assist on by default*; start a recording; back up and
+    restore on another device.
+
+**Expected**
+
+- Step 1: the Record screen shows no *Live assist* switch.
+- Step 2: the switch says recent speech is sent, then *Checking the language
+  model…* for at most 3 s, then *Listening for questions.*
+- Step 3: a card appears for the first two (answer in at most two sentences
+  with the session and time it comes from), only once complete; on the Boox the
+  screen refreshes once per card. Nothing appears for the others.
+- Step 4: the second question gets no card (one every 20 s at most). The pinned
+  card is a mark at the time of the question with `Q: …` / `A: …` as its note,
+  in the transcript and Marks; the dismissed one and any other card are gone.
+- Step 5: recording and the live transcript never stop or slow down. After the
+  failed question the card says *Paused: the language model stopped
+  answering…*; the question after the restart clears it and gets a card.
+- Step 6: *Endpoint not reachable. Live assist is off.* within 3 s; the switch
+  is off.
+- Step 7: note which engines write `?`. Questions without it are still
+  answered when they start with a question word or inverted verb.
+- Step 8: the expanded shape shows *1 answer*, and tapping it opens the Record
+  screen. The minimal and standard shapes look exactly as without live assist
+  and don't redraw on the Boox when an answer arrives.
+- Step 9: the past session is found and cited. Transcription keeps up.
+- Step 10: the recording starts with live assist on. The restored device has
+  *Live assist on by default* on and *Match past sessions by meaning* off.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)
