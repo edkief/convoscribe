@@ -39,7 +39,14 @@ sealed interface RetranscribeState {
         val progress: Float,
         val cleaning: Boolean = false,
         val onServer: Boolean = false
-    ) : RetranscribeState
+    ) : RetranscribeState {
+        /**
+         * The phone does the work: it transcribes, or cleans the audio
+         * before the server transcribes it. Starting a recording stops
+         * such a run (issue #123); one on the server carries on.
+         */
+        val onDevice: Boolean get() = cleaning || !onServer
+    }
 
     /** The last run for [sessionId] failed; the previous transcript was kept. */
     data class Failed(val sessionId: Long, val message: String) : RetranscribeState
@@ -90,6 +97,9 @@ class RetranscribeUseCase(
     val state: StateFlow<RetranscribeState> = _state.asStateFlow()
 
     val isRunning: Boolean get() = _state.value is RetranscribeState.Running
+
+    /** A run is working on the phone ([RetranscribeState.Running.onDevice]). */
+    val runsOnDevice: Boolean get() = (_state.value as? RetranscribeState.Running)?.onDevice == true
 
     /**
      * Re-transcribe [sessionId] in [language], cleaning its audio
@@ -237,6 +247,9 @@ class RetranscribeUseCase(
         val report = { progress: Float ->
             _state.value = RetranscribeState.Running(sessionId, from + progress * (1f - from), onServer = onServer)
         }
+        // Cleaning (on the phone) is over: say so before the first
+        // progress report, which a server may be slow to send (issue #123).
+        report(0f)
         if (onServer) return server!!.transcribe(file, language, report)
         return withContext(asrDispatcher) {
             transcriberFactory.create(language).use { transcriber ->

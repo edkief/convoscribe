@@ -43,7 +43,10 @@ import com.convoscribe.llm.SummaryTemplates
  *
  * [speakerIdMode] is a [SpeakerIdMode.key] (`"auto"`, `"charging"` or
  * `"manual"`): when speakers are identified after a transcript is done
- * (issue #11).
+ * (issue #11). [speakerIdWhileRecording] lets them be identified while a
+ * recording is open; off, a run gives way to the recording and is picked
+ * up once it ends (issue #123). Like the ASR engine, it depends on the
+ * phone, so backups leave it out.
  *
  * [semanticIndexMode] is a [SemanticIndexMode.key] (`"charging"` or
  * `"anytime"`): when sessions are indexed for semantic search (issue #65).
@@ -161,6 +164,7 @@ data class AppSettings(
     val clusterThreshold: Float = SettingsRepository.DEFAULT_CLUSTER_THRESHOLD,
     val speakerMatchThreshold: Float = 0.5f,
     val speakerIdMode: String = SpeakerIdMode.AUTO.key,
+    val speakerIdWhileRecording: Boolean = true,
     val semanticIndexMode: String = SemanticIndexMode.CHARGING.key,
     val diarizationEmbedding: String = DEFAULT_DIARIZATION_EMBEDDING,
     val diarizationStepSeconds: Float = DEFAULT_DIARIZATION_STEP_SECONDS,

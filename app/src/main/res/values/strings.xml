@@ -159,7 +159,7 @@
     <string name="record_live_paused">Paused. Nothing is recorded until you resume.</string>
     <string name="record_live_listening">Listening… speech appears here as it is recognised.</string>
     <string name="record_live_idle">The transcript appears here once you start.</string>
-    <string name="record_busy_retranscribing">A session is being re-transcribed. You can record once it has finished.</string>
+    <string name="record_notice_stops_retranscription">A session is being re-transcribed on this phone. Recording stops it; the session keeps its current transcript, and you can re-transcribe it again later.</string>
     <string name="conversation_language_label">Language</string>
     <string name="conversation_language_en">English</string>
     <string name="conversation_language_fr">Français</string>
@@ -201,7 +201,6 @@
     <string name="import_error_no_audio_track">It has no audio track.</string>
     <string name="import_error_unsupported">Its audio format isn\'t supported on this device.</string>
     <string name="import_error_empty">It contains no audio.</string>
-    <string name="record_busy_importing">An audio file is being imported. You can record once it has finished.</string>
     <string name="home_more_options">More options</string>
     <string name="home_session_more">More options for %1$s</string>
     <plurals name="home_speaker_count">
@@ -409,6 +408,8 @@
     <string name="settings_speakers_id_mode_charging">Charging</string>
     <string name="settings_speakers_id_mode_manual">On demand</string>
     <string name="settings_speakers_id_mode_help">Identifying speakers keeps the processor busy for a while and uses some battery. Auto: as soon as the transcript is done. Charging: at once if plugged in, otherwise the next time you charge, even with ConvoScribe closed. On demand: only when you tap Identify speakers now in a session.</string>
+    <string name="settings_speakers_while_recording_label">Identify speakers while recording</string>
+    <string name="settings_speakers_while_recording_help">On: an earlier session\'s speakers go on being identified while you record. Off: that stops when you start recording and picks up once you stop. Turn it off if the live transcript lags or the phone gets hot while recording.</string>
     <string name="settings_speakers_automatic">Automatic</string>
     <string name="settings_speakers_count">%1$d</string>
     <string name="settings_speakers_threshold_label">Clustering threshold</string>

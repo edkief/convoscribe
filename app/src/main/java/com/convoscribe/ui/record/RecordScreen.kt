@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -66,7 +67,6 @@ import com.convoscribe.models.ModelCatalog
 import com.convoscribe.overlay.OverlayPermission
 import com.convoscribe.overlay.OverlayPermissionDialog
 import com.convoscribe.recording.ConversationOptions
-import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
 import com.convoscribe.service.RecordingService
@@ -159,7 +159,6 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
     val pointChecksFailing by vm.pointChecksFailing.collectAsStateWithLifecycle()
     val pointsOpenFirst by vm.pointsOpenFirst.collectAsStateWithLifecycle()
     val retranscribeState by container.retranscribeUseCase.state.collectAsStateWithLifecycle()
-    val importState by container.importAudioUseCase.state.collectAsStateWithLifecycle()
     // A continued session keeps its own options; only a new one sends them.
     val startOptions = options.takeIf { resumeSessionId == null }
 
@@ -237,11 +236,7 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
         finalLines = state.finalLines,
         partialText = state.partialText,
         error = state.error,
-        busyMessage = when {
-            retranscribeState is RetranscribeState.Running -> stringResource(R.string.record_busy_retranscribing)
-            importState is ImportState.Running -> stringResource(R.string.record_busy_importing)
-            else -> null
-        },
+        startNotice = startNoticeRes(retranscribeState)?.let { stringResource(it) },
         micDeniedMessage = micDeniedMessage,
         continuing = resumeSessionId != null,
         inputLevel = state.inputLevel,
@@ -360,8 +355,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
  *   the runtime permission.
  * @param continuing `true` when appending to an existing session;
  *   changes the title and hides the new-conversation options.
- * @param busyMessage why Start is unavailable (another job holds the
- *   recorder), or `null`.
+ * @param startNotice what Start will do to work still running for an
+ *   earlier session ([startNoticeRes]), or `null`. Start stays available.
  * @param options the new conversation's options, shown while idle
  *   (see [ConversationOptionsForm]).
  */
@@ -373,7 +368,7 @@ internal fun RecordBody(
     finalLines: List<String>,
     partialText: String,
     error: String?,
-    busyMessage: String? = null,
+    startNotice: String? = null,
     micDeniedMessage: String?,
     continuing: Boolean = false,
     options: ConversationOptions? = null,
@@ -486,15 +481,15 @@ internal fun RecordBody(
                             .widthIn(max = AppTheme.sizes.contentMaxWidth)
                     )
                 }
-                if (busyMessage != null && phase == RecordingPhase.IDLE) {
-                    NoticeText(text = busyMessage, modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth))
+                if (startNotice != null && phase == RecordingPhase.IDLE) {
+                    NoticeText(text = startNotice, modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth))
                 }
                 micDeniedMessage?.let { ErrorBanner(message = it) }
                 error?.let { ErrorBanner(message = it) }
             }
             RecordControl(
                 phase = phase,
-                canStart = phase == RecordingPhase.IDLE && busyMessage == null,
+                canStart = phase == RecordingPhase.IDLE,
                 continuing = continuing,
                 onStart = onStart,
                 onStop = onStop,
@@ -777,3 +772,18 @@ private fun requiredPermissions(): Array<String> {
     }
     return perms.toTypedArray()
 }
+
+/**
+ * What the Record screen says above Start about an earlier session's
+ * work (issue #123), or `null`. Start is never held back by it: a
+ * re-transcription on the phone is stopped when recording starts, and
+ * the session keeps its transcript. Work on the transcription server,
+ * imports and speaker identification carry on, so they need no notice.
+ */
+@StringRes
+internal fun startNoticeRes(retranscribe: RetranscribeState): Int? =
+    if (retranscribe is RetranscribeState.Running && retranscribe.onDevice) {
+        R.string.record_notice_stops_retranscription
+    } else {
+        null
+    }

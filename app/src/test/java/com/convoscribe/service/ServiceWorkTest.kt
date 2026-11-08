@@ -1,6 +1,7 @@
 package com.convoscribe.service
 
 import com.convoscribe.recording.RecordingPhase
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -103,5 +104,49 @@ class ServiceWorkTest {
         // Once that identification ends, the paused session gives it back.
         assertFalse(paused.copy(processing = 0).needsWakeLock)
         assertFalse(paused.copy(processing = 0).idle)
+    }
+
+    @Test
+    fun startingWhileAReTranscriptionStops_holdsTheService() {
+        // The re-transcription has just been cancelled and has let go of
+        // retranscribing; the recording has not opened yet (issue #123).
+        val starting = nothing.copy(starting = true)
+        assertFalse(starting.idle)
+        assertTrue(starting.needsWakeLock)
+        assertFalse(starting.acceptsJob)
+        assertEquals(ServiceForeground.RECORDING, starting.foreground)
+    }
+
+    @Test
+    fun anOpenSession_alwaysShowsTheRecordingNotification() {
+        val everything = nothing.copy(retranscribing = true, importing = true, processing = 2)
+        for (phase in RecordingPhase.entries - RecordingPhase.IDLE) {
+            assertEquals("$phase", ServiceForeground.RECORDING, everything.copy(phase = phase).foreground)
+        }
+    }
+
+    @Test
+    fun withoutASession_reTranscriptionThenImportThenSpeakersShow() {
+        assertEquals(
+            ServiceForeground.RETRANSCRIBING,
+            nothing.copy(retranscribing = true, importing = true, processing = 1).foreground
+        )
+        assertEquals(ServiceForeground.IMPORTING, nothing.copy(importing = true, processing = 1).foreground)
+        assertEquals(ServiceForeground.IDENTIFYING, nothing.copy(processing = 1).foreground)
+        assertEquals(ServiceForeground.NONE, nothing.foreground)
+    }
+
+    @Test
+    fun aRecordingStartedDuringAServerTranscript_keepsTheServiceWhenEitherEnds() {
+        val both = nothing.copy(phase = RecordingPhase.RECORDING, retranscribing = true, processing = 1)
+        assertFalse(both.idle)
+        // The server transcript and the earlier session's speakers end first.
+        assertFalse(both.copy(retranscribing = false, processing = 0).idle)
+        // Or the recording is stopped first: its own Stop job holds the service.
+        assertFalse(both.copy(phase = RecordingPhase.IDLE, processing = 2).idle)
+        assertEquals(
+            ServiceForeground.RETRANSCRIBING,
+            both.copy(phase = RecordingPhase.IDLE, processing = 2).foreground
+        )
     }
 }

@@ -420,6 +420,9 @@ model show "unknown". New sessions show e.g. `cpu` /
 2. Watch the banner and notification progress; leave the app.
 3. Repeat on another session and tap **Cancel** halfway (banner or
    notification).
+4. Re-transcribe another session on the phone and, halfway, open the
+   Record screen and tap **Start** (issue #123). Record a minute, then
+   stop.
 
 **Expected** — the dialog warns that the summary and questions were
 based on the old transcript. Step 1 replaces the transcript with a
@@ -427,8 +430,12 @@ French one, speakers are identified again, and names you typed are
 kept. Once the new transcript shows, the notification switches to
 *Identifying speakers…* and disappears when that finishes; it never
 stays behind at its last percentage (issue #43). After the cancel in
-step 3 the previous transcript, language and speakers are unchanged. **Start** on the Record screen is
-disabled while a re-transcription runs.
+step 3 the previous transcript, language and speakers are unchanged.
+In step 4 the Record screen says above **Start** that recording stops
+the re-transcription, and Start stays available. The recording starts
+normally, the session that was being re-transcribed keeps its previous
+transcript, language and speakers, and logcat shows no
+`re-transcribed session=` line for it.
 
 ---
 
@@ -522,8 +529,10 @@ adb push talk-44k.wav talk-48k.wav talk.mp3 talk.m4a talk.ogg talk.flac /sdcard/
 - Step 6: a snackbar says the file can't be read / has no audio; no
   session is created.
 - Step 7: the share is refused with *Something is already recording
-  or importing…*; during the import the Record screen's Start is
-  disabled with *An audio file is being imported…*.
+  or importing…*. During the import, **New recording** starts at once
+  (issue #123): the recording notification shows while you record, the
+  import carries on and its notification comes back after **Stop**, and
+  the imported session is complete.
 - Step 8: the app opens setup for the French model; after the
   download it returns to Home and the import starts. Backing out of
   setup instead shows *Importing needs the transcription models…*.
@@ -781,12 +790,22 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
     `diarization engine session=` for the first session, then a few
     minutes more. Stop it.
 15. As step 14 with Settings › *Improve recordings on the server* on:
-    start the new recording as soon as Start is available again (after
-    the server transcript, while speakers are identified).
+    tap **Start** right after **Stop**, while the first session is still
+    being transcribed on the server (issue #123). Keep recording until
+    logcat shows `re-transcribed session=` and then `diarization engine
+    session=` for the first session, then a few minutes more. Stop it.
 16. Record and stop twice in a row, the second stop while the first
-    session is still *Identifying speakers…*.
+    session is still *Identifying speakers…*. With *Improve recordings
+    on the server* on, also stop the second while the first is still
+    being transcribed on the server.
 17. While recording, open another session and tap **Identify speakers
     now**. Keep recording until it finishes.
+18. Settings › Speakers › *Identify speakers while recording* off
+    (issue #123). In **Auto**, record 5+ minutes and stop. While
+    *Identifying speakers…* shows, start a new recording; record a few
+    minutes, open the first session from Recordings, then stop.
+19. Still off: while recording, open another session and tap
+    **Identify speakers now**, then stop the recording.
 
 **Expected**
 
@@ -836,6 +855,26 @@ ConvoScribe` for `diarization deferred`, `speaker job scheduled`,
 - Step 17: the notification stays the recording one (timer, Mark,
   Pause, Stop) while speakers are identified, the recording carries on
   afterwards, and the other session shows its speakers.
+- Step 15, in addition: Start works at once; nothing says a session is being
+  re-transcribed. The notification and the floating control are the
+  recording's throughout: timer, Mark, Pause, Stop, never the server's
+  percentage. The first session ends up with the server transcript
+  (*Session info* shows `server`) and its speakers. If the server was
+  unreachable, it keeps the device transcript instead.
+- Step 16 with the server on: the second session's server transcript starts only after
+  the first one's (logcat: two `re-transcribed session=` lines, one
+  after the other). The notification shows each one's progress in
+  turn, and both sessions end with the server transcript and their
+  speakers.
+- Step 18: when you start, logcat shows `diarization interrupted
+  session=<first> byUser=false forRecording=true` and the CPU drops.
+  The first session shows *Speakers pending* while you record. After
+  **Stop**, `diarization resumed after recording session=<first>`
+  appears, both sessions get their speakers, and nothing is held
+  until the next charge.
+- Step 19: the other session shows *Speakers pending* until you stop.
+  Then `diarization resumed after recording` appears and its speakers
+  are identified.
 
 ## 26. Floating control shapes (issue #21)
 

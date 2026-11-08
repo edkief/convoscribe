@@ -122,6 +122,7 @@ class SettingsRepository(
             putBoolean(KEY_CLUSTER_THRESHOLD_TUNED, true)
             putFloat(KEY_SPEAKER_MATCH_THRESHOLD, next.speakerMatchThreshold)
             putString(KEY_SPEAKER_ID_MODE, next.speakerIdMode)
+            putBoolean(KEY_SPEAKER_ID_WHILE_RECORDING, next.speakerIdWhileRecording)
             putString(KEY_SEMANTIC_INDEX_MODE, next.semanticIndexMode)
             putString(KEY_DIARIZATION_EMBEDDING, next.diarizationEmbedding)
             putFloat(KEY_DIARIZATION_STEP_SECONDS, next.diarizationStepSeconds)
@@ -292,6 +293,7 @@ class SettingsRepository(
             clusterThreshold = loadClusterThreshold(),
             speakerMatchThreshold = prefs.getFloat(KEY_SPEAKER_MATCH_THRESHOLD, 0.5f),
             speakerIdMode = prefs.getString(KEY_SPEAKER_ID_MODE, null) ?: SpeakerIdMode.AUTO.key,
+            speakerIdWhileRecording = prefs.getBoolean(KEY_SPEAKER_ID_WHILE_RECORDING, true),
             semanticIndexMode = SemanticIndexMode.of(prefs.getString(KEY_SEMANTIC_INDEX_MODE, null) ?: "").key,
             diarizationEmbedding = prefs.getString(KEY_DIARIZATION_EMBEDDING, null)
                 ?.takeIf { it in ModelCatalog.diarizationEmbeddings }
@@ -421,6 +423,7 @@ class SettingsRepository(
         const val KEY_CLUSTER_THRESHOLD_TUNED = "clusterThresholdTuned"
         const val KEY_SPEAKER_MATCH_THRESHOLD = "speakerMatchThreshold"
         const val KEY_SPEAKER_ID_MODE = "speakerIdMode"
+        const val KEY_SPEAKER_ID_WHILE_RECORDING = "speakerIdWhileRecording"
         const val KEY_SEMANTIC_INDEX_MODE = "semanticIndexMode"
         const val KEY_DIARIZATION_EMBEDDING = "diarizationEmbedding"
         const val KEY_DIARIZATION_STEP_SECONDS = "diarizationStepSeconds"

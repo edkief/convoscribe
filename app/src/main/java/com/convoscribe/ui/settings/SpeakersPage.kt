@@ -35,6 +35,7 @@ import com.convoscribe.ui.components.NoticeText
 import com.convoscribe.ui.components.PickerField
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.components.SwitchRow
 import com.convoscribe.ui.session.voiceModelName
 import com.convoscribe.ui.theme.AppTheme
 import java.util.Locale
@@ -113,7 +114,8 @@ private fun stepLabel(seconds: Float): String = String.format(Locale.ROOT, "%.1f
 
 /**
  * "Speakers" section: when speakers are identified ([speakerIdMode],
- * issue #11, written immediately), number-of-speakers dropdown (Automatic,
+ * issue #11, written immediately) and whether that may happen during a
+ * recording ([speakerIdWhileRecording], issue #123, written immediately), number-of-speakers dropdown (Automatic,
  * 2..6 — `-1` is the "automatic" sentinel persisted by the
  * repository) and a clustering threshold slider with the value
  * to two decimals and the "Lower = more speakers" helper text.
@@ -134,7 +136,9 @@ internal fun SpeakersSection(
     onThresholdChange: (Float) -> Unit,
     onMatchThresholdChange: (Float) -> Unit,
     onOpenKnownSpeakers: () -> Unit,
-    voiceModel: VoiceModelUi = VoiceModelUi()
+    voiceModel: VoiceModelUi = VoiceModelUi(),
+    speakerIdWhileRecording: Boolean = true,
+    onSpeakerIdWhileRecordingChange: (Boolean) -> Unit = {}
 ) {
     var speakersExpanded by remember { mutableStateOf(false) }
     SectionCard(modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth)) {
@@ -145,6 +149,12 @@ internal fun SpeakersSection(
             onSelect = onSpeakerIdModeChange
         )
         SupportingText(text = stringResource(R.string.settings_speakers_id_mode_help))
+        SwitchRow(
+            label = stringResource(R.string.settings_speakers_while_recording_label),
+            help = stringResource(R.string.settings_speakers_while_recording_help),
+            checked = speakerIdWhileRecording,
+            onCheckedChange = onSpeakerIdWhileRecordingChange
+        )
     }
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),

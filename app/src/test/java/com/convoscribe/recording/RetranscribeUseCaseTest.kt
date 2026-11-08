@@ -414,6 +414,72 @@ class RetranscribeUseCaseTest {
     }
 
     @Test
+    fun runsOnDevice_whileTranscribingOnThePhone() = runTest {
+        val id = englishSession()
+        lateinit var uc: RetranscribeUseCase
+        val seen = mutableListOf<Boolean>()
+        uc = useCase(
+            factory {
+                object : StreamingTranscriber {
+                    override fun accept(samples: FloatArray): List<TranscriptEvent> {
+                        seen += uc.runsOnDevice
+                        return emptyList()
+                    }
+                    override fun finish(): List<TranscriptEvent> = emptyList()
+                    override fun close() = Unit
+                }
+            }
+        )
+        assertFalse(uc.runsOnDevice)
+
+        uc.run(id, "fr")
+
+        assertTrue(seen.isNotEmpty())
+        assertTrue(seen.all { it })
+        assertFalse(uc.runsOnDevice)
+    }
+
+    @Test
+    fun runsOnDevice_whileCleaningOnThePhone_butNotWhileTheServerTranscribes() = runTest {
+        val id = loudSession()
+        lateinit var uc: RetranscribeUseCase
+        val cleaning = mutableListOf<Boolean>()
+        val serving = mutableListOf<Boolean>()
+        val cleaners = object : AudioCleanerFactory {
+            override fun isAvailable() = true
+            override fun create(): StreamingCleaner = object : StreamingCleaner {
+                override fun process(samples: FloatArray): FloatArray {
+                    cleaning += uc.runsOnDevice
+                    return samples
+                }
+                override fun flush() = FloatArray(0)
+                override fun close() = Unit
+            }
+            override fun modelId() = "enh-test"
+        }
+        val server = object : FileRecognizer {
+            override suspend fun transcribe(
+                file: File,
+                language: String,
+                onProgress: (Float) -> Unit
+            ): List<TranscriptEvent.Final> {
+                serving += uc.runsOnDevice
+                onProgress(0.5f)
+                serving += uc.runsOnDevice
+                return listOf(TranscriptEvent.Final("clean", 0, 2_000))
+            }
+            override fun describe() = EngineInfo("server", "m")
+        }
+        uc = useCase(factory { FrenchTranscriber() }, cleaners = cleaners, server = server)
+
+        assertTrue(uc.run(id, "en", clean = true, onServer = true))
+
+        assertTrue(cleaning.isNotEmpty())
+        assertTrue(cleaning.all { it })
+        assertEquals(listOf(false, false), serving)
+    }
+
+    @Test
     fun dominantSpeaker_picksTheMostOverlappingLabelledLine() {
         fun seg(start: Long, end: Long, speaker: Int?) =
             SegmentEntity(sessionId = 1, startMs = start, endMs = end, text = "", speakerIndex = speaker)

@@ -379,7 +379,8 @@ class AppContainer(val context: Context) {
         onPending = { pendingDiarizationScheduler.sync() },
         onDiarized = { markNotesWriter.onDiarized(it) },
         onFinished = { sessionSummariser.onFinished(it) },
-        onCancelled = { pendingDiarizationScheduler.hold() }
+        onCancelled = { pendingDiarizationScheduler.hold() },
+        recordingOpen = { recordingController.state.value.phase != RecordingPhase.IDLE }
     )
 
     /**

@@ -49,6 +49,14 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun speakerIdWhileRecording_defaultOn_andPersists() {
+        val repo = newRepository()
+        assertEquals(true, repo.settings.value.speakerIdWhileRecording)
+        repo.update { it.copy(speakerIdWhileRecording = false) }
+        assertEquals(false, newRepository().settings.value.speakerIdWhileRecording)
+    }
+
+    @Test
     fun updateSettings_autoCheckOnAndPreReleasesOff_andPersist() {
         val repo = newRepository()
         assertEquals(true, repo.settings.value.updateCheckAuto)

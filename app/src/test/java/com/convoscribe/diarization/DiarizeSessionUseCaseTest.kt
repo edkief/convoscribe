@@ -868,7 +868,8 @@ class DiarizeSessionUseCaseTest {
         ),
         charging: Boolean = false,
         pendingCalls: AtomicInteger = AtomicInteger(),
-        cancelledCalls: AtomicInteger = AtomicInteger()
+        cancelledCalls: AtomicInteger = AtomicInteger(),
+        recordingOpen: () -> Boolean = { false }
     ) = DiarizeSessionUseCase(
         repository = repo,
         diarizerFactory = factory,
@@ -876,7 +877,8 @@ class DiarizeSessionUseCaseTest {
         readSamples = { FloatArray(16_000) },
         isCharging = { charging },
         onPending = { pendingCalls.incrementAndGet() },
-        onCancelled = { cancelledCalls.incrementAndGet() }
+        onCancelled = { cancelledCalls.incrementAndGet() },
+        recordingOpen = recordingOpen
     )
 
     /** Automatically (the default) diarizes at once, charging or not (issue #11). */
@@ -1063,6 +1065,179 @@ class DiarizeSessionUseCaseTest {
         assertTrue(useCase.runIfPending(pending))
         assertEquals(SessionStatus.DIARIZED, repo.getSession(pending)!!.status)
         assertEquals(2, factory.created)
+    }
+
+    /** Two speakers for every session after a first run that blocks until it is cancelled. */
+    private class BlockingOnceFactory : DiarizerFactory {
+        val first = BlockingDiarizer()
+        var created = 0
+            private set
+        override fun create(): Diarizer {
+            created += 1
+            return if (created == 1) {
+                first
+            } else {
+                ScriptedDiarizer(listOf(SpeakerTurn(0L, 1000L, 0), SpeakerTurn(1000L, 2000L, 1)))
+            }
+        }
+    }
+
+    /** By default speakers are identified during a recording, as before issue #123. */
+    @Test
+    fun whileRecording_runsByDefault() = runTest {
+        val id = twoLineSession()
+        val useCase = twoSpeakerUseCase(recordingOpen = { true })
+
+        assertFalse(useCase.yieldsToRecording())
+        assertTrue(useCase.runOrDefer(id))
+
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertFalse(useCase.giveWayToRecording())
+    }
+
+    /**
+     * With *Identify speakers while recording* off, a run that would
+     * start during a recording leaves the session pending, without
+     * holding the charging job, and runs once the recording has ended
+     * (issue #123).
+     */
+    @Test
+    fun whileRecording_off_setsTheSessionAside_andResumesAfter() = runTest {
+        settings.update { it.copy(speakerIdWhileRecording = false) }
+        val id = twoLineSession()
+        var recording = true
+        val factory = ScriptedDiarizerFactory(
+            ScriptedDiarizer(listOf(SpeakerTurn(0L, 1000L, 0), SpeakerTurn(1000L, 2000L, 1)))
+        )
+        val cancelled = AtomicInteger()
+        val useCase = twoSpeakerUseCase(factory, cancelledCalls = cancelled, recordingOpen = { recording })
+
+        useCase.runOrDefer(id)
+
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        assertEquals(0, factory.created)
+        assertEquals(0, cancelled.get())
+        assertTrue(useCase.hasSetAside())
+
+        recording = false
+        useCase.resumeSetAside()
+
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertEquals(listOf(0, 1), repo.getSegments(id).map { it.speakerIndex })
+        assertFalse(useCase.hasSetAside())
+    }
+
+    /** A run in progress when a recording starts stops, returns normally and resumes after (issue #123). */
+    @Test
+    fun giveWayToRecording_stopsTheRun_andItResumesAfter() = runBlocking {
+        settings.update { it.copy(speakerIdWhileRecording = false) }
+        val id = twoLineSession()
+        val recording = AtomicBoolean(false)
+        val factory = BlockingOnceFactory()
+        val cancelled = AtomicInteger()
+        val useCase = twoSpeakerUseCase(factory, cancelledCalls = cancelled, recordingOpen = { recording.get() })
+
+        var returned = false
+        val job = launch(Dispatchers.Default) {
+            useCase.runOrDefer(id)
+            returned = true
+        }
+        factory.first.started.await()
+        assertFalse(useCase.giveWayToRecording())
+        recording.set(true)
+        assertTrue(useCase.giveWayToRecording())
+        job.join()
+
+        assertTrue(returned)
+        assertFalse(job.isCancelled)
+        assertTrue(factory.first.sawCancel.get())
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        // Not the user's cancel: the charging job is not held.
+        assertEquals(0, cancelled.get())
+        assertTrue(useCase.hasSetAside())
+
+        recording.set(false)
+        useCase.resumeSetAside()
+
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertEquals(2, factory.created)
+    }
+
+    /** A cancel by the user is still one, whatever happened before (issue #64). */
+    @Test
+    fun cancelByTheUser_afterAGiveWayThatFoundNothing_holdsTheChargingJob() = runBlocking {
+        settings.update { it.copy(speakerIdWhileRecording = false) }
+        val id = twoLineSession()
+        val diarizer = BlockingDiarizer()
+        val cancelled = AtomicInteger()
+        val useCase = twoSpeakerUseCase(ScriptedDiarizerFactory(diarizer), cancelledCalls = cancelled)
+
+        val job = launch(Dispatchers.Default) { useCase.run(id) }
+        diarizer.started.await()
+        assertFalse(useCase.giveWayToRecording())
+        assertTrue(useCase.cancel())
+        job.join()
+
+        assertEquals(1, cancelled.get())
+        assertFalse(useCase.hasSetAside())
+    }
+
+    /** An automatic run follows *Identify speakers* when it resumes: on battery under Charging it stays pending. */
+    @Test
+    fun resumeSetAside_followsTheSetting_andSkipsSessionsIdentifiedMeanwhile() = runTest {
+        settings.update { it.copy(speakerIdWhileRecording = false) }
+        var recording = true
+        val factory = ScriptedDiarizerFactory(ScriptedDiarizer(listOf(SpeakerTurn(0L, 2000L, 0))))
+        val useCase = twoSpeakerUseCase(factory, charging = false, recordingOpen = { recording })
+        val identifiedMeanwhile = twoLineSession()
+        val waitsForCharger = twoLineSession()
+        useCase.runOrDefer(identifiedMeanwhile)
+        useCase.runOrDefer(waitsForCharger)
+
+        recording = false
+        useCase.run(identifiedMeanwhile)
+        assertEquals(1, factory.created)
+        settings.update { it.copy(speakerIdMode = "charging") }
+        useCase.resumeSetAside()
+
+        assertEquals(1, factory.created)
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(identifiedMeanwhile)!!.status)
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(waitsForCharger)!!.status)
+        assertFalse(useCase.hasSetAside())
+    }
+
+    /** *Identify speakers now* during a recording runs once it ends, with the speaker count asked for. */
+    @Test
+    fun aManualRunSetAside_runsAfterWhateverTheSetting() = runTest {
+        settings.update { it.copy(speakerIdWhileRecording = false, speakerIdMode = "manual") }
+        val id = twoLineSession()
+        var recording = true
+        val useCase = twoSpeakerUseCase(recordingOpen = { recording })
+
+        useCase.run(id, numSpeakers = 3)
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+
+        recording = false
+        useCase.resumeSetAside()
+
+        assertEquals(SessionStatus.DIARIZED, repo.getSession(id)!!.status)
+        assertEquals(3, repo.getSession(id)!!.numSpeakers)
+    }
+
+    /** The charging job gives way too, but leaves its sessions to itself (issue #123). */
+    @Test
+    fun runIfPending_whileRecording_off_returnsFalse_andSetsNothingAside() = runTest {
+        settings.update { it.copy(speakerIdWhileRecording = false) }
+        val id = twoLineSession()
+        val factory = ScriptedDiarizerFactory(ScriptedDiarizer(listOf(SpeakerTurn(0L, 2000L, 0))))
+        val useCase = twoSpeakerUseCase(factory, recordingOpen = { true })
+        useCase.defer(id)
+
+        assertFalse(useCase.runIfPending(id))
+
+        assertEquals(0, factory.created)
+        assertEquals(SessionStatus.DIARIZATION_PENDING, repo.getSession(id)!!.status)
+        assertFalse(useCase.hasSetAside())
     }
 }
 
