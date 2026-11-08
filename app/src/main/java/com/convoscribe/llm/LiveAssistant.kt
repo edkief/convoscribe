@@ -80,7 +80,8 @@ interface AssistSources {
  * [watch] follows the recording controller's state, like
  * [TalkingPointChecker], so the recording never waits for it and never
  * sees its failures. While a session is open with live assist on, each
- * new transcript line goes through [QuestionFilter]; a line it lets
+ * new transcript line goes through [QuestionFilter], and again when the
+ * recorder joins a lone `?` to it (issue #147); a line it lets
  * through is sent, with the last [RECENT_MS] of the transcript and
  * excerpts from earlier in this session and from past sessions
  * ([AssistSources], [CrossSessionRetriever]), to the language model,
@@ -119,6 +120,11 @@ class LiveAssistant(
     /** Lines of [RecordingState.finalLines] already looked at. */
     @Volatile private var seenLines = 0
 
+    /** The last line of [RecordingState.finalLines] looked at, and whether [QuestionFilter] let it through. */
+    @Volatile private var lastLine: String? = null
+
+    @Volatile private var lastLineCandidate = false
+
     @Volatile private var probe: Job? = null
 
     @Volatile private var answering: Job? = null
@@ -129,7 +135,8 @@ class LiveAssistant(
 
     /** Follow [state], the recording controller's, for as long as the returned job runs. */
     fun watch(state: Flow<RecordingState>): Job = scope.launch {
-        state.distinctUntilChangedBy { Triple(it.phase, it.sessionId, it.finalLines.size) }.collect { onState(it) }
+        state.distinctUntilChangedBy { listOf(it.phase, it.sessionId, it.finalLines.size, it.finalLines.lastOrNull()) }
+            .collect { onState(it) }
     }
 
     private fun onState(recording: RecordingState) {
@@ -137,18 +144,34 @@ class LiveAssistant(
         val current = _state.value.sessionId
         if (open != current) {
             if (current != null) end()
-            if (open != null) begin(open, recording.finalLines.size)
+            if (open != null) begin(open, recording.finalLines)
             return
         }
         if (open == null) return
-        val fresh = recording.finalLines.drop(seenLines)
-        seenLines = recording.finalLines.size
+        val lines = recording.finalLines
+        val fresh = lines.drop(seenLines)
+        seenLines = lines.size
+        val last = lines.lastOrNull()
+        if (fresh.isEmpty() && last != null && last != lastLine) {
+            // The recognizer's lone "?" was joined to the last line (issue
+            // #147): it may only now read as a question. One that already
+            // did was considered when it arrived.
+            val candidate = QuestionFilter.isCandidate(last)
+            if (candidate && !lastLineCandidate) consider(open, last)
+            lastLine = last
+            lastLineCandidate = lastLineCandidate || candidate
+            return
+        }
+        lastLine = last
+        lastLineCandidate = last != null && QuestionFilter.isCandidate(last)
         // Several lines at once: the newest question is the one still being talked about.
         fresh.lastOrNull { QuestionFilter.isCandidate(it) }?.let { consider(open, it) }
     }
 
-    private fun begin(sessionId: Long, lines: Int) {
-        seenLines = lines
+    private fun begin(sessionId: Long, lines: List<String>) {
+        seenLines = lines.size
+        lastLine = lines.lastOrNull()
+        lastLineCandidate = true
         lastCardAt = null
         _state.value = LiveAssistState(sessionId = sessionId)
         val current = settings.settings.value
