@@ -1,6 +1,9 @@
 import { sql } from 'drizzle-orm';
+import { fetch as undiciFetch } from 'undici';
+import { agent, upstreamOf, type Service } from './ai-proxy';
 import { blobStore } from './blob-store';
 import { db } from './db';
+import { env } from './env';
 
 /** How long a dependency has to answer before it counts as unreachable. */
 const CHECK_TIMEOUT_MS = 5000;
@@ -30,6 +33,41 @@ async function check(name: string, probe: () => Promise<unknown>): Promise<Reach
 export const checkPostgres = () => check('Postgres', () => db().execute(sql`select 1`));
 
 export const checkStore = () => check('S3', () => blobStore().check());
+
+/** A GET of `url` that counts only a 2xx answer as reached; the body is not read. */
+async function probe(url: string, key?: string): Promise<void> {
+  const res = await undiciFetch(url, {
+    headers: { accept: 'application/json', ...(key ? { authorization: `Bearer ${key}` } : {}) },
+    signal: AbortSignal.timeout(CHECK_TIMEOUT_MS),
+    redirect: 'manual',
+    dispatcher: agent(),
+  });
+  await res.body?.cancel();
+  if (!res.ok) throw new Error(`answered ${res.status}${res.status === 401 || res.status === 403 ? ', check its key' : ''}`);
+}
+
+/** Where each upstream is asked whether it is up: a cheap GET it already serves (#145). */
+const PROBE_PATH: Record<Service, string> = { llm: '/models', asr: '/models', decision: '/health' };
+
+const UPSTREAM_NAME: Record<Service, string> = { llm: 'language model', asr: 'transcription', decision: 'decision service' };
+
+/** An upstream the server is set up with: whether it answered, and the model it is set to use. */
+export type UpstreamReachability = Reachability & { model: string | null };
+
+/** Whether the upstream for `service` answers, or null when the server has none (#145). */
+export async function checkUpstream(service: Service): Promise<UpstreamReachability | null> {
+  const upstream = upstreamOf(service);
+  if (!upstream) return null;
+  const state = await check(UPSTREAM_NAME[service], () => probe(`${upstream.url}${PROBE_PATH[service]}`, upstream.key));
+  return { ...state, model: upstream.model ?? null };
+}
+
+/** Whether authz-proxy serves the keys sign-ins are checked against, or null in api-key mode (#145). */
+export async function checkAuthzProxy(): Promise<Reachability | null> {
+  const config = env();
+  if (config.AUTH_MODE !== 'authz-proxy') return null;
+  return check('authz-proxy', () => probe(`${config.AUTHZ_PROXY_URL}/.well-known/jwks.json`));
+}
 
 /** Bytes stored across all users, from Postgres (#79, decision 9). */
 export type StorageBreakdown = {
@@ -69,11 +107,31 @@ const usedBy = (condition: 'not d.deleted' | 'd.deleted' | 'true') => sql.raw(`e
   where r.owner = b.owner and r.sha256 = b.sha256 and ${condition}
 )`);
 
-/** What the status page shows of the server's dependencies and storage (#82). */
-export type ServerStatus = { postgres: Reachability; s3: Reachability; storage: StorageBreakdown | null };
+/**
+ * What the status page shows of the server's dependencies and storage (#82):
+ * Postgres and S3, and the upstreams it offers and authz-proxy (#145), each
+ * null when the server is not set up with it.
+ */
+export type ServerStatus = {
+  postgres: Reachability;
+  s3: Reachability;
+  authzProxy: Reachability | null;
+  llm: UpstreamReachability | null;
+  asr: UpstreamReachability | null;
+  decision: UpstreamReachability | null;
+  storage: StorageBreakdown | null;
+};
 
-/** Check Postgres and S3, and add the storage figures when Postgres can give them. */
+/** Check every dependency at once, and add the storage figures when Postgres can give them. */
 export async function serverStatus(): Promise<ServerStatus> {
-  const [postgres, s3] = await Promise.all([checkPostgres(), checkStore()]);
-  return { postgres, s3, storage: postgres.ok ? await storageBreakdown().catch(() => null) : null };
+  const [postgres, s3, authzProxy, llm, asr, decision] = await Promise.all([
+    checkPostgres(),
+    checkStore(),
+    checkAuthzProxy(),
+    checkUpstream('llm'),
+    checkUpstream('asr'),
+    checkUpstream('decision'),
+  ]);
+  const storage = postgres.ok ? await storageBreakdown().catch(() => null) : null;
+  return { postgres, s3, authzProxy, llm, asr, decision, storage };
 }

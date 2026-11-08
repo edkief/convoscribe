@@ -200,6 +200,8 @@ describe('status from the admin API (#82)', () => {
   it('reports both reachable and the storage figures', async () => {
     const body = (await (await statusGet(request('/x'))).json()) as Record<string, unknown>;
     expect(body).toMatchObject({ postgres: { ok: true }, s3: { ok: true }, storage: { total: 0 } });
+    // Upstreams the server is not set up with (#145).
+    expect(body).toMatchObject({ authzProxy: null, llm: null, asr: null, decision: null });
     expect(JSON.stringify(body)).not.toMatch(/secret|S3_|bucket/i);
   });
 });

@@ -2330,6 +2330,18 @@ button.t-mark-time:hover {
   color: var(--danger);
 }
 
+.reach.off {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.reach-model {
+  margin-left: 0.5rem;
+  color: var(--text-3);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
 .reach-time {
   margin-left: 0.5rem;
   color: var(--text-3);
