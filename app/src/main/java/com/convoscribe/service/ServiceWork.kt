@@ -21,12 +21,15 @@ import com.convoscribe.recording.RecordingPhase
  * @property processing post-Stop jobs (server transcript, speakers)
  *   and *Identify speakers* runs still going, including ones waiting
  *   for another run to free the speaker engine.
+ * @property starting Start is waiting for a re-transcription on the
+ *   phone to stop before it opens the microphone (issue #123).
  */
 internal data class ServiceWork(
     val phase: RecordingPhase,
     val retranscribing: Boolean,
     val importing: Boolean,
-    val processing: Int
+    val processing: Int,
+    val starting: Boolean = false
 ) {
     /**
      * A re-transcription or an import may start: no session is open and
@@ -34,11 +37,11 @@ internal data class ServiceWork(
      * wait for the speaker engine in turn.
      */
     val acceptsJob: Boolean
-        get() = phase == RecordingPhase.IDLE && !retranscribing && !importing
+        get() = phase == RecordingPhase.IDLE && !retranscribing && !importing && !starting
 
     /** Nothing holds the service: it may give back the wake lock, leave the foreground and stop. */
     val idle: Boolean
-        get() = phase == RecordingPhase.IDLE && !retranscribing && !importing && processing == 0
+        get() = phase == RecordingPhase.IDLE && !retranscribing && !importing && processing == 0 && !starting
 
     /**
      * Something needs the CPU, so the service keeps its wake lock
@@ -52,8 +55,29 @@ internal data class ServiceWork(
             phase == RecordingPhase.STOPPING ||
             retranscribing ||
             importing ||
-            processing > 0
+            processing > 0 ||
+            starting
+
+    /**
+     * Whose notification the service shows (issue #123). An open
+     * session always wins: its notification keeps the microphone
+     * foreground type, which Android 14+ needs to go on capturing in
+     * the background, and its timer, Mark, Pause and Stop. Without one,
+     * a re-transcription, then an import, then a speaker identification
+     * shows its own; the others carry on without one.
+     */
+    val foreground: ServiceForeground
+        get() = when {
+            phase != RecordingPhase.IDLE || starting -> ServiceForeground.RECORDING
+            retranscribing -> ServiceForeground.RETRANSCRIBING
+            importing -> ServiceForeground.IMPORTING
+            processing > 0 -> ServiceForeground.IDENTIFYING
+            else -> ServiceForeground.NONE
+        }
 }
+
+/** The notification [RecordingService] shows for its [ServiceWork.foreground]. */
+internal enum class ServiceForeground { RECORDING, RETRANSCRIBING, IMPORTING, IDENTIFYING, NONE }
 
 /**
  * Safety-net timeout of each wake lock [RecordingService] takes, in

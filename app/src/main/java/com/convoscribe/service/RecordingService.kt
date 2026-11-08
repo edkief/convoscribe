@@ -312,7 +312,7 @@ class RecordingService : Service() {
                 // its progress and Cancel; a cancel or a failure keeps the
                 // device transcript, and speakers are identified anyway.
                 if (completedId != null) improveOnServer(completedId)
-                showDiarizingOrRecording()
+                showForeground()
                 if (completedId != null) {
                     // Now, or left pending for the charger / the user
                     // (Settings › Identify speakers, issue #11).
@@ -331,31 +331,66 @@ class RecordingService : Service() {
     }
 
     /**
-     * Show "Identifying speakers…" in a `dataSync` foreground, unless a
-     * session is open: the recording keeps its microphone-typed
-     * foreground and its own notification (issue #121), which is posted
-     * again so a `startForegroundService` call is still answered.
+     * Post the notification of whatever leads now ([ServiceWork.foreground],
+     * issue #123): an open session's, in the `microphone`-typed foreground
+     * it needs to go on capturing in the background, else the
+     * re-transcription's, the import's or "Identifying speakers…", in a
+     * `dataSync` one. Every job that starts or ends calls it; a background
+     * job's progress never replaces an open session's notification. Also
+     * answers a `startForegroundService` call, so a job's handler counts
+     * itself before calling it.
      */
-    private fun showDiarizingOrRecording() {
-        val current = controller().state.value
-        if (current.phase == RecordingPhase.IDLE) {
-            ServiceCompat.startForeground(
+    private fun showForeground() {
+        ensureNotificationChannel()
+        lastNotificationUpdateMs = SystemClock.elapsedRealtime()
+        when (work().foreground) {
+            ServiceForeground.RECORDING -> {
+                val current = controller().state.value
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    buildNotification(
+                        current.elapsedMs,
+                        paused = current.phase == RecordingPhase.PAUSED,
+                        marks = current.markCount
+                    ),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+                )
+            }
+            ServiceForeground.RETRANSCRIBING -> {
+                // Between the new transcript and the end of the job, its
+                // speakers are being identified (issue #43).
+                val state = (application as ConvoApp).container.retranscribeUseCase.state.value
+                val notification = if (state is RetranscribeState.Running) {
+                    buildRetranscribeNotification(state.progress, state.cleaning, state.onServer)
+                } else {
+                    buildDiarizingNotification()
+                }
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            }
+            ServiceForeground.IMPORTING -> {
+                val state = (application as ConvoApp).container.importAudioUseCase.state.value
+                ServiceCompat.startForeground(
+                    this,
+                    NOTIFICATION_ID,
+                    buildImportNotification(
+                        state as? ImportState.Running ?: ImportState.Running(null, ImportStep.COPYING, 0f)
+                    ),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                )
+            }
+            ServiceForeground.IDENTIFYING -> ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
                 buildDiarizingNotification(),
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
             )
-        } else {
-            ServiceCompat.startForeground(
-                this,
-                NOTIFICATION_ID,
-                buildNotification(
-                    current.elapsedMs,
-                    paused = current.phase == RecordingPhase.PAUSED,
-                    marks = current.markCount
-                ),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-            )
+            ServiceForeground.NONE -> Unit
         }
     }
 
@@ -367,12 +402,6 @@ class RecordingService : Service() {
     private suspend fun improveOnServer(sessionId: Long) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
         if (!useCase.wantsServer(sessionId)) return
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildRetranscribeNotification(0f, onServer = true),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        )
         val job = scope.launch {
             val progress = useCase.state
                 .onEach { state ->
@@ -388,6 +417,7 @@ class RecordingService : Service() {
             }
         }
         retranscribeJob = job
+        showForeground()
         try {
             job.join()
         } finally {
@@ -453,13 +483,13 @@ class RecordingService : Service() {
      * and stops.
      */
     private fun handleDiarize(sessionId: Long, numSpeakers: Int?) {
-        ensureNotificationChannel()
-        // A recording open meanwhile keeps its own notification.
-        showDiarizingOrRecording()
+        // Counted first, so the notification below is its own, unless a
+        // recording open meanwhile keeps its notification.
+        processing++
+        showForeground()
         // Speaker identification is heavy work; keep the CPU awake for it.
         acquireWakeLock()
         scope.launch {
-            processing++
             try {
                 diarizerUseCase().run(sessionId, numSpeakers = numSpeakers)
             } finally {
@@ -485,13 +515,6 @@ class RecordingService : Service() {
     private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean, onServer: Boolean) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
         if (!work().acceptsJob || useCase.isRunning) return
-        ensureNotificationChannel()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildRetranscribeNotification(0f, cleaning = clean, onServer = onServer),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        )
         acquireWakeLock()
         retranscribeJob = scope.launch {
             var started = false
@@ -514,12 +537,7 @@ class RecordingService : Service() {
                         // last throttled percentage on screen (issue #43).
                         // A cancel cancels this collector too, and a failure
                         // ends in Failed, so neither shows it.
-                        ServiceCompat.startForeground(
-                            this@RecordingService,
-                            NOTIFICATION_ID,
-                            buildDiarizingNotification(),
-                            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                        )
+                        showForeground()
                     }
                 }
                 .launchIn(this)
@@ -533,6 +551,9 @@ class RecordingService : Service() {
                 stopIfIdle()
             }
         }
+        // The progress collector's first update came before the job was
+        // known; show the notification now.
+        showForeground()
     }
 
     /** The running import, so [ACTION_CANCEL_IMPORT] can stop it. */
@@ -570,6 +591,9 @@ class RecordingService : Service() {
             // A job ended while the session is paused: nothing else
             // may need the lock now (issue #124).
             releaseWakeLockIfUnneeded()
+            // What still runs shows its own notification again, not the
+            // one of the job that just ended (issue #123).
+            showForeground()
             return
         }
         releaseWakeLock()
@@ -588,13 +612,6 @@ class RecordingService : Service() {
     private fun handleImport(uri: Uri) {
         val useCase = (application as ConvoApp).container.importAudioUseCase
         if (!work().acceptsJob || useCase.isRunning) return
-        ensureNotificationChannel()
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            buildImportNotification(ImportState.Running(null, ImportStep.COPYING, 0f)),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        )
         acquireWakeLock()
         val source = importSource(uri)
         importJob = scope.launch {
@@ -616,6 +633,7 @@ class RecordingService : Service() {
                 stopIfIdle()
             }
         }
+        showForeground()
     }
 
     /** [uri] as an [ImportSource]: its display name and size from the provider, if it has them. */
@@ -640,6 +658,8 @@ class RecordingService : Service() {
     }
 
     private fun maybeRefreshImportNotification(state: ImportState.Running, force: Boolean = false) {
+        // A recording or a re-transcription shows its own (issue #123).
+        if (work().foreground != ServiceForeground.IMPORTING) return
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
@@ -698,6 +718,8 @@ class RecordingService : Service() {
         onServer: Boolean = false,
         force: Boolean = false
     ) {
+        // An open session keeps its own notification (issue #123).
+        if (work().foreground != ServiceForeground.RETRANSCRIBING) return
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastNotificationUpdateMs < NOTIFICATION_REFRESH_PERIOD_MS) return
         lastNotificationUpdateMs = now
@@ -792,10 +814,9 @@ class RecordingService : Service() {
                     // The controller fell back to IDLE because of
                     // an error: surface a final teardown so we do
                     // not leak the foreground notification while
-                    // showing a dead service. An earlier session's
-                    // speakers still being identified keep the
-                    // service, under their own notification (#121).
-                    if (!idle()) showDiarizingOrRecording()
+                    // showing a dead service. Earlier sessions' work
+                    // still going keeps the service, under its own
+                    // notification (#121, #123).
                     stopIfIdle()
                 }
             }
