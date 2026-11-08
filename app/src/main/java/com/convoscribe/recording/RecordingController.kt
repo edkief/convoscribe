@@ -502,16 +502,21 @@ class RecordingController(
      * paused position and a continued session's marks follow its
      * earlier audio, like its segments.
      *
+     * [atMs] marks an earlier moment instead, such as the question of a
+     * pinned live-assist answer (issue #50); it is kept within the
+     * recorded time.
+     *
      * Marking touches neither the transcriber nor the WAV, so it does
      * not wait for a pause or a stop in progress.
      */
-    suspend fun mark(note: String? = null): Long? {
+    suspend fun mark(note: String? = null, atMs: Long? = null): Long? {
         val current = _state.value
         if (!current.phase.active) return null
         val id = current.sessionId ?: return null
-        val markId = store.addMark(id, current.elapsedMs, note)
+        val at = atMs?.coerceIn(0L, current.elapsedMs) ?: current.elapsedMs
+        val markId = store.addMark(id, at, note)
         _state.update { if (it.sessionId == id) it.copy(markCount = it.markCount + 1) else it }
-        Log.i(TAG, "mark session=$id atMs=${current.elapsedMs}")
+        Log.i(TAG, "mark session=$id atMs=$at")
         return markId
     }
 
