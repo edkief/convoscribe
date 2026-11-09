@@ -638,7 +638,10 @@ first; pushing the tag makes Tekton run the second.
    `convoscribe-X.Y.Z.apk` and its `.sha256`. It does nothing if the
    release already exists, so re-running the pipeline is safe.
 
-The release notes leave out commits that only touch `server/`. The sync
+The release notes leave out commits that only touch `server/`, commits
+users can't notice (tests, docs, refactors, CI) and release or eval
+tooling (`release`/`eval` scopes). An issue that is all fixes is listed
+under Fixed, not New. The sync
 server releases on its own `server-vX.Y.Z` tags with
 **`prepare-server`**, which works like `prepare` on the `version` in
 `server/package.json`. Pushing the tag makes Tekton build the server
