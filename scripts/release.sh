@@ -547,7 +547,10 @@ prior_issues = set(os.environ.get("PRIOR_ISSUES", "").split())
 # commits stay only with an issue reference (e.g. release signing, #16);
 # without one they are CI plumbing.
 HIDDEN_TYPES = {"test", "docs", "ci", "style", "refactor", "chore"}
-TYPE_RE = re.compile(r"^(\w+)(?:\([^)]*\))?!?:")
+# Scopes for developer tooling that never ships in the APK, whatever the type
+# (e.g. "feat(release): list the commits a release contains").
+HIDDEN_SCOPES = {"release", "eval"}
+TYPE_RE = re.compile(r"^(\w+)(?:\(([^)]*)\))?!?:")
 ISSUE_RE = re.compile(r"\(#(\d+)\)")
 
 # Group the visible commits by issue, in order of first appearance, so the
@@ -560,9 +563,10 @@ for record in os.environ["COMMIT_LOG"].split("\x1e"):
     subject, _, commit_body = record.partition("\n")
     match = TYPE_RE.match(subject)
     kind = match.group(1).lower() if match else None
+    scope = (match.group(2) or "").lower() if match else ""
     issue = ISSUE_RE.search(subject)
     issue = issue.group(1) if issue else None
-    if kind in HIDDEN_TYPES or (kind == "build" and issue is None):
+    if kind in HIDDEN_TYPES or scope in HIDDEN_SCOPES or (kind == "build" and issue is None):
         continue
     groups.setdefault(issue, []).append((kind, subject, commit_body.strip()))
 
@@ -572,24 +576,29 @@ if not groups:
     sys.exit(0)
 
 # Where each issue's bullet may go. Users have nothing of a new issue yet,
-# so all of it is New, never Improved or Fixed; an issue whose commits are
-# all build changes is Under the hood; a follow-up to a released issue goes
+# so all of it is New, never Improved or Fixed; a new issue whose commits are
+# all fixes is a bug report, so it is Fixed; an issue whose commits are all
+# build changes is Under the hood; a follow-up to a released issue goes
 # wherever its commits fit.
 build_only = {i for i, commits in groups.items() if i is not None and all(kind == "build" for kind, _, _ in commits)}
-new_issues = [i for i in groups if i is not None and i not in prior_issues and i not in build_only]
+fix_issues = [i for i, commits in groups.items()
+              if i is not None and i not in prior_issues and all(kind == "fix" for kind, _, _ in commits)]
+new_issues = [i for i in groups if i is not None and i not in prior_issues and i not in build_only and i not in fix_issues]
 # What the commits outside new features can feed. A commit without a type
 # could be anything.
-rest = [kind for i, commits in groups.items() if i not in new_issues and i not in build_only for kind, _, _ in commits]
+rest = [kind for i, commits in groups.items()
+        if i not in new_issues and i not in build_only and i not in fix_issues for kind, _, _ in commits]
 allowed = []
 if new_issues or rest:
     allowed.append("New")
 if any(kind not in ("fix", "build") for kind in rest):
     allowed.append("Improved")
-if any(kind in ("fix", None) for kind in rest):
+if fix_issues or any(kind in ("fix", None) for kind in rest):
     allowed.append("Fixed")
 if build_only or "build" in rest:
     allowed.append("Under the hood")
 homes = {i: {"New"} for i in new_issues}
+homes.update({i: {"Fixed"} for i in fix_issues})
 homes.update({i: {"Under the hood"} for i in build_only})
 homes.update({i: set(allowed) for i in groups if i is not None and i not in homes})
 
@@ -601,6 +610,8 @@ def render(with_bodies):
             parts.append("## Commits without an issue reference (each stands alone)")
         elif issue in new_issues:
             parts.append(f"## #{issue}: NEW FEATURE, users have never had any of it")
+        elif issue in fix_issues:
+            parts.append(f"## #{issue}: BUG FIX to something users already have")
         elif issue in build_only:
             parts.append(f"## #{issue}: BUILD CHANGE to how the app is built, signed or installed")
         else:
@@ -628,6 +639,9 @@ plan = [f"- Use only these `###` sections, in this order: {', '.join(f'`### {s}`
 if new_issues:
     refs = ", ".join(f"#{i}" for i in new_issues)
     plan.append(f"- `### New` has exactly one bullet for each new feature: {refs}. Every part of a feature goes in its one bullet, never in a second bullet or under another section.")
+if fix_issues:
+    refs = ", ".join(f"#{i}" for i in fix_issues)
+    plan.append(f"- `### Fixed` has exactly one bullet for each bug fix: {refs}. Say what no longer goes wrong.")
 if build_only:
     refs = ", ".join(f"#{i}" for i in build_only)
     plan.append(f"- `### Under the hood` has one bullet for each build change, {refs}, and only when it changes how the app is installed or updated. Never list a build change under `### New`.")
@@ -647,7 +661,7 @@ user = f"""Write the release notes for ConvoScribe {os.environ['NEW_TAG']} {sinc
 How to read the log:
 - It is the development history between two releases. Users only ever had the previous release; none of the intermediate commits reached them. Describe the net difference between the previous release and this one, not the steps taken to get there.
 - Commits follow Conventional Commits: `type(scope): subject`. `feat` adds behaviour, `fix` corrects it, `perf` speeds it up, `build` changes how the app is built or signed. The scope names the area of the app. Commits users cannot notice (tests, docs, refactors, CI) have already been removed.
-- The commits are grouped by issue. Each `##` heading says whether that issue is a NEW FEATURE (users have never had any of it), a FOLLOW-UP to a feature they already have, or a BUILD CHANGE. Trust these labels.
+- The commits are grouped by issue. Each `##` heading says whether that issue is a NEW FEATURE (users have never had any of it), a BUG FIX, a FOLLOW-UP to a feature they already have, or a BUILD CHANGE. Trust these labels.
 - The commits of one issue are the steps of building it (data layer, service, UI); together they are one change for the user, not one change per commit. A fix, tweak or tuning inside a NEW FEATURE group is part of building that feature, not a fix or improvement users would notice (e.g. "add speaker identification" then "tune speaker identification sensitivity" is one New bullet).
 
 Sections for this release:
@@ -658,8 +672,9 @@ Sections for this release:
 Rules:
 - Output GitHub Markdown only: no title, no preamble, no closing remarks, no code fences around the whole answer.
 - Start with one or two plain sentences summarising the release.
-- Write exactly one bullet per issue: what the user can now do, in plain language, in one or two sentences, mentioning its main parts (e.g. "Model downloads now run in the background with a progress notification, resume after interruptions, wait for the network and retry on errors, and the setup screen follows their progress (#10).").
+- Write exactly one bullet per issue: what the user can now do, in plain language, in at most 40 words, mentioning its main parts and leaving out how it was built (e.g. "Model downloads now run in the background with a progress notification, resume after interruptions, wait for the network and retry on errors, and the setup screen follows their progress (#10).").
 - End each bullet with its group's issue reference, e.g. "(#7)". Never give a bullet an issue reference its commits do not carry.
+- Write for people using the app, not for developers: never name code (classes, functions, fields, request headers, JSON fields, model parameters) and never use backticks. Name a setting the way users see it, e.g. Settings > Speakers > "Identify speakers while recording".
 - Only describe what the commits say. Do not invent features, numbers or reasons.
 - At most 12 bullets in total.
 
@@ -693,9 +708,13 @@ def ask(messages):
         "model": os.environ["LLM_MODEL"],
         "messages": messages,
         "temperature": 0.3,
-        # Reasoning counts against this budget. With a switch the model
-        # ignores (llama-chat ignores enable_thinking), it reasoned past 3000
-        # tokens on this prompt before writing a word of the notes.
+        # A ceiling, not a target: it stops a looping model with a clear
+        # message instead of running into LLM_TIMEOUT. The notes are at most
+        # 12 bullets of about 40 words, under 1000 tokens; reasoning counts
+        # against the budget too, and a model whose switch we don't send
+        # (llama-chat ignores enable_thinking) reasoned past 3000 tokens on
+        # this prompt before writing a word. 12000 covers that at about
+        # 32 tokens/s on llama-chat, about 6 minutes, inside LLM_TIMEOUT.
         "max_tokens": int(os.environ["LLM_MAX_TOKENS"]),
     }
     body.update(LOW_REASONING)
@@ -776,8 +795,9 @@ def tidy(text):
 
 # The model still sometimes files part of a new feature under Improved or
 # Fixed, splits one feature over several bullets or makes up an issue
-# reference. tidy() drops the misplaced bullets; split or missing features
-# go back to the model, at most twice, before taking what it gave.
+# reference. tidy() drops the misplaced bullets; split or missing issues,
+# code names and overlong bullets go back to the model, at most twice,
+# before taking what it gave.
 messages = [
     {"role": "system", "content": system},
     {"role": "user", "content": user},
@@ -787,6 +807,13 @@ for attempt in range(3):
     text, counts = tidy(raw)
     problems = [f"#{i} has {n} bullets; merge them into one bullet." for i, n in counts.items() if n > 1]
     problems += [f"#{i} is missing; give it one bullet under `### New`." for i in new_issues if i not in counts]
+    problems += [f"#{i} is missing; give it one bullet under `### Fixed`." for i in fix_issues if i not in counts]
+    bullets = [line for line in text.splitlines() if BULLET_RE.match(line)]
+    if any("`" in b for b in bullets):
+        problems.append("Some bullets name code in backticks; describe those changes in words users know, without code.")
+    long_refs = sorted({r for b in bullets if len(REF_RE.sub("", b).split()) > 50 for r in REF_RE.findall(b)})
+    if long_refs:
+        problems.append(f"The bullets for {', '.join('#' + r for r in long_refs)} are too long; keep each under 40 words.")
     if not problems:
         break
     print(f"[release] notes attempt {attempt + 1}: {' '.join(problems)}", file=sys.stderr)
