@@ -70,8 +70,19 @@ Environment (publish):
                       unless --notes-file is given)
   LLM_BASE_URL        default http://llama-chat.llama:8080/v1
   LLM_MODEL           default llama-chat
-  LLM_DISABLE_THINKING  1 (default) sends chat_template_kwargs.enable_thinking
-                      = false (llama.cpp/vLLM); set 0 for other servers
+  LLM_LOW_REASONING   JSON object merged into the notes request to ask the
+                      model for little reasoning; every model has its own
+                      switch, as with the server's LLM_LOW_REASONING (#136).
+                      Default: the known chat_template_kwargs switches, so a
+                      new model behind llama-chat still finds its own:
+                      reasoning_strength none (Muse Glimmer), enable_thinking
+                      false (Qwen3, GLM), enable_reasoning false, thinking
+                      false (DeepSeek), reasoning_effort low (gpt-oss); a
+                      template ignores the ones it doesn't read. Set it empty
+                      for servers that reject unknown fields
+  LLM_MAX_TOKENS      output budget for the notes, reasoning included
+                      (default 12000)
+  LLM_TIMEOUT         seconds to wait for the notes (default 900)
   GH_TOKEN            used by gh when it is not logged in
   GIT_TAG             tag to publish when --tag is not given (set by Tekton)
   CONVOSCRIBE_SHERPA_PREBUILT  directory holding jniLibs/ and libs/ from the
@@ -356,7 +367,13 @@ publish() {
 
   LLM_BASE_URL="${LLM_BASE_URL:-http://llama-chat.llama:8080/v1}"
   LLM_MODEL="${LLM_MODEL:-llama-chat}"
-  LLM_DISABLE_THINKING="${LLM_DISABLE_THINKING:-1}"
+  # Unset: the default switch. Set empty, or the old LLM_DISABLE_THINKING=0:
+  # send nothing extra.
+  local default_low_reasoning='{"chat_template_kwargs":{"reasoning_strength":"none","enable_thinking":false,"enable_reasoning":false,"thinking":false,"reasoning_effort":"low"}}'
+  [[ "${LLM_DISABLE_THINKING:-1}" == 0 ]] && default_low_reasoning=""
+  LLM_LOW_REASONING="${LLM_LOW_REASONING-$default_low_reasoning}"
+  LLM_MAX_TOKENS="${LLM_MAX_TOKENS:-12000}"
+  LLM_TIMEOUT="${LLM_TIMEOUT:-900}"
 
   # shellcheck disable=SC1091
   source "$SCRIPT_DIR/env.sh"
@@ -512,7 +529,8 @@ publish() {
     log "Generating release notes from $commit_count commit(s) with $LLM_MODEL at $LLM_BASE_URL ..."
     COMMIT_LOG="$commit_log" PRIOR_ISSUES="$prior_issues" PREV_TAG="${prev_tag:-}" NEW_TAG="$tag" \
       LLM_BASE_URL="$LLM_BASE_URL" LLM_MODEL="$LLM_MODEL" \
-      LLM_DISABLE_THINKING="$LLM_DISABLE_THINKING" \
+      LLM_LOW_REASONING="$LLM_LOW_REASONING" \
+      LLM_MAX_TOKENS="$LLM_MAX_TOKENS" LLM_TIMEOUT="$LLM_TIMEOUT" \
       python3 - "$NOTES_BODY" <<'PY'
 import json
 import os
@@ -654,15 +672,33 @@ BULLET_RE = re.compile(r"\s*[-*+] ")
 REF_RE = re.compile(r"#(\d+)\b")
 
 
+def low_reasoning():
+    raw = os.environ.get("LLM_LOW_REASONING", "").strip()
+    if not raw:
+        return {}
+    try:
+        fields = json.loads(raw)
+    except json.JSONDecodeError:
+        fields = None
+    if not isinstance(fields, dict):
+        sys.exit(f"release: LLM_LOW_REASONING must be a JSON object, got: {raw[:200]}")
+    return fields
+
+
+LOW_REASONING = low_reasoning()
+
+
 def ask(messages):
     body = {
         "model": os.environ["LLM_MODEL"],
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": 3000,
+        # Reasoning counts against this budget. With a switch the model
+        # ignores (llama-chat ignores enable_thinking), it reasoned past 3000
+        # tokens on this prompt before writing a word of the notes.
+        "max_tokens": int(os.environ["LLM_MAX_TOKENS"]),
     }
-    if os.environ.get("LLM_DISABLE_THINKING", "1") == "1":
-        body["chat_template_kwargs"] = {"enable_thinking": False}
+    body.update(LOW_REASONING)
     req = urllib.request.Request(
         os.environ["LLM_BASE_URL"].rstrip("/") + "/chat/completions",
         data=json.dumps(body).encode(),
@@ -672,7 +708,7 @@ def ask(messages):
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
+        with urllib.request.urlopen(req, timeout=int(os.environ["LLM_TIMEOUT"])) as resp:
             data = json.load(resp)
     except urllib.error.HTTPError as e:
         sys.exit(f"release: LLM request failed: HTTP {e.code}: {e.read().decode(errors='replace')[:500]}")
@@ -681,13 +717,21 @@ def ask(messages):
     try:
         choice = data["choices"][0]
         text = choice["message"].get("content") or ""
+        reasoning = choice["message"].get("reasoning_content") or ""
     except (KeyError, IndexError, TypeError):
         sys.exit(f"release: unexpected LLM response: {json.dumps(data)[:500]}")
+    inline_thinking = "".join(re.findall(r"<think>(.*?)(?:</think>|$)", text, flags=re.S))
     # Reasoning models may inline their thinking; drop it and any wrapping fence.
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
     text = re.sub(r"^```(?:markdown|md)?\s*\n(.*)\n```$", r"\1", text, flags=re.S).strip()
     if choice.get("finish_reason") == "length":
-        sys.exit("release: the LLM hit max_tokens before finishing; retry, or pass --notes-file.")
+        used = (data.get("usage") or {}).get("completion_tokens", "?")
+        thought = len(reasoning) + len(inline_thinking)
+        sys.exit(
+            f"release: the LLM hit max_tokens ({os.environ['LLM_MAX_TOKENS']}) before finishing: "
+            f"{used} tokens generated, {thought} chars of reasoning and {len(text)} chars of notes. "
+            "Raise LLM_MAX_TOKENS, retry, or pass --notes-file."
+        )
     if not text:
         sys.exit("release: the LLM returned empty release notes; retry, or pass --notes-file.")
     return text
