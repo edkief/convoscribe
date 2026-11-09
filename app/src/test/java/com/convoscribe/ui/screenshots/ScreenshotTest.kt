@@ -55,6 +55,8 @@ import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.SemanticCheckResult
 import com.convoscribe.export.ExportFormat
 import com.convoscribe.llm.AssistCard
+import com.convoscribe.llm.AssistMiss
+import com.convoscribe.llm.AssistMissReason
 import com.convoscribe.llm.AssistStatus
 import com.convoscribe.llm.Citation
 import com.convoscribe.llm.LiveAssistState
@@ -591,6 +593,53 @@ class ScreenshotTest(private val variant: Variant) {
             micDeniedMessage = null,
             inputLevel = 0.4f,
             assist = LiveAssistState(sessionId = 1L, enabled = true, status = AssistStatus.PAUSED),
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    /** Live assist answering a question, under an earlier card (issue #152). */
+    @Test
+    fun recordLiveAssistAnswering() = capture("record_live_assist_answering") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            assist = LiveAssistState(
+                sessionId = 1L,
+                enabled = true,
+                cards = ASSIST_CARDS.take(1),
+                answering = "Can you remind me which cloud platform we were going to use for IESB?"
+            ),
+            onBack = {},
+            onStart = {},
+            onStop = {}
+        )
+    }
+
+    /** Live assist found no answer to the last question (issue #152). */
+    @Test
+    fun recordLiveAssistNoAnswer() = capture("record_live_assist_no_answer") {
+        RecordBody(
+            phase = RecordingPhase.RECORDING,
+            preparingNpu = false,
+            elapsedMs = 754_000L,
+            finalLines = LIVE_LINES,
+            partialText = "",
+            error = null,
+            micDeniedMessage = null,
+            inputLevel = 0.4f,
+            assist = LiveAssistState(
+                sessionId = 1L,
+                enabled = true,
+                missed = AssistMiss("Do we support private link on the standard tier?", AssistMissReason.NO_ANSWER)
+            ),
             onBack = {},
             onStart = {},
             onStop = {}
