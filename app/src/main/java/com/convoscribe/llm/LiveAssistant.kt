@@ -264,7 +264,9 @@ class LiveAssistant(
         if (_state.value.status == AssistStatus.PAUSED) {
             if (!reachable()) {
                 Log.i(TAG, "live assist: still paused session=$sessionId")
-                updateOpen(sessionId) { it.copy(answering = null, missed = AssistMiss(question, AssistMissReason.FAILED)) }
+                updateOpen(
+                    sessionId
+                ) { it.copy(answering = null, missed = AssistMiss(question, AssistMissReason.FAILED)) }
                 return
             }
             updateOpen(sessionId) { it.copy(status = AssistStatus.IDLE) }
@@ -292,7 +294,9 @@ class LiveAssistant(
         }
         if (card == null) {
             Log.i(TAG, "live assist: no answer session=$sessionId in ${clock() - startedAt} ms")
-            updateOpen(sessionId) { it.copy(answering = null, missed = AssistMiss(question, AssistMissReason.NO_ANSWER)) }
+            updateOpen(
+                sessionId
+            ) { it.copy(answering = null, missed = AssistMiss(question, AssistMissReason.NO_ANSWER)) }
             return
         }
         Log.i(TAG, "live assist: card session=$sessionId in ${clock() - startedAt} ms")
