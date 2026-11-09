@@ -339,6 +339,89 @@ class LiveAssistantTest {
     }
 
     @Test
+    fun theQuestionBeingAnsweredIsShownUntilItsCard() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val client = ScriptedChatClient({
+            flow {
+                gate.await()
+                emit("March 3.")
+            }
+        })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        assertNull(assistant.state.value.answering)
+        hear(id, 5, "When is the launch date again ")
+        runCurrent()
+        assertEquals("When is the launch date again", assistant.state.value.answering)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertNull(assistant.state.value.missed)
+        assertEquals(1, assistant.state.value.cards.size)
+    }
+
+    @Test
+    fun aQuestionWithoutAnAnswerSaysSoUntilTheNextQuestion() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val client = answering("NONE")
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "What do you think about the new logo")
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertEquals(
+            AssistMiss("What do you think about the new logo", AssistMissReason.NO_ANSWER),
+            assistant.state.value.missed
+        )
+
+        client.reply = {
+            flow {
+                gate.await()
+                emit("Marie does.")
+            }
+        }
+        hear(id, 10, "Who signs off on the budget this year")
+        runCurrent()
+        assertNull("a new question clears it", assistant.state.value.missed)
+        assertEquals("Who signs off on the budget this year", assistant.state.value.answering)
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(assistant.state.value.missed)
+        assertEquals(1, assistant.state.value.cards.size)
+    }
+
+    @Test
+    fun aFailedQuestionSaysSo() = runTest(dispatcher) {
+        val client = ScriptedChatClient({ flow { throw LlmException("HTTP 500") } })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertEquals(
+            AssistMiss("When is the launch date again", AssistMissReason.FAILED),
+            assistant.state.value.missed
+        )
+        // The endpoint still answers the probe: not paused.
+        assertEquals(AssistStatus.IDLE, assistant.state.value.status)
+    }
+
+    @Test
+    fun turningItOffClearsWhatItWasDoing() = runTest(dispatcher) {
+        val client = ScriptedChatClient({ flow { awaitCancellation() } })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        assertEquals("When is the launch date again", assistant.state.value.answering)
+        assistant.setEnabled(false)
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertNull(assistant.state.value.missed)
+    }
+
+    @Test
     fun oneQuestionAtATime() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val client = ScriptedChatClient({
@@ -427,8 +510,9 @@ class LiveAssistantTest {
         runCurrent()
         assertEquals(0, client.calls.size)
         assertTrue(assistant.state.value.cards.isEmpty())
-        // The endpoint still answers: nothing to tell.
+        // The endpoint still answers: not paused, but the question says it failed.
         assertEquals(AssistStatus.IDLE, assistant.state.value.status)
+        assertEquals(AssistMissReason.FAILED, assistant.state.value.missed?.reason)
 
         client.reply = { flow { awaitCancellation() } }
         hear(id, 10, "Who signs off on the budget this year")

@@ -50,16 +50,32 @@ enum class AssistStatus {
     PAUSED
 }
 
+/** Why a question got no card (issue #152). */
+enum class AssistMissReason {
+    /** The model found no answer in this conversation or past sessions (it said NONE). */
+    NO_ANSWER,
+
+    /** The question timed out or failed. */
+    FAILED
+}
+
+/** The last question that got no card, and why (issue #152). */
+data class AssistMiss(val question: String, val reason: AssistMissReason)
+
 /**
  * Live assist of the open recording (issue #50). [sessionId] is `null`
  * while no session is open; [cards] are newest first, at most
- * [LiveAssistant.MAX_CARDS].
+ * [LiveAssistant.MAX_CARDS]. [answering] is the question being
+ * answered right now, and [missed] the last one that got no card,
+ * until the next question or card (issue #152).
  */
 data class LiveAssistState(
     val sessionId: Long? = null,
     val enabled: Boolean = false,
     val status: AssistStatus = AssistStatus.IDLE,
-    val cards: List<AssistCard> = emptyList()
+    val cards: List<AssistCard> = emptyList(),
+    val answering: String? = null,
+    val missed: AssistMiss? = null
 )
 
 /** The past sessions a question may be answered from, and how close they are in meaning when that is known. */
@@ -197,7 +213,7 @@ class LiveAssistant(
         if (!enabled) {
             probe?.cancel()
             answering?.cancel()
-            _state.update { it.copy(enabled = false, status = AssistStatus.IDLE) }
+            _state.update { it.copy(enabled = false, status = AssistStatus.IDLE, answering = null, missed = null) }
             return
         }
         if (_state.value.enabled || !settings.settings.value.llmConfigured) return
@@ -242,30 +258,58 @@ class LiveAssistant(
     }
 
     private suspend fun answer(sessionId: Long, line: String) {
+        val question = line.trim()
+        val startedAt = clock()
+        updateOpen(sessionId) { it.copy(answering = question, missed = null) }
         if (_state.value.status == AssistStatus.PAUSED) {
-            if (!reachable()) return
-            _state.update { if (it.sessionId == sessionId) it.copy(status = AssistStatus.IDLE) else it }
+            if (!reachable()) {
+                Log.i(TAG, "live assist: still paused session=$sessionId")
+                updateOpen(sessionId) { it.copy(answering = null, missed = AssistMiss(question, AssistMissReason.FAILED)) }
+                return
+            }
+            updateOpen(sessionId) { it.copy(status = AssistStatus.IDLE) }
         }
+        Log.i(TAG, "live assist: asking session=$sessionId")
         val card = try {
-            withTimeoutOrNull(ANSWER_TIMEOUT_MS) { ask(sessionId, line) }
+            // Boxed: a null card (nothing to show) is not a timeout.
+            val answered = withTimeoutOrNull(ANSWER_TIMEOUT_MS) { listOf(ask(sessionId, line)) }
                 ?: throw LlmException("No answer within ${ANSWER_TIMEOUT_MS / 1_000} s")
+            answered.single()
         } catch (ce: CancellationException) {
+            updateOpen(sessionId) { it.copy(answering = null) }
             throw ce
         } catch (failure: Exception) {
             Log.w(TAG, "live assist: question failed session=$sessionId", failure)
-            if (!reachable()) {
-                _state.update {
-                    if (it.sessionId == sessionId && it.enabled) it.copy(status = AssistStatus.PAUSED) else it
-                }
+            val paused = !reachable()
+            updateOpen(sessionId) {
+                it.copy(
+                    answering = null,
+                    missed = AssistMiss(question, AssistMissReason.FAILED),
+                    status = if (paused) AssistStatus.PAUSED else it.status
+                )
             }
             return
-        } ?: return
-        var shown = false
-        _state.update {
-            shown = it.sessionId == sessionId && it.enabled
-            if (shown) it.copy(cards = (listOf(card) + it.cards).take(MAX_CARDS)) else it
+        }
+        if (card == null) {
+            Log.i(TAG, "live assist: no answer session=$sessionId in ${clock() - startedAt} ms")
+            updateOpen(sessionId) { it.copy(answering = null, missed = AssistMiss(question, AssistMissReason.NO_ANSWER)) }
+            return
+        }
+        Log.i(TAG, "live assist: card session=$sessionId in ${clock() - startedAt} ms")
+        val shown = updateOpen(sessionId) {
+            it.copy(cards = (listOf(card) + it.cards).take(MAX_CARDS), answering = null, missed = null)
         }
         if (shown) lastCardAt = clock()
+    }
+
+    /** Apply [change] if [sessionId] is still open with live assist on; whether it was. */
+    private fun updateOpen(sessionId: Long, change: (LiveAssistState) -> LiveAssistState): Boolean {
+        var applied = false
+        _state.update {
+            applied = it.sessionId == sessionId && it.enabled
+            if (applied) change(it) else it
+        }
+        return applied
     }
 
     /** The card for [line], or `null` when the model has nothing to show. */
