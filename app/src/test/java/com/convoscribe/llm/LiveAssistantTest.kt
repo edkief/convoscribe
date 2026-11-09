@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flow
@@ -339,6 +340,89 @@ class LiveAssistantTest {
     }
 
     @Test
+    fun theQuestionBeingAnsweredIsShownUntilItsCard() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val client = ScriptedChatClient({
+            flow {
+                gate.await()
+                emit("March 3.")
+            }
+        })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        assertNull(assistant.state.value.answering)
+        hear(id, 5, "When is the launch date again ")
+        runCurrent()
+        assertEquals("When is the launch date again", assistant.state.value.answering)
+
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertNull(assistant.state.value.missed)
+        assertEquals(1, assistant.state.value.cards.size)
+    }
+
+    @Test
+    fun aQuestionWithoutAnAnswerSaysSoUntilTheNextQuestion() = runTest(dispatcher) {
+        val gate = CompletableDeferred<Unit>()
+        val client = answering("NONE")
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "What do you think about the new logo")
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertEquals(
+            AssistMiss("What do you think about the new logo", AssistMissReason.NO_ANSWER),
+            assistant.state.value.missed
+        )
+
+        client.reply = {
+            flow {
+                gate.await()
+                emit("Marie does.")
+            }
+        }
+        hear(id, 10, "Who signs off on the budget this year")
+        runCurrent()
+        assertNull("a new question clears it", assistant.state.value.missed)
+        assertEquals("Who signs off on the budget this year", assistant.state.value.answering)
+        gate.complete(Unit)
+        runCurrent()
+        assertNull(assistant.state.value.missed)
+        assertEquals(1, assistant.state.value.cards.size)
+    }
+
+    @Test
+    fun aFailedQuestionSaysSo() = runTest(dispatcher) {
+        val client = ScriptedChatClient({ flow { throw LlmException("HTTP 500") } })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertEquals(
+            AssistMiss("When is the launch date again", AssistMissReason.FAILED),
+            assistant.state.value.missed
+        )
+        // The endpoint still answers the probe: not paused.
+        assertEquals(AssistStatus.IDLE, assistant.state.value.status)
+    }
+
+    @Test
+    fun turningItOffClearsWhatItWasDoing() = runTest(dispatcher) {
+        val client = ScriptedChatClient({ flow { awaitCancellation() } })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        assertEquals("When is the launch date again", assistant.state.value.answering)
+        assistant.setEnabled(false)
+        runCurrent()
+        assertNull(assistant.state.value.answering)
+        assertNull(assistant.state.value.missed)
+    }
+
+    @Test
     fun oneQuestionAtATime() = runTest(dispatcher) {
         val gate = CompletableDeferred<Unit>()
         val client = ScriptedChatClient({
@@ -354,11 +438,17 @@ class LiveAssistantTest {
         hear(id, 8, "Who signs off on the budget this year")
         runCurrent()
         assertEquals(1, client.calls.size)
+        assertEquals("When is the launch date again", assistant.state.value.answering)
 
         gate.complete(Unit)
         runCurrent()
         assertEquals(1, assistant.state.value.cards.size)
-        assertEquals(1, client.calls.size)
+        assertEquals("the second waits for the card spacing", 1, client.calls.size)
+
+        advanceTimeBy(LiveAssistant.CARD_SPACING_MS + 1)
+        runCurrent()
+        assertEquals(2, client.calls.size)
+        assertEquals("Who signs off on the budget this year", assistant.state.value.cards.first().question)
     }
 
     @Test
@@ -373,14 +463,106 @@ class LiveAssistantTest {
         advanceTimeBy(LiveAssistant.CARD_SPACING_MS - 1_000)
         hear(id, 20, "Who signs off on the budget this year")
         runCurrent()
-        assertEquals(1, client.calls.size)
+        assertEquals("it waits, not dropped", 1, client.calls.size)
 
         advanceTimeBy(2_000)
-        hear(id, 25, "Who signs off on the hiring plan this year")
         runCurrent()
         assertEquals(2, client.calls.size)
         assertEquals(2, assistant.state.value.cards.size)
-        assertEquals("Who signs off on the hiring plan this year", assistant.state.value.cards.first().question)
+        assertEquals("Who signs off on the budget this year", assistant.state.value.cards.first().question)
+    }
+
+    @Test
+    fun waitingQuestionsAreAskedNewestFirst_atMostThree() = runTest(dispatcher) {
+        val client = answering("Yes.")
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        assertEquals(1, assistant.state.value.cards.size)
+
+        // Four questions inside the card spacing: the oldest makes way.
+        hear(id, 8, "Who signs off on the budget this year")
+        runCurrent()
+        hear(id, 10, "Who writes the release notes this time")
+        runCurrent()
+        hear(id, 12, "Where do we keep the design files now")
+        runCurrent()
+        hear(id, 14, "Why did we move the launch to March")
+        runCurrent()
+        assertEquals(1, client.calls.size)
+
+        repeat(3) {
+            advanceTimeBy(LiveAssistant.CARD_SPACING_MS + 1)
+            runCurrent()
+        }
+        val asked = client.calls.drop(1).map { it.last().content.substringAfter("Line just said:\n") }
+        assertEquals(
+            listOf(
+                "Why did we move the launch to March",
+                "Where do we keep the design files now",
+                "Who writes the release notes this time"
+            ),
+            asked
+        )
+    }
+
+    @Test
+    fun aQuestionThatWaitedTooLongIsDropped() = runTest(dispatcher) {
+        // Each answer takes most of the time a question has.
+        val slow = LiveAssistant.ANSWER_TIMEOUT_MS - 1_000
+        val client = ScriptedChatClient({
+            flow {
+                delay(slow)
+                emit("Yes.")
+            }
+        })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        hear(id, 8, "Who signs off on the budget this year")
+        runCurrent()
+        hear(id, 10, "Who writes the release notes this time")
+        runCurrent()
+
+        // Newest first: the release notes, then the budget once it is too old.
+        advanceTimeBy(2 * slow + 2 * LiveAssistant.CARD_SPACING_MS + 10)
+        runCurrent()
+        assertEquals(2, client.calls.size)
+        assertTrue(client.calls[1].last().content.endsWith("Who writes the release notes this time"))
+        advanceTimeBy(LiveAssistant.MAX_WAIT_MS)
+        runCurrent()
+        assertEquals("the budget question was dropped", 2, client.calls.size)
+        assertNull(assistant.state.value.answering)
+
+        // The worker is free again for the next question.
+        hear(id, 200, "Where do we keep the design files now")
+        runCurrent()
+        assertEquals(3, client.calls.size)
+    }
+
+    @Test
+    fun turningItOffForgetsWaitingQuestions() = runTest(dispatcher) {
+        val client = ScriptedChatClient({ flow { awaitCancellation() } })
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "When is the launch date again")
+        runCurrent()
+        hear(id, 8, "Who signs off on the budget this year")
+        runCurrent()
+        assistant.setEnabled(false)
+        runCurrent()
+        assistant.setEnabled(true)
+        runCurrent()
+        advanceTimeBy(LiveAssistant.CARD_SPACING_MS + 1)
+        runCurrent()
+        assertEquals(1, client.calls.size)
+
+        hear(id, 40, "Who writes the release notes this time")
+        runCurrent()
+        assertEquals(2, client.calls.size)
+        assertEquals("Who writes the release notes this time", assistant.state.value.answering)
     }
 
     @Test
@@ -413,7 +595,7 @@ class LiveAssistantTest {
     }
 
     @Test
-    fun aQuestionGivesUpAfterFifteenSecondsIncludingTheWaitForTheLock() = runTest(dispatcher) {
+    fun aQuestionGivesUpAfterThirtySecondsIncludingTheWaitForTheLock() = runTest(dispatcher) {
         val calls = Mutex()
         calls.lock()
         val client = answering("March 3.")
@@ -427,8 +609,9 @@ class LiveAssistantTest {
         runCurrent()
         assertEquals(0, client.calls.size)
         assertTrue(assistant.state.value.cards.isEmpty())
-        // The endpoint still answers: nothing to tell.
+        // The endpoint still answers: not paused, but the question says it failed.
         assertEquals(AssistStatus.IDLE, assistant.state.value.status)
+        assertEquals(AssistMissReason.FAILED, assistant.state.value.missed?.reason)
 
         client.reply = { flow { awaitCancellation() } }
         hear(id, 10, "Who signs off on the budget this year")

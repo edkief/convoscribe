@@ -2897,6 +2897,13 @@ NPU engine (Nemotron) on the phone.
 11. With live assist on, say a question as the second sentence of a line and
     pause before its end, e.g. "I can't remember. Can you remind me whether we
     support private link" … (2 s) … (issue #147).
+12. With live assist on, ask a question a past session answers and watch the
+    live assist panel until its card appears; then ask one nothing answers
+    ("What is the Wi-Fi password at the Lisbon office?"). On the Boox, and on
+    the phone with the floating control in its expanded shape and ConvoScribe
+    in the background (issue #152).
+13. Ask three questions within 10 s of each other, then stay quiet for a
+    minute (issue #152).
 
 **Expected**
 
@@ -2905,8 +2912,12 @@ NPU engine (Nemotron) on the phone.
   model…* for at most 3 s, then *Listening for questions.*
 - Step 3: a card appears for the first two (answer in at most two sentences
   with the session and time it comes from), only once complete; on the Boox the
-  screen refreshes once per card. Nothing appears for the others.
-- Step 4: the second question gets no card (one every 20 s at most). The pinned
+  screen refreshes once per card. No card for the others: if one reached the
+  language model (the rhetorical one may not), the panel says *No answer
+  found in this conversation or past sessions for “…”* until the next
+  question.
+- Step 4: the second question's card comes about 20 s after the first (one
+  every 20 s at most). The pinned
   card is a mark at the time of the question with `Q: …` / `A: …` as its note,
   in the transcript and Marks; the dismissed one and any other card are gone.
 - Step 5: recording and the live transcript never stop or slow down. After the
@@ -2925,6 +2936,14 @@ NPU engine (Nemotron) on the phone.
 - Step 11: a card appears for the question. If the recognizer writes a `?`
   after the pause, it ends the question's line on the Record screen and in the
   saved transcript; there is no line holding only `?`.
+- Step 12: within a few seconds of each question the panel says *Answering
+  “…”* with the question, and the expanded floating control shows
+  *Answering…*. The first ends in a card, the line going back to *Listening
+  for questions.*; the second in *No answer found … for “…”*, and the
+  floating badge goes away. On the Boox the line changes without
+  flicker or animation, once when the answer starts and once when it ends.
+- Step 13: a card for each, newest question first, about 20 s apart. Logcat
+  (`live assist`) shows the other two waiting their turn.
 
 ## 65. Services per user and upstream status (issue #145)
 

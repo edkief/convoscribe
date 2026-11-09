@@ -5,6 +5,13 @@ import com.convoscribe.recording.RecordingState
 import com.convoscribe.settings.FloatingShape
 
 /**
+ * What live assist has to show on the floating control: [answers]
+ * waiting on the Record screen (issue #50), and whether a question is
+ * being [answering] right now (issue #152).
+ */
+data class AssistBadges(val answers: Int = 0, val answering: Boolean = false)
+
+/**
  * What the floating control draws (issue #21): only the parts of
  * [RecordingState] its [FloatingShape] shows. [FloatingControl] feeds
  * the content through `distinctUntilChanged`, so a field left `null`
@@ -18,12 +25,16 @@ import com.convoscribe.settings.FloatingShape
  * @property answers live-assist answers waiting on the Record screen
  *   (issue #50), or `null` when there are none or the shape shows none:
  *   only the expanded shape does, so the others never redraw for one
+ * @property answering `true` while live assist answers a question
+ *   (issue #152), `null` otherwise or when the shape shows none: only
+ *   the expanded shape does
  */
 data class FloatingControlUi(
     val paused: Boolean,
     val elapsedMs: Long? = null,
     val transcript: String? = null,
-    val answers: Int? = null
+    val answers: Int? = null,
+    val answering: Boolean? = null
 ) {
     companion object {
         /**
@@ -31,16 +42,17 @@ data class FloatingControlUi(
          * text being recognised ([RecordingState.partialText]) only
          * outside e-ink ([eink]), so that on e-ink it changes once per
          * sentence rather than per word. [maxChars] is the transcript
-         * budget, smaller with a larger font ([maxCharsFor]). [answers] is
-         * the number of live-assist cards (issue #50), shown by the
-         * expanded shape only.
+         * budget, smaller with a larger font ([maxCharsFor]). [assist] is
+         * the number of live-assist cards (issue #50) and whether a
+         * question is being answered (issue #152), shown by the expanded
+         * shape only.
          */
         fun of(
             state: RecordingState,
             shape: FloatingShape,
             eink: Boolean,
             maxChars: Int = MAX_CHARS,
-            answers: Int = 0
+            assist: AssistBadges = AssistBadges()
         ): FloatingControlUi {
             val paused = state.phase == RecordingPhase.PAUSED
             val seconds = state.elapsedMs / 1_000L * 1_000L
@@ -53,7 +65,8 @@ data class FloatingControlUi(
                         paused,
                         elapsedMs = seconds,
                         transcript = transcriptTail(state.finalLines, partial, maxChars),
-                        answers = answers.takeIf { it > 0 }
+                        answers = assist.answers.takeIf { it > 0 },
+                        answering = true.takeIf { assist.answering }
                     )
                 }
             }

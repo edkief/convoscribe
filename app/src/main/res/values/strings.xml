@@ -16,6 +16,7 @@
         <item quantity="one">%d answer</item>
         <item quantity="other">%d answers</item>
     </plurals>
+    <string name="overlay_answering">Answering…</string>
     <string name="tile_label">ConvoScribe</string>
     <string name="preset_picker_title">Start recording with</string>
     <string name="preset_picker_empty">Save presets on the Record screen or in Settings → Search &amp; organise to start them from here.</string>
@@ -344,6 +345,9 @@
     <string name="record_assist_unreachable">Endpoint not reachable. Live assist is off.</string>
     <string name="record_assist_paused">Paused: the language model stopped answering. The next question tries again.</string>
     <string name="record_assist_listening">Listening for questions.</string>
+    <string name="record_assist_answering">Answering “%1$s”…</string>
+    <string name="record_assist_no_answer">No answer found in this conversation or past sessions for “%1$s”.</string>
+    <string name="record_assist_failed">Couldn\'t get an answer to “%1$s”.</string>
     <string name="record_assist_pin">Pin</string>
     <string name="record_assist_dismiss">Dismiss</string>
     <string name="presets_title">Presets</string>

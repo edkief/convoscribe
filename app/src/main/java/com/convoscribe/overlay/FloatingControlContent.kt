@@ -47,8 +47,8 @@ import com.convoscribe.ui.theme.AppTheme
  *    and the recorded time, then the same buttons.
  *  * [FloatingShape.EXPANDED]: the standard row above the end of the
  *    transcript, in a card of fixed size so the window does not jump
- *    as sentences arrive, and a badge of live-assist answers waiting
- *    (issue #50) when there are any.
+ *    as sentences arrive, and badges for live assist: answers waiting
+ *    (issue #50) and a question being answered (issue #152).
  *
  * Every shape ends with an expand / collapse arrow that calls
  * [onShapeChange] with [FloatingShape.next]. Tapping the status part
@@ -93,7 +93,14 @@ internal fun FloatingControlContent(
                     .widthIn(min = AppTheme.sizes.floatingExpandedWidth)
             ) {
                 ControlRow(shape, ui, onOpen, onMark, onPauseResume, onStop, onShapeChange)
-                ui.answers?.let { AnswersBadge(count = it, onOpen = onOpen) }
+                if (ui.answers != null || ui.answering != null) {
+                    Row(modifier = Modifier.padding(bottom = spacing.xs)) {
+                        ui.answers?.let {
+                            AssistBadge(pluralStringResource(R.plurals.overlay_answers, it, it), onOpen)
+                        }
+                        if (ui.answering == true) AssistBadge(stringResource(R.string.overlay_answering), onOpen)
+                    }
+                }
                 Text(
                     text = ui.transcript ?: stringResource(R.string.overlay_listening),
                     modifier = Modifier.padding(start = spacing.m, end = spacing.m, bottom = spacing.m),
@@ -110,9 +117,13 @@ internal fun FloatingControlContent(
     }
 }
 
-/** Live-assist answers waiting (issue #50); opens the Record screen, where they are. */
+/**
+ * A live-assist badge: answers waiting (issue #50) or a question being
+ * answered (issue #152). Static text; opens the Record screen, where
+ * the answers are.
+ */
 @Composable
-private fun AnswersBadge(count: Int, onOpen: () -> Unit) {
+private fun AssistBadge(text: String, onOpen: () -> Unit) {
     val spacing = AppTheme.spacing
     Surface(
         onClick = onOpen,
@@ -120,10 +131,10 @@ private fun AnswersBadge(count: Int, onOpen: () -> Unit) {
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
         border = if (AppTheme.isEink) BorderStroke(AppTheme.sizes.outline, MaterialTheme.colorScheme.outline) else null,
-        modifier = Modifier.padding(start = spacing.m, bottom = spacing.xs)
+        modifier = Modifier.padding(start = spacing.m)
     ) {
         Text(
-            text = pluralStringResource(R.plurals.overlay_answers, count, count),
+            text = text,
             style = MaterialTheme.typography.labelMedium,
             modifier = Modifier.padding(horizontal = spacing.m, vertical = spacing.xs)
         )
