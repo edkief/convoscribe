@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,10 +106,14 @@ interface AssistSources {
  * [PromptBuilder.NONE_ANSWER] ([AssistAnswer]). The whole answer is
  * collected before a card is shown, so e-ink redraws once per card.
  *
- * At most one question is in flight; lines that arrive meanwhile, or
- * less than [CARD_SPACING_MS] after the last card, are skipped. A
- * question gets [ANSWER_TIMEOUT_MS] in all, including the wait for
- * [calls], the lock shared with the other background calls.
+ * At most one question is in flight, and at most one card shows every
+ * [CARD_SPACING_MS]. Questions heard meanwhile wait, at most
+ * [MAX_WAITING] of them, and are asked newest first, the one still
+ * being talked about; one heard more than [MAX_WAIT_MS] ago is dropped
+ * (issue #152). A question gets [ANSWER_TIMEOUT_MS] in all, including
+ * the wait for [calls], the lock shared with the other background calls.
+ * [state] says which question is being answered, and which last got no
+ * card and why.
  *
  * Turning it on probes the endpoint ([ChatClient.listModels], at most
  * [PROBE_TIMEOUT_MS]); when that fails it stays off with
@@ -142,6 +147,18 @@ class LiveAssistant(
     @Volatile private var lastLineCandidate = false
 
     @Volatile private var probe: Job? = null
+
+    /** A question heard while another was answered or a card had just shown, and when (issue #152). */
+    private class Waiting(val line: String, val heardAt: Long)
+
+    /** Questions waiting their turn, oldest first; guards [working] and [generation] too. */
+    private val waiting = ArrayDeque<Waiting>()
+
+    /** Whether a worker is taking [waiting] questions, one at a time. */
+    private var working = false
+
+    /** Bumped when live assist stops, so a worker still winding down takes nothing more. */
+    private var generation = 0
 
     @Volatile private var answering: Job? = null
 
@@ -196,7 +213,7 @@ class LiveAssistant(
 
     private fun end() {
         probe?.cancel()
-        answering?.cancel()
+        stopAnswering()
         probe = null
         answering = null
         sources.release()
@@ -212,7 +229,7 @@ class LiveAssistant(
         val id = _state.value.sessionId ?: return
         if (!enabled) {
             probe?.cancel()
-            answering?.cancel()
+            stopAnswering()
             _state.update { it.copy(enabled = false, status = AssistStatus.IDLE, answering = null, missed = null) }
             return
         }
@@ -248,13 +265,55 @@ class LiveAssistant(
         _state.update { state -> state.copy(cards = state.cards.filterNot { it.id == cardId }) }
     }
 
+    /** Put [line] in line to be asked; start a worker unless one is already at it. */
     private fun consider(sessionId: Long, line: String) {
         val current = _state.value
         if (!current.enabled || current.status == AssistStatus.CHECKING) return
-        if (answering?.isActive == true) return
-        val last = lastCardAt
-        if (last != null && clock() - last < CARD_SPACING_MS) return
-        answering = scope.launch { answer(sessionId, line) }
+        // The generation a new worker belongs to, or null when one is at it already.
+        val owner = synchronized(waiting) {
+            waiting.addLast(Waiting(line, clock()))
+            while (waiting.size > MAX_WAITING) waiting.removeFirst()
+            if (working) {
+                null
+            } else {
+                working = true
+                generation
+            }
+        }
+        if (owner != null) {
+            answering = scope.launch { work(sessionId, owner) }
+        } else {
+            Log.i(TAG, "live assist: question waits its turn session=$sessionId")
+        }
+    }
+
+    /** Ask the [waiting] questions, newest first, a card at most every [CARD_SPACING_MS]. */
+    private suspend fun work(sessionId: Long, owner: Int) {
+        while (true) {
+            lastCardAt?.let { last ->
+                val wait = last + CARD_SPACING_MS - clock()
+                if (wait > 0) delay(wait)
+            }
+            val next = synchronized(waiting) {
+                if (owner != generation) return
+                waiting.removeLastOrNull().also { if (it == null) working = false }
+            } ?: return
+            if (clock() - next.heardAt > MAX_WAIT_MS) {
+                Log.i(TAG, "live assist: question waited too long, dropped session=$sessionId")
+                continue
+            }
+            answer(sessionId, next.line)
+        }
+    }
+
+    /** Forget waiting questions and stop the one being answered. */
+    private fun stopAnswering() {
+        synchronized(waiting) {
+            waiting.clear()
+            working = false
+            generation++
+        }
+        answering?.cancel()
     }
 
     private suspend fun answer(sessionId: Long, line: String) {
@@ -366,8 +425,21 @@ class LiveAssistant(
         /** The quietest the card area may be: at most one new card this often. */
         const val CARD_SPACING_MS: Long = 20_000L
 
-        /** All a question may take, from the excerpts to the end of the answer. */
-        const val ANSWER_TIMEOUT_MS: Long = 15_000L
+        /**
+         * All a question may take, from the excerpts to the end of the
+         * answer: a reasoning model took 10–12 s alone (issue #152).
+         */
+        const val ANSWER_TIMEOUT_MS: Long = 30_000L
+
+        /** Questions kept waiting their turn; the oldest makes way (issue #152). */
+        const val MAX_WAITING: Int = 3
+
+        /**
+         * A waiting question heard longer ago than this is no longer asked
+         * (issue #152): long enough for [MAX_WAITING] of them, a card
+         * every [CARD_SPACING_MS].
+         */
+        const val MAX_WAIT_MS: Long = 90_000L
 
         /** How long the endpoint has to answer the probe. */
         const val PROBE_TIMEOUT_MS: Long = 3_000L
