@@ -406,17 +406,25 @@ brings them to your other devices.
   excerpts from earlier in this session and from past sessions (found as
   in *Ask across sessions*), to the language model with low reasoning,
   which either answers in at most two sentences with where it comes from,
-  or says there is nothing to answer, and nothing is shown. One question
-  is asked at a time, a new answer appears at most every 20 s, and a
-  question gets 15 s in all. Answers appear whole (no streaming), newest
-  on top, at most 3, so e-ink redraws once per answer. **Pin** keeps one
+  or says there is nothing to answer. While a question is being answered
+  the live assist panel says *Answering “…”*; when it gets no answer, the
+  panel says *No answer found…* for that question, or *Couldn't get an
+  answer…* when it timed out or failed, until the next question
+  (issue #152). One question is asked at a time and a new answer appears
+  at most every 20 s; questions heard meanwhile wait, at most 3, and are
+  asked newest first, unless they were heard more than 90 s ago. A
+  question gets 30 s in all. Answers appear whole (no streaming), newest
+  on top, at most 3, so e-ink redraws once per answer; the status line is
+  plain text too, so it redraws only when it changes. **Pin** keeps one
   as a mark at the moment of the question, with `Q: … / A: …` as its
   note, so it shows in the transcript, Marks and summaries; the others
   are dropped at Stop. If the language model stops answering mid-meeting,
   live assist says it is paused and the next question tries again; the
   recording and transcription are never affected. The expanded floating
-  control shows how many answers are waiting; the minimal and standard
-  shapes don't change. With the semantic search model installed,
+  control shows how many answers are waiting, and *Answering…* while a
+  question is being answered; the minimal and standard shapes don't
+  change. Logcat (`live assist`) says what happened to each question:
+  asked, waiting, dropped, no answer, card or failed. With the semantic search model installed,
   *Match past sessions by meaning* also finds past sessions that say the
   same thing in other words; it runs on the device next to
   transcription, so it is off by default and not backed up. Nothing is
