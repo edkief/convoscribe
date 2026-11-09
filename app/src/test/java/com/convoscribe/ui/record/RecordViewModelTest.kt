@@ -438,6 +438,8 @@ class RecordViewModelTest {
             text: String,
             tokens: List<TimedToken>
         ): Long = error("not used")
+        override suspend fun appendToSegment(segmentId: Long, text: String, endMs: Long, tokens: List<TimedToken>) =
+            error("not used")
         override suspend fun finishRecording(sessionId: Long, durationMs: Long) = Unit
     }
 }

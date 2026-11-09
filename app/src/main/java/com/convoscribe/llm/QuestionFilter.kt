@@ -10,8 +10,9 @@ import java.util.Locale
  * so it errs on letting a line through.
  *
  * Whether a recognizer writes `?` depends on its model, so the
- * punctuation is one sign among others. A line is a candidate when,
- * after a trailing rhetorical tag (*…, right?*, *…, n'est-ce pas ?*)
+ * punctuation is one sign among others. A line is a candidate when
+ * any of its sentences is (issue #147: *I can't remember. Can you
+ * remind me whether…*). A sentence is, after a trailing rhetorical tag (*…, right?*, *…, n'est-ce pas ?*)
  * and leading discourse words (*so*, *alors*) are set aside, it has at
  * least [MIN_WORDS] words and:
  *  - it ends in `?` (and the `?` was not the tag's), or
@@ -90,16 +91,23 @@ object QuestionFilter {
     /** How many words into a line an inversion still counts (*Et quand partez-vous*). */
     private const val INVERSION_WORDS = 3
 
+    /** Where a line splits into sentences: after `.`, `!`, `?` or `…` and a space. */
+    private val SENTENCE_END = Regex("(?<=[.!?…])\\s+")
+
     /** Whether [line] could be a real question, worth asking the language model about. */
-    fun isCandidate(line: String): Boolean {
-        var text = line.replace('’', '\'').replace('‘', '\'').trim().lowercase(Locale.ROOT)
+    fun isCandidate(line: String): Boolean = line.replace('’', '\'').replace('‘', '\'').trim()
+        .split(SENTENCE_END)
+        .any { sentence -> isQuestionSentence(sentence) }
+
+    private fun isQuestionSentence(sentence: String): Boolean {
+        var text = sentence.trim().lowercase(Locale.ROOT)
         val untagged = TAIL_TAG.replace(text, "")
         val tagged = untagged.length != text.length
         text = untagged.trim()
         val words = words(text).dropWhile { it in LEAD_WORDS }
         if (words.size < MIN_WORDS) return false
         if (!tagged && text.endsWith("?")) return true
-        return opensEnglishQuestion(words, line) || isFrenchQuestion(words, text)
+        return opensEnglishQuestion(words, sentence) || isFrenchQuestion(words, text)
     }
 
     /** The words of [text], without the punctuation around them. */

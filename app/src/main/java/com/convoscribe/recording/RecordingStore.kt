@@ -105,6 +105,15 @@ interface RecordingStore {
     ): Long
 
     /**
+     * Add [text], punctuation the recognizer closed on its own after a
+     * pause (a lone `?`, issue #147), to the end of segment [segmentId]:
+     * its text gets [text] with no space, its end becomes [endMs] when
+     * later, and [tokens] (absolute times) follow its own. Nothing
+     * happens when the segment is gone.
+     */
+    suspend fun appendToSegment(segmentId: Long, text: String, endMs: Long, tokens: List<TimedToken> = emptyList())
+
+    /**
      * Mark the moment [atMs] of [sessionId]'s recorded audio, with an
      * optional [note] (issue #30), and return the mark's id.
      */

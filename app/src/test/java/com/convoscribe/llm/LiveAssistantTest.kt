@@ -153,6 +153,13 @@ class LiveAssistantTest {
         state.update { it.copy(finalLines = it.finalLines + text, elapsedMs = startMs + 3_000L) }
     }
 
+    /** The recognizer's lone [text] joined to the last line, as the controller does (issue #147). */
+    private suspend fun join(id: Long, text: String) {
+        val last = repo.getSegments(id).maxBy { it.startMs }
+        repo.appendToSegment(last.id, text, endMs = last.endMs + 1_000L, tokens = emptyList())
+        state.update { it.copy(finalLines = it.finalLines.dropLast(1) + (it.finalLines.last() + text)) }
+    }
+
     private fun stop(id: Long) {
         state.value = RecordingState(phase = RecordingPhase.STOPPING, sessionId = id)
         state.value = RecordingState(phase = RecordingPhase.IDLE, lastCompletedSessionId = id)
@@ -283,6 +290,37 @@ class LiveAssistantTest {
         runCurrent()
         assertEquals(0, client.calls.size)
         assertTrue(assistant.state.value.cards.isEmpty())
+    }
+
+    @Test
+    fun aLineIsAskedAboutWhenItsQuestionMarkIsJoined() = runTest(dispatcher) {
+        val client = answering("AWS.")
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "We were going to use AWS for the launch")
+        runCurrent()
+        assertEquals(0, client.calls.size)
+
+        join(id, "?")
+        runCurrent()
+        assertEquals(1, client.calls.size)
+        val card = assistant.state.value.cards.single()
+        assertEquals("We were going to use AWS for the launch?", card.question)
+        assertEquals(5_000L, card.questionAtMs)
+    }
+
+    @Test
+    fun aQuestionIsNotAskedAgainWhenItsQuestionMarkIsJoined() = runTest(dispatcher) {
+        val client = answering("NONE")
+        val assistant = assistant(client)
+        val id = recordingWith(assistant)
+        hear(id, 5, "I can't remember. Can you remind me whether we support private link")
+        runCurrent()
+        assertEquals(1, client.calls.size)
+
+        join(id, "?")
+        runCurrent()
+        assertEquals(1, client.calls.size)
     }
 
     @Test

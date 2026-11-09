@@ -191,6 +191,21 @@ class RecordingControllerTest {
             return segId
         }
 
+        override suspend fun appendToSegment(
+            segmentId: Long,
+            text: String,
+            endMs: Long,
+            tokens: List<com.convoscribe.asr.TimedToken>
+        ) {
+            val index = (segmentId - 1L).toInt()
+            val segment = segments.getOrNull(index) ?: return
+            segments[index] = segment.copy(
+                text = segment.text + text,
+                endMs = maxOf(segment.endMs, endMs),
+                tokens = segment.tokens + tokens
+            )
+        }
+
         override suspend fun finishRecording(sessionId: Long, durationMs: Long) {
             finishCalls += Finish(sessionId, durationMs)
         }
@@ -241,6 +256,9 @@ class RecordingControllerTest {
         /** Every sample fed through [accept], in order. */
         val fed: MutableList<Float> = mutableListOf()
 
+        /** Texts of the next finals, in order, in place of "line-<n>" (issue #147). */
+        val texts: ArrayDeque<String> = ArrayDeque()
+
         /** [acceptCount] at the end of the last utterance. */
         private var boundary: Int = 0
 
@@ -254,7 +272,7 @@ class RecordingControllerTest {
                 boundary = n
                 return listOf(
                     TranscriptEvent.Final(
-                        text = "line-$n",
+                        text = texts.removeFirstOrNull() ?: "line-$n",
                         startMs = startMs,
                         endMs = endMs,
                         tokens = listOf(com.convoscribe.asr.TimedToken(" line", startMs + 10))
@@ -1225,5 +1243,45 @@ class RecordingControllerTest {
         h.controller.stop()
         advanceUntilIdle()
         assertEquals(1, h.store.finishCalls.size)
+    }
+
+    @Test
+    fun aPunctuationOnlyFinal_isJoinedToTheLineBeforeIt() = runTest {
+        val transcriber = EveryThirdChunkTranscriber().apply {
+            texts += listOf("Can you remind me which cloud platform", "?", "Next line")
+        }
+        val h = buildHarness(transcriber = transcriber)
+        h.controller.start(this)
+        advanceUntilIdle()
+        repeat(9) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        assertEquals(
+            listOf("Can you remind me which cloud platform?", "Next line"),
+            h.store.segments.map { it.text }
+        )
+        assertEquals(listOf(0L to 600L, 600L to 900L), h.store.segments.map { it.startMs to it.endMs })
+        assertEquals(listOf(10L, 310L), h.store.segments[0].tokens.map { it.ms })
+        assertEquals(
+            listOf("Can you remind me which cloud platform?", "Next line"),
+            h.controller.state.value.finalLines
+        )
+        h.controller.stop()
+        advanceUntilIdle()
+    }
+
+    @Test
+    fun aPunctuationOnlyFirstFinal_staysALineOfItsOwn() = runTest {
+        val transcriber = EveryThirdChunkTranscriber().apply { texts += listOf("?", "Next line") }
+        val h = buildHarness(transcriber = transcriber)
+        h.controller.start(this)
+        advanceUntilIdle()
+        repeat(6) { h.audio.channel.trySend(silentChunk()) }
+        advanceUntilIdle()
+
+        assertEquals(listOf("?", "Next line"), h.store.segments.map { it.text })
+        assertEquals(listOf("?", "Next line"), h.controller.state.value.finalLines)
+        h.controller.stop()
+        advanceUntilIdle()
     }
 }
