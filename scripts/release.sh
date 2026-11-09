@@ -70,8 +70,19 @@ Environment (publish):
                       unless --notes-file is given)
   LLM_BASE_URL        default http://llama-chat.llama:8080/v1
   LLM_MODEL           default llama-chat
-  LLM_DISABLE_THINKING  1 (default) sends chat_template_kwargs.enable_thinking
-                      = false (llama.cpp/vLLM); set 0 for other servers
+  LLM_LOW_REASONING   JSON object merged into the notes request to ask the
+                      model for little reasoning; every model has its own
+                      switch, as with the server's LLM_LOW_REASONING (#136).
+                      Default: the known chat_template_kwargs switches, so a
+                      new model behind llama-chat still finds its own:
+                      reasoning_strength none (Muse Glimmer), enable_thinking
+                      false (Qwen3, GLM), enable_reasoning false, thinking
+                      false (DeepSeek), reasoning_effort low (gpt-oss); a
+                      template ignores the ones it doesn't read. Set it empty
+                      for servers that reject unknown fields
+  LLM_MAX_TOKENS      output budget for the notes, reasoning included
+                      (default 12000)
+  LLM_TIMEOUT         seconds to wait for the notes (default 900)
   GH_TOKEN            used by gh when it is not logged in
   GIT_TAG             tag to publish when --tag is not given (set by Tekton)
   CONVOSCRIBE_SHERPA_PREBUILT  directory holding jniLibs/ and libs/ from the
@@ -356,7 +367,13 @@ publish() {
 
   LLM_BASE_URL="${LLM_BASE_URL:-http://llama-chat.llama:8080/v1}"
   LLM_MODEL="${LLM_MODEL:-llama-chat}"
-  LLM_DISABLE_THINKING="${LLM_DISABLE_THINKING:-1}"
+  # Unset: the default switch. Set empty, or the old LLM_DISABLE_THINKING=0:
+  # send nothing extra.
+  local default_low_reasoning='{"chat_template_kwargs":{"reasoning_strength":"none","enable_thinking":false,"enable_reasoning":false,"thinking":false,"reasoning_effort":"low"}}'
+  [[ "${LLM_DISABLE_THINKING:-1}" == 0 ]] && default_low_reasoning=""
+  LLM_LOW_REASONING="${LLM_LOW_REASONING-$default_low_reasoning}"
+  LLM_MAX_TOKENS="${LLM_MAX_TOKENS:-12000}"
+  LLM_TIMEOUT="${LLM_TIMEOUT:-900}"
 
   # shellcheck disable=SC1091
   source "$SCRIPT_DIR/env.sh"
@@ -512,7 +529,8 @@ publish() {
     log "Generating release notes from $commit_count commit(s) with $LLM_MODEL at $LLM_BASE_URL ..."
     COMMIT_LOG="$commit_log" PRIOR_ISSUES="$prior_issues" PREV_TAG="${prev_tag:-}" NEW_TAG="$tag" \
       LLM_BASE_URL="$LLM_BASE_URL" LLM_MODEL="$LLM_MODEL" \
-      LLM_DISABLE_THINKING="$LLM_DISABLE_THINKING" \
+      LLM_LOW_REASONING="$LLM_LOW_REASONING" \
+      LLM_MAX_TOKENS="$LLM_MAX_TOKENS" LLM_TIMEOUT="$LLM_TIMEOUT" \
       python3 - "$NOTES_BODY" <<'PY'
 import json
 import os
@@ -529,7 +547,10 @@ prior_issues = set(os.environ.get("PRIOR_ISSUES", "").split())
 # commits stay only with an issue reference (e.g. release signing, #16);
 # without one they are CI plumbing.
 HIDDEN_TYPES = {"test", "docs", "ci", "style", "refactor", "chore"}
-TYPE_RE = re.compile(r"^(\w+)(?:\([^)]*\))?!?:")
+# Scopes for developer tooling that never ships in the APK, whatever the type
+# (e.g. "feat(release): list the commits a release contains").
+HIDDEN_SCOPES = {"release", "eval"}
+TYPE_RE = re.compile(r"^(\w+)(?:\(([^)]*)\))?!?:")
 ISSUE_RE = re.compile(r"\(#(\d+)\)")
 
 # Group the visible commits by issue, in order of first appearance, so the
@@ -542,9 +563,10 @@ for record in os.environ["COMMIT_LOG"].split("\x1e"):
     subject, _, commit_body = record.partition("\n")
     match = TYPE_RE.match(subject)
     kind = match.group(1).lower() if match else None
+    scope = (match.group(2) or "").lower() if match else ""
     issue = ISSUE_RE.search(subject)
     issue = issue.group(1) if issue else None
-    if kind in HIDDEN_TYPES or (kind == "build" and issue is None):
+    if kind in HIDDEN_TYPES or scope in HIDDEN_SCOPES or (kind == "build" and issue is None):
         continue
     groups.setdefault(issue, []).append((kind, subject, commit_body.strip()))
 
@@ -554,24 +576,29 @@ if not groups:
     sys.exit(0)
 
 # Where each issue's bullet may go. Users have nothing of a new issue yet,
-# so all of it is New, never Improved or Fixed; an issue whose commits are
-# all build changes is Under the hood; a follow-up to a released issue goes
+# so all of it is New, never Improved or Fixed; a new issue whose commits are
+# all fixes is a bug report, so it is Fixed; an issue whose commits are all
+# build changes is Under the hood; a follow-up to a released issue goes
 # wherever its commits fit.
 build_only = {i for i, commits in groups.items() if i is not None and all(kind == "build" for kind, _, _ in commits)}
-new_issues = [i for i in groups if i is not None and i not in prior_issues and i not in build_only]
+fix_issues = [i for i, commits in groups.items()
+              if i is not None and i not in prior_issues and all(kind == "fix" for kind, _, _ in commits)]
+new_issues = [i for i in groups if i is not None and i not in prior_issues and i not in build_only and i not in fix_issues]
 # What the commits outside new features can feed. A commit without a type
 # could be anything.
-rest = [kind for i, commits in groups.items() if i not in new_issues and i not in build_only for kind, _, _ in commits]
+rest = [kind for i, commits in groups.items()
+        if i not in new_issues and i not in build_only and i not in fix_issues for kind, _, _ in commits]
 allowed = []
 if new_issues or rest:
     allowed.append("New")
 if any(kind not in ("fix", "build") for kind in rest):
     allowed.append("Improved")
-if any(kind in ("fix", None) for kind in rest):
+if fix_issues or any(kind in ("fix", None) for kind in rest):
     allowed.append("Fixed")
 if build_only or "build" in rest:
     allowed.append("Under the hood")
 homes = {i: {"New"} for i in new_issues}
+homes.update({i: {"Fixed"} for i in fix_issues})
 homes.update({i: {"Under the hood"} for i in build_only})
 homes.update({i: set(allowed) for i in groups if i is not None and i not in homes})
 
@@ -583,6 +610,8 @@ def render(with_bodies):
             parts.append("## Commits without an issue reference (each stands alone)")
         elif issue in new_issues:
             parts.append(f"## #{issue}: NEW FEATURE, users have never had any of it")
+        elif issue in fix_issues:
+            parts.append(f"## #{issue}: BUG FIX to something users already have")
         elif issue in build_only:
             parts.append(f"## #{issue}: BUILD CHANGE to how the app is built, signed or installed")
         else:
@@ -610,6 +639,9 @@ plan = [f"- Use only these `###` sections, in this order: {', '.join(f'`### {s}`
 if new_issues:
     refs = ", ".join(f"#{i}" for i in new_issues)
     plan.append(f"- `### New` has exactly one bullet for each new feature: {refs}. Every part of a feature goes in its one bullet, never in a second bullet or under another section.")
+if fix_issues:
+    refs = ", ".join(f"#{i}" for i in fix_issues)
+    plan.append(f"- `### Fixed` has exactly one bullet for each bug fix: {refs}. Say what no longer goes wrong.")
 if build_only:
     refs = ", ".join(f"#{i}" for i in build_only)
     plan.append(f"- `### Under the hood` has one bullet for each build change, {refs}, and only when it changes how the app is installed or updated. Never list a build change under `### New`.")
@@ -629,7 +661,7 @@ user = f"""Write the release notes for ConvoScribe {os.environ['NEW_TAG']} {sinc
 How to read the log:
 - It is the development history between two releases. Users only ever had the previous release; none of the intermediate commits reached them. Describe the net difference between the previous release and this one, not the steps taken to get there.
 - Commits follow Conventional Commits: `type(scope): subject`. `feat` adds behaviour, `fix` corrects it, `perf` speeds it up, `build` changes how the app is built or signed. The scope names the area of the app. Commits users cannot notice (tests, docs, refactors, CI) have already been removed.
-- The commits are grouped by issue. Each `##` heading says whether that issue is a NEW FEATURE (users have never had any of it), a FOLLOW-UP to a feature they already have, or a BUILD CHANGE. Trust these labels.
+- The commits are grouped by issue. Each `##` heading says whether that issue is a NEW FEATURE (users have never had any of it), a BUG FIX, a FOLLOW-UP to a feature they already have, or a BUILD CHANGE. Trust these labels.
 - The commits of one issue are the steps of building it (data layer, service, UI); together they are one change for the user, not one change per commit. A fix, tweak or tuning inside a NEW FEATURE group is part of building that feature, not a fix or improvement users would notice (e.g. "add speaker identification" then "tune speaker identification sensitivity" is one New bullet).
 
 Sections for this release:
@@ -640,8 +672,9 @@ Sections for this release:
 Rules:
 - Output GitHub Markdown only: no title, no preamble, no closing remarks, no code fences around the whole answer.
 - Start with one or two plain sentences summarising the release.
-- Write exactly one bullet per issue: what the user can now do, in plain language, in one or two sentences, mentioning its main parts (e.g. "Model downloads now run in the background with a progress notification, resume after interruptions, wait for the network and retry on errors, and the setup screen follows their progress (#10).").
+- Write exactly one bullet per issue: what the user can now do, in plain language, in at most 40 words, mentioning its main parts and leaving out how it was built (e.g. "Model downloads now run in the background with a progress notification, resume after interruptions, wait for the network and retry on errors, and the setup screen follows their progress (#10).").
 - End each bullet with its group's issue reference, e.g. "(#7)". Never give a bullet an issue reference its commits do not carry.
+- Write for people using the app, not for developers: never name code (classes, functions, fields, request headers, JSON fields, model parameters) and never use backticks. Name a setting the way users see it, e.g. Settings > Speakers > "Identify speakers while recording".
 - Only describe what the commits say. Do not invent features, numbers or reasons.
 - At most 12 bullets in total.
 
@@ -654,15 +687,37 @@ BULLET_RE = re.compile(r"\s*[-*+] ")
 REF_RE = re.compile(r"#(\d+)\b")
 
 
+def low_reasoning():
+    raw = os.environ.get("LLM_LOW_REASONING", "").strip()
+    if not raw:
+        return {}
+    try:
+        fields = json.loads(raw)
+    except json.JSONDecodeError:
+        fields = None
+    if not isinstance(fields, dict):
+        sys.exit(f"release: LLM_LOW_REASONING must be a JSON object, got: {raw[:200]}")
+    return fields
+
+
+LOW_REASONING = low_reasoning()
+
+
 def ask(messages):
     body = {
         "model": os.environ["LLM_MODEL"],
         "messages": messages,
         "temperature": 0.3,
-        "max_tokens": 3000,
+        # A ceiling, not a target: it stops a looping model with a clear
+        # message instead of running into LLM_TIMEOUT. The notes are at most
+        # 12 bullets of about 40 words, under 1000 tokens; reasoning counts
+        # against the budget too, and a model whose switch we don't send
+        # (llama-chat ignores enable_thinking) reasoned past 3000 tokens on
+        # this prompt before writing a word. 12000 covers that at about
+        # 32 tokens/s on llama-chat, about 6 minutes, inside LLM_TIMEOUT.
+        "max_tokens": int(os.environ["LLM_MAX_TOKENS"]),
     }
-    if os.environ.get("LLM_DISABLE_THINKING", "1") == "1":
-        body["chat_template_kwargs"] = {"enable_thinking": False}
+    body.update(LOW_REASONING)
     req = urllib.request.Request(
         os.environ["LLM_BASE_URL"].rstrip("/") + "/chat/completions",
         data=json.dumps(body).encode(),
@@ -672,7 +727,7 @@ def ask(messages):
         },
     )
     try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
+        with urllib.request.urlopen(req, timeout=int(os.environ["LLM_TIMEOUT"])) as resp:
             data = json.load(resp)
     except urllib.error.HTTPError as e:
         sys.exit(f"release: LLM request failed: HTTP {e.code}: {e.read().decode(errors='replace')[:500]}")
@@ -681,13 +736,21 @@ def ask(messages):
     try:
         choice = data["choices"][0]
         text = choice["message"].get("content") or ""
+        reasoning = choice["message"].get("reasoning_content") or ""
     except (KeyError, IndexError, TypeError):
         sys.exit(f"release: unexpected LLM response: {json.dumps(data)[:500]}")
+    inline_thinking = "".join(re.findall(r"<think>(.*?)(?:</think>|$)", text, flags=re.S))
     # Reasoning models may inline their thinking; drop it and any wrapping fence.
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.S).strip()
     text = re.sub(r"^```(?:markdown|md)?\s*\n(.*)\n```$", r"\1", text, flags=re.S).strip()
     if choice.get("finish_reason") == "length":
-        sys.exit("release: the LLM hit max_tokens before finishing; retry, or pass --notes-file.")
+        used = (data.get("usage") or {}).get("completion_tokens", "?")
+        thought = len(reasoning) + len(inline_thinking)
+        sys.exit(
+            f"release: the LLM hit max_tokens ({os.environ['LLM_MAX_TOKENS']}) before finishing: "
+            f"{used} tokens generated, {thought} chars of reasoning and {len(text)} chars of notes. "
+            "Raise LLM_MAX_TOKENS, retry, or pass --notes-file."
+        )
     if not text:
         sys.exit("release: the LLM returned empty release notes; retry, or pass --notes-file.")
     return text
@@ -732,8 +795,9 @@ def tidy(text):
 
 # The model still sometimes files part of a new feature under Improved or
 # Fixed, splits one feature over several bullets or makes up an issue
-# reference. tidy() drops the misplaced bullets; split or missing features
-# go back to the model, at most twice, before taking what it gave.
+# reference. tidy() drops the misplaced bullets; split or missing issues,
+# code names and overlong bullets go back to the model, at most twice,
+# before taking what it gave.
 messages = [
     {"role": "system", "content": system},
     {"role": "user", "content": user},
@@ -743,6 +807,13 @@ for attempt in range(3):
     text, counts = tidy(raw)
     problems = [f"#{i} has {n} bullets; merge them into one bullet." for i, n in counts.items() if n > 1]
     problems += [f"#{i} is missing; give it one bullet under `### New`." for i in new_issues if i not in counts]
+    problems += [f"#{i} is missing; give it one bullet under `### Fixed`." for i in fix_issues if i not in counts]
+    bullets = [line for line in text.splitlines() if BULLET_RE.match(line)]
+    if any("`" in b for b in bullets):
+        problems.append("Some bullets name code in backticks; describe those changes in words users know, without code.")
+    long_refs = sorted({r for b in bullets if len(REF_RE.sub("", b).split()) > 50 for r in REF_RE.findall(b)})
+    if long_refs:
+        problems.append(f"The bullets for {', '.join('#' + r for r in long_refs)} are too long; keep each under 40 words.")
     if not problems:
         break
     print(f"[release] notes attempt {attempt + 1}: {' '.join(problems)}", file=sys.stderr)

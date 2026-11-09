@@ -638,7 +638,10 @@ first; pushing the tag makes Tekton run the second.
    `convoscribe-X.Y.Z.apk` and its `.sha256`. It does nothing if the
    release already exists, so re-running the pipeline is safe.
 
-The release notes leave out commits that only touch `server/`. The sync
+The release notes leave out commits that only touch `server/`, commits
+users can't notice (tests, docs, refactors, CI) and release or eval
+tooling (`release`/`eval` scopes). An issue that is all fixes is listed
+under Fixed, not New. The sync
 server releases on its own `server-vX.Y.Z` tags with
 **`prepare-server`**, which works like `prepare` on the `version` in
 `server/package.json`. Pushing the tag makes Tekton build the server
@@ -659,9 +662,13 @@ bash scripts/release.sh publish --notes-file my-notes.md    # skip the LLM
 ```
 
 The notes endpoint defaults to `http://llama-chat.llama:8080/v1`, model
-`llama-chat` (`LLM_BASE_URL`, `LLM_MODEL`). The script turns the model's
-thinking off with `chat_template_kwargs`. Set `LLM_DISABLE_THINKING=0`
-for servers that reject that field. In an interactive shell both halves
+`llama-chat` (`LLM_BASE_URL`, `LLM_MODEL`). The script asks the model for
+little reasoning with `LLM_LOW_REASONING`, a JSON object merged into the
+request. By default it carries every known `chat_template_kwargs` switch
+(`reasoning_strength`, `enable_thinking`, `enable_reasoning`, `thinking`,
+`reasoning_effort`), so a model change behind llama-chat keeps working.
+Set it empty for servers that reject unknown fields. Reasoning counts
+against `LLM_MAX_TOKENS` (default 12000). In an interactive shell both halves
 ask before pushing or publishing (`--yes` skips the prompt).
 
 If `publish` fails in CI after the tag is pushed (a failing test, say),
