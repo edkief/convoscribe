@@ -48,17 +48,22 @@ class FloatingControlUiTest {
     }
 
     @Test
-    fun onlyExpanded_showsLiveAssistAnswers() {
+    fun onlyExpanded_showsLiveAssistAnswersAndAQuestionBeingAnswered() {
+        val busy = AssistBadges(answers = 2, answering = true)
         for (eink in listOf(true, false)) {
             for (shape in listOf(FloatingShape.MINIMAL, FloatingShape.STANDARD)) {
                 assertEquals(
-                    "$shape never redraws for an answer",
-                    FloatingControlUi.of(recording, shape, eink, answers = 0),
-                    FloatingControlUi.of(recording, shape, eink, answers = 2)
+                    "$shape never redraws for live assist",
+                    FloatingControlUi.of(recording, shape, eink),
+                    FloatingControlUi.of(recording, shape, eink, assist = busy)
                 )
             }
-            assertNull(FloatingControlUi.of(recording, FloatingShape.EXPANDED, eink, answers = 0).answers)
-            assertEquals(2, FloatingControlUi.of(recording, FloatingShape.EXPANDED, eink, answers = 2).answers)
+            val idle = FloatingControlUi.of(recording, FloatingShape.EXPANDED, eink)
+            assertNull(idle.answers)
+            assertNull(idle.answering)
+            val expanded = FloatingControlUi.of(recording, FloatingShape.EXPANDED, eink, assist = busy)
+            assertEquals(2, expanded.answers)
+            assertEquals(true, expanded.answering)
         }
     }
 

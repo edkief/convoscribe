@@ -61,8 +61,9 @@ import kotlinx.coroutines.launch
  * The content sees the session only through [FloatingControlUi], the
  * part its [FloatingShape] draws, deduplicated, so the minimal shape
  * never recomposes while recording and the standard one once a second
- * (issue #21). [answers] counts live-assist cards (issue #50), which
- * only the expanded shape shows. [onShapeChange] saves the shape chosen with the
+ * (issue #21). [assist] counts live-assist cards (issue #50) and says
+ * whether a question is being answered (issue #152), which only the
+ * expanded shape shows. [onShapeChange] saves the shape chosen with the
  * control's arrow. When the control changes size (another shape, a
  * longer time), it is placed again at its saved position, so it stays
  * against its edge and on screen.
@@ -77,7 +78,7 @@ class FloatingControl(
     private val onPauseResume: () -> Unit,
     private val onStop: () -> Unit,
     private val onShapeChange: (FloatingShape) -> Unit,
-    private val answers: StateFlow<Int> = MutableStateFlow(0)
+    private val assist: StateFlow<AssistBadges> = MutableStateFlow(AssistBadges())
 ) {
     private val windowManager: WindowManager = requireNotNull(context.getSystemService())
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -123,10 +124,10 @@ class FloatingControl(
                 // Start from the current state, not a placeholder, so the first frame is already right.
                 val maxChars = FloatingControlUi.maxCharsFor(context.resources.configuration.fontScale)
                 val (uiFlow, initial) = remember(shape, eink, maxChars) {
-                    combine(state, answers) { recording, count ->
-                        FloatingControlUi.of(recording, shape, eink, maxChars, count)
+                    combine(state, assist) { recording, badges ->
+                        FloatingControlUi.of(recording, shape, eink, maxChars, badges)
                     }.distinctUntilChanged() to
-                        FloatingControlUi.of(state.value, shape, eink, maxChars, answers.value)
+                        FloatingControlUi.of(state.value, shape, eink, maxChars, assist.value)
                 }
                 val ui by uiFlow.collectAsStateWithLifecycle(initial)
                 ConvoScribeTheme(

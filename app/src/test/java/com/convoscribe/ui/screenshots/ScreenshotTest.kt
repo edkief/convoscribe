@@ -1190,8 +1190,10 @@ class ScreenshotTest(private val variant: Variant) {
                         paused = false,
                         elapsedMs = 754_000L,
                         transcript = transcript,
-                        // The first with a live-assist answer waiting (issue #50).
-                        answers = if (transcript != null) 1 else null
+                        // The first with a live-assist answer waiting (issue #50) and
+                        // a question being answered (issue #152).
+                        answers = if (transcript != null) 1 else null,
+                        answering = if (transcript != null) true else null
                     ),
                     onOpen = {},
                     onMark = {},

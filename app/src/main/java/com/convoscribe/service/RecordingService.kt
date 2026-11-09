@@ -20,6 +20,7 @@ import com.convoscribe.MainActivity
 import com.convoscribe.R
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.llm.SummaryTemplates
+import com.convoscribe.overlay.AssistBadges
 import com.convoscribe.overlay.FloatingControl
 import com.convoscribe.recording.ConversationOptions
 import com.convoscribe.recording.ImportSource
@@ -329,9 +330,15 @@ class RecordingService : Service() {
             },
             onStop = ::handleStop,
             onShapeChange = { shape -> container.settingsRepository.update { it.copy(floatingShape = shape.key) } },
-            answers = container.liveAssistant.state
-                .map { it.cards.size }
-                .stateIn(scope, SharingStarted.Eagerly, container.liveAssistant.state.value.cards.size)
+            assist = container.liveAssistant.state
+                .map { AssistBadges(answers = it.cards.size, answering = it.answering != null) }
+                .stateIn(
+                    scope,
+                    SharingStarted.Eagerly,
+                    container.liveAssistant.state.value.let {
+                        AssistBadges(answers = it.cards.size, answering = it.answering != null)
+                    }
+                )
         ).also { floatingControl = it }
         overlayObserver = combine(
             controller().state.map { it.phase.active }.distinctUntilChanged(),
