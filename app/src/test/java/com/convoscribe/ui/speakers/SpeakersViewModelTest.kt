@@ -13,12 +13,14 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -277,6 +279,75 @@ class SpeakersViewModelTest {
         assertEquals(1, fx.useCase.enrollCalls)
         assertEquals("Alice", fx.useCase.lastEnrollName)
         assertEquals(240_000, fx.useCase.lastEnrollSamples?.size)
+    }
+
+    /**
+     * [AudioSource] that behaves like the mic: a 1 600-sample
+     * chunk every 100 ms, forever. The `delay` runs on the test
+     * scheduler, so 15 s of "recording" takes no real time.
+     */
+    private class EndlessMicSource : AudioSource {
+        override fun chunks(): Flow<ShortArray> = flow {
+            while (true) {
+                delay(100L)
+                emit(ShortArray(1600))
+            }
+        }
+    }
+
+    /**
+     * The real [EnrollSpeakerUseCase.record] over [EndlessMicSource];
+     * only `enroll` is replaced, so the sherpa embedder and the
+     * `Dispatchers.Default` hop stay out of the test.
+     */
+    private class RealRecordUseCase(
+        private val store: EnrolledSpeakerStore
+    ) : EnrollSpeakerUseCase(
+        audioSource = EndlessMicSource(),
+        embedderFactory = FakeSpeakerEmbedderFactory(FakeSpeakerEmbedder()),
+        repo = store
+    ) {
+        var lastEnrollSamples: FloatArray? = null
+            private set
+
+        override suspend fun enroll(name: String, samples: FloatArray) {
+            lastEnrollSamples = samples
+            store.save(name, samples)
+        }
+    }
+
+    /**
+     * #146: with a source that never completes (the real mic),
+     * enrollment ends on its own once the bar is full: it goes
+     * to `IDLE` with the speaker saved, without the user doing
+     * anything after the recording.
+     */
+    @Test
+    fun startEnrollment_withEndlessMic_finishesOnceTheSampleIsLongEnough() = runTest(dispatcher) {
+        val store = FakeEnrolledSpeakerStore()
+        val useCase = RealRecordUseCase(store)
+        val vm = SpeakersViewModel(repo = store, enroll = useCase)
+        try {
+            vm.setEnrollName("Alice")
+            vm.startEnrollment()
+            runCurrent()
+            assertEquals(EnrollmentPhase.RECORDING, vm.state.value.phase)
+
+            // The view model records 15 s; give it one more.
+            advanceTimeBy(16_000L)
+            runCurrent()
+
+            val state = vm.state.value
+            assertEquals(EnrollmentPhase.IDLE, state.phase)
+            assertNull(state.error)
+            assertEquals(listOf("Alice"), store.namesSnapshot())
+            assertEquals(240_000, useCase.lastEnrollSamples?.size)
+        } finally {
+            // On a regression the recording is still running;
+            // stop it so it does not outlive this test.
+            vm.cancel()
+            runCurrent()
+        }
     }
 
     /**
