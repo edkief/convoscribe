@@ -40,17 +40,25 @@ class EnrollSpeakerUseCaseTest {
      * the flow after a fixed number of chunks so we can assert
      * on a deterministic recording; without it the flow emits
      * chunks forever (matching the real mic's behaviour).
+     *
+     * [chunksEmitted] counts a chunk before it is handed on, so
+     * the chunk whose `emit` ends the collection is counted too.
+     * [released] is set in a `finally`, the way the real mic
+     * stops and releases its `AudioRecord`.
      */
     private class FakeAudioSource(private val stopAfter: Int? = null) : AudioSource {
         var chunksEmitted: Int = 0
             private set
+        var released: Boolean = false
+            private set
         override fun chunks(): Flow<ShortArray> = flow {
-            var i = 0
-            while (true) {
-                if (stopAfter != null && i >= stopAfter) break
-                emit(ShortArray(1600))
-                i += 1
-                chunksEmitted = i
+            try {
+                while (stopAfter == null || chunksEmitted < stopAfter) {
+                    chunksEmitted += 1
+                    emit(ShortArray(1600))
+                }
+            } finally {
+                released = true
             }
         }
     }
@@ -157,6 +165,54 @@ class EnrollSpeakerUseCaseTest {
             "progress should be monotonically non-decreasing; got ${progress.toList()}",
             progress.zipWithNext().all { (a, b) -> b >= a }
         )
+    }
+
+    /**
+     * The real mic never completes, so `record` must end the
+     * collection itself once it has the requested length (#146).
+     * 1 s at 16 kHz is ten 1 600-sample chunks: no eleventh chunk
+     * is read, and the source's `finally` runs (the mic is
+     * released). The timeout turns a regression into a failure
+     * instead of a hung test run.
+     */
+    @Test(timeout = 10_000L)
+    fun record_fromSourceThatNeverCompletes_returnsRequestedLength_andReleasesSource() = runTest {
+        val source = FakeAudioSource()
+        val useCase = EnrollSpeakerUseCase(
+            audioSource = source,
+            embedderFactory = FakeSpeakerEmbedderFactory(FakeSpeakerEmbedder()),
+            repo = FakeEnrolledSpeakerStore()
+        )
+
+        val progress = mutableListOf<Float>()
+        val samples = useCase.record(durationMs = 1000L) { p -> progress.add(p) }
+
+        assertEquals(16_000, samples.size)
+        assertEquals(10, source.chunksEmitted)
+        assertTrue("the source should have been released", source.released)
+        assertEquals(1.0f, progress.last(), 0f)
+    }
+
+    /**
+     * A source that ends before the requested length still makes
+     * `record` return what it got; `enroll` is what rejects a
+     * sample that is too short.
+     */
+    @Test(timeout = 10_000L)
+    fun record_fromSourceThatEndsEarly_returnsWhatWasCollected() = runTest {
+        val source = FakeAudioSource(stopAfter = 5)
+        val useCase = EnrollSpeakerUseCase(
+            audioSource = source,
+            embedderFactory = FakeSpeakerEmbedderFactory(FakeSpeakerEmbedder()),
+            repo = FakeEnrolledSpeakerStore()
+        )
+
+        val progress = mutableListOf<Float>()
+        val samples = useCase.record(durationMs = 1000L) { p -> progress.add(p) }
+
+        assertEquals(8_000, samples.size)
+        assertEquals(5, source.chunksEmitted)
+        assertEquals(0.5f, progress.last(), 0.0001f)
     }
 
     /**
