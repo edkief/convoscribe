@@ -34,7 +34,8 @@ Usage: bash scripts/release.sh prepare [--major|--minor|--patch|--version X.Y.Z]
        bash scripts/release.sh publish [options]
 
 prepare: bump the app version, commit, tag vX.Y.Z and push the branch and
-tag. The tag push makes Tekton run `publish`.
+tag. The tag push makes Tekton run `publish`. It lists the commits the
+release contains before asking for confirmation.
 
 prepare-server: bump the sync server's version in server/package.json,
 commit, tag server-vX.Y.Z and push the branch and tag. The tag push makes
@@ -296,6 +297,14 @@ prepare() {
     log "Preparing $new_tag (versionName $current_name -> $new_name, versionCode $current_code -> $new_code)"
   fi
   log "Previous release: ${prev_tag:-none}"
+  # The commits this release covers, oldest first, without merges and earlier
+  # release commits (the same set publish writes the notes from).
+  local release_commits release_count
+  release_commits=$(git log --no-merges --invert-grep --grep='^chore(release): ' --reverse \
+    --format='  %h %s' "${prev_tag:+$prev_tag..}HEAD" "${paths[@]}")
+  release_count=$(printf '%s\n' "$release_commits" | grep -c . || true)
+  log "$release_count commit(s) in $new_tag${prev_tag:+ since $prev_tag}:"
+  printf '%s\n' "$release_commits"
   if [[ "$dry_run" == true ]]; then
     log "Dry run: nothing changed."
     return 0
