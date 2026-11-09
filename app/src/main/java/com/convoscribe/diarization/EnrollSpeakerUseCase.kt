@@ -4,6 +4,8 @@ import com.convoscribe.audio.AudioSpec
 import com.convoscribe.audio.toFloatSamples
 import com.convoscribe.data.EnrolledSpeakerStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.withContext
 
 /**
@@ -22,7 +24,8 @@ import kotlinx.coroutines.withContext
  *    samples are gathered to build a usable enrollment
  *    (defaults to 15 s — twice the 3 s minimum the
  *    `wespeaker_en_voxceleb_resnet34_LM` model typically
- *    wants, with margin for short prompts). The final chunk is
+ *    wants, with margin for short prompts), then stops
+ *    collecting so the mic is released. The final chunk is
  *    truncated so the returned `FloatArray` is exactly the
  *    requested length, so the embedding model never sees more
  *    audio than the user asked for.
@@ -62,6 +65,12 @@ open class EnrollSpeakerUseCase(
      * chunk is truncated — so callers can rely on `samples.size ==
      * durationMs * AudioSpec.SAMPLE_RATE / 1000`.
      *
+     * Collection stops as soon as the target is reached, which
+     * cancels [audioSource]'s flow so the mic is released; the
+     * source does not have to complete (the real mic never does).
+     * If it completes early, the samples gathered so far are
+     * returned and [enroll] rejects them when they are too short.
+     *
      * Cancellation-safe: throwing [kotlinx.coroutines.CancellationException]
      * out of [onProgress] or out of the collector cancels the
      * collection and propagates as usual.
@@ -77,8 +86,11 @@ open class EnrollSpeakerUseCase(
         val targetSamples = durationMs * AudioSpec.SAMPLE_RATE / 1000L
         val buffer = ArrayList<ShortArray>((targetSamples / AudioSpec.CHUNK_SAMPLES).toInt() + 1)
         var collected: Long = 0L
-        audioSource.chunks().collect { chunk ->
-            if (collected >= targetSamples) return@collect
+        // The mic never completes, so end the collection here once
+        // the target is reached: `transformWhile` stops right after
+        // the chunk that fills it, which cancels the source and
+        // releases the mic.
+        audioSource.chunks().transformWhile<ShortArray, Nothing> { chunk ->
             val remaining = targetSamples - collected
             if (chunk.size.toLong() <= remaining) {
                 buffer.add(chunk)
@@ -91,7 +103,8 @@ open class EnrollSpeakerUseCase(
                 collected += remaining
             }
             onProgress((collected.toFloat() / targetSamples.toFloat()).coerceIn(0f, 1f))
-        }
+            collected < targetSamples
+        }.collect()
         val flat = ShortArray(collected.toInt())
         var offset = 0
         for (chunk in buffer) {
