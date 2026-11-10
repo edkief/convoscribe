@@ -69,6 +69,48 @@ export async function checkAuthzProxy(): Promise<Reachability | null> {
   return check('authz-proxy', () => probe(`${config.AUTHZ_PROXY_URL}/.well-known/jwks.json`));
 }
 
+/** Each dependency the status page asks after, by the name its row fetches it with. */
+export const STATUS_CHECKS = ['postgres', 's3', 'authz-proxy', 'llm', 'asr', 'decision'] as const;
+export type StatusCheck = (typeof STATUS_CHECKS)[number];
+
+export const isStatusCheck = (name: string): name is StatusCheck => (STATUS_CHECKS as readonly string[]).includes(name);
+
+/** Run one check by name: null when the server is not set up with that dependency. */
+export function runCheck(name: StatusCheck): Promise<Reachability | UpstreamReachability | null> {
+  switch (name) {
+    case 'postgres':
+      return checkPostgres();
+    case 's3':
+      return checkStore();
+    case 'authz-proxy':
+      return checkAuthzProxy();
+    default:
+      return checkUpstream(name);
+  }
+}
+
+/**
+ * What the status page can show before any check answers, from the server's
+ * set-up alone: whether each dependency is configured, and the model an
+ * upstream is set to use.
+ */
+export type CheckSetup = { name: StatusCheck; configured: boolean; model: string | null };
+
+export function checkSetup(): CheckSetup[] {
+  const upstream = (service: Service): CheckSetup => {
+    const u = upstreamOf(service);
+    return { name: service, configured: !!u, model: u?.model ?? null };
+  };
+  return [
+    { name: 'postgres', configured: true, model: null },
+    { name: 's3', configured: true, model: null },
+    { name: 'authz-proxy', configured: env().AUTH_MODE === 'authz-proxy', model: null },
+    upstream('llm'),
+    upstream('asr'),
+    upstream('decision'),
+  ];
+}
+
 /** Bytes stored across all users, from Postgres (#79, decision 9). */
 export type StorageBreakdown = {
   /** Recordings and manifests of live documents; a recording also in the trash counts here. */

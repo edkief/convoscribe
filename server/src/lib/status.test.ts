@@ -10,7 +10,7 @@ import { eq } from 'drizzle-orm';
 import { blobStore, setBlobStore, type BlobStore } from './blob-store';
 import { db, setDb, type Db } from './db';
 import { deleteDocument, purgeTrash } from './documents';
-import { checkAuthzProxy, checkStore, checkUpstream, serverStatus, storageBreakdown } from './status';
+import { checkAuthzProxy, checkSetup, checkStore, checkUpstream, isStatusCheck, runCheck, serverStatus, storageBreakdown } from './status';
 
 setupSyncServer();
 
@@ -190,5 +190,30 @@ describe('upstreams on the status page (#145)', () => {
     expect(seen).toContainEqual({ url: '/.well-known/jwks.json', authorization: undefined });
     configure();
     expect(await checkAuthzProxy()).toBeNull();
+  });
+
+  it('runs one check by name, as the status page asks for them', async () => {
+    configure({ DECISION_UPSTREAM_URL: '' });
+    expect(await runCheck('postgres')).toMatchObject({ ok: true });
+    expect(await runCheck('s3')).toMatchObject({ ok: true });
+    expect(await runCheck('llm')).toMatchObject({ ok: true, model: 'muse' });
+    expect(await runCheck('decision')).toBeNull();
+    expect(await runCheck('authz-proxy')).toBeNull();
+    expect(seen.map((s) => s.url)).toEqual(['/llm/v1/models']);
+    expect(isStatusCheck('asr')).toBe(true);
+    expect(isStatusCheck('storage')).toBe(false);
+  });
+
+  it('says what is set up, and each model, without asking anything', async () => {
+    configure({ DECISION_UPSTREAM_URL: '', ASR_MODEL: 'parakeet' });
+    expect(checkSetup()).toEqual([
+      { name: 'postgres', configured: true, model: null },
+      { name: 's3', configured: true, model: null },
+      { name: 'authz-proxy', configured: false, model: null },
+      { name: 'llm', configured: true, model: 'muse' },
+      { name: 'asr', configured: true, model: 'parakeet' },
+      { name: 'decision', configured: false, model: null },
+    ]);
+    expect(seen).toEqual([]);
   });
 });

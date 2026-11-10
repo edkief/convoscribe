@@ -124,6 +124,28 @@ export const IconCheckCircle = (p: IconProps) => (
   </Icon>
 );
 
+export const IconXCircle = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6" />
+  </Icon>
+);
+
+export const IconMinusCircle = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M8.5 12h7" />
+  </Icon>
+);
+
+/** A quarter-open ring; turns when given the `spin` class. */
+export const IconSpinner = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="12" cy="12" r="8.5" opacity={0.25} />
+    <path d="M12 3.5a8.5 8.5 0 0 1 8.5 8.5" />
+  </Icon>
+);
+
 export const IconCircle = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="8.5" />

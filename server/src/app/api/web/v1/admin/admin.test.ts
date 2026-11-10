@@ -7,6 +7,7 @@ import { stubServerEnv } from '@/test/env';
 import { request, setupSyncServer } from '@/test/http';
 import { pushManifest, sessionManifest, storeBlob } from '@/test/sessions';
 import { GET as cleanupGet, POST as cleanupPost } from './cleanup/route';
+import { GET as checkGet } from './status/[check]/route';
 import { GET as statusGet } from './status/route';
 import { GET as usersGet, PUT as usersPut } from './users/route';
 
@@ -35,6 +36,10 @@ const routes: Route[] = [
       usersPut(new Request('http://server/x', { method: 'PUT', headers: { ...JSON_ORIGIN, ...h }, body: '{"owner":"alice@example.com","quotaBytes":1}' })),
   },
   { name: 'GET status', call: (h) => statusGet(new Request('http://server/x', { headers: h })) },
+  {
+    name: 'GET one status check',
+    call: (h) => checkGet(new Request('http://server/x', { headers: h }), { params: Promise.resolve({ check: 'postgres' }) }),
+  },
   { name: 'GET cleanup', call: (h) => cleanupGet(new Request('http://server/x', { headers: h })) },
   {
     name: 'POST cleanup',
@@ -139,6 +144,7 @@ describe('what admins see (#82)', () => {
       [
         usersGet(request('/x')),
         statusGet(request('/x')),
+        checkGet(request('/x'), { params: Promise.resolve({ check: 'postgres' }) }),
         cleanupGet(request('/x')),
       ].map(async (res) => {
         const response = await res;
@@ -155,6 +161,27 @@ describe('what admins see (#82)', () => {
     const alice = users.find((u) => u.owner === 'alice')!;
     expect(Object.keys(alice).sort()).toEqual(['bytes', 'firstSeenAt', 'lastSeenAt', 'owner', 'quotaBytes', 'services', 'sessions', 'trashed']);
     expect(alice).toMatchObject({ sessions: 1, trashed: 0 });
+  });
+});
+
+describe('one status check (#82, #145)', () => {
+  const check = (name: string) => checkGet(request('/x'), { params: Promise.resolve({ check: name }) });
+
+  it('answers with that dependency alone, uncached', async () => {
+    const res = await check('postgres');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('cache-control')).toBe('no-store');
+    expect(await res.json()).toEqual({ state: { ok: true, latencyMs: expect.any(Number) } });
+  });
+
+  it('is null for one the server is not set up with', async () => {
+    expect(await (await check('decision')).json()).toEqual({ state: null });
+  });
+
+  it('is 404 for a name it does not know', async () => {
+    const res = await check('storage');
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'not_found' });
   });
 });
 

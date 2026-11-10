@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import { cleanupStatus, type CleanupKindStatus, type CleanupReport } from '@/lib/cleanup';
 import { formatBytes, formatDateTime } from '@/lib/format';
-import { serverStatus, type Reachability, type UpstreamReachability } from '@/lib/status';
+import { checkSetup, storageBreakdown } from '@/lib/status';
 import { pageLocale, requireAdmin } from '@/lib/web-identity';
 import { CleanupControls } from '../../../_components/AdminActions';
 import { AdminTabs } from '../../../_components/AdminTabs';
+import { Reachability } from '../../../_components/Reachability';
 
 export const metadata: Metadata = { title: 'Status' };
 
@@ -13,29 +14,6 @@ const MODES = {
   'dry-run': 'CLEANUP=dry-run: the daily run only reports. Run clean-up here still removes.',
   off: 'CLEANUP=off: no daily run. Run clean-up here still removes.',
 };
-
-/** A dependency's state; null when the server is not set up with it (#145). */
-function Reach({ name, state }: { name: string; state: Reachability | UpstreamReachability | null }) {
-  const model = state && 'model' in state ? state.model : null;
-  return (
-    <div>
-      <dt>
-        {name}
-        {model && <span className="reach-model">{model}</span>}
-      </dt>
-      <dd>
-        {state ? (
-          <>
-            <span className={`reach ${state.ok ? 'ok' : 'down'}`}>{state.ok ? 'Reachable' : 'Unreachable'}</span>
-            <span className="reach-time">{state.latencyMs} ms</span>
-          </>
-        ) : (
-          <span className="reach off">Not configured</span>
-        )}
-      </dd>
-    </div>
-  );
-}
 
 const describeReport = (r: CleanupReport) =>
   [
@@ -74,14 +52,14 @@ function CleanupKind(props: { title: string; verb: string; never: string; state:
 /**
  * Whether the server's storage, and the services it offers (#145), can be
  * reached, how much it holds, and clean-up (#82). Renders with any of them
- * down: that is when it matters.
+ * down: that is when it matters. Reachability is asked for by the browser
+ * once the page is up, so a slow upstream never holds the page back.
  */
 export default async function AdminStatusPage() {
   await requireAdmin();
   const { zone, locale } = await pageLocale();
-  const [status, cleanup] = await Promise.all([serverStatus(), cleanupStatus().catch(() => null)]);
+  const [storage, cleanup] = await Promise.all([storageBreakdown().catch(() => null), cleanupStatus().catch(() => null)]);
   const date = (ms: number) => formatDateTime(ms, zone, locale);
-  const storage = status.storage;
 
   return (
     <div className="page library">
@@ -98,17 +76,10 @@ export default async function AdminStatusPage() {
             <h2>Reachability</h2>
           </div>
           <div className="card-body">
-            <dl className="facts">
-              <Reach name="Postgres" state={status.postgres} />
-              <Reach name="S3" state={status.s3} />
-              {status.authzProxy && <Reach name="authz-proxy" state={status.authzProxy} />}
-              <Reach name="Language model" state={status.llm} />
-              <Reach name="Transcription" state={status.asr} />
-              <Reach name="Decision service" state={status.decision} />
-            </dl>
+            <Reachability checks={checkSetup()} />
             <p className="card-note">
               The services the server offers its users are asked for their models (the decision service for its
-              health) each time this page loads. Why one can’t be reached goes to the server’s log.
+              health) each time this page loads, each on its own. Why one can’t be reached goes to the server’s log.
             </p>
           </div>
         </section>
