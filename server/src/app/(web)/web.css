@@ -2396,7 +2396,45 @@ button.t-mark-time:hover {
 }
 
 .reach {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-weight: 600;
+  vertical-align: middle;
+}
+
+.reach svg {
+  flex: none;
+}
+
+.reach.checking {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.reach.failed {
+  color: var(--text-2);
+  font-weight: 400;
+}
+
+.reach .spin {
+  animation: reach-spin 0.9s linear infinite;
+}
+
+@keyframes reach-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reach .spin {
+    animation-duration: 2.4s;
+  }
+}
+
+.reach-again {
+  margin-top: 0.75rem;
 }
 
 .reach.ok {
