@@ -239,7 +239,9 @@ bytes and times, and never another user's titles, transcripts or audio.
   its model or *Not configured*, and authz-proxy in that mode. Each
   upstream is asked a cheap question (`GET /models`, the decision service's
   `/health`, authz-proxy's `/.well-known/jwks.json`) with its key, every
-  time the page loads, and must answer `2xx` within 5 s; a refused key
+  time the page loads, and must answer `2xx` within 5 s. The page itself
+  doesn't wait: each row shows a spinner and is asked for on its own once
+  the page is up, so a slow upstream holds back only its own row; a refused key
   counts as unreachable;
   bytes stored across all users, split into live, in the trash, unreferenced
   and in unfinished uploads; and clean-up, with its daily mode, when it last
@@ -416,6 +418,7 @@ actions the model they use; without it, `403 service_not_allowed`.
 | `GET /api/web/v1/admin/users` | Admin | `200 {"users":[{"owner","sessions","trashed","bytes","quotaBytes","services","firstSeenAt","lastSeenAt"}]}`; `services` is null for a user on the default (#145) |
 | `PUT /api/web/v1/admin/users` | Admin. JSON `{"owner", "quotaBytes"?: n, "services"?: [...]}`, at least one of them: `quotaBytes` null for no limit, `services` a list of `sync`, `llm`, `asr`, `decision`, or null for the default (#145) | `200` with the same, `400 invalid_body` for an unknown service, `404 unknown_owner` for someone not seen |
 | `GET /api/web/v1/admin/status` | Admin | `200 {"postgres":{"ok","latencyMs"},"s3":{"ok","latencyMs"},"authzProxy","llm","asr","decision","storage":{"live","trash","unreferenced","uploads","total"}}`: `authzProxy` is `{"ok","latencyMs"}` in that mode, each upstream `{"ok","latencyMs","model"}`, and either null when not configured (#145); `storage` is null while Postgres is down |
+| `GET /api/web/v1/admin/status/<check>` | Admin | `200 {"state"}` for one of `postgres`, `s3`, `authz-proxy`, `llm`, `asr`, `decision`: `state` as that field above (each upstream with its `model`), null when not configured; `404 not_found` for another name. What the status page asks for, row by row |
 | `GET /api/web/v1/admin/cleanup` | Admin | `200 {"mode","run":{"running","last"},"preview":{"running","last"}}`: each `last` has `trigger`, `startedAt`, `finishedAt`, `report` and `failed`, never the error text |
 | `POST /api/web/v1/admin/cleanup` | Admin. JSON `{"dryRun": bool}` | `202 {"id"}`: started in the background; `409 cleanup_running` while one of the same kind is going |
 
