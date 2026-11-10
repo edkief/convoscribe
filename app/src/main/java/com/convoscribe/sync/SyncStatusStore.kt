@@ -18,7 +18,14 @@ data class SyncStatus(
     val lastError: String? = null,
     val running: Boolean = false,
     val downloading: Int = 0
-)
+) {
+    /**
+     * The server refused the key at the last run (issue #95): revoked,
+     * expired or mistyped, so the device must sign in again. Every `401`
+     * is recorded as "HTTP 401 from the sync server…" (`SyncClient.unexpected`).
+     */
+    val keyRefused: Boolean get() = lastError?.startsWith("HTTP 401 ") == true
+}
 
 /**
  * Keeps [SyncStatus] across restarts, in its own preferences file,

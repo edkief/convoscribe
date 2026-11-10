@@ -98,6 +98,20 @@ private fun serverStatus(state: SettingsUiState, inputs: OverviewInputs): Overvi
     val host = UiText.Plain(serverHost(url))
     val status = state.syncStatus
     return when {
+        // The key was revoked or expired (issue #95): say so before the generic failure.
+        state.syncEnabled && status.keyRefused -> OverviewStatus(
+            listOf(
+                host,
+                UiText.res(
+                    if (state.signIn.offer != null) {
+                        R.string.settings_overview_sign_in_again
+                    } else {
+                        R.string.settings_overview_key_refused
+                    }
+                )
+            ),
+            problem = true
+        )
         state.syncEnabled && status.lastError != null ->
             OverviewStatus(listOf(host, UiText.res(R.string.settings_overview_sync_failed)), problem = true)
         state.syncEnabled -> {

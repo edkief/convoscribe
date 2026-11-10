@@ -47,6 +47,23 @@ describe('loadEnv', () => {
     expect(() => services(',')).toThrow(/DEFAULT_USER_SERVICES/);
   });
 
+  it('takes device sign-in only in authz-proxy mode, with roles split (#95)', () => {
+    const proxy = { ...base, AUTH_MODE: 'authz-proxy', AUTHZ_PROXY_URL: 'http://authz.internal' };
+    const env = loadEnv({
+      ...proxy,
+      DEVICE_SIGN_IN_CLIENT_ID: 'convoscribe',
+      DEVICE_SIGN_IN_PROXY_URL: 'https://auth.example.com/',
+      DEVICE_KEY_ROLES: 'convoscribe, sync ,',
+    });
+    expect(env.DEVICE_SIGN_IN_CLIENT_ID).toBe('convoscribe');
+    expect(env.DEVICE_SIGN_IN_PROXY_URL).toBe('https://auth.example.com');
+    expect(env.DEVICE_KEY_ROLES).toEqual(['convoscribe', 'sync']);
+    expect(loadEnv({ ...proxy, DEVICE_KEY_ROLES: '' }).DEVICE_KEY_ROLES).toBeUndefined();
+    expect(() =>
+      loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, DEVICE_SIGN_IN_CLIENT_ID: 'convoscribe' }),
+    ).toThrow(/DEVICE_SIGN_IN_CLIENT_ID/);
+  });
+
   it('parses S3_FORCE_PATH_STYLE=false', () => {
     const env = loadEnv({ ...base, AUTH_MODE: 'api-key', SYNC_API_KEY: apiKey, S3_FORCE_PATH_STYLE: 'false' });
     expect(env.S3_FORCE_PATH_STYLE).toBe(false);

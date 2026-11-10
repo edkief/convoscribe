@@ -869,6 +869,26 @@
     <string name="sync_url_placeholder">https://sync.example.com</string>
     <string name="sync_url_cleartext">Sessions are sent to an http:// address unencrypted. Use https:// unless the server is on a network you trust.</string>
     <string name="sync_key_label">API key</string>
+    <!-- Device sign-in through the browser (issue #95) -->
+    <string name="sign_in_action">Sign in</string>
+    <string name="sign_in_again_action">Sign in again</string>
+    <string name="sign_in_help">Opens the server\'s sign-in page in your browser, where you approve a key for this device.</string>
+    <string name="sign_in_starting">Opening the sign-in page…</string>
+    <string name="sign_in_waiting">Waiting for you to approve this device in the browser…</string>
+    <string name="sign_in_cancel">Cancel</string>
+    <string name="sign_in_signed_in">Signed in. This device\'s key is in your key list on the sign-in server, where you can revoke it.</string>
+    <string name="sign_in_connected">Connected with this device\'s key.</string>
+    <string name="sign_in_declined">The sign-in was declined.</string>
+    <string name="sign_in_expired">The sign-in wasn\'t approved in time. Try again.</string>
+    <string name="sign_in_failed">Couldn\'t sign in: %1$s</string>
+    <string name="sign_in_refused">The server refused this device\'s key: it may have been revoked. Sign in again.</string>
+    <string name="sign_in_sign_out">Sign out</string>
+    <string name="sign_in_sign_out_help">Removes the key from this device. To stop it working everywhere, revoke it in your key list on the sign-in server.</string>
+    <string name="sign_in_use_key">Use an API key instead</string>
+    <string name="sign_in_hide_key">Hide API key</string>
+    <string name="settings_overview_sign_in_again">Sign in again</string>
+    <string name="settings_overview_key_refused">API key refused</string>
+    <string name="sign_in_no_browser">No browser to open the sign-in page.</string>
     <string name="sync_enabled_label">Sync sessions</string>
     <string name="sync_enabled_help">Syncs when a network is available, never while recording. Deleting a session deletes it on the server and every device; Remove from this device only frees space here.</string>
     <string name="sync_mobile_data_label">Download recordings on mobile data</string>
@@ -891,7 +911,7 @@
     <string name="sync_confirm_action">Upload</string>
     <string name="sync_confirm_cancel">Cancel</string>
     <string name="server_services_label">Use this server\'s services</string>
-    <string name="server_services_help">Its language model, transcription and decision model, with the key above, if the server provides them. Separate from Sync sessions: either works without the other.</string>
+    <string name="server_services_help">Its language model, transcription and decision model, with this device\'s key, if the server provides them. Separate from Sync sessions: either works without the other.</string>
     <string name="server_services_checking">Asking the server what it provides…</string>
     <string name="server_services_refused">The server refused the API key. Check it and try again.</string>
     <string name="server_services_failed">Couldn\'t ask the server: %1$s</string>

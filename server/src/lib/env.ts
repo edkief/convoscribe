@@ -66,6 +66,19 @@ const schema = z
         .transform((value) => value.split(',').map((role) => role.trim()).filter(Boolean))
         .optional(),
     ),
+    // Device sign-in (#95): the authz-proxy public client the app asks a key through.
+    // Setting it turns sign-in on; GET /api/public/v1/sign-in advertises it.
+    DEVICE_SIGN_IN_CLIENT_ID: z.preprocess(blankToUndefined, z.string().min(1).optional()),
+    // authz-proxy as a browser reaches it; AUTHZ_PROXY_URL (often cluster-internal) when unset.
+    DEVICE_SIGN_IN_PROXY_URL: z.preprocess(blankToUndefined, httpUrl.optional()),
+    // Roles a device's key asks for; every role of the user when unset.
+    DEVICE_KEY_ROLES: z.preprocess(
+      blankToUndefined,
+      z
+        .string()
+        .transform((value) => value.split(',').map((role) => role.trim()).filter(Boolean))
+        .optional(),
+    ),
     // Where the web app's Sign out goes in authz-proxy mode, whose session is the proxy's (#80).
     WEB_SIGN_OUT_URL: z.preprocess(blankToUndefined, z.url().optional()),
     // The daily storage clean-up (#81): `dry-run` records what it would remove and removes nothing.
@@ -103,6 +116,9 @@ const schema = z
     }
     if (env.AUTH_MODE === 'authz-proxy' && !env.AUTHZ_PROXY_URL) {
       ctx.addIssue({ code: 'custom', path: ['AUTHZ_PROXY_URL'], message: 'required when AUTH_MODE=authz-proxy' });
+    }
+    if (env.DEVICE_SIGN_IN_CLIENT_ID && env.AUTH_MODE !== 'authz-proxy') {
+      ctx.addIssue({ code: 'custom', path: ['DEVICE_SIGN_IN_CLIENT_ID'], message: 'needs AUTH_MODE=authz-proxy' });
     }
     if (env.LLM_LOW_REASONING && !env.LLM_UPSTREAM_URL) {
       ctx.addIssue({ code: 'custom', path: ['LLM_LOW_REASONING'], message: 'needs LLM_UPSTREAM_URL' });

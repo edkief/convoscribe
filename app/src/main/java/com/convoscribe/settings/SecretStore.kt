@@ -31,6 +31,16 @@ interface SecretStore {
     fun getDecisionKey(): String
 
     fun setDecisionKey(value: String)
+
+    /**
+     * A device sign-in waiting for the user's approval (issue #95), as
+     * JSON; blank when none. Kept here, encrypted, because it holds the
+     * request secret, and because Android may end the app while the
+     * browser is in front.
+     */
+    fun getPendingSignIn(): String
+
+    fun setPendingSignIn(value: String)
 }
 
 /**
@@ -79,12 +89,20 @@ class EncryptedSecretStore(context: Context) : SecretStore {
         prefs.edit().putString(KEY_DECISION_KEY, value).apply()
     }
 
+    override fun getPendingSignIn(): String = prefs.getString(KEY_PENDING_SIGN_IN, "") ?: ""
+
+    // Written at once: the browser opens next, and the app may not live to write it later.
+    override fun setPendingSignIn(value: String) {
+        prefs.edit().putString(KEY_PENDING_SIGN_IN, value).commit()
+    }
+
     private companion object {
         const val FILE_NAME = "secrets"
         const val KEY_API_KEY = "api_key"
         const val KEY_ASR_SERVER_KEY = "asr_server_key"
         const val KEY_SYNC_KEY = "sync_key"
         const val KEY_DECISION_KEY = "decision_key"
+        const val KEY_PENDING_SIGN_IN = "pending_sign_in"
     }
 }
 
@@ -99,6 +117,7 @@ class InMemorySecretStore : SecretStore {
     private var asrServerKey: String = ""
     private var syncKey: String = ""
     private var decisionKey: String = ""
+    private var pendingSignIn: String = ""
 
     override fun getApiKey(): String = value
 
@@ -122,5 +141,11 @@ class InMemorySecretStore : SecretStore {
 
     override fun setDecisionKey(value: String) {
         decisionKey = value
+    }
+
+    override fun getPendingSignIn(): String = pendingSignIn
+
+    override fun setPendingSignIn(value: String) {
+        pendingSignIn = value
     }
 }

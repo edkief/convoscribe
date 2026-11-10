@@ -8,7 +8,9 @@
         calls the user's own endpoint. The update check (issue #15) asks
         the GitHub API for the app's releases at most once a day (or when
         the user taps Check for updates) and downloads the APK the user
-        chose to install. No other network calls live in the app.
+        chose to install. Device sign-in (issue #95) asks the user's
+        sync server how to sign in and the authz-proxy it names for a
+        key. No other network calls live in the app.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
 
@@ -126,6 +128,25 @@
             android:noHistory="true"
             android:taskAffinity=""
             android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+        <!--
+            Device sign-in (issue #95): authz-proxy's approval page sends
+            the browser back to convoscribe://api-key, registered as the
+            proxy client's redirect URI. Exported for the browser; it
+            carries no key, and a return the app did not start is ignored.
+        -->
+        <activity
+            android:name=".SignInReturnActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="convoscribe" android:host="api-key" />
+            </intent-filter>
+        </activity>
         <!--
             Opened by a long-press on the Quick Settings tile (issue #32):
             start a recording with the Settings defaults or a preset.

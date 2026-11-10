@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) {
             takeImport(intent)
             takeOpenRecord(intent)
+            takeOpenSignIn(intent)
         }
         // The active language and ASR engine are settings; if every
         // required bundle for that combination is already on disk we
@@ -100,6 +101,13 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         takeImport(intent)
         takeOpenRecord(intent)
+        takeOpenSignIn(intent)
+    }
+
+    /** Ask the navigation graph for the Server page if [intent] came from [openSignInIntent]. */
+    private fun takeOpenSignIn(intent: Intent?) {
+        if (intent?.getBooleanExtra(EXTRA_OPEN_SIGN_IN, false) != true) return
+        (applicationContext as ConvoApp).container.pendingOpenSignIn.value = true
     }
 
     /** Ask the navigation graph for the Record screen if [intent] came from [openRecordIntent]. */
@@ -126,6 +134,14 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_OPEN_RECORD = "com.convoscribe.EXTRA_OPEN_RECORD"
+        private const val EXTRA_OPEN_SIGN_IN = "com.convoscribe.EXTRA_OPEN_SIGN_IN"
+
+        /** Bring ConvoScribe forward on Settings' Server page, back from a device sign-in (issue #95). */
+        fun openSignInIntent(context: Context): Intent = Intent(context, MainActivity::class.java)
+            .putExtra(EXTRA_OPEN_SIGN_IN, true)
+            .addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
 
         /**
          * Bring ConvoScribe forward on the Record screen, which shows the

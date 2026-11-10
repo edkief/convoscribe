@@ -119,6 +119,16 @@ fun AppNavHost(startDestination: String = ROUTE_HOME) {
             navController.navigate(ROUTE_RECORD) { launchSingleTop = true }
         }
     }
+    // Back from approving a device sign-in (issue #95): the Server page collects the key.
+    val openSignIn by container.pendingOpenSignIn.collectAsStateWithLifecycle()
+    LaunchedEffect(openSignIn) {
+        if (!openSignIn) return@LaunchedEffect
+        container.pendingOpenSignIn.value = false
+        val route = navController.currentDestination?.route
+        if (route != null && !route.startsWith("settings") && !route.startsWith(ROUTE_SETUP)) {
+            navController.navigate(settingsRoute(SettingsPage.SERVER)) { launchSingleTop = true }
+        }
+    }
     NavHost(navController = navController, startDestination = startDestination) {
         composable(ROUTE_HOME) { backStackEntry ->
             HomeShell(navController = navController, savedStateHandle = backStackEntry.savedStateHandle)
