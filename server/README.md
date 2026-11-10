@@ -300,6 +300,7 @@ The `api-key` mode's one user is the admin, and can be limited the same way.
 | Endpoint | Auth | Response |
 |---|---|---|
 | `GET /api/health` | none | `200 {"status":"ok"}` |
+| `GET /api/public/v1/sign-in` | none | `200 {"authzProxy":{"url":"…","clientId":"…","roles":[…]\|null}}`, or `{"authzProxy":null}` without device sign-in; see *Device sign-in* |
 | `GET /api/sync/v1/whoami` | `Authorization: Bearer <key>` | `200 {"owner":"…"}`, or `401` with `WWW-Authenticate: Bearer` |
 
 Every route below needs the same `Authorization: Bearer <key>` and answers
@@ -611,6 +612,9 @@ exits with the list of problems if any is missing or invalid.
 | `SYNC_API_KEY` | `api-key` mode | The key devices send, at least 32 characters (`openssl rand -hex 32`). |
 | `AUTHZ_PROXY_URL` | `authz-proxy` mode | Base URL of authz-proxy, reachable from the server. |
 | `ADMIN_ROLES` | no | `authz-proxy` mode: comma-separated roles that make a user an admin. Default `role-authz-admin`. In `api-key` mode the one user is the admin. See *Admin pages*. |
+| `DEVICE_SIGN_IN_CLIENT_ID` | no | `authz-proxy` mode: the authz-proxy client the app asks for a key through (#95), e.g. `convoscribe`. Setting it turns on device sign-in; see *Device sign-in*. Refused in `api-key` mode. |
+| `DEVICE_SIGN_IN_PROXY_URL` | no | authz-proxy's address as a phone's browser reaches it, e.g. `https://auth.example.com`. Default `AUTHZ_PROXY_URL`, which is often an address only the cluster reaches. |
+| `DEVICE_KEY_ROLES` | no | Comma-separated roles a device's key asks for, e.g. the role that admits users to ConvoScribe. Unset asks for all of the user's roles, current and future, and the approval page warns about that. |
 | `WEB_SIGN_OUT_URL` | no | `authz-proxy` mode: where the web app's *Sign out* goes, e.g. the proxy's sign-out page. Without it the web app shows no *Sign out*. |
 | `LLM_UPSTREAM_URL` | no | An OpenAI-compatible language model the server offers its users (#93), e.g. `http://llm.llm:8080/v1`: the base its `/chat/completions` hangs off. Blank offers none. |
 | `LLM_UPSTREAM_KEY` | no | The key sent to it, never to a device. Leave blank for an upstream that needs none. |
@@ -638,6 +642,45 @@ on the mode:
 Browsers sign in to the web app as described in *Web app*. The sync API
 only ever takes the Bearer key: the web sign-in cookie does not
 authenticate it.
+
+### Device sign-in
+
+In `authz-proxy` mode the app can get its key by signing in through a
+browser instead of the user pasting one (#95). It uses authz-proxy's API
+key requests: the app starts a request, the user approves it on the
+proxy's page, and the app collects an ordinary `sk_authz_` key, named
+`ConvoScribe on <phone model>`, that never expires. The user sees it in
+the proxy's key list and revokes it there; a revoked key gets `401` and
+the app asks to sign in again. Pasting a key keeps working.
+
+To turn it on:
+
+1. In authz-proxy, under Admin → Clients, register a **public** client
+   (no secret, `token_endpoint_auth_method: none`), e.g. `convoscribe`,
+   with the **API key requests** grant and the redirect URI
+   `convoscribe://api-key`.
+2. Set `DEVICE_SIGN_IN_CLIENT_ID` to its id, and `DEVICE_SIGN_IN_PROXY_URL`
+   if `AUTHZ_PROXY_URL` is not the address a browser uses. Optionally set
+   `DEVICE_KEY_ROLES`.
+3. Let `/api/public/` past ForwardAuth: the app asks
+   `GET /api/public/v1/sign-in` before it holds any key. With Traefik, a
+   second router for the same service, without the forwardAuth middleware:
+
+   ```yaml
+   - match: Host(`sync.example.com`) && PathPrefix(`/api/public/`)
+     kind: Rule
+     priority: 100
+     services:
+       - name: convoscribe-server
+         port: 3000
+   ```
+
+   Only that route is public; it names the proxy, the client and the
+   roles, none of them secret. Everything else stays behind ForwardAuth.
+
+To check: `curl https://sync.example.com/api/public/v1/sign-in` shows the
+proxy's address and the client. A redirect to the sign-in page, or `401`,
+means the bypass is missing, and the app offers only the pasted key.
 
 ## Deployment
 
