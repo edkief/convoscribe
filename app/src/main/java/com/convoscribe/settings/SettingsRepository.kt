@@ -203,6 +203,21 @@ class SettingsRepository(
         secrets.setSyncKey(value)
     }
 
+    /** The device sign-in waiting for approval (issue #95), or `null`; unreadable counts as none. */
+    fun pendingSignIn(): PendingSignIn? = secrets.getPendingSignIn().takeIf { it.isNotBlank() }?.let {
+        try {
+            pendingJson.decodeFromString<PendingSignIn>(it)
+        } catch (e: kotlinx.serialization.SerializationException) {
+            null
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+
+    fun setPendingSignIn(value: PendingSignIn?) {
+        secrets.setPendingSignIn(value?.let { pendingJson.encodeToString(PendingSignIn.serializer(), it) }.orEmpty())
+    }
+
     /**
      * The language model in use (issue #94): the sync server's, with the
      * sync key, or the user's own with theirs. Never mixes the two, so
@@ -373,6 +388,8 @@ class SettingsRepository(
     }
 
     internal companion object {
+        private val pendingJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
         /**
          * Default clustering threshold. 0.75 had the best purity/coverage
          * F1 (with 0.70) over 4 AMI meetings and 12 synthetic 2-4 speaker
