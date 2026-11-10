@@ -675,6 +675,12 @@ To turn it on:
          port: 3000
    ```
 
+   With a plain Kubernetes Ingress whose forwardAuth comes from the
+   `traefik.ingress.kubernetes.io/router.middlewares` annotation, add a
+   second Ingress for the same host and service with the path
+   `/api/public/` (`pathType: Prefix`) and without that annotation.
+   Traefik ranks the longer rule first, so it wins over the main Ingress's `/`.
+
    Only that route is public; it names the proxy, the client and the
    roles, none of them secret. Everything else stays behind ForwardAuth.
 

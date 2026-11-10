@@ -2985,6 +2985,58 @@ model and at least one synced session.
 - Step 6: everything lit again; sync completes and the library is back.
 - Step 7: the new user's row shows only *Sync* lit, with *Default*.
 
+## 66. Sign a device in through the browser (issue #95)
+
+Use a sync server from this release behind authz-proxy (with API key
+requests, authz-proxy #95), set up as in *Device sign-in* in
+[`server/README.md`](../server/README.md#device-sign-in): the public client
+with `convoscribe://api-key`, `DEVICE_SIGN_IN_CLIENT_ID`, and the
+`/api/public/` bypass. Start with a device that has no sync key.
+
+**Steps**
+
+1. `curl https://sync.example.com/api/public/v1/sign-in`.
+2. Settings → *Server & sync*: type the server's address and wait a moment.
+3. Tap **Sign in**. In the browser, sign in to the proxy if asked, look at
+   the request, and approve it.
+4. Back in the app, turn on *Sync sessions* and *Sync now*.
+5. Open the proxy's key list.
+6. Sign out on the device, then **Sign in** again and **decline** in the
+   browser.
+7. **Sign in** again. While the approval page is open, end ConvoScribe
+   (`adb shell am kill com.convoscribe`, or swipe it away from recents),
+   approve, and tap *Open ConvoScribe* if the browser stays put. Then open
+   the app on *Server & sync*.
+8. **Sign in** and leave the approval page unanswered for 15 minutes.
+9. Revoke this device's key in the proxy's key list, then *Sync now*.
+   Open Settings.
+10. Tap *Use an API key instead* and paste a key you made by hand in the
+    proxy.
+11. Point the app at a server in `api-key` mode, or remove the bypass rule.
+
+**Expected**
+
+- Step 1: JSON naming the proxy's browser address, the client and the
+  roles (`null` for all), and nothing else.
+- Step 2: **Sign in** under the address, with *Use an API key instead*; no
+  key field.
+- Step 3: the browser opens on the proxy's page, naming the registered
+  client, *ConvoScribe on <your phone>*, *Never expires* and the roles (or
+  the all-roles warning). After approving, the browser returns to the app,
+  which says *Signed in*, with no key shown or typed.
+- Step 4: sync completes.
+- Step 5: the key *ConvoScribe on <your phone>*, with its description.
+- Step 6: after the decline, *The sign-in was declined.* and still no key.
+- Step 7: the app comes back signed in; the key was collected after the
+  restart.
+- Step 8: *The sign-in wasn't approved in time.*
+- Step 9: sync fails with `HTTP 401`; the card says the key was refused,
+  with **Sign in again**, and the overview's *Server & sync* row says
+  *Sign in again* with a warning. Signing in again restores sync.
+- Step 10: the pasted key works as before.
+- Step 11: the card is the address and the API key, as before, with no
+  **Sign in**.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

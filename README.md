@@ -1126,7 +1126,13 @@ development, configuration and deployment.
 To sync a phone (#68): deploy the server, then in Settings → *Server & sync* enter
 its address (`https://sync.example.com`, without `/api/…`) and the API key
 (`SYNC_API_KEY`, or your `sk_authz_…` key behind authz-proxy), and turn on
-*Sync sessions*. Do the same on every device. Each uploads its finished
+*Sync sessions*. Behind authz-proxy with device sign-in set up (#95, see
+[*Device sign-in*](server/README.md#device-sign-in)), tap **Sign in** under
+the address instead: the proxy's page opens in the browser, you approve a
+key for the device, and the app collects it, so no key is typed. The key
+appears in the proxy's key list as *ConvoScribe on <phone model>*, where
+you revoke it; the app then asks you to sign in again. *Use an API key
+instead* keeps the pasted key. Do the same on every device. Each uploads its finished
 sessions and downloads the others' (#69); a session that changed in two
 places is merged on the device, so changes to different parts all survive
 (#90). When both changed one value the most recent change wins, then (for
