@@ -1,9 +1,13 @@
 package com.convoscribe.ui.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Context
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -67,6 +71,7 @@ import java.text.DateFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -103,7 +108,9 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
                     syncStatus = container.syncStatusStore.status,
                     fetchServerOffer = container.serverConfigClient::fetch,
                     refreshServerOffer = { container.serverOfferRefresher.refresh() },
-                    pingDecision = container.decisionClient::ping
+                    pingDecision = container.decisionClient::ping,
+                    signInApi = container.deviceSignInClient,
+                    deviceName = deviceName()
                 )
             }
         }
@@ -150,6 +157,28 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
         )
     }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Device sign-in (issue #95): ask the server typed on the Server page
+    // whether it offers sign-in, once typing pauses; open the approval page;
+    // and on every return, check a sign-in that is waiting.
+    val onServerPage = SettingsPage.of(pageKey) == SettingsPage.SERVER
+    LaunchedEffect(onServerPage, state.form.syncUrl) {
+        if (!onServerPage) return@LaunchedEffect
+        delay(SIGN_IN_CHECK_DELAY_MS)
+        vm.checkSignIn()
+    }
+    LaunchedEffect(state.signIn.approvalUrl) {
+        val url = state.signIn.approvalUrl ?: return@LaunchedEffect
+        vm.signInBrowserOpened()
+        if (!openInCustomTab(context, url)) {
+            coroutineScope.launch { snackbarHostState.showSnackbar(context.getString(R.string.sign_in_no_browser)) }
+            vm.cancelSignIn()
+        }
+    }
+    LifecycleResumeEffect(Unit) {
+        vm.resumeSignIn()
+        onPauseOrDispose {}
+    }
     // The cleanup model downloads through the shared download service
     // (issue #37); re-read the model state once it lands.
     val downloadState by container.modelDownloadManager.state.collectAsStateWithLifecycle()
@@ -287,6 +316,9 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             onAcceptServerServices = vm::acceptServerServices,
             onDismissServerServices = vm::dismissServerServices,
             onTurnOffServerServices = vm::turnOffServerServices,
+            onSignIn = vm::startSignIn,
+            onCancelSignIn = vm::cancelSignIn,
+            onSignOut = vm::signOut,
             onLlmSourceChange = vm::setLlmSource,
             onAsrSourceChange = vm::setAsrSource,
             onDecisionSourceChange = vm::setDecisionSource,
@@ -321,6 +353,31 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
 
 /** Type of a backup file in the system file picker. */
 private const val BACKUP_MIME = "application/zip"
+
+/** How long typing in the server address pauses before asking it about sign-in (issue #95). */
+private const val SIGN_IN_CHECK_DELAY_MS = 600L
+
+/** Names this device's key on the sign-in server, e.g. "Google Pixel 9" (issue #95). */
+private fun deviceName(): String {
+    val maker = Build.MANUFACTURER.orEmpty().replaceFirstChar { it.uppercase() }
+    val model = Build.MODEL.orEmpty()
+    return when {
+        model.isBlank() -> maker.ifBlank { "Android" }
+        model.startsWith(maker, ignoreCase = true) -> model
+        else -> "$maker $model"
+    }
+}
+
+/**
+ * Open [url] in a Custom Tab, so the user's browser sign-in and passkeys
+ * work (issue #95); false when no browser can open it.
+ */
+private fun openInCustomTab(context: Context, url: String): Boolean = try {
+    CustomTabsIntent.Builder().setShowTitle(true).build().launchUrl(context, Uri.parse(url))
+    true
+} catch (e: ActivityNotFoundException) {
+    false
+}
 
 /** What the Settings screen can do; filled from [SettingsViewModel] and the nav controller. */
 internal class SettingsActions(
@@ -370,6 +427,9 @@ internal class SettingsActions(
     val onAcceptServerServices: () -> Unit = {},
     val onDismissServerServices: () -> Unit = {},
     val onTurnOffServerServices: () -> Unit = {},
+    val onSignIn: () -> Unit = {},
+    val onCancelSignIn: () -> Unit = {},
+    val onSignOut: () -> Unit = {},
     val onLlmSourceChange: (ServiceSource) -> Unit = {},
     val onAsrSourceChange: (ServiceSource) -> Unit = {},
     val onDecisionSourceChange: (ServiceSource) -> Unit = {},
@@ -546,7 +606,11 @@ private fun SettingsPageContent(
                 onAccept = actions.onAcceptServerServices,
                 onDismiss = actions.onDismissServerServices,
                 onTurnOff = actions.onTurnOffServerServices
-            )
+            ),
+            signIn = state.signIn,
+            onSignIn = actions.onSignIn,
+            onCancelSignIn = actions.onCancelSignIn,
+            onSignOut = actions.onSignOut
         )
         SettingsPage.RECORDING -> {
             TranscriptionSection(

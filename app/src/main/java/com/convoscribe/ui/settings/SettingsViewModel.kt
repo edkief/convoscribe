@@ -18,13 +18,21 @@ import com.convoscribe.settings.AppSettings
 import com.convoscribe.settings.DEFAULT_DIARIZATION_EMBEDDING
 import com.convoscribe.settings.DEFAULT_DIARIZATION_STEP_SECONDS
 import com.convoscribe.settings.DisplayMode
+import com.convoscribe.settings.PendingSignIn
 import com.convoscribe.settings.SemanticIndexMode
 import com.convoscribe.settings.ServerOffer
 import com.convoscribe.settings.ServiceSource
 import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.SpeakerIdMode
+import com.convoscribe.sync.DeviceSignInApi
+import com.convoscribe.sync.KeyRequestResult
 import com.convoscribe.sync.ServerConfigResult
+import com.convoscribe.sync.SignInOffer
+import com.convoscribe.sync.StartResult
 import com.convoscribe.sync.SyncStatus
+import java.security.SecureRandom
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -138,6 +146,38 @@ sealed interface ServicesCheck {
     /** The server was not reached or answered something unexpected. */
     data class Failed(val message: String) : ServicesCheck
 }
+
+/** Where a device sign-in through the browser stands (issue #95). */
+sealed interface SignInPhase {
+    data object Idle : SignInPhase
+
+    /** Asking the proxy for a key request. */
+    data object Starting : SignInPhase
+
+    /** The user is approving in the browser; the app checks every few seconds. */
+    data object Waiting : SignInPhase
+
+    /** The key arrived and is saved. */
+    data object SignedIn : SignInPhase
+    data object Declined : SignInPhase
+
+    /** The user did not answer in time, or the request is gone. */
+    data object Expired : SignInPhase
+    data class Failed(val message: String) : SignInPhase
+}
+
+/**
+ * Device sign-in (issue #95). [offer] is how the server at [checkedUrl]
+ * lets a device sign in, `null` when it offers no sign-in and a key is
+ * pasted. [approvalUrl] is set once, for the screen to open in the
+ * browser, then cleared by [SettingsViewModel.signInBrowserOpened].
+ */
+data class SignInUi(
+    val offer: SignInOffer? = null,
+    val checkedUrl: String = "",
+    val phase: SignInPhase = SignInPhase.Idle,
+    val approvalUrl: String? = null
+)
 
 /**
  * Snapshot rendered by [SettingsScreen]. The form is mutable
@@ -268,7 +308,9 @@ data class SettingsUiState(
     /** Last decision service test: [ConnectionTestResult.Connected] names the laya model that answered. */
     val decisionTestResult: ConnectionTestResult? = null,
     /** Turning the server's services on, while it is under way. */
-    val servicesCheck: ServicesCheck? = null
+    val servicesCheck: ServicesCheck? = null,
+    /** Signing this device in through the browser (issue #95). */
+    val signIn: SignInUi = SignInUi()
 )
 
 /**
@@ -316,6 +358,9 @@ data class SettingsUiState(
  *   [requestServerServices] (issue #94).
  * @param refreshServerOffer refreshes the stored offer, after a new
  *   sync key is saved.
+ * @param signInApi the server's sign-in and authz-proxy's key requests
+ *   (issue #95); `null` offers no sign-in.
+ * @param deviceName names the key, as "ConvoScribe on <deviceName>".
  */
 class SettingsViewModel(
     private val repo: SettingsRepository,
@@ -329,8 +374,15 @@ class SettingsViewModel(
     private val fetchServerOffer: suspend (url: String, key: String) -> ServerConfigResult =
         { _, _ -> ServerConfigResult.Failed("not available") },
     private val refreshServerOffer: suspend () -> Unit = {},
-    private val pingDecision: suspend () -> String = { "" }
+    private val pingDecision: suspend () -> String = { "" },
+    private val signInApi: DeviceSignInApi? = null,
+    private val deviceName: String = "Android",
+    private val now: () -> Long = System::currentTimeMillis,
+    private val newSignInState: () -> String = ::randomSignInState
 ) : ViewModel() {
+
+    private var signInOfferJob: Job? = null
+    private var signInPollJob: Job? = null
 
     private val _state: MutableStateFlow<SettingsUiState>
     val state: StateFlow<SettingsUiState>
@@ -744,6 +796,158 @@ class SettingsViewModel(
         _state.update { it.copy(servicesCheck = null) }
     }
 
+    /**
+     * Ask the server typed in the form whether a device can sign in
+     * through the browser (issue #95). The screen calls it when the
+     * Server page opens and after the address changes.
+     */
+    fun checkSignIn() {
+        val api = signInApi
+        val url = _state.value.form.syncUrl.trim()
+        signInOfferJob?.cancel()
+        if (api == null || url.isBlank()) {
+            _state.update { it.copy(signIn = it.signIn.copy(offer = null, checkedUrl = url)) }
+            return
+        }
+        signInOfferJob = viewModelScope.launch {
+            val offer = api.fetchOffer(url)
+            // Dropped if the address changed meanwhile.
+            _state.update {
+                if (it.form.syncUrl.trim() != url) return@update it
+                it.copy(signIn = it.signIn.copy(offer = offer, checkedUrl = url))
+            }
+        }
+    }
+
+    /**
+     * Sign this device in (issue #95): save what is typed (the address
+     * must be stored before the app leaves for the browser), start a key
+     * request, remember it in the encrypted store in case Android ends
+     * the app meanwhile, and hand the screen the approval page to open.
+     */
+    fun startSignIn() {
+        val api = signInApi ?: return
+        val offer = _state.value.signIn.offer ?: return
+        val phase = _state.value.signIn.phase
+        if (phase == SignInPhase.Starting || phase == SignInPhase.Waiting) return
+        save()
+        val requestState = newSignInState()
+        setSignInPhase(SignInPhase.Starting)
+        viewModelScope.launch {
+            val result = api.start(
+                offer = offer,
+                purpose = "ConvoScribe on $deviceName",
+                description = SIGN_IN_DESCRIPTION,
+                returnUrl = SIGN_IN_RETURN_URL,
+                state = requestState
+            )
+            when (result) {
+                is StartResult.Started -> {
+                    repo.setPendingSignIn(
+                        PendingSignIn(
+                            proxyUrl = offer.proxyUrl,
+                            clientId = offer.clientId,
+                            requestSecret = result.request.requestSecret,
+                            state = requestState,
+                            startedAt = now(),
+                            intervalSeconds = result.request.intervalSeconds
+                        )
+                    )
+                    _state.update {
+                        it.copy(
+                            signIn = it.signIn.copy(
+                                phase = SignInPhase.Waiting,
+                                approvalUrl = result.request.approvalUrl
+                            )
+                        )
+                    }
+                    pollSignIn()
+                }
+                is StartResult.Failed -> setSignInPhase(SignInPhase.Failed(result.message))
+            }
+        }
+    }
+
+    /** The screen opened [SignInUi.approvalUrl]. */
+    fun signInBrowserOpened() {
+        _state.update { it.copy(signIn = it.signIn.copy(approvalUrl = null)) }
+    }
+
+    /**
+     * Back from the browser, or the Server page resumed: if a sign-in is
+     * waiting, check it now and keep checking while the user has not
+     * answered. Also picks up a sign-in started before Android ended the app.
+     */
+    fun resumeSignIn() {
+        if (repo.pendingSignIn() == null) return
+        pollSignIn()
+    }
+
+    /** Give up on the waiting sign-in; an approval after this is never collected. */
+    fun cancelSignIn() {
+        signInPollJob?.cancel()
+        repo.setPendingSignIn(null)
+        _state.update { it.copy(signIn = it.signIn.copy(phase = SignInPhase.Idle, approvalUrl = null)) }
+    }
+
+    /**
+     * Forget this device's key (issue #95). The key itself stays valid
+     * until the user revokes it in the proxy's key list.
+     */
+    fun signOut() {
+        repo.setSyncKey("")
+        _state.update { it.copy(form = it.form.copy(syncKey = ""), signIn = it.signIn.copy(phase = SignInPhase.Idle)) }
+    }
+
+    private fun pollSignIn() {
+        val api = signInApi ?: return
+        if (signInPollJob?.isActive == true) return
+        signInPollJob = viewModelScope.launch {
+            var wait = 0L
+            while (true) {
+                if (wait > 0) delay(wait)
+                val pending = repo.pendingSignIn() ?: return@launch
+                if (pending.expired(now())) return@launch endSignIn(SignInPhase.Expired)
+                setSignInPhase(SignInPhase.Waiting)
+                val interval = pending.intervalSeconds.coerceAtLeast(1) * 1000L
+                wait = interval
+                val status = api.status(pending.proxyUrl, pending.clientId, pending.requestSecret)
+                val answer = if (status == KeyRequestResult.Approved) {
+                    api.finalize(pending.proxyUrl, pending.clientId, pending.requestSecret)
+                } else {
+                    status
+                }
+                when (answer) {
+                    is KeyRequestResult.Issued -> return@launch signedIn(answer.apiKey)
+                    KeyRequestResult.Declined -> return@launch endSignIn(SignInPhase.Declined)
+                    KeyRequestResult.Expired, KeyRequestResult.Gone -> return@launch endSignIn(SignInPhase.Expired)
+                    KeyRequestResult.SlowDown -> wait = interval * 2
+                    // Still waiting, or not reached: an approved request can be collected again.
+                    KeyRequestResult.Pending, KeyRequestResult.Approved, is KeyRequestResult.Failed -> {}
+                }
+            }
+        }
+    }
+
+    private fun signedIn(apiKey: String) {
+        // The key is given once: stored before anything else.
+        repo.setSyncKey(apiKey)
+        repo.setPendingSignIn(null)
+        _state.update {
+            it.copy(form = it.form.copy(syncKey = apiKey), signIn = it.signIn.copy(phase = SignInPhase.SignedIn))
+        }
+        if (repo.settings.value.serverServicesEnabled) viewModelScope.launch { refreshServerOffer() }
+    }
+
+    private fun endSignIn(phase: SignInPhase) {
+        repo.setPendingSignIn(null)
+        setSignInPhase(phase)
+    }
+
+    private fun setSignInPhase(phase: SignInPhase) {
+        _state.update { if (it.signIn.phase == phase) it else it.copy(signIn = it.signIn.copy(phase = phase)) }
+    }
+
     /** Turn *Use this server's services* off; the user's own values are untouched. */
     fun turnOffServerServices() {
         repo.update { it.copy(serverServicesEnabled = false) }
@@ -958,4 +1162,16 @@ class SettingsViewModel(
         val bundle = ModelCatalog.asrFor(language, engine)
         return if (modelStore.isInstalled(bundle)) 0L else bundle.totalBytes
     }
+}
+
+/** Where the approval page sends the browser back (issue #95); registered on the proxy's client. */
+internal const val SIGN_IN_RETURN_URL = "convoscribe://api-key"
+
+/** Shown on the approval page and stored on the key. */
+private const val SIGN_IN_DESCRIPTION = "Syncs sessions and uses this server's services from this device."
+
+/** A random value the browser must hand back unchanged, so a return the app did not start is ignored. */
+private fun randomSignInState(): String {
+    val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
+    return bytes.joinToString("") { "%02x".format(it) }
 }

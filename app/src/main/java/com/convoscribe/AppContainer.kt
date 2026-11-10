@@ -73,6 +73,7 @@ import com.convoscribe.service.UpdateCheckScheduler
 import com.convoscribe.service.UpdateDownloadService
 import com.convoscribe.settings.EncryptedSecretStore
 import com.convoscribe.settings.SettingsRepository
+import com.convoscribe.sync.DeviceSignInClient
 import com.convoscribe.sync.ServerConfigClient
 import com.convoscribe.sync.ServerOfferRefresher
 import com.convoscribe.sync.SyncEngine
@@ -649,6 +650,9 @@ class AppContainer(val context: Context) {
      */
     val pendingOpenRecord = MutableStateFlow(false)
 
+    /** Back from approving a device sign-in in the browser (issue #95): open Settings on the Server page. */
+    val pendingOpenSignIn = MutableStateFlow(false)
+
     /**
      * A preset picked from the Quick Settings tile's long-press that
      * could not start straight away (issue #32); the Record screen
@@ -740,6 +744,9 @@ class AppContainer(val context: Context) {
 
     /** Asks the sync server what it provides (issue #94), for Settings and [serverOfferRefresher]. */
     val serverConfigClient: ServerConfigClient = ServerConfigClient(httpClient)
+
+    /** Device sign-in through authz-proxy's key requests (issue #95). */
+    val deviceSignInClient: DeviceSignInClient = DeviceSignInClient(httpClient)
 
     /**
      * Keeps the sync server's offer current while its services are on

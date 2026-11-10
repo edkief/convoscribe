@@ -5,11 +5,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Button
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -51,6 +53,12 @@ import java.util.Date
  *
  * *Use this server's services* ([services], issue #94) has its own card
  * between them: either can be on without the other.
+ *
+ * When the server offers device sign-in ([signIn], issue #95), the card
+ * offers *Sign in* through the browser instead of the key, which stays
+ * behind *Use an API key instead*; once signed in, *Sign out*, and
+ * *Sign in again* when the server refuses the key. Without it, the card
+ * is the address and the key.
  */
 @Composable
 internal fun SyncSection(
@@ -65,11 +73,18 @@ internal fun SyncSection(
     onSyncNow: () -> Unit,
     audioOnMobileData: Boolean = false,
     onAudioOnMobileDataChange: (Boolean) -> Unit = {},
-    services: ServerServicesUi = ServerServicesUi()
+    services: ServerServicesUi = ServerServicesUi(),
+    signIn: SignInUi = SignInUi(),
+    onSignIn: () -> Unit = {},
+    onCancelSignIn: () -> Unit = {},
+    onSignOut: () -> Unit = {}
 ) {
     var keyVisible by rememberSaveable { mutableStateOf(false) }
     var confirming by rememberSaveable { mutableStateOf(false) }
+    var keyShown by rememberSaveable { mutableStateOf(false) }
     val active = enabled && configured
+    // Sign-in is offered for the address as typed only once the server answered for it.
+    val canSignIn = signIn.offer != null && signIn.checkedUrl == url.trim()
     // Connection first and on its own: browser sign-in (#95) replaces the key here.
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
@@ -89,24 +104,43 @@ internal fun SyncSection(
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             modifier = Modifier.fillMaxWidth()
         )
-        OutlinedTextField(
-            value = key,
-            onValueChange = onKeyChange,
-            label = { Text(text = stringResource(R.string.sync_key_label)) },
-            singleLine = true,
-            visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
-            trailingIcon = {
-                IconButton(onClick = { keyVisible = !keyVisible }) {
-                    Text(
-                        text = stringResource(
-                            if (keyVisible) R.string.settings_llm_api_key_hide else R.string.settings_llm_api_key_show
-                        ),
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
+        if (canSignIn) {
+            SignInBlock(
+                signIn = signIn,
+                hasKey = key.isNotBlank(),
+                keyRefused = status.keyRefused,
+                onSignIn = onSignIn,
+                onCancel = onCancelSignIn,
+                onSignOut = onSignOut
+            )
+            TextButton(onClick = { keyShown = !keyShown }) {
+                Text(text = stringResource(if (keyShown) R.string.sign_in_hide_key else R.string.sign_in_use_key))
+            }
+        }
+        if (!canSignIn || keyShown) {
+            OutlinedTextField(
+                value = key,
+                onValueChange = onKeyChange,
+                label = { Text(text = stringResource(R.string.sync_key_label)) },
+                singleLine = true,
+                visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                trailingIcon = {
+                    IconButton(onClick = { keyVisible = !keyVisible }) {
+                        Text(
+                            text = stringResource(
+                                if (keyVisible) {
+                                    R.string.settings_llm_api_key_hide
+                                } else {
+                                    R.string.settings_llm_api_key_show
+                                }
+                            ),
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
@@ -176,5 +210,61 @@ internal fun SyncSection(
             },
             onDismiss = { confirming = false }
         )
+    }
+}
+
+/**
+ * Device sign-in on the Connection card (issue #95): *Sign in*, the
+ * wait for the browser, the outcome, and *Sign out* once this device
+ * holds a key ([hasKey]). [keyRefused]: the server refused the key at
+ * the last sync, so the user is asked to sign in again.
+ */
+@Composable
+private fun SignInBlock(
+    signIn: SignInUi,
+    hasKey: Boolean,
+    keyRefused: Boolean,
+    onSignIn: () -> Unit,
+    onCancel: () -> Unit,
+    onSignOut: () -> Unit
+) {
+    when (val phase = signIn.phase) {
+        SignInPhase.Starting, SignInPhase.Waiting -> {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.m)
+            ) {
+                InlineProgress()
+                NoticeText(
+                    text = stringResource(
+                        if (phase == SignInPhase.Starting) R.string.sign_in_starting else R.string.sign_in_waiting
+                    ),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            TextButton(onClick = onCancel) { Text(text = stringResource(R.string.sign_in_cancel)) }
+            return
+        }
+        SignInPhase.SignedIn -> NoticeText(text = stringResource(R.string.sign_in_signed_in))
+        SignInPhase.Declined -> ErrorBanner(message = stringResource(R.string.sign_in_declined))
+        SignInPhase.Expired -> ErrorBanner(message = stringResource(R.string.sign_in_expired))
+        is SignInPhase.Failed -> ErrorBanner(message = stringResource(R.string.sign_in_failed, phase.message))
+        SignInPhase.Idle -> {}
+    }
+    when {
+        hasKey && keyRefused -> {
+            ErrorBanner(message = stringResource(R.string.sign_in_refused))
+            Button(onClick = onSignIn) { Text(text = stringResource(R.string.sign_in_again_action)) }
+        }
+        hasKey -> {
+            if (signIn.phase != SignInPhase.SignedIn) NoticeText(text = stringResource(R.string.sign_in_connected))
+            OutlinedButton(onClick = onSignOut) { Text(text = stringResource(R.string.sign_in_sign_out)) }
+            SupportingText(text = stringResource(R.string.sign_in_sign_out_help))
+        }
+        else -> {
+            Button(onClick = onSignIn) { Text(text = stringResource(R.string.sign_in_action)) }
+            SupportingText(text = stringResource(R.string.sign_in_help))
+        }
     }
 }

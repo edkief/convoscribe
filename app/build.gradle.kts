@@ -170,6 +170,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.security.crypto)
+    // Device sign-in (issue #95) opens the approval page in a Custom Tab.
+    implementation(libs.androidx.browser)
     implementation(libs.commons.compress)
     implementation(libs.onnxruntime.android)
 
