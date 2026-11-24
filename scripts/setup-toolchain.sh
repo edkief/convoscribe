@@ -186,8 +186,8 @@ else
   echo "WARNING: sherpa-onnx build script not found at $SHERPA_BUILD_SCRIPT; skipping." >&2
 fi
 
-# onnxruntime's JNI library, linked against the runtime sherpa-onnx just
-# installed (issue #61). Under a minute.
+# onnxruntime-android-qnn's runtime and JNI library in place of the
+# runtime sherpa-onnx just installed (issues #61, #159). Under a minute.
 ORT_JNI_BUILD_SCRIPT="$(cd "$(dirname "$0")" && pwd)/build-onnxruntime-jni.sh"
 if [[ "$APP_ONLY" != 1 && -f "$ORT_JNI_BUILD_SCRIPT" ]]; then
   bash "$ORT_JNI_BUILD_SCRIPT"

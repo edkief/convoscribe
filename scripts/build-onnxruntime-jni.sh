@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
-# Put onnxruntime's Java JNI library (`libonnxruntime4j_jni.so`) for
-# arm64-v8a next to the `libonnxruntime.so` that
-# scripts/build-sherpa-onnx.sh puts in app/src/main/jniLibs (issues #61,
-# #159).
+# Replace the onnxruntime that scripts/build-sherpa-onnx.sh puts in
+# app/src/main/jniLibs/arm64-v8a with Microsoft's onnxruntime-android-qnn
+# build of the same version, and put its Java JNI library
+# (`libonnxruntime4j_jni.so`) next to it (issues #61, #159).
 #
 # Why: the text embedder (#61) and Whisper on the NPU (#159) use
-# onnxruntime's Java API from the `onnxruntime-android` AAR, but that
-# AAR's runtime has no QNN execution provider, so the app ships
-# sherpa-onnx's runtime instead (csukuangfj/onnxruntime-libs, built with
-# the QNN provider) and the JNI library has to bind to that runtime's
-# symbol version (`OrtGetApiBase@VERS_<version>`), or Android's linker
-# refuses to load it. The same onnxruntime-libs release ships a JNI
-# library built against that runtime; this script takes it from there.
-# The app's copy replaces the AAR's at packaging (app/build.gradle.kts).
+# onnxruntime's Java API, and Whisper needs the QNN execution provider.
+# The runtime sherpa-onnx is built against (csukuangfj/onnxruntime-libs)
+# has none: sherpa-onnx's own NPU models (Nemotron) call the QNN SDK
+# directly, so they never needed it. onnxruntime-android-qnn does have it.
+# Both runtimes export the same symbol version (`OrtGetApiBase@VERS_<
+# version>`), so sherpa-onnx's JNI library loads against the swapped one;
+# Android's linker refuses any other version. The app's copies replace
+# the onnxruntime-android AAR's at packaging (app/build.gradle.kts).
+#
+# The QNN libraries (libQnnHtp.so and the stubs/skels) come from the QAIRT
+# SDK pinned in scripts/build-sherpa-onnx.sh, not from Maven's
+# qnn-runtime package the AAR declares.
 #
 # Run after scripts/build-sherpa-onnx.sh; takes under a minute.
 set -euo pipefail
@@ -23,57 +27,60 @@ source scripts/env.sh
 
 # Must match ONNXRUNTIME_VERSION in scripts/build-sherpa-onnx.sh and
 # `onnxruntime` in gradle/libs.versions.toml (the Java classes).
-ORT_VERSION=1.30.0
-ORT_ZIP_URL="https://github.com/csukuangfj/onnxruntime-libs/releases/download/v$ORT_VERSION/onnxruntime-android-$ORT_VERSION.zip"
-ORT_ZIP_SHA256="150d1fd3356220e7539e17cb4ec81a7f6649218e5d2bab5afbeef6e23daf9641"
+ORT_VERSION=1.29.0
+ORT_AAR_URL="https://repo1.maven.org/maven2/com/microsoft/onnxruntime/onnxruntime-android-qnn/$ORT_VERSION/onnxruntime-android-qnn-$ORT_VERSION.aar"
+ORT_AAR_SHA256="cc4cfd72a47703aee65d8e6ce7448fa7488e3fff6556f9d6d354ec1687347cfd"
 
 WORK="$HOME/.local/share/convoscribe-toolchain/onnxruntime-jni-build"
-ZIP="$WORK/onnxruntime-android-$ORT_VERSION.zip"
+AAR="$WORK/onnxruntime-android-qnn-$ORT_VERSION.aar"
 OUT="app/src/main/jniLibs/arm64-v8a"
 
 log() {
   echo "[build-onnxruntime-jni] $*"
 }
 
-if [[ ! -f "$OUT/libonnxruntime.so" ]]; then
-  echo "ERROR: $OUT/libonnxruntime.so is missing - run bash scripts/build-sherpa-onnx.sh first." >&2
+if [[ ! -f "$OUT/libsherpa-onnx-jni.so" ]]; then
+  echo "ERROR: $OUT/libsherpa-onnx-jni.so is missing - run bash scripts/build-sherpa-onnx.sh first." >&2
   exit 1
 fi
 
 mkdir -p "$WORK"
-if [[ ! -f "$ZIP" ]]; then
-  log "Downloading onnxruntime-libs $ORT_VERSION for Android ..."
-  curl --fail --location --silent --show-error --retry 3 --retry-delay 5 -o "$ZIP.part" "$ORT_ZIP_URL"
-  mv "$ZIP.part" "$ZIP"
+if [[ ! -f "$AAR" ]]; then
+  log "Downloading onnxruntime-android-qnn $ORT_VERSION ..."
+  curl --fail --location --silent --show-error --retry 3 --retry-delay 5 -o "$AAR.part" "$ORT_AAR_URL"
+  mv "$AAR.part" "$AAR"
 fi
-actual_sha=$(sha256sum "$ZIP" | awk '{print $1}')
-if [[ "$actual_sha" != "$ORT_ZIP_SHA256" ]]; then
-  echo "ERROR: onnxruntime-android-$ORT_VERSION.zip sha256 mismatch." >&2
-  echo "  expected: $ORT_ZIP_SHA256" >&2
+actual_sha=$(sha256sum "$AAR" | awk '{print $1}')
+if [[ "$actual_sha" != "$ORT_AAR_SHA256" ]]; then
+  echo "ERROR: onnxruntime-android-qnn-$ORT_VERSION.aar sha256 mismatch." >&2
+  echo "  expected: $ORT_AAR_SHA256" >&2
   echo "  actual  : $actual_sha" >&2
-  rm -f "$ZIP"
+  rm -f "$AAR"
   exit 1
 fi
 
 EXTRACT="$WORK/extract-$ORT_VERSION"
 rm -rf "$EXTRACT"
-unzip -q -o "$ZIP" "jni/arm64-v8a/*" -d "$EXTRACT"
-
-# The JNI library must come from the same build as the shipped runtime.
-if ! cmp -s "$EXTRACT/jni/arm64-v8a/libonnxruntime.so" "$OUT/libonnxruntime.so"; then
-  echo "ERROR: $OUT/libonnxruntime.so is not the onnxruntime-libs $ORT_VERSION runtime." >&2
-  echo "       Rebuild with bash scripts/build-sherpa-onnx.sh (ONNXRUNTIME_VERSION=$ORT_VERSION)." >&2
-  exit 1
-fi
+unzip -q -o "$AAR" "jni/arm64-v8a/*" -d "$EXTRACT"
+cp "$EXTRACT/jni/arm64-v8a/libonnxruntime.so" "$OUT/libonnxruntime.so"
 cp "$EXTRACT/jni/arm64-v8a/libonnxruntime4j_jni.so" "$OUT/libonnxruntime4j_jni.so"
 rm -rf "$EXTRACT"
 
 READELF="$(ls "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf)"
 # Capture first: with pipefail, `grep -q` closing the pipe early would
 # fail the pipeline through readelf's SIGPIPE.
-JNI_SYMS="$("$READELF" --dyn-syms "$OUT/libonnxruntime4j_jni.so")"
-if ! grep -q "OrtGetApiBase@VERS_$ORT_VERSION" <<<"$JNI_SYMS"; then
-  echo "ERROR: libonnxruntime4j_jni.so does not bind to VERS_$ORT_VERSION." >&2
+for lib in libonnxruntime4j_jni.so libsherpa-onnx-jni.so; do
+  syms="$("$READELF" --dyn-syms "$OUT/$lib")"
+  if ! grep -q "OrtGetApiBase@VERS_$ORT_VERSION" <<<"$syms"; then
+    echo "ERROR: $lib does not bind to onnxruntime VERS_$ORT_VERSION." >&2
+    exit 1
+  fi
+done
+# Every onnxruntime build names "QNNExecutionProvider"; only one with the
+# provider compiled in has its backend manager and `backend_path` option.
+ort_strings="$(strings "$OUT/libonnxruntime.so")"
+if ! grep -q "QnnBackendManager" <<<"$ort_strings" || ! grep -qx "backend_path" <<<"$ort_strings"; then
+  echo "ERROR: $OUT/libonnxruntime.so has no QNN execution provider (needed by Whisper on the NPU)." >&2
   exit 1
 fi
-log "Wrote $OUT/libonnxruntime4j_jni.so"
+log "Wrote $OUT/libonnxruntime.so and libonnxruntime4j_jni.so (onnxruntime-android-qnn $ORT_VERSION)"

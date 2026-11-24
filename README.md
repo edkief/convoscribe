@@ -1406,9 +1406,10 @@ features enabled.
    `SHERPA_ONNX_ENABLE_QNN=ON`, `SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=ON`,
    `SHERPA_ONNX_ENABLE_TTS=OFF`, `SHERPA_ONNX_ENABLE_BINARY=OFF`,
    `SHERPA_ONNX_ENABLE_C_API=OFF`, `SHERPA_ONNX_ENABLE_JNI=ON` and
-   `BUILD_SHARED_LIBS=ON`. This fetches a prebuilt onnxruntime **1.30.0**
-   (`csukuangfj/onnxruntime-libs`, built with the QNN execution provider)
-   and links it as a shared library.
+   `BUILD_SHARED_LIBS=ON`. This fetches a prebuilt onnxruntime **1.29.0**
+   (`csukuangfj/onnxruntime-libs`) and links it as a shared library.
+   That runtime has no QNN execution provider (sherpa-onnx's own NPU
+   models call the QNN SDK directly); the next script swaps it.
 4. Copies `libsherpa-onnx-jni.so` + `libonnxruntime.so` from
    `build-android-arm64-v8a/install/lib/` and the QNN runtime
    (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnSystem.so`,
@@ -1416,8 +1417,8 @@ features enabled.
    `app/src/main/jniLibs/arm64-v8a/`.
 5. Verifies the resulting `libsherpa-onnx-jni.so` exports both
    `Java_com_k2fsa_sherpa_onnx_OfflineSpeakerDiarization` and the
-   `prependAdspLibraryPath` symbol (QNN path), binds to onnxruntime
-   `VERS_1.30.0`, and that `libonnxruntime.so` has the QNN provider.
+   `prependAdspLibraryPath` symbol (QNN path) and binds to onnxruntime
+   `VERS_1.29.0`.
 6. Downloads `sherpa-onnx-1.13.8.aar`, checks its sha256 against
    `633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96`,
    and extracts the AAR's `classes.jar` into
@@ -1439,19 +1440,24 @@ version that wrote them (`qnn-runtime.txt`).
 ### onnxruntime JNI library
 
 Semantic search and Whisper on the NPU run through onnxruntime's Java
-API (the `onnxruntime-android` AAR). The AAR's own runtime has no QNN
-provider, so the app ships sherpa-onnx's runtime instead, and the JNI
-library must bind to that runtime's symbol version or Android refuses
-to load it. `scripts/build-onnxruntime-jni.sh` (also run by
+API (the `onnxruntime-android` AAR). Neither that AAR's runtime nor
+sherpa-onnx's has the QNN execution provider Whisper needs, so the app
+ships Microsoft's `onnxruntime-android-qnn` runtime of the same version
+instead: both export `VERS_1.29.0`, which sherpa-onnx's JNI library and
+the Java JNI library bind to (Android refuses any other version). 1.29.0
+is the newest `onnxruntime-android-qnn` on Maven.
+`scripts/build-onnxruntime-jni.sh` (also run by
 `scripts/setup-toolchain.sh`):
 
-1. Downloads `onnxruntime-android-1.30.0.zip` from
-   `csukuangfj/onnxruntime-libs` (the release sherpa-onnx links against)
-   and checks its sha256.
-2. Checks that its `libonnxruntime.so` is the one in
-   `app/src/main/jniLibs/arm64-v8a/`, then copies the matching
-   `libonnxruntime4j_jni.so` next to it.
-3. Checks that the library binds to `VERS_1.30.0`.
+1. Downloads `onnxruntime-android-qnn-1.29.0.aar` from Maven Central and
+   checks its sha256.
+2. Copies its `libonnxruntime.so` and `libonnxruntime4j_jni.so` over
+   the ones in `app/src/main/jniLibs/arm64-v8a/`. The QNN libraries stay
+   the QAIRT 2.51 ones from the step above, not Maven's `qnn-runtime`.
+3. Checks that both JNI libraries bind to `VERS_1.29.0` and that the
+   runtime has the QNN provider compiled in (`QnnBackendManager` and its
+   `backend_path` option; every build merely names
+   `QNNExecutionProvider`).
 
 The packaging rules in `app/build.gradle.kts` keep these two libraries
 over the AAR's. Run it again after rebuilding sherpa-onnx.

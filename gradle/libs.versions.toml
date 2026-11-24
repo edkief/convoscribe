@@ -22,8 +22,8 @@ commonsCompress = "1.27.1"
 roborazzi = "1.40.1"
 # 0.28.0 is the last release built on Kotlin 2.0 / Compose 1.7; newer ones need Kotlin 2.1+.
 markdownRenderer = "0.28.0"
-# Java API only: the native runtime is sherpa-onnx's libonnxruntime.so (1.30.0, with the QNN provider), see app/build.gradle.kts.
-onnxruntime = "1.30.0"
+# Java API only: the native runtime is sherpa-onnx's libonnxruntime.so (1.29.0, Microsoft's onnxruntime-android-qnn build with the QNN provider), see app/build.gradle.kts.
+onnxruntime = "1.29.0"
 
 [libraries]
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }

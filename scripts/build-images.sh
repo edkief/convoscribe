@@ -12,7 +12,7 @@
 # Tags are derived from the pinned versions, so an unchanged pin means an
 # unchanged tag and there is nothing to rebuild:
 #   sherpa : <sherpa>-qnn<qnn>-ort<onnxruntime>-jni<onnxruntime JNI version>,
-#            e.g. 1.13.8-qnn2.51.0.260929-ort1.30.0-jni1.30.0
+#            e.g. 1.13.8-qnn2.51.0.260929-ort1.29.0-jni1.29.0
 #   builder: <sherpa tag>-tc<hash of setup-toolchain.sh + env.sh>
 #
 # Usage: bash scripts/build-images.sh [options] [sherpa|builder|all]

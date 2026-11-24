@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # Build sherpa-onnx 1.13.8 native libraries for arm64-v8a with Qualcomm QNN
 # (Hexagon NPU) and speaker diarization enabled, then copy the resulting
-# `libsherpa-onnx-jni.so` together with `libonnxruntime.so` (1.30.0, with
-# the QNN execution provider) and the Qualcomm QAIRT 2.51 HTP runtime
-# shared libraries into
+# `libsherpa-onnx-jni.so` together with `libonnxruntime.so` (1.29.0) and
+# the Qualcomm QAIRT 2.51 HTP runtime shared libraries into
 # `app/src/main/jniLibs/arm64-v8a/`. Extract the Kotlin API classes
 # from the official 1.13.8 AAR into `app/libs/sherpa-onnx-classes-1.13.8.jar`.
 #
@@ -13,6 +12,12 @@
 # Run with: `bash scripts/build-sherpa-onnx.sh` (after `source scripts/env.sh`).
 # The build itself takes 10-30 minutes; the onnxruntime download is a
 # prebuilt release from https://github.com/csukuangfj/onnxruntime-libs.
+#
+# That runtime has no QNN execution provider (sherpa-onnx's own QNN
+# models call the QNN SDK directly), so scripts/build-onnxruntime-jni.sh
+# then swaps it for Microsoft's onnxruntime-android-qnn build of the same
+# version, which Whisper on the NPU needs (issue #159). sherpa-onnx's JNI
+# library only binds to the version (`OrtGetApiBase@VERS_<version>`).
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -28,7 +33,9 @@ QNN_SDK_SHA256="9b4ca798902f02a2543857f5de4d233830c044d19701b92fc66a12fdc292211f
 # HTP architectures whose stub/skel pair is bundled: v68 (888) to v85
 # (8 Elite Gen 6).
 HTP_ARCHS=(68 69 73 75 79 81 85)
-ONNXRUNTIME_VERSION=1.30.0
+# Must match ORT_VERSION in scripts/build-onnxruntime-jni.sh: 1.29.0 is the
+# newest onnxruntime-android-qnn release on Maven.
+ONNXRUNTIME_VERSION=1.29.0
 
 WORK="$HOME/.local/share/convoscribe-toolchain/sherpa-onnx-build"
 OUT="app/src/main/jniLibs/arm64-v8a"
@@ -224,10 +231,6 @@ READELF="$(ls "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf)"
 JNI_SYMS="$("$READELF" --dyn-syms "$OUT/libsherpa-onnx-jni.so")"
 if ! grep -q "OrtGetApiBase@VERS_$ONNXRUNTIME_VERSION" <<<"$JNI_SYMS"; then
   echo "ERROR: libsherpa-onnx-jni.so does not bind to onnxruntime VERS_$ONNXRUNTIME_VERSION." >&2
-  exit 1
-fi
-if ! grep -q "QNNExecutionProvider" <(strings "$OUT/libonnxruntime.so"); then
-  echo "ERROR: libonnxruntime.so has no QNN execution provider (needed by Whisper on the NPU)." >&2
   exit 1
 fi
 log "Native libraries look good."

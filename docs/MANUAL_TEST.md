@@ -3093,7 +3093,7 @@ recording with two speakers.
 Use a phone with a supported Snapdragon chip (see README → *Which chips
 use the NPU*; e.g. 8 Gen 3 or 8 Elite) and Android 12 or later, about
 4.5 GB free, the English models, and a 2–3 minute English recording.
-The app ships QNN 2.51 and onnxruntime 1.30 since this change, so start
+The app ships QNN 2.51 and onnxruntime 1.29 (Microsoft's QNN build) since this change, so start
 with the regression checks.
 
 **Steps**
