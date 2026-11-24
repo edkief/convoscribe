@@ -110,13 +110,24 @@ brings them to your other devices.
   **Talking points** (your lists) and **Ask** (questions across
   sessions). The app opens on Recordings, and Back from another section
   returns there. Each section keeps its place while you switch.
+- **Whisper Large-v3-Turbo on the phone** (optional, issue #158).
+  Settings → *Recording & transcription* → *Whisper Large-v3-Turbo*: download it
+  (about 1 GB) and turn on *Transcribe again with Whisper* to have each
+  stopped recording and each import transcribed again on the phone,
+  usually more accurately than the live transcript. Live captions keep
+  using Kroko / Nemotron, and the live transcript stays until Whisper is
+  done; a transcript you edited is never replaced, and a failure or
+  Cancel keeps the live one. *Re-transcribe…* in a session's menu offers
+  *Whisper on this phone* once it is downloaded. It runs on the CPU for
+  now (the NPU is #159). See [*Whisper on the phone*](#whisper-on-the-phone).
 - **Import an audio file** as a session: *Import audio…* in Recordings' menu, or
   share a voice note to ConvoScribe / *Open with* it from a file
   manager. Any format Android can decode (MP3, M4A/AAC, OGG/Opus,
   FLAC, AMR, WAV…) is converted to 16 kHz mono, stored as the
   session's recording and transcribed in the Settings language (on the
-  transcription server when *Improve recordings on the server* is on),
-  then speakers are identified. It runs in the background with progress and
+  transcription server when *Improve recordings on the server* is on, or
+  with Whisper when *Transcribe again with Whisper* is on), then speakers
+  are identified. It runs in the background with progress and
   Cancel; a cancelled or unreadable import leaves nothing behind.
 - **Search across sessions** from Recordings (the search icon, or the
   search field on wide screens). Words are matched in session titles,
@@ -772,6 +783,8 @@ data.
 | `seg-pyannote-3-0-int8` | CPU (always) | 1 540 506 (≈1.5 MB) | Speaker segmentation. `model.int8.onnx`. |
 | `emb-wespeaker-resnet34-lm` | CPU (always) | 26 530 550 (≈25 MB) | Speaker embeddings. `wespeaker_en_voxceleb_resnet34_LM.onnx`. |
 | `enh-gtcrn-simple` | CPU, optional | 535 638 (≈0.5 MB) | Noise cleanup (issue #37), downloaded from Settings only. `gtcrn_simple.onnx`, run by sherpa-onnx's streaming denoiser. |
+| `asr-whisper-large-v3-turbo-int8` | CPU, optional | 1 036 613 791 (≈1.04 GB) | Whisper Large-v3-Turbo (issue #158), downloaded from Settings only. `turbo-encoder.int8.onnx`, `turbo-decoder.int8.onnx`, `turbo-tokens.txt`; sherpa-onnx offline recognizer, `modelType = "whisper"`. |
+| `vad-silero` | CPU, optional | 643 854 (≈0.6 MB) | Silero voice activity detection, downloaded with Whisper. Cuts recordings into speech segments of at most 28 s for it. `silero_vad.onnx`. |
 
 Sources:
 
@@ -783,6 +796,9 @@ Sources:
 - Embeddings: `https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx`
   (the `recongition` misspelling is in the upstream tag and must be preserved).
 - Noise cleanup: `https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx`
+- Whisper: `https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/<file>`
+  (pinned to a revision; the downloader checks exact sizes).
+- Silero VAD: `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx`
 
 Models are downloaded on first run into
 `context.filesDir/models/<bundleId>/` — see the troubleshooting
@@ -1115,6 +1131,39 @@ CONVOSCRIBE_ASR_SAMPLE_WAV=/path/to/16k-speech.wav \
 ./gradlew :app:testDebugUnitTest --tests '*ServerTranscriberLiveTest'
 ```
 
+## Whisper on the phone
+
+Whisper Large-v3-Turbo (#158) is an on-device, whole-recording engine
+next to the transcription server. It does not stream (it reads 30 s at
+a time), so it never replaces the live transcript while you record:
+
+- **After Stop and for imports**, with *Transcribe again with Whisper*
+  on. With *Improve recordings on the server* also on, the server goes
+  first and Whisper is used only if the server fails.
+- **Re-transcribe…** → *Whisper on this phone*, whatever the setting.
+- **Engine check** → *Check Whisper* times it on the English sample
+  clip (model loading included) and shows what it heard.
+
+How it works: Silero VAD cuts the recording into speech segments of at
+most 28 s, and sherpa-onnx's offline Whisper recognizer turns each into
+one transcript line, on the CPU with the Settings thread count. The
+model (about 1 GB, held in memory while it runs) is
+loaded for each recording and released afterwards.
+
+**Word timings.** The published export has no attention outputs, so
+Whisper reports no word times of its own. Each Whisper line borrows
+them from the live transcript (Kroko / Nemotron) of the same audio:
+matching words keep the live engine's times, and the others are placed
+between their neighbours (the same alignment as editing a line). An
+import, or a transcript without word times, gets a quick streaming pass
+first, which takes about 3 % of the audio's length. With nothing to
+borrow from, words are spread evenly over their segment. Tapping a word
+to seek, playback highlighting and splitting a line at a speaker change
+keep working. Whisper's own word times are #161.
+
+Not yet: the NPU on Snapdragon chips that Qualcomm publishes Whisper
+builds for (#159), and an experimental live mode (#160).
+
 ## Sync server
 
 [`server/`](server/README.md) holds the self-hosted sync server (#67), a
@@ -1220,6 +1269,8 @@ same list with each model name + licence + source URL.
 - **pyannote segmentation 3.0** — MIT.
 - **WeSpeaker ResNet34-LM** — Apache-2.0.
 - **GTCRN** (optional noise cleanup) — MIT, https://github.com/Xiaobin-Rong/gtcrn.
+- **Whisper Large-v3-Turbo** (optional) — MIT, https://github.com/openai/whisper.
+- **Silero VAD** (optional, with Whisper) — MIT, https://github.com/snakers4/silero-vad.
 - **sherpa-onnx** — Apache-2.0, https://github.com/k2-fsa/sherpa-onnx.
 - **Qualcomm AI Engine Direct (QNN) runtime libraries**
   (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnSystem.so`,
