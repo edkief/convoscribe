@@ -99,6 +99,12 @@ import com.convoscribe.llm.SummaryTemplates
  * import again on the phone with Whisper Large-v3-Turbo (issue #158),
  * once it is downloaded, after the server or if the server fails; like
  * the ASR engine, it depends on the phone, so backups leave it out.
+ * [whisperLive] (experimental, issue #160) makes the live transcript
+ * come from Whisper while recording: the audio is cut at pauses and each
+ * segment becomes a line once Whisper has decoded it, a few seconds
+ * late. [whisperLiveMaxSeconds] caps a segment during continuous speech
+ * (5..28 s): shorter means lines sooner, more CPU and heat, and a little
+ * less accuracy at the cuts. Neither is backed up.
  * [asrServerAuto] sends each stopped recording and each
  * import to the server, keeping the device transcript if that fails.
  *
@@ -160,6 +166,8 @@ data class AppSettings(
     val asrServerModel: String = "",
     val asrServerAuto: Boolean = false,
     val whisperAuto: Boolean = false,
+    val whisperLive: Boolean = false,
+    val whisperLiveMaxSeconds: Int = SettingsRepository.DEFAULT_WHISPER_LIVE_MAX_SECONDS,
     val syncServerUrl: String = "",
     val syncEnabled: Boolean = false,
     val syncAudioOnMobileData: Boolean = false,

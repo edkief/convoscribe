@@ -45,6 +45,7 @@ class SettingsRepository(
      *  - `maxTranscriptChars` clamped to 2000..400000
      *  - `talkingPointCheckSeconds` 0 (off) or clamped to 5..300
      *  - `numThreads` clamped to 1..8
+     *  - `whisperLiveMaxSeconds` clamped to 5..28
      *  - `numSpeakers` must be -1 or in 1..10; 0 or anything < -1
      *    becomes -1
      *  - thresholds clamped to 0.05..0.95
@@ -99,6 +100,8 @@ class SettingsRepository(
             putString(KEY_ASR_SERVER_MODEL, next.asrServerModel)
             putBoolean(KEY_ASR_SERVER_AUTO, next.asrServerAuto)
             putBoolean(KEY_WHISPER_AUTO, next.whisperAuto)
+            putBoolean(KEY_WHISPER_LIVE, next.whisperLive)
+            putInt(KEY_WHISPER_LIVE_MAX_SECONDS, next.whisperLiveMaxSeconds)
             putString(KEY_SYNC_SERVER_URL, next.syncServerUrl)
             putBoolean(KEY_SYNC_ENABLED, next.syncEnabled)
             putBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, next.syncAudioOnMobileData)
@@ -295,6 +298,8 @@ class SettingsRepository(
             asrServerModel = prefs.getString(KEY_ASR_SERVER_MODEL, "") ?: "",
             asrServerAuto = prefs.getBoolean(KEY_ASR_SERVER_AUTO, false),
             whisperAuto = prefs.getBoolean(KEY_WHISPER_AUTO, false),
+            whisperLive = prefs.getBoolean(KEY_WHISPER_LIVE, false),
+            whisperLiveMaxSeconds = prefs.getInt(KEY_WHISPER_LIVE_MAX_SECONDS, DEFAULT_WHISPER_LIVE_MAX_SECONDS),
             syncServerUrl = (prefs.getString(KEY_SYNC_SERVER_URL, "") ?: "").trim().trimEnd('/'),
             syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
             syncAudioOnMobileData = prefs.getBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, false),
@@ -424,6 +429,13 @@ class SettingsRepository(
         const val KEY_ASR_SERVER_MODEL = "asrServerModel"
         const val KEY_ASR_SERVER_AUTO = "asrServerAuto"
         const val KEY_WHISPER_AUTO = "whisperAuto"
+        const val KEY_WHISPER_LIVE = "whisperLive"
+        const val KEY_WHISPER_LIVE_MAX_SECONDS = "whisperLiveMaxSeconds"
+
+        /** Live Whisper's longest segment (issue #160), in seconds. */
+        const val DEFAULT_WHISPER_LIVE_MAX_SECONDS = 10
+        const val MIN_WHISPER_LIVE_MAX_SECONDS = 5
+        const val MAX_WHISPER_LIVE_MAX_SECONDS = 28
         const val KEY_SYNC_SERVER_URL = "syncServerUrl"
         const val KEY_SYNC_ENABLED = "syncEnabled"
         const val KEY_SYNC_AUDIO_ON_MOBILE_DATA = "syncAudioOnMobileData"
@@ -557,6 +569,10 @@ internal fun AppSettings.normaliseNumeric(): AppSettings {
             )
         },
         numThreads = numThreads.coerceIn(1, 8),
+        whisperLiveMaxSeconds = whisperLiveMaxSeconds.coerceIn(
+            SettingsRepository.MIN_WHISPER_LIVE_MAX_SECONDS,
+            SettingsRepository.MAX_WHISPER_LIVE_MAX_SECONDS
+        ),
         numSpeakers = speakers,
         clusterThreshold = clusterThreshold.coerceIn(0.05f, 0.95f),
         speakerMatchThreshold = speakerMatchThreshold.coerceIn(0.05f, 0.95f),

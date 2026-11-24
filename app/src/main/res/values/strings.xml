@@ -192,6 +192,11 @@
     <string name="conversation_cleanup_help">Reduce background noise while recording. The original audio is kept too.</string>
     <string name="conversation_cleanup_slow">This device may be too slow to clean while recording (see Engine check). You can clean the conversation afterwards from its menu instead.</string>
     <string name="record_cleaning">Noise cleanup on</string>
+    <plurals name="record_whisper_live_pending">
+        <item quantity="one">Whisper is transcribing %d segment…</item>
+        <item quantity="other">Whisper is transcribing %d segments…</item>
+    </plurals>
+    <string name="record_whisper_live_failed">Live Whisper stopped (%1$s). The recording continues: use Re-transcribe after Stop.</string>
     <string name="conversation_set_default">Set as default</string>
     <string name="conversation_set_default_done">Saved for new conversations</string>
     <string name="conversation_save_preset">Save as preset…</string>
@@ -830,6 +835,10 @@
     <string name="settings_whisper_installed">Whisper installed. Finished conversations can use it from Re-transcribe.</string>
     <string name="settings_whisper_delete">Delete Whisper</string>
     <string name="settings_whisper_auto_label">Transcribe again with Whisper</string>
+    <string name="settings_whisper_live_label">Transcribe while recording (experimental)</string>
+    <string name="settings_whisper_live_help">Whisper writes the live transcript instead of the streaming engine: each stretch of speech becomes a line a few seconds after the pause that ends it. Uses more CPU and battery and warms the phone; no captions while someone is talking. Applies from the next recording.</string>
+    <string name="settings_whisper_live_max_label">Longest segment: %1$d s</string>
+    <string name="settings_whisper_live_max_help">Cuts long stretches without a pause. Shorter: lines appear sooner, but Whisper works harder (each segment costs about the same) and is a little less accurate where it cuts.</string>
     <string name="settings_whisper_auto_help">After Stop and for imports. With Improve recordings on the server also on, the server goes first and Whisper is used if it fails. A transcript you edited is never replaced.</string>
     <string name="settings_cleanup_default_help">Clean the audio live while recording, so the live transcript benefits too. You can change it for each conversation before Start.</string>
     <string name="settings_floating_control_label">Floating control over other apps</string>

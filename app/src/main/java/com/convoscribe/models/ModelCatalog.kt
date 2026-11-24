@@ -302,7 +302,8 @@ object ModelCatalog {
      * int8 export, about 1 GB, run on the CPU by an offline (whole
      * recording) recognizer. It transcribes a recording again after Stop,
      * imports and re-transcriptions; live captions keep using the
-     * streaming engines. Multilingual; MIT licence (OpenAI). Needs
+     * streaming engines unless live Whisper (experimental, issue #160)
+     * is on. Multilingual; MIT licence (OpenAI). Needs
      * [VAD_SILERO] to cut recordings into segments of at most 30 s.
      */
     val ASR_WHISPER_TURBO: ModelBundle = ModelBundle(
@@ -335,6 +336,16 @@ object ModelCatalog {
             )
         )
     )
+
+    /**
+     * Whether a session's recorded ASR model ([asrModel], several joined
+     * by `" + "` for a continued session) is on-device Whisper alone, as
+     * live Whisper (issue #160) records it.
+     */
+    fun isWhisperOnly(asrModel: String?): Boolean =
+        !asrModel.isNullOrBlank() && asrModel.split(" + ").all { it.startsWith(WHISPER_ID_PREFIX) }
+
+    private const val WHISPER_ID_PREFIX = "asr-whisper-"
 
     /** What on-device Whisper (issue #158) needs, downloaded and deleted together. */
     val whisperBundles: List<ModelBundle> = listOf(ASR_WHISPER_TURBO, VAD_SILERO)

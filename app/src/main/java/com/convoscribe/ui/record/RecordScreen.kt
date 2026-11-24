@@ -45,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextAlign
@@ -291,6 +292,8 @@ fun RecordScreen(navController: NavHostController, resumeSessionId: Long? = null
             CleanupOption(liveNotRecommended = verdict != null && verdict != LiveCleanupVerdict.RECOMMENDED)
         },
         cleaning = state.cleaning,
+        chunksPending = state.chunksPending,
+        liveNotice = state.liveNotice,
         onBack = { navController.popBackStack() },
         onStart = {
             // The chosen language's models must be on disk first:
@@ -398,6 +401,8 @@ internal fun RecordBody(
     assistActions: LiveAssistActions = LiveAssistActions(),
     cleanup: CleanupOption? = null,
     cleaning: Boolean = false,
+    chunksPending: Int = 0,
+    liveNotice: String? = null,
     inputLevel: Float = 0f,
     onBack: () -> Unit,
     onStart: () -> Unit,
@@ -489,6 +494,8 @@ internal fun RecordBody(
                         finalLines = finalLines,
                         partialText = partialText,
                         cleaning = cleaning,
+                        chunksPending = chunksPending,
+                        liveNotice = liveNotice,
                         modifier = Modifier
                             .weight(1f)
                             .widthIn(max = AppTheme.sizes.contentMaxWidth)
@@ -537,7 +544,9 @@ private fun LiveTranscript(
     finalLines: List<String>,
     partialText: String,
     modifier: Modifier = Modifier,
-    cleaning: Boolean = false
+    cleaning: Boolean = false,
+    chunksPending: Int = 0,
+    liveNotice: String? = null
 ) {
     val spacing = AppTheme.spacing
     Column(
@@ -566,6 +575,17 @@ private fun LiveTranscript(
         }
         if (cleaning && (phase == RecordingPhase.RECORDING || phase == RecordingPhase.PAUSED)) {
             SupportingText(text = stringResource(R.string.record_cleaning))
+        }
+        // Live Whisper (issue #160): segments still to transcribe, or
+        // why it stopped while the recording goes on.
+        if (phase != RecordingPhase.IDLE && phase != RecordingPhase.LOADING) {
+            if (liveNotice != null) {
+                SupportingText(text = stringResource(R.string.record_whisper_live_failed, liveNotice))
+            } else if (chunksPending > 0) {
+                SupportingText(
+                    text = pluralStringResource(R.plurals.record_whisper_live_pending, chunksPending, chunksPending)
+                )
+            }
         }
 
         // The list grows monotonically for the lifetime of a session,

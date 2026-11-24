@@ -1,12 +1,13 @@
 package com.convoscribe.engine.sherpa
 
 import com.convoscribe.asr.EngineInfo
-import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.SpeechChunker
 import com.convoscribe.asr.SpeechSpan
 import com.convoscribe.asr.TextNormalizer
 import com.convoscribe.asr.TranscriptEvent
 import com.convoscribe.asr.VoiceDetector
+import com.convoscribe.asr.WhisperDecoder
+import com.convoscribe.asr.WhisperRecognizer
 import com.convoscribe.audio.AudioSpec
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelStore
@@ -35,13 +36,15 @@ import kotlinx.coroutines.withContext
  * [com.convoscribe.asr.WordTimer].
  *
  * The recognizer (about 1 GB of weights) is loaded for each call and
- * released afterwards, so it holds no memory between recordings.
+ * released afterwards, so it holds no memory between recordings. Live
+ * Whisper (issue #160) keeps one loaded for a recording through
+ * [openDecoder].
  */
 class SherpaWhisperRecognizer(
     private val store: ModelStore,
     private val numThreads: () -> Int,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
-) : FileRecognizer {
+) : WhisperRecognizer {
 
     /** Whisper and its VAD are both downloaded. */
     fun isAvailable(): Boolean = ModelCatalog.whisperBundles.all(store::isInstalled)
@@ -51,35 +54,40 @@ class SherpaWhisperRecognizer(
         language: String,
         onProgress: (Float) -> Unit
     ): List<TranscriptEvent.Final> = withContext(dispatcher) {
-        ModelCatalog.whisperBundles.firstOrNull { !store.isInstalled(it) }?.let {
-            throw IllegalStateException("Model not installed: ${it.id}")
-        }
-        val recognizer = OfflineRecognizer(assetManager = null, config = config(language))
-        try {
+        openDecoder(language).use { decoder ->
             SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
                 val finals = mutableListOf<TranscriptEvent.Final>()
                 SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
-                    decode(recognizer, span)?.let(finals::add)
+                    span.lineOf(decoder.decode(span.samples))?.let(finals::add)
                 }
                 finals
             }
-        } finally {
-            recognizer.release()
         }
+    }
+
+    override fun openDecoder(language: String): WhisperDecoder {
+        ModelCatalog.whisperBundles.firstOrNull { !store.isInstalled(it) }?.let {
+            throw IllegalStateException("Model not installed: ${it.id}")
+        }
+        return Decoder(OfflineRecognizer(assetManager = null, config = config(language)), describe())
     }
 
     override fun describe(): EngineInfo = EngineInfo(engine = "cpu", model = ModelCatalog.ASR_WHISPER_TURBO.id)
 
-    private fun decode(recognizer: OfflineRecognizer, span: SpeechSpan): TranscriptEvent.Final? {
-        val stream = recognizer.createStream()
-        try {
-            stream.acceptWaveform(span.samples, AudioSpec.SAMPLE_RATE)
-            recognizer.decode(stream)
-            val text = TextNormalizer.normalize(recognizer.getResult(stream).text)
-            return text.takeIf { it.isNotBlank() }?.let { TranscriptEvent.Final(it, span.startMs, span.endMs) }
-        } finally {
-            stream.release()
+    /** One recognizer kept for a run of segments. */
+    private class Decoder(private val recognizer: OfflineRecognizer, override val info: EngineInfo) : WhisperDecoder {
+        override fun decode(samples: FloatArray): String {
+            val stream = recognizer.createStream()
+            try {
+                stream.acceptWaveform(samples, AudioSpec.SAMPLE_RATE)
+                recognizer.decode(stream)
+                return TextNormalizer.normalize(recognizer.getResult(stream).text)
+            } finally {
+                stream.release()
+            }
         }
+
+        override fun close() = recognizer.release()
     }
 
     private fun config(language: String): OfflineRecognizerConfig {
@@ -111,9 +119,13 @@ class SherpaWhisperRecognizer(
 /**
  * [VoiceDetector] over sherpa-onnx's Silero VAD, configured for
  * [SpeechChunker]: segments are closed after 0.5 s of silence and
- * capped at its 28 s limit.
+ * capped at [maxSpeechSeconds], its 28 s limit unless live Whisper asks
+ * for shorter segments (issue #160).
  */
-class SherpaVoiceDetector(model: File) : VoiceDetector {
+class SherpaVoiceDetector(
+    model: File,
+    maxSpeechSeconds: Float = SpeechChunker.MAX_SAMPLES.toFloat() / AudioSpec.SAMPLE_RATE
+) : VoiceDetector {
 
     private val vad = Vad(
         assetManager = null,
@@ -124,7 +136,7 @@ class SherpaVoiceDetector(model: File) : VoiceDetector {
                 minSilenceDuration = 0.5f,
                 minSpeechDuration = 0.25f,
                 windowSize = 512,
-                maxSpeechDuration = SpeechChunker.MAX_SAMPLES.toFloat() / AudioSpec.SAMPLE_RATE
+                maxSpeechDuration = maxSpeechSeconds
             ),
             sampleRate = AudioSpec.SAMPLE_RATE,
             numThreads = 1,

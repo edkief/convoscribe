@@ -232,6 +232,7 @@ class RecordingController(
                         error = null
                     )
                 }
+                watchStatus(scope, transcriber)
                 Log.i(
                     TAG,
                     "recording started session=$id lang=$lang resumed=${resumeSessionId != null} " +
@@ -354,6 +355,7 @@ class RecordingController(
         clean: CleanTrack?,
         sessionId: Long?
     ) {
+        stopWatchingStatus()
         runCatching { transcriber?.close() }
         runCatching { wav?.close() }
         runCatching { clean?.close() }
@@ -480,6 +482,7 @@ class RecordingController(
             }
             applyEvents(flushEvents)
         } finally {
+            stopWatchingStatus()
             runCatching { transcriber?.close() }
             runCatching { wav?.close() }
             runCatching { clean?.close() }
@@ -529,6 +532,36 @@ class RecordingController(
      */
     fun consumeCompleted() {
         _state.update { it.copy(lastCompletedSessionId = null) }
+    }
+
+    /** Copies the transcriber's [StreamingTranscriber.status] into the state; `null` outside a session. */
+    private var statusJob: Job? = null
+
+    /**
+     * Publish what [transcriber] does behind the recording (live
+     * Whisper's backlog and failure, issue #160) until the session ends.
+     * Runs in [scope], not the session's job, so it carries on through a
+     * pause and through Stop's wait for the backlog.
+     */
+    private fun watchStatus(scope: CoroutineScope, transcriber: StreamingTranscriber) {
+        val status = transcriber.status ?: return
+        statusJob?.cancel()
+        statusJob = scope.launch {
+            status.collect { live ->
+                _state.update {
+                    if (it.phase == RecordingPhase.IDLE) {
+                        it
+                    } else {
+                        it.copy(chunksPending = live.pending, liveNotice = live.failure)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopWatchingStatus() {
+        statusJob?.cancel()
+        statusJob = null
     }
 
     /** Transcriber the launched session body is using; `null` outside a session. */

@@ -268,6 +268,10 @@ data class SettingsUiState(
 
     /** *Transcribe again with Whisper* (issue #158). */
     val whisperAuto: Boolean = false,
+    /** *Transcribe while recording* with Whisper, experimental (issue #160). */
+    val whisperLive: Boolean = false,
+    /** Live Whisper's longest segment, in seconds (issue #160). */
+    val whisperLiveMaxSeconds: Int = SettingsRepository.DEFAULT_WHISPER_LIVE_MAX_SECONDS,
     /** The semantic search model is downloaded (issue #61). */
     val semanticInstalled: Boolean = false,
     /** Sessions indexed for semantic search, and all sessions (issue #61). */
@@ -751,6 +755,16 @@ class SettingsViewModel(
         repo.update { it.copy(whisperAuto = enabled) }
     }
 
+    /** Persist live Whisper (experimental, issue #160) immediately; used from the next recording. */
+    fun setWhisperLive(enabled: Boolean) {
+        repo.update { it.copy(whisperLive = enabled) }
+    }
+
+    /** Persist live Whisper's longest segment (issue #160) immediately; clamped by the repository. */
+    fun setWhisperLiveMaxSeconds(seconds: Int) {
+        repo.update { it.copy(whisperLiveMaxSeconds = seconds) }
+    }
+
     /**
      * Remove every Whisper model, CPU and NPU, and the VAD (issues #158,
      * #159); sessions keep their transcripts.
@@ -1170,6 +1184,8 @@ class SettingsViewModel(
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
             whisperStatus = whisperStatus(),
             whisperAuto = current.whisperAuto,
+            whisperLive = current.whisperLive,
+            whisperLiveMaxSeconds = current.whisperLiveMaxSeconds,
             semanticInstalled = modelStore.isInstalled(ModelCatalog.TEXT_EMBEDDING_GEMMA),
             cleanAudioDefault = current.cleanAudioDefault,
             autoMarkNotes = current.autoMarkNotes,
