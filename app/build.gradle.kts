@@ -33,8 +33,8 @@ android {
         applicationId = "com.convoscribe"
         minSdk = 29
         targetSdk = 35
-        versionCode = 36
-        versionName = "0.30.1"
+        versionCode = 37
+        versionName = "0.31.0"
         ndk {
             abiFilters += listOf("arm64-v8a")
         }
