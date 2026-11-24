@@ -3039,8 +3039,10 @@ with `convoscribe://api-key`, `DEVICE_SIGN_IN_CLIENT_ID`, and the
 
 ## 67. Whisper Large-v3-Turbo on the phone (issue #158)
 
-Use a device with the English CPU model installed, about 2.5 GB free and
-a 2–3 minute English recording with two speakers.
+Use a device whose chip has **no** Whisper NPU build (the Boox, or any
+non-Snapdragon phone; see section 68 for the others), with the English
+CPU model installed, about 2.5 GB free and a 2–3 minute English
+recording with two speakers.
 
 **Steps**
 
@@ -3062,11 +3064,15 @@ a 2–3 minute English recording with two speakers.
 
 **Expected**
 
-- Step 1: the download shows progress; afterwards the card says *Whisper
-  installed* and the switch is enabled. Settings → About lists Whisper
-  and Silero VAD (MIT).
-- Step 2: a time, a real-time factor and the clip's text. Note the RTF
-  on the bug report.
+- Step 1: before the download the card says Whisper will run on the CPU
+  because Qualcomm publishes no NPU build for this chip. The download
+  shows progress; afterwards the card says *Runs on the CPU* with the
+  same reason, and the switch is enabled. Settings → About lists
+  Whisper and Silero VAD (MIT).
+- Step 2: the card says Whisper runs on the CPU; then a time, a
+  real-time factor and the clip's text. Note the RTF on the bug report.
+  *Copy report* has a `--- Whisper ---` block with `runsOn: cpu` and
+  `npuBuild: none for this chip`.
 - Step 3: the live transcript appears while recording as before. After
   Stop the notification says *Transcribing with Whisper* with progress,
   then speakers are identified. Session info shows the model
@@ -3081,6 +3087,67 @@ a 2–3 minute English recording with two speakers.
 - Step 8: the server fails quietly and Whisper transcribes the session.
 - Step 9: the card offers the download again; the switch is disabled
   and nothing is re-transcribed after Stop.
+
+## 68. Whisper on the NPU, and the runtime upgrade (issue #159)
+
+Use a phone with a supported Snapdragon chip (see README → *Which chips
+use the NPU*; e.g. 8 Gen 3 or 8 Elite) and Android 12 or later, about
+4.5 GB free, the English models, and a 2–3 minute English recording.
+The app ships QNN 2.51 and onnxruntime 1.30 since this change, so start
+with the regression checks.
+
+**Steps**
+
+1. Regression, before anything else: Engine check → **Check NPU**
+   (Nemotron) and **Check CPU** (Kroko). Record 30 s with each engine.
+2. Settings → *Recording & transcription* → *Whisper Large-v3-Turbo*:
+   read the card, then **Download Whisper for the NPU**.
+3. Wait for the download to finish, and watch the card.
+4. Engine check → **Check Whisper**. *Copy report*.
+5. Turn on *Transcribe again with Whisper*. Record the conversation and
+   **Stop**. Open the session's info.
+6. *Re-transcribe…* → *Whisper on this phone* on a French session (or
+   French audio).
+7. Force an NPU failure by damaging the decoder without changing its
+   size (the app checks sizes): `adb shell run-as com.convoscribe dd
+   if=/dev/zero of=files/models/asr-whisper-turbo-npu-<chip>/decoder.bin
+   bs=4096 count=16 conv=notrunc` (the chip id from `run-as
+   com.convoscribe ls files/models`), then record and stop again. Then
+   tap **Download the CPU model instead**, then **Check the NPU again**,
+   and record and stop once more.
+8. Settings → **Delete Whisper**, then **Download Whisper for the NPU**
+   again.
+9. Settings → **Delete Whisper**.
+
+**Expected**
+
+- Step 1: both checks pass as before the upgrade, with a similar RTF.
+  The first NPU start after the upgrade compiles Nemotron's context
+  binaries again (the long first-run message), once. Both recordings
+  transcribe live. The app does not crash at launch (onnxruntime's
+  telemetry provider is removed from the manifest).
+- Step 2: the card says *This phone's Snapdragon … can run Whisper on its
+  NPU* and the button shows about 2 GB.
+- Step 3: after the download, *Checking Whisper on the NPU…* for up to a
+  minute, then *Runs on the NPU (Snapdragon …)*. The app stays open
+  during the check.
+- Step 4: the card says it runs on the NPU; the result has a time, an
+  RTF clearly below the CPU's (section 67) and the clip's text. The
+  report has `engine: whisper-npu` and `runsOn: npu`.
+- Step 5: after Stop the notification says *Transcribing with Whisper*;
+  the transcript is Whisper's, with seekable words. Session info shows
+  the model `asr-whisper-turbo-npu-<chip>` and engine `npu`.
+- Step 6: the French session is transcribed in French on the NPU.
+- Step 7: without the CPU model, the recording keeps its live transcript
+  and the app stays open; Settings says *The NPU failed (…)* and offers
+  the CPU model. After the CPU download the check fails again (the app
+  stays open) and the card says *Runs on the CPU: the NPU failed (…)*;
+  the next recording is transcribed with Whisper on the CPU (session
+  engine `cpu`).
+- Step 8: after Delete and a fresh download the check passes and the
+  card says *Runs on the NPU*.
+- Step 9: the NPU build, tokens, VAD and any CPU model are removed; the
+  card offers the NPU download again.
 
 ## Troubleshooting
 

@@ -112,14 +112,16 @@ brings them to your other devices.
   returns there. Each section keeps its place while you switch.
 - **Whisper Large-v3-Turbo on the phone** (optional, issue #158).
   Settings → *Recording & transcription* → *Whisper Large-v3-Turbo*: download it
-  (about 1 GB) and turn on *Transcribe again with Whisper* to have each
+  (about 2 GB for the NPU build on supported Snapdragon chips, 1 GB for
+  the CPU elsewhere) and turn on *Transcribe again with Whisper* to have each
   stopped recording and each import transcribed again on the phone,
   usually more accurately than the live transcript. Live captions keep
   using Kroko / Nemotron, and the live transcript stays until Whisper is
   done; a transcript you edited is never replaced, and a failure or
   Cancel keeps the live one. *Re-transcribe…* in a session's menu offers
-  *Whisper on this phone* once it is downloaded. It runs on the CPU for
-  now (the NPU is #159). See [*Whisper on the phone*](#whisper-on-the-phone).
+  *Whisper on this phone* once it is downloaded. It runs on the Hexagon
+  NPU of Snapdragon chips Qualcomm publishes a build for (#159), and on
+  the CPU elsewhere. See [*Whisper on the phone*](#whisper-on-the-phone).
 - **Import an audio file** as a session: *Import audio…* in Recordings' menu, or
   share a voice note to ConvoScribe / *Open with* it from a file
   manager. Any format Android can decode (MP3, M4A/AAC, OGG/Opus,
@@ -785,6 +787,8 @@ data.
 | `enh-gtcrn-simple` | CPU, optional | 535 638 (≈0.5 MB) | Noise cleanup (issue #37), downloaded from Settings only. `gtcrn_simple.onnx`, run by sherpa-onnx's streaming denoiser. |
 | `asr-whisper-large-v3-turbo-int8` | CPU, optional | 1 036 613 791 (≈1.04 GB) | Whisper Large-v3-Turbo (issue #158), downloaded from Settings only. `turbo-encoder.int8.onnx`, `turbo-decoder.int8.onnx`, `turbo-tokens.txt`; sherpa-onnx offline recognizer, `modelType = "whisper"`. |
 | `vad-silero` | CPU, optional | 643 854 (≈0.6 MB) | Silero voice activity detection, downloaded with Whisper. Cuts recordings into speech segments of at most 28 s for it. `silero_vad.onnx`. |
+| `asr-whisper-turbo-npu-<chip>` | NPU, optional | ≈2.2 GB unpacked (≈1.8 GB for 8 Gen 1) | Whisper Large-v3-Turbo for the NPU (issue #159), Qualcomm AI Hub's precompiled float build for one chip (see [*Whisper on the phone*](#whisper-on-the-phone)). A zip of about 2.0 GB (1.6 GB for 8 Gen 1); `encoder.onnx`/`decoder.onnx` (onnxruntime EPContext wrappers) and `encoder.bin`/`decoder.bin` (QNN context binaries) are extracted. |
+| `asr-whisper-large-v3-turbo-tokens` | optional | 816 730 (≈0.8 MB) | Whisper's token table (`turbo-tokens.txt`, the same file as in the CPU bundle), downloaded with the NPU build. |
 
 Sources:
 
@@ -799,6 +803,8 @@ Sources:
 - Whisper: `https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/<file>`
   (pinned to a revision; the downloader checks exact sizes).
 - Silero VAD: `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx`
+- Whisper for the NPU: `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/whisper_large_v3_turbo/releases/v0.67.0/whisper_large_v3_turbo-precompiled_qnn_onnx-float-qualcomm_<chip>.zip`
+  (release v0.67.0 of [qualcomm/Whisper-Large-V3-Turbo](https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo)).
 
 Models are downloaded on first run into
 `context.filesDir/models/<bundleId>/` — see the troubleshooting
@@ -1145,10 +1151,60 @@ a time), so it never replaces the live transcript while you record:
   clip (model loading included) and shows what it heard.
 
 How it works: Silero VAD cuts the recording into speech segments of at
-most 28 s, and sherpa-onnx's offline Whisper recognizer turns each into
-one transcript line, on the CPU with the Settings thread count. The
-model (about 1 GB, held in memory while it runs) is
+most 28 s, and Whisper turns each into one transcript line. The model is
 loaded for each recording and released afterwards.
+
+- **On the NPU** (#159), on a chip Qualcomm publishes a Whisper build
+  for: the app runs that precompiled float build (about 2.2 GB) through
+  onnxruntime's QNN execution provider on the Hexagon NPU. It computes
+  Whisper's log-mel features itself and decodes greedily, 200 tokens at
+  most per segment. onnxruntime's CPU fallback is off, so a model the
+  NPU cannot run fails instead of crawling.
+- **On the CPU** everywhere else: sherpa-onnx's offline Whisper
+  recognizer with the int8 export (about 1 GB), with the Settings
+  thread count.
+
+### Which chips use the NPU
+
+The app reads the chip from `Build.SOC_MODEL` (Android 12 and later;
+earlier versions use the CPU) and picks the matching build from
+[Qualcomm AI Hub release v0.67.0](https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo):
+
+| Chip (`SOC_MODEL`) | Qualcomm build |
+|---|---|
+| Snapdragon 8 Gen 1 (`SM8450`) | `snapdragon_8gen1` |
+| Snapdragon 8 Gen 2 (`SM8550`), QCS8550 | `qcs8550_proxy` (compiled for the same SoC id as the SM8550) |
+| Snapdragon 8 Gen 3 (`SM8650`) | `snapdragon_8gen3` |
+| Snapdragon 8 Elite (`SM8750`, `SM8750-AC`) | `snapdragon_8_elite_for_galaxy` |
+| Snapdragon 8 Elite Gen 5 (`SM8850`) | `snapdragon_8_elite_gen5_for_galaxy` |
+| Snapdragon 8 Elite Gen 6 (`SM8950`) | `snapdragon_8_elite_gen6` |
+| Snapdragon 8 Elite Extreme Gen 6 (`SM8975`) | `snapdragon_8_elite_extreme_gen6` |
+| Dragonwing IQ-8275 (`QCS8275`) | `qcs8275` |
+| Dragonwing IQ-9075 (`QCS9075`) | `qcs9075` |
+
+Every other chip uses the CPU, including the Boox's QCS6690. Qualcomm
+also publishes builds for the SA8775P, SA7255P and SA8295P (QNN context
+binaries only, with no onnxruntime wrapper) and for the X Elite and X2
+Elite (Windows PCs); those use the CPU too. A suffix in `SOC_MODEL`
+(`SM8750-AC`) is ignored, so the standard 8 Elite uses the Galaxy build
+(the same SoC id).
+
+On such a chip, Settings downloads the NPU build (a zip of about 2 GB,
+unpacked on the phone, so about 4.2 GB must be free while it unpacks)
+instead of the CPU model. Right after the download the app **checks it
+in a separate process** (the engine check's NPU probe), so a native
+crash on the NPU cannot close the app. Whisper uses the NPU only once
+that check passed. If it fails, or a later recording fails on the NPU,
+the failure is recorded and Whisper uses the CPU instead: the same
+recording is transcribed again on the CPU when that model is
+downloaded, and otherwise the live transcript is kept and Settings
+offers the CPU model (1 GB). *Check the NPU again* in Settings, or
+*Check Whisper* in Engine check, runs the check again.
+
+Settings and Engine check say where Whisper runs and why: on the NPU
+(with the chip), or on the CPU because the chip has no build, the NPU
+build is not downloaded, not checked yet, or failed (with the error).
+Each session records `npu` or `cpu` as its engine.
 
 **Word timings.** The published export has no attention outputs, so
 Whisper reports no word times of its own. Each Whisper line borrows
@@ -1161,8 +1217,7 @@ borrow from, words are spread evenly over their segment. Tapping a word
 to seek, playback highlighting and splitting a line at a speaker change
 keep working. Whisper's own word times are #161.
 
-Not yet: the NPU on Snapdragon chips that Qualcomm publishes Whisper
-builds for (#159), and an experimental live mode (#160).
+Not yet: an experimental live mode (#160).
 
 ## Sync server
 
@@ -1271,12 +1326,15 @@ same list with each model name + licence + source URL.
 - **GTCRN** (optional noise cleanup) — MIT, https://github.com/Xiaobin-Rong/gtcrn.
 - **Whisper Large-v3-Turbo** (optional) — MIT, https://github.com/openai/whisper.
 - **Silero VAD** (optional, with Whisper) — MIT, https://github.com/snakers4/silero-vad.
+- **Whisper-Large-V3-Turbo for Qualcomm devices** (optional, the NPU
+  build) — Apache-2.0, https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo
+  (Qualcomm AI Hub Models v0.67.0).
 - **sherpa-onnx** — Apache-2.0, https://github.com/k2-fsa/sherpa-onnx.
-- **Qualcomm AI Engine Direct (QNN) runtime libraries**
+- **Qualcomm AI Runtime (QAIRT) 2.51 QNN libraries**
   (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnSystem.so`,
-  `libQnnHtpV{68,69,73,75,79,81}{Skel,Stub}.so`) — redistributed
-  unmodified under the Qualcomm licence by sherpa-onnx; see
-  https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk.
+  `libQnnHtpV{68,69,73,75,79,81,85}{Skel,Stub}.so`) — redistributed
+  unmodified under the Qualcomm licence, from the public QAIRT SDK; see
+  https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community.
 
 The bundled QualComm QNN runtime libraries ship unmodified so the
 NPU backend (Hexagon DSP via `libcdsprpc.so`) can be reached at
