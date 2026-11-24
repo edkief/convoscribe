@@ -134,6 +134,11 @@ internal fun AboutSection(
             url = "https://github.com/openai/whisper"
         )
         AboutModelRow(
+            name = stringResource(R.string.settings_about_whisper_qualcomm_name),
+            licence = stringResource(R.string.settings_about_whisper_qualcomm_licence),
+            url = "https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo"
+        )
+        AboutModelRow(
             name = stringResource(R.string.settings_about_silero_name),
             licence = stringResource(R.string.settings_about_silero_licence),
             url = "https://github.com/snakers4/silero-vad"
@@ -146,7 +151,7 @@ internal fun AboutSection(
         AboutModelRow(
             name = stringResource(R.string.settings_about_qnn_name),
             licence = stringResource(R.string.settings_about_qnn_licence),
-            url = "https://developer.qualcomm.com/software/qualcomm-neural-processing-sdk"
+            url = "https://softwarecenter.qualcomm.com/catalog/item/Qualcomm_AI_Runtime_Community"
         )
     }
 }

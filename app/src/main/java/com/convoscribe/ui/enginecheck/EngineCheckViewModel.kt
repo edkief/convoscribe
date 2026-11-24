@@ -3,6 +3,7 @@ package com.convoscribe.ui.enginecheck
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.convoscribe.asr.WhisperStatus
 import com.convoscribe.audio.WavReader
 import com.convoscribe.enginecheck.CleanupCheckResult
 import com.convoscribe.enginecheck.DeviceInfo
@@ -62,6 +63,8 @@ import kotlinx.coroutines.withContext
  *   can be checked (issue #158).
  * @property whisperRunning that check is in flight.
  * @property whisper the last Whisper result.
+ * @property whisperStatus where Whisper runs, NPU or CPU, and why
+ *   (issue #159).
  */
 data class EngineCheckUiState(
     val deviceInfo: DeviceInfo? = null,
@@ -80,7 +83,8 @@ data class EngineCheckUiState(
     val semantic: SemanticCheckResult? = null,
     val whisperAvailable: Boolean = false,
     val whisperRunning: Boolean = false,
-    val whisper: EngineCheckResult? = null
+    val whisper: EngineCheckResult? = null,
+    val whisperStatus: WhisperStatus? = null
 ) {
     /** A check of any engine is in flight. */
     val busy: Boolean get() = runningEngine != null || cleanupRunning || semanticRunning || whisperRunning
@@ -138,12 +142,16 @@ interface SemanticProbe {
 
 /**
  * Times on-device Whisper (issue #158) over a sample clip, or says it
- * is not downloaded. Production wraps [measureWhisper] around the
- * container's recognizer.
+ * is not downloaded. Production runs the NPU build in the probe process
+ * when it is downloaded (issue #159), otherwise [measureWhisper] on the
+ * CPU.
  */
 interface WhisperProbe {
     fun isAvailable(): Boolean
     suspend fun run(sampleFile: File): EngineCheckResult
+
+    /** Where Whisper runs and why (issue #159), or `null` if unknown. */
+    fun status(): WhisperStatus? = null
 }
 
 /**
@@ -172,7 +180,8 @@ class EngineCheckViewModel(
         EngineCheckUiState(
             cleanupAvailable = cleanupProbe?.isAvailable() == true,
             semanticAvailable = semanticProbe?.isAvailable() == true,
-            whisperAvailable = whisperProbe?.isAvailable() == true
+            whisperAvailable = whisperProbe?.isAvailable() == true,
+            whisperStatus = whisperProbe?.status()
         )
     )
     val state: StateFlow<EngineCheckUiState> = _state.asStateFlow()
@@ -369,7 +378,7 @@ class EngineCheckViewModel(
         _state.value = _state.value.copy(whisperRunning = true, recordingBlocked = false)
         viewModelScope.launch {
             val result = withContext(Dispatchers.Default) { probe.run(sample) }
-            _state.value = _state.value.copy(whisper = result, whisperRunning = false)
+            _state.value = _state.value.copy(whisper = result, whisperRunning = false, whisperStatus = probe.status())
         }
     }
 
@@ -382,7 +391,7 @@ class EngineCheckViewModel(
         val info = _state.value.deviceInfo ?: return ""
         val list = listOf("npu", "cpu")
             .mapNotNull { _state.value.results[it] } + listOfNotNull(_state.value.whisper)
-        val report = formatReport(info, list) + semanticReport()
+        val report = formatReport(info, list) + whisperReport() + semanticReport()
         val cleanup = _state.value.cleanup ?: return report
         return buildString {
             append(report)
@@ -401,6 +410,20 @@ class EngineCheckViewModel(
     }
 
     /** The semantic search section of the report, empty until it was checked. */
+    /** Where Whisper runs (issue #159), once its card has a status. */
+    private fun whisperReport(): String {
+        val status = _state.value.whisperStatus ?: return ""
+        return buildString {
+            append("\n--- Whisper ---\n")
+            append("runsOn: ").append(status.engine ?: "none").append('\n')
+            append("npuBuild: ").append(status.npuChip ?: "none for this chip").append('\n')
+            append("npuDownloaded: ").append(status.npuInstalled).append('\n')
+            append("npuVerified: ").append(status.npuVerified).append('\n')
+            status.npuBlockedReason?.let { append("npuFailed: ").append(it).append('\n') }
+            append("cpuDownloaded: ").append(status.cpuInstalled).append('\n')
+        }
+    }
+
     private fun semanticReport(): String {
         val semantic = _state.value.semantic ?: return ""
         return buildString {

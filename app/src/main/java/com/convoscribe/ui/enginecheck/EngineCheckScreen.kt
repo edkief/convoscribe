@@ -51,6 +51,7 @@ import com.convoscribe.ui.components.ProgressBlock
 import com.convoscribe.ui.components.ScreenScaffold
 import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
+import com.convoscribe.ui.settings.whisperWhereText
 import com.convoscribe.ui.theme.AppTheme
 import java.io.File
 
@@ -117,12 +118,23 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                         )
                     },
                     whisperProbe = object : WhisperProbe {
-                        override fun isAvailable() = container.whisperRecognizer.isAvailable()
-                        override suspend fun run(sampleFile: File) = measureWhisper(
-                            recognizer = container.whisperRecognizer,
-                            sampleFile = sampleFile,
-                            clock = { System.nanoTime() / 1_000_000L }
-                        )
+                        override fun isAvailable() = container.whisperRecognizer.status().anyInstalled
+
+                        // The NPU build runs in the probe process, so a native
+                        // crash cannot close the app, and its verdict decides
+                        // whether recordings use the NPU (issue #159).
+                        override suspend fun run(sampleFile: File) =
+                            if (container.whisperRecognizer.status().npuInstalled) {
+                                container.whisperNpuProbe.runWhisper(sampleFile)
+                            } else {
+                                measureWhisper(
+                                    recognizer = container.whisperCpuRecognizer,
+                                    sampleFile = sampleFile,
+                                    clock = { System.nanoTime() / 1_000_000L }
+                                )
+                            }
+
+                        override fun status() = container.whisperRecognizer.status()
                     }
                 )
             }
@@ -411,13 +423,15 @@ private fun SemanticCard(state: EngineCheckUiState, onRun: () -> Unit, modifier:
 }
 
 /**
- * On-device Whisper (issue #158): its time over the sample clip, model
- * loading included, its real-time factor and the text it heard.
+ * On-device Whisper (issue #158): where it runs, NPU or CPU, and why
+ * (issue #159), then its time over the sample clip, model loading
+ * included, its real-time factor and the text it heard.
  */
 @Composable
 private fun WhisperCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: Modifier = Modifier) {
     SectionCard(modifier = modifier, title = stringResource(R.string.enginecheck_whisper_title)) {
         SupportingText(text = stringResource(R.string.enginecheck_whisper_help))
+        state.whisperStatus?.let { NoticeText(text = whisperWhereText(it)) }
         val whisper = state.whisper
         if (state.whisperRunning) {
             ProgressBlock(message = stringResource(R.string.enginecheck_whisper_running))
