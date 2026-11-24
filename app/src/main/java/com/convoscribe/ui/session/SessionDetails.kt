@@ -25,6 +25,7 @@ import com.convoscribe.R
 import com.convoscribe.data.DiarizationRun
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.models.ModelCatalog
+import com.convoscribe.recording.RetranscribeTarget
 import com.convoscribe.ui.components.InfoRow
 import com.convoscribe.ui.home.formatDuration
 import com.convoscribe.ui.record.participantsSummary
@@ -167,7 +168,9 @@ data class RetranscribeUi(
     val enabled: Boolean = false,
     /** A transcription server is set up, so the dialog offers it (issue #58). */
     val serverAvailable: Boolean = false,
-    val onStart: (language: String, onServer: Boolean) -> Unit = { _, _ -> },
+    /** On-device Whisper is downloaded, so the dialog offers it (issue #158). */
+    val whisperAvailable: Boolean = false,
+    val onStart: (language: String, target: RetranscribeTarget) -> Unit = { _, _ -> },
     val onCancel: () -> Unit = {}
 )
 
@@ -239,39 +242,46 @@ internal fun RetranscribeBanner(progress: Float, onCancel: () -> Unit, cleaning:
  * were based on the old one.
  */
 /**
- * Re-transcribe in a language (issue #6), on the device or, when
- * [serverAvailable], on the transcription server (issue #58). The
- * device defaults to the other language, as before; picking the
- * server switches to the session's own language, since it is mostly
- * used for a more accurate transcript.
+ * Re-transcribe in a language (issue #6), with the live engine or, when
+ * [serverAvailable], on the transcription server (issue #58), or, when
+ * [whisperAvailable], with Whisper on the phone (issue #158). The live
+ * engine defaults to the other language, as before; picking the server
+ * or Whisper switches to the session's own language, since they are
+ * mostly used for a more accurate transcript.
  */
 @Composable
 internal fun RetranscribeDialog(
     currentLanguage: String,
-    onConfirm: (language: String, onServer: Boolean) -> Unit,
+    onConfirm: (language: String, target: RetranscribeTarget) -> Unit,
     onDismiss: () -> Unit,
-    serverAvailable: Boolean = false
+    serverAvailable: Boolean = false,
+    whisperAvailable: Boolean = false
 ) {
     val otherLanguage = if (currentLanguage == "fr") "en" else "fr"
     var selected by remember { mutableStateOf(otherLanguage) }
-    var onServer by remember { mutableStateOf(false) }
+    var target by remember { mutableStateOf(RetranscribeTarget.DEVICE) }
+    val targets = buildList {
+        add(RetranscribeTarget.DEVICE to R.string.session_retranscribe_device)
+        if (serverAvailable) add(RetranscribeTarget.SERVER to R.string.session_retranscribe_server)
+        if (whisperAvailable) add(RetranscribeTarget.WHISPER to R.string.session_retranscribe_whisper)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(R.string.session_retranscribe_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)) {
-                if (serverAvailable) {
+                if (targets.size > 1) {
                     Text(text = stringResource(R.string.session_retranscribe_where))
-                    listOf(
-                        false to R.string.session_retranscribe_device,
-                        true to R.string.session_retranscribe_server
-                    ).forEach { (server, label) ->
+                    targets.forEach { (option, label) ->
                         RadioRow(
                             label = stringResource(label),
-                            selected = server == onServer,
+                            selected = option == target,
                             onSelect = {
-                                if (server != onServer) selected = if (server) currentLanguage else otherLanguage
-                                onServer = server
+                                if (option != target) {
+                                    val live = option == RetranscribeTarget.DEVICE
+                                    selected = if (live) otherLanguage else currentLanguage
+                                }
+                                target = option
                             }
                         )
                     }
@@ -288,7 +298,7 @@ internal fun RetranscribeDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(selected, onServer) }) {
+            TextButton(onClick = { onConfirm(selected, target) }) {
                 Text(text = stringResource(R.string.session_retranscribe_confirm))
             }
         },

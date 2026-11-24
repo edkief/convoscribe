@@ -43,6 +43,7 @@ import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.enginecheck.NpuProbeClient
 import com.convoscribe.enginecheck.measureCleanup
 import com.convoscribe.enginecheck.measureSemantic
+import com.convoscribe.enginecheck.measureWhisper
 import com.convoscribe.ui.components.ErrorBanner
 import com.convoscribe.ui.components.InfoRow
 import com.convoscribe.ui.components.NoticeText
@@ -114,6 +115,14 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
                             create = container.textEmbedderFactory::create,
                             clock = { System.nanoTime() / 1_000_000L }
                         )
+                    },
+                    whisperProbe = object : WhisperProbe {
+                        override fun isAvailable() = container.whisperRecognizer.isAvailable()
+                        override suspend fun run(sampleFile: File) = measureWhisper(
+                            recognizer = container.whisperRecognizer,
+                            sampleFile = sampleFile,
+                            clock = { System.nanoTime() / 1_000_000L }
+                        )
                     }
                 )
             }
@@ -132,6 +141,7 @@ fun EngineCheckScreen(navController: androidx.navigation.NavHostController) {
         onRunCheck = vm::runCheck,
         onRunCleanupCheck = vm::runCleanupCheck,
         onRunSemanticCheck = vm::runSemanticCheck,
+        onRunWhisperCheck = vm::runWhisperCheck,
         onOpenSetup = { engine -> navController.navigate("setup?engine=$engine") },
         onCopyReport = { copyToClipboard(context, vm.buildReport()) },
         onShareReport = { shareText(context, vm.buildReport()) }
@@ -149,7 +159,8 @@ internal fun EngineCheckBody(
     onCopyReport: () -> Unit,
     onShareReport: () -> Unit,
     onRunCleanupCheck: () -> Unit = {},
-    onRunSemanticCheck: () -> Unit = {}
+    onRunSemanticCheck: () -> Unit = {},
+    onRunWhisperCheck: () -> Unit = {}
 ) {
     val spacing = AppTheme.spacing
     ScreenScaffold(title = stringResource(R.string.enginecheck_title), onBack = onBack) { innerPadding: PaddingValues ->
@@ -205,8 +216,11 @@ internal fun EngineCheckBody(
             if (state.semanticAvailable) {
                 SemanticCard(state = state, onRun = onRunSemanticCheck, modifier = width)
             }
+            if (state.whisperAvailable) {
+                WhisperCard(state = state, onRun = onRunWhisperCheck, modifier = width)
+            }
             ActionRow(
-                enabled = state.results.isNotEmpty(),
+                enabled = state.results.isNotEmpty() || state.whisper != null,
                 onCopy = onCopyReport,
                 onShare = onShareReport,
                 modifier = width
@@ -392,6 +406,38 @@ private fun SemanticCard(state: EngineCheckUiState, onRun: () -> Unit, modifier:
             onClick = onRun
         ) {
             Text(text = stringResource(R.string.enginecheck_semantic_check))
+        }
+    }
+}
+
+/**
+ * On-device Whisper (issue #158): its time over the sample clip, model
+ * loading included, its real-time factor and the text it heard.
+ */
+@Composable
+private fun WhisperCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: Modifier = Modifier) {
+    SectionCard(modifier = modifier, title = stringResource(R.string.enginecheck_whisper_title)) {
+        SupportingText(text = stringResource(R.string.enginecheck_whisper_help))
+        val whisper = state.whisper
+        if (state.whisperRunning) {
+            ProgressBlock(message = stringResource(R.string.enginecheck_whisper_running))
+        } else if (whisper != null) {
+            if (whisper.error != null) {
+                ErrorBanner(message = stringResource(R.string.enginecheck_result_error, whisper.error))
+            } else {
+                InfoRow(
+                    stringResource(R.string.enginecheck_whisper_time),
+                    stringResource(R.string.enginecheck_ms, whisper.processMs)
+                )
+                InfoRow(
+                    stringResource(R.string.enginecheck_whisper_rtf),
+                    "%.2f".format(whisper.realTimeFactor)
+                )
+                SupportingText(text = whisper.text.ifBlank { "—" })
+            }
+        }
+        Button(modifier = Modifier.fillMaxWidth(), enabled = !state.busy, onClick = onRun) {
+            Text(text = stringResource(R.string.enginecheck_whisper_check))
         }
     }
 }

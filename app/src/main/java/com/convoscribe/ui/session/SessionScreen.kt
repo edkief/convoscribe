@@ -461,10 +461,12 @@ fun SessionScreen(
                 !state.audioDownloading &&
                 state.status in CONTINUABLE_STATUSES,
             serverAvailable = appSettings.asrServerConfigured,
-            onStart = { language, onServer ->
+            whisperAvailable = container.retranscribeUseCase.whisperAvailable,
+            onStart = { language, target ->
                 val engine = appSettings.asrEngine
-                // The server needs no model on the device.
-                val missing = if (onServer) {
+                // The server needs no model on the device; Whisper is
+                // only offered once downloaded.
+                val missing = if (target != RetranscribeTarget.DEVICE) {
                     emptyList()
                 } else {
                     container.modelStore.missing(ModelCatalog.requiredFor(language, engine))
@@ -480,7 +482,7 @@ fun SessionScreen(
                             context,
                             sessionId,
                             language,
-                            target = if (onServer) RetranscribeTarget.SERVER else RetranscribeTarget.DEVICE
+                            target = target
                         )
                     )
                 }
@@ -663,7 +665,7 @@ internal fun SessionBody(
     var infoOpen by remember { mutableStateOf(false) }
     var retranscribeOpen by remember { mutableStateOf(false) }
     // Language chosen for a re-transcription that waits for "discard your edits?".
-    var retranscribeOverEdits by remember { mutableStateOf<Pair<String, Boolean>?>(null) }
+    var retranscribeOverEdits by remember { mutableStateOf<Pair<String, RetranscribeTarget>?>(null) }
     var marksOpen by remember { mutableStateOf(initialMarksOpen) }
     var cleanupOpen by remember { mutableStateOf(false) }
     var removeCleaningOpen by remember { mutableStateOf(false) }
@@ -1078,14 +1080,15 @@ internal fun SessionBody(
         RetranscribeDialog(
             currentLanguage = details.language,
             serverAvailable = retranscribe.serverAvailable,
-            onConfirm = { language, onServer ->
+            whisperAvailable = retranscribe.whisperAvailable,
+            onConfirm = { language, target ->
                 retranscribeOpen = false
-                if (hasEdits) retranscribeOverEdits = language to onServer else retranscribe.onStart(language, onServer)
+                if (hasEdits) retranscribeOverEdits = language to target else retranscribe.onStart(language, target)
             },
             onDismiss = { retranscribeOpen = false }
         )
     }
-    retranscribeOverEdits?.let { (language, onServer) ->
+    retranscribeOverEdits?.let { (language, target) ->
         ConfirmDialog(
             title = stringResource(R.string.session_retranscribe_edits_title),
             message = stringResource(R.string.session_retranscribe_edits_message),
@@ -1094,7 +1097,7 @@ internal fun SessionBody(
             destructive = true,
             onConfirm = {
                 retranscribeOverEdits = null
-                retranscribe.onStart(language, onServer)
+                retranscribe.onStart(language, target)
             },
             onDismiss = { retranscribeOverEdits = null }
         )

@@ -58,6 +58,10 @@ import kotlinx.coroutines.withContext
  *   so its speed and memory can be checked (issue #61).
  * @property semanticRunning that check is in flight.
  * @property semantic the last semantic search timing.
+ * @property whisperAvailable on-device Whisper is downloaded, so it
+ *   can be checked (issue #158).
+ * @property whisperRunning that check is in flight.
+ * @property whisper the last Whisper result.
  */
 data class EngineCheckUiState(
     val deviceInfo: DeviceInfo? = null,
@@ -73,8 +77,14 @@ data class EngineCheckUiState(
     val liveVerdict: LiveCleanupVerdict? = null,
     val semanticAvailable: Boolean = false,
     val semanticRunning: Boolean = false,
-    val semantic: SemanticCheckResult? = null
+    val semantic: SemanticCheckResult? = null,
+    val whisperAvailable: Boolean = false,
+    val whisperRunning: Boolean = false,
+    val whisper: EngineCheckResult? = null
 ) {
+    /** A check of any engine is in flight. */
+    val busy: Boolean get() = runningEngine != null || cleanupRunning || semanticRunning || whisperRunning
+
     /** Recognizer plus cleaner, for [cleanupEngine]; `null` until both ran cleanly. */
     val combinedRtf: Double?
         get() {
@@ -127,6 +137,16 @@ interface SemanticProbe {
 }
 
 /**
+ * Times on-device Whisper (issue #158) over a sample clip, or says it
+ * is not downloaded. Production wraps [measureWhisper] around the
+ * container's recognizer.
+ */
+interface WhisperProbe {
+    fun isAvailable(): Boolean
+    suspend fun run(sampleFile: File): EngineCheckResult
+}
+
+/**
  * ViewModel for the engine-check screen. Owns one
  * [EngineCheckUiState] `StateFlow` that the screen collects.
  *
@@ -144,13 +164,15 @@ class EngineCheckViewModel(
     private val cleanupProbe: CleanupProbe? = null,
     private val liveCleanup: LiveCleanupStore? = null,
     private val currentEngine: () -> String = { "cpu" },
-    private val semanticProbe: SemanticProbe? = null
+    private val semanticProbe: SemanticProbe? = null,
+    private val whisperProbe: WhisperProbe? = null
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(
         EngineCheckUiState(
             cleanupAvailable = cleanupProbe?.isAvailable() == true,
-            semanticAvailable = semanticProbe?.isAvailable() == true
+            semanticAvailable = semanticProbe?.isAvailable() == true,
+            whisperAvailable = whisperProbe?.isAvailable() == true
         )
     )
     val state: StateFlow<EngineCheckUiState> = _state.asStateFlow()
@@ -326,6 +348,32 @@ class EngineCheckViewModel(
     }
 
     /**
+     * Time Whisper (issue #158) on the English sample clip, which comes
+     * with the English CPU model (or the NPU one). Not while recording,
+     * nor while another check runs.
+     */
+    fun runWhisperCheck() {
+        val probe = whisperProbe ?: return
+        ensureDeviceInfo()
+        if (recordingController.state.value.phase != RecordingPhase.IDLE) {
+            _state.value = _state.value.copy(recordingBlocked = true)
+            return
+        }
+        val sample = listOf(ModelCatalog.ASR_EN, ModelCatalog.ASR_EN_NPU)
+            .map(::sampleFile)
+            .firstOrNull { it.exists() }
+        if (sample == null) {
+            _state.value = _state.value.copy(modelMissing = true, missingEngine = "cpu")
+            return
+        }
+        _state.value = _state.value.copy(whisperRunning = true, recordingBlocked = false)
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.Default) { probe.run(sample) }
+            _state.value = _state.value.copy(whisper = result, whisperRunning = false)
+        }
+    }
+
+    /**
      * Build the plain-text report the user copies / shares.
      * Returns an empty string when no check has run yet so the
      * screen can disable the buttons.
@@ -333,7 +381,7 @@ class EngineCheckViewModel(
     fun buildReport(): String {
         val info = _state.value.deviceInfo ?: return ""
         val list = listOf("npu", "cpu")
-            .mapNotNull { _state.value.results[it] }
+            .mapNotNull { _state.value.results[it] } + listOfNotNull(_state.value.whisper)
         val report = formatReport(info, list) + semanticReport()
         val cleanup = _state.value.cleanup ?: return report
         return buildString {
