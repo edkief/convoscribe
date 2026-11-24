@@ -51,8 +51,8 @@ data class WhisperStatus(
  * produced the last result, so the session records `npu` or `cpu`.
  */
 class WhisperEngine(
-    private val npu: FileRecognizer,
-    private val cpu: FileRecognizer,
+    private val npu: WhisperRecognizer,
+    private val cpu: WhisperRecognizer,
     private val npuChip: () -> String?,
     private val npuInstalled: () -> Boolean,
     private val cpuInstalled: () -> Boolean,
@@ -91,21 +91,71 @@ class WhisperEngine(
             } catch (ce: CancellationException) {
                 throw ce
             } catch (t: Throwable) {
-                val reason = t.message ?: t.toString()
-                Log.w(TAG, "Whisper failed on the NPU; using the CPU from now on", t)
-                npuState.markFailed(reason)
-                if (!cpuInstalled()) {
-                    throw IllegalStateException(
-                        "Whisper failed on the NPU ($reason). Download the CPU model in Settings to use it instead.",
-                        t
-                    )
-                }
+                npuFailed(t)
                 onProgress(0f)
             }
         } else if (status.engine == null) {
             throw IllegalStateException("Whisper is not downloaded")
         }
         return cpu.transcribe(file, language, onProgress).also { lastUsed = cpu }
+    }
+
+    /**
+     * Whisper kept loaded for a live recording (issue #160), on the
+     * recognizer [transcribe] would use. A failure to open or decode on
+     * the NPU is recorded in [npuState] like one in [transcribe], and
+     * the decoder carries on with the CPU model (retrying the segment)
+     * when it is downloaded; otherwise the failure is thrown.
+     */
+    fun openDecoder(language: String): WhisperDecoder = when (status().engine) {
+        "npu" -> {
+            val first = try {
+                npu.openDecoder(language)
+            } catch (t: Throwable) {
+                null.also { npuFailed(t) }
+            }
+            first?.let { FallbackDecoder(it, language) } ?: cpu.openDecoder(language)
+        }
+        "cpu" -> cpu.openDecoder(language)
+        else -> throw IllegalStateException("Whisper is not downloaded")
+    }
+
+    /** Record an NPU failure; throws when there is no CPU model to fall back to. */
+    private fun npuFailed(t: Throwable) {
+        val reason = t.message ?: t.toString()
+        Log.w(TAG, "Whisper failed on the NPU; using the CPU from now on", t)
+        npuState.markFailed(reason)
+        if (!cpuInstalled()) {
+            throw IllegalStateException(
+                "Whisper failed on the NPU ($reason). Download the CPU model in Settings to use it instead.",
+                t
+            )
+        }
+    }
+
+    /** The NPU decoder, swapped for the CPU one on its first failure. */
+    private inner class FallbackDecoder(private var current: WhisperDecoder, private val language: String) :
+        WhisperDecoder {
+        private var onNpu = true
+
+        override val info: EngineInfo get() = current.info
+
+        override fun decode(samples: FloatArray): String {
+            if (!onNpu) return current.decode(samples)
+            return try {
+                current.decode(samples)
+            } catch (t: Throwable) {
+                // Throws when there is no CPU model; [close] still
+                // releases the NPU decoder then.
+                npuFailed(t)
+                runCatching { current.close() }
+                onNpu = false
+                current = cpu.openDecoder(language)
+                current.decode(samples)
+            }
+        }
+
+        override fun close() = current.close()
     }
 
     override fun describe(): EngineInfo = (lastUsed ?: if (status().engine == "npu") npu else cpu).describe()

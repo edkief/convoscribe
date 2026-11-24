@@ -12,8 +12,29 @@ import org.junit.Test
 
 class WhisperEngineTest {
 
-    private class Fake(val engine: String, var failure: Throwable? = null) : FileRecognizer {
+    private class Fake(val engine: String, var failure: Throwable? = null) : WhisperRecognizer {
         var calls = 0
+        var opened = 0
+        var closed = 0
+        var openFailure: Throwable? = null
+        var decodeFailure: Throwable? = null
+
+        override fun openDecoder(language: String): WhisperDecoder {
+            openFailure?.let { throw it }
+            opened++
+            return object : WhisperDecoder {
+                override val info = describe()
+                override fun decode(samples: FloatArray): String {
+                    decodeFailure?.let { throw it }
+                    return "$engine ${samples.size}"
+                }
+
+                override fun close() {
+                    closed++
+                }
+            }
+        }
+
         override suspend fun transcribe(
             file: File,
             language: String,
@@ -137,5 +158,65 @@ class WhisperEngineTest {
         assertEquals("cpu", engine.describe().engine)
         state.verified = true
         assertEquals("npu", engine.describe().engine)
+    }
+
+    @Test
+    fun openDecoder_verifiedNpu_decodesOnTheNpu() {
+        state.verified = true
+
+        engine.openDecoder("en").use { decoder ->
+            assertEquals("npu 3", decoder.decode(FloatArray(3)))
+            assertEquals("npu", decoder.info.engine)
+        }
+        assertEquals(0, cpu.opened)
+        assertEquals(1, npu.closed)
+    }
+
+    @Test
+    fun openDecoder_npuFailsToOpen_isRecorded_andTheCpuIsUsed() {
+        state.verified = true
+        npu.openFailure = IllegalStateException("context binary")
+
+        val decoder = engine.openDecoder("en")
+
+        assertEquals("cpu 2", decoder.decode(FloatArray(2)))
+        assertEquals("context binary", state.blocked)
+    }
+
+    @Test
+    fun openDecoder_npuFailsToDecode_retriesTheSegmentOnTheCpu_andStaysThere() {
+        state.verified = true
+        val decoder = engine.openDecoder("en")
+        npu.decodeFailure = IllegalStateException("HTP error")
+
+        assertEquals("cpu 4", decoder.decode(FloatArray(4)))
+        assertEquals("cpu", decoder.info.engine)
+        assertEquals("HTP error", state.blocked)
+        assertEquals(1, npu.closed)
+
+        npu.decodeFailure = null
+        assertEquals("cpu 1", decoder.decode(FloatArray(1)))
+        decoder.close()
+        assertEquals(1, cpu.closed)
+    }
+
+    @Test
+    fun openDecoder_npuFails_withoutTheCpuModel_isThrown() {
+        state.verified = true
+        cpuInstalled = false
+        val decoder = engine.openDecoder("en")
+        npu.decodeFailure = IllegalStateException("HTP error")
+
+        val ex = runCatching { decoder.decode(FloatArray(1)) }.exceptionOrNull()
+
+        assertTrue(ex?.message.orEmpty().contains("HTP error"))
+        assertEquals(0, cpu.opened)
+    }
+
+    @Test
+    fun openDecoder_nothingDownloaded_throws() {
+        cpuInstalled = false
+        val ex = runCatching { engine.openDecoder("en") }.exceptionOrNull()
+        assertEquals("Whisper is not downloaded", ex?.message)
     }
 }

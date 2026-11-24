@@ -34,6 +34,10 @@ interface VoiceDetector : Closeable {
 class SpeechSpan(val startSample: Long, val samples: FloatArray) {
     val startMs: Long get() = startSample * 1000 / AudioSpec.SAMPLE_RATE
     val endMs: Long get() = (startSample + samples.size) * 1000 / AudioSpec.SAMPLE_RATE
+
+    /** The line Whisper's [text] makes of this span; `null` when it heard nothing. */
+    fun lineOf(text: String): TranscriptEvent.Final? =
+        text.takeIf { it.isNotBlank() }?.let { TranscriptEvent.Final(it, startMs, endMs) }
 }
 
 /**

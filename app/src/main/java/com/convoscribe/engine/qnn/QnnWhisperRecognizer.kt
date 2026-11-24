@@ -1,10 +1,11 @@
 package com.convoscribe.engine.qnn
 
 import com.convoscribe.asr.EngineInfo
-import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.SpeechChunker
 import com.convoscribe.asr.TextNormalizer
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.asr.WhisperDecoder
+import com.convoscribe.asr.WhisperRecognizer
 import com.convoscribe.asr.WhisperTokens
 import com.convoscribe.engine.sherpa.QnnRuntime
 import com.convoscribe.engine.sherpa.SherpaVoiceDetector
@@ -28,7 +29,8 @@ import kotlinx.coroutines.withContext
  * 30 s window takes each segment padded.
  *
  * The model (about 2.2 GB) is loaded for each call and released
- * afterwards. A failure to load or run it is thrown;
+ * afterwards; live Whisper (issue #160) keeps it loaded for a recording
+ * through [openDecoder]. A failure to load or run it is thrown;
  * [com.convoscribe.asr.WhisperEngine] then records it and falls back to
  * the CPU.
  */
@@ -37,7 +39,7 @@ class QnnWhisperRecognizer(
     private val socModel: () -> String?,
     private val nativeLibraryDir: String,
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default
-) : FileRecognizer {
+) : WhisperRecognizer {
 
     /** The published build for this device's chip, or `null` (the CPU is used). */
     fun asset(): WhisperNpuAsset? = ModelCatalog.whisperNpuFor(socModel())
@@ -53,6 +55,19 @@ class QnnWhisperRecognizer(
         language: String,
         onProgress: (Float) -> Unit
     ): List<TranscriptEvent.Final> = withContext(dispatcher) {
+        openDecoder(language).use { decoder ->
+            SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
+                val finals = mutableListOf<TranscriptEvent.Final>()
+                SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
+                    currentCoroutineContext().ensureActive()
+                    span.lineOf(decoder.decode(span.samples))?.let(finals::add)
+                }
+                finals
+            }
+        }
+    }
+
+    override fun openDecoder(language: String): WhisperDecoder {
         val asset = asset() ?: throw IllegalStateException("This chip has no Whisper build for the NPU")
         ModelCatalog.whisperNpuBundles(socModel()).firstOrNull { !store.isInstalled(it) }?.let {
             throw IllegalStateException("Model not installed: ${it.id}")
@@ -60,16 +75,14 @@ class QnnWhisperRecognizer(
         val prompt = WhisperTokens.prompt(language)
         val tokens = WhisperTokens.load(store.fileFor(ModelCatalog.WHISPER_TOKENS, "turbo-tokens.txt"))
         QnnRuntime.ensurePrepared(nativeLibraryDir)
-        WhisperQnnSession.open(store.bundleDir(asset.bundle), nativeLibraryDir).use { session ->
-            SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
-                val finals = mutableListOf<TranscriptEvent.Final>()
-                SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
-                    currentCoroutineContext().ensureActive()
-                    val text = TextNormalizer.normalize(tokens.decode(session.transcribe(span.samples, prompt)))
-                    if (text.isNotBlank()) finals += TranscriptEvent.Final(text, span.startMs, span.endMs)
-                }
-                finals
-            }
+        val session = WhisperQnnSession.open(store.bundleDir(asset.bundle), nativeLibraryDir)
+        return object : WhisperDecoder {
+            override val info = describe()
+
+            override fun decode(samples: FloatArray): String =
+                TextNormalizer.normalize(tokens.decode(session.transcribe(samples, prompt)))
+
+            override fun close() = session.close()
         }
     }
 
