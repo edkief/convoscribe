@@ -16,7 +16,7 @@ scripts:
     # After a toolchain or sherpa pin change, rebuild with
     # `bash scripts/build-images.sh --push builder` and update this tag to
     # `bash scripts/build-images.sh --print-builder-image`.
-    image: registry.kieffer.me/convoscribe-android-builder:1.13.8-qnn2.40.0.251030-ort1.28.2-jniv1.28.0-tcc4be88e126
+    image: registry.kieffer.me/convoscribe-android-builder:1.13.8-qnn2.51.0.260929-ort1.29.0-jni1.29.0-tc1221dfe339
     command: bash scripts/release.sh publish --yes
     git_tags: ['^v[0-9]+\.[0-9]+\.[0-9]+$']
     # GH_TOKEN (fine-grained PAT, this repo, Contents: read and write) and

@@ -96,7 +96,11 @@ fi
 download() {
   # download <url> <output>  -- fail loudly on HTTP errors and follow redirects.
   local url="$1" out="$2"
-  curl --fail --location --silent --show-error --retry 3 --retry-delay 5 -o "$out" "$url"
+  # --retry-all-errors: the 3 GB QAIRT zip has been cut off mid-stream
+  # (curl 92, HTTP/2 INTERNAL_ERROR), which plain --retry does not cover;
+  # HTTP/1.1 avoids that stream reset.
+  curl --fail --location --silent --show-error --http1.1 \
+    --retry 5 --retry-delay 10 --retry-all-errors -o "$out" "$url"
 }
 
 # ---------------------------------------------------------------------------
