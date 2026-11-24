@@ -101,8 +101,11 @@ class SherpaTranscriberFactory(
                 )
             }
             QnnRuntime.ensurePrepared(nativeLibraryDir)
+            SherpaAsrConfigs.dropStaleContextBinaries(modelDir)
             val backend = try {
-                SherpaRecognizerBackend(config = SherpaAsrConfigs.npu(modelDir, asr))
+                SherpaRecognizerBackend(config = SherpaAsrConfigs.npu(modelDir, asr)).also {
+                    SherpaAsrConfigs.markContextBinariesCurrent(modelDir)
+                }
             } catch (e: Throwable) {
                 throw IllegalStateException(
                     "The NPU engine failed to start (${e.message}). " +
@@ -144,6 +147,6 @@ class SherpaTranscriberFactory(
         if (effective != "npu") return false
         val bundle = ModelCatalog.asrFor(language, engine)
         val modelDir = store.bundleDir(bundle)
-        return SherpaAsrConfigs.contextBinaries(modelDir).any { !it.exists() }
+        return !SherpaAsrConfigs.contextBinariesCurrent(modelDir)
     }
 }

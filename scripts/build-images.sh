@@ -2,8 +2,8 @@
 # Build (and optionally push) the release container images:
 #
 #   sherpa   docker/sherpa-onnx.Containerfile: files-only image with the
-#            sherpa-onnx native libs + Kotlin jar, and onnxruntime's JNI
-#            library rebuilt against them. Slow (10-30 min); only rebuild
+#            sherpa-onnx native libs (with the QAIRT HTP runtime) + Kotlin
+#            jar, and onnxruntime's JNI library matching their runtime. Slow (10-30 min); only rebuild
 #            when the pins in scripts/build-sherpa-onnx.sh or
 #            scripts/build-onnxruntime-jni.sh change.
 #   builder  docker/android-builder.Containerfile: JDK + SDK + gh with the
@@ -11,8 +11,8 @@
 #
 # Tags are derived from the pinned versions, so an unchanged pin means an
 # unchanged tag and there is nothing to rebuild:
-#   sherpa : <sherpa>-qnn<qnn>-ort<onnxruntime>-jni<onnxruntime JNI tag>,
-#            e.g. 1.13.8-qnn2.40.0.251030-ort1.28.2-jniv1.28.0
+#   sherpa : <sherpa>-qnn<qnn>-ort<onnxruntime>-jni<onnxruntime JNI version>,
+#            e.g. 1.13.8-qnn2.51.0.260929-ort1.30.0-jni1.30.0
 #   builder: <sherpa tag>-tc<hash of setup-toolchain.sh + env.sh>
 #
 # Usage: bash scripts/build-images.sh [options] [sherpa|builder|all]
@@ -87,7 +87,7 @@ pin() {
 }
 
 sherpa_tag="$(pin VERSION)-qnn$(pin QNN_VERSION)-ort$(pin ONNXRUNTIME_VERSION)"
-sherpa_tag+="-jni$(pin ORT_TAG scripts/build-onnxruntime-jni.sh)"
+sherpa_tag+="-jni$(pin ORT_VERSION scripts/build-onnxruntime-jni.sh)"
 toolchain_hash=$(cat scripts/setup-toolchain.sh scripts/env.sh | sha256sum | cut -c1-10)
 sherpa_image="$registry/convoscribe-sherpa:$sherpa_tag"
 builder_image="$registry/convoscribe-android-builder:$sherpa_tag-tc$toolchain_hash"

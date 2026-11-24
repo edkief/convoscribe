@@ -35,6 +35,13 @@ object NpuProbeProtocol {
 
     const val KEY_SAMPLE_FILE = "sampleFile"
 
+    /** What the probe runs: [KIND_NEMOTRON] (the default) or [KIND_WHISPER]. */
+    const val KEY_KIND = "kind"
+    const val KIND_NEMOTRON = "nemotron"
+
+    /** Whisper on the NPU through onnxruntime's QNN provider (issue #159). */
+    const val KIND_WHISPER = "whisper"
+
     /** Name suffix of the probe process, as declared in the manifest. */
     const val PROCESS_SUFFIX = ":npuprobe"
 }
@@ -63,7 +70,7 @@ class NpuProbeClient(
     private val context: Context,
     private val availability: NpuAvailability,
     private val onVerified: () -> Unit = {}
-) {
+) : WhisperNpuProbe {
 
     private sealed interface Outcome {
         data class Completed(val result: EngineCheckResult) : Outcome
@@ -75,12 +82,53 @@ class NpuProbeClient(
      * returns a result for a different engine; throws only when the
      * probe service cannot be bound at all.
      */
-    suspend fun run(sampleFile: File): EngineCheckResult {
-        return when (val outcome = withContext(Dispatchers.Main) { runInProbe(sampleFile) }) {
+    suspend fun run(sampleFile: File): EngineCheckResult = runKind(
+        sampleFile = sampleFile,
+        kind = NpuProbeProtocol.KIND_NEMOTRON,
+        engine = "npu",
+        onClean = {
+            availability.markVerified()
+            onVerified()
+        },
+        onFailed = availability::markFailed
+    )
+
+    /**
+     * Run Whisper on the NPU (issue #159) over [sampleFile] in the probe
+     * process. A clean run marks Whisper verified on the NPU; an error or
+     * a dead probe marks it failed, so [com.convoscribe.asr.WhisperEngine]
+     * uses the CPU. Nemotron's state is left alone.
+     */
+    override suspend fun runWhisper(sampleFile: File): EngineCheckResult = runKind(
+        sampleFile = sampleFile,
+        kind = NpuProbeProtocol.KIND_WHISPER,
+        engine = WHISPER_NPU_ENGINE,
+        onClean = availability::markWhisperVerified,
+        onFailed = availability::markWhisperFailed,
+        failedOnError = true
+    )
+
+    /**
+     * [onClean] after a run without error; [onFailed] with the reason when
+     * the probe died, or (with [failedOnError]) when the run returned an
+     * error. Nemotron keeps its old rule: an error result (a missing
+     * model, say) is not a verdict on the NPU.
+     */
+    private suspend fun runKind(
+        sampleFile: File,
+        kind: String,
+        engine: String,
+        onClean: () -> Unit,
+        onFailed: (String) -> Unit,
+        failedOnError: Boolean = false
+    ): EngineCheckResult {
+        return when (val outcome = withContext(Dispatchers.Main) { runInProbe(sampleFile, kind) }) {
             is Outcome.Completed -> {
-                if (outcome.result.error == null) {
-                    availability.markVerified()
-                    onVerified()
+                val error = outcome.result.error
+                if (error == null) {
+                    onClean()
+                } else if (failedOnError) {
+                    onFailed(error)
                 }
                 outcome.result
             }
@@ -96,9 +144,9 @@ class NpuProbeClient(
                 }
                 Log.w(TAG, "npu probe died:\n$diagnostics")
                 val message = probeFailureMessage(exit)
-                availability.markFailed(message)
+                onFailed(message)
                 EngineCheckResult(
-                    engine = "npu",
+                    engine = engine,
                     initMs = 0L,
                     firstRun = false,
                     audioMs = 0L,
@@ -112,7 +160,7 @@ class NpuProbeClient(
     }
 
     /** Bind the probe, ask it to run, and wait for a result or its death. Main thread only. */
-    private suspend fun runInProbe(sampleFile: File): Outcome = suspendCancellableCoroutine { cont ->
+    private suspend fun runInProbe(sampleFile: File, kind: String): Outcome = suspendCancellableCoroutine { cont ->
         val mainHandler = Handler(Looper.getMainLooper())
         var probePid = 0
         var finished = false
@@ -145,6 +193,7 @@ class NpuProbeClient(
                         replyTo = replies
                         data = Bundle().apply {
                             putString(NpuProbeProtocol.KEY_SAMPLE_FILE, sampleFile.absolutePath)
+                            putString(NpuProbeProtocol.KEY_KIND, kind)
                         }
                     }
                     Messenger(service).send(request)
@@ -272,6 +321,11 @@ class NpuProbeClient(
             else -> "reason=$reason"
         }
     }
+}
+
+/** Runs Whisper on the NPU in the probe process (issue #159); see [NpuProbeClient.runWhisper]. */
+fun interface WhisperNpuProbe {
+    suspend fun runWhisper(sampleFile: File): EngineCheckResult
 }
 
 /** How the probe process ended, from [ApplicationExitInfo]. */

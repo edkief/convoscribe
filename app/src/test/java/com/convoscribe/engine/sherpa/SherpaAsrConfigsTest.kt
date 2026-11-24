@@ -2,6 +2,7 @@ package com.convoscribe.engine.sherpa
 
 import com.convoscribe.models.ModelCatalog
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -80,5 +81,32 @@ class SherpaAsrConfigsTest {
         // sherpa's QNN path does its own dispatch on the Hexagon
         // cores; passing more than one thread would just race.
         assertEquals(1, config.modelConfig.numThreads)
+    }
+
+    @Test
+    fun staleContextBinaries_withoutStamp_areDeletedAndNotCurrent() {
+        // Binaries compiled by the QNN 2.40 runtime (before issue #159)
+        // carry no stamp: they must be compiled again by QNN 2.51.
+        SherpaAsrConfigs.contextBinaries(dir).forEach { it.writeText("old") }
+        assertFalse(SherpaAsrConfigs.contextBinariesCurrent(dir))
+        assertTrue(SherpaAsrConfigs.dropStaleContextBinaries(dir))
+        assertTrue(SherpaAsrConfigs.contextBinaries(dir).none { it.exists() })
+    }
+
+    @Test
+    fun staleContextBinaries_fromAnotherVersion_areDeleted() {
+        SherpaAsrConfigs.contextBinaries(dir).forEach { it.writeText("old") }
+        SherpaAsrConfigs.runtimeStamp(dir).writeText("2.40.0.251030")
+        assertTrue(SherpaAsrConfigs.dropStaleContextBinaries(dir))
+        assertTrue(SherpaAsrConfigs.contextBinaries(dir).none { it.exists() })
+    }
+
+    @Test
+    fun currentContextBinaries_areKept() {
+        SherpaAsrConfigs.contextBinaries(dir).forEach { it.writeText("new") }
+        SherpaAsrConfigs.markContextBinariesCurrent(dir)
+        assertTrue(SherpaAsrConfigs.contextBinariesCurrent(dir))
+        assertFalse(SherpaAsrConfigs.dropStaleContextBinaries(dir))
+        assertTrue(SherpaAsrConfigs.contextBinaries(dir).all { it.exists() })
     }
 }

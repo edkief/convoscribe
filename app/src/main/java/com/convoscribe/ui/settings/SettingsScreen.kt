@@ -55,6 +55,7 @@ import com.convoscribe.R
 import com.convoscribe.backup.BackupKind
 import com.convoscribe.backup.BackupState
 import com.convoscribe.enginecheck.LiveCleanupVerdict
+import com.convoscribe.enginecheck.currentSocModel
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.models.ModelDownloadState
 import com.convoscribe.overlay.OverlayPermission
@@ -110,7 +111,10 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
                     refreshServerOffer = { container.serverOfferRefresher.refresh() },
                     pingDecision = container.decisionClient::ping,
                     signInApi = container.deviceSignInClient,
-                    deviceName = deviceName()
+                    deviceName = deviceName(),
+                    whisperStatus = container.whisperRecognizer::status,
+                    checkWhisperNpu = { container.whisperNpuAutoCheck.check() },
+                    onWhisperDeleted = container.npuAvailability::clearWhisper
                 )
             }
         }
@@ -186,8 +190,15 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
         ?.bundleIds?.contains(ModelCatalog.CLEANUP.id) == true
     val semanticDownloading = (downloadState as? ModelDownloadState.Running)
         ?.bundleIds?.contains(ModelCatalog.TEXT_EMBEDDING_GEMMA.id) == true
+    val whisperIds = remember { ModelCatalog.allWhisperBundles.map { it.id }.toSet() }
     val whisperDownloading = (downloadState as? ModelDownloadState.Running)
-        ?.bundleIds?.contains(ModelCatalog.ASR_WHISPER_TURBO.id) == true
+        ?.bundleIds?.any { it in whisperIds } == true
+    // The NPU check after a Whisper download (issue #159); re-read where
+    // Whisper runs once it ends.
+    val whisperChecking by container.whisperNpuAutoCheck.checking.collectAsStateWithLifecycle()
+    LaunchedEffect(whisperChecking) {
+        if (!whisperChecking) vm.refreshModels()
+    }
     // Sessions get indexed by the charging job meanwhile; re-count on return.
     LifecycleResumeEffect(Unit) {
         vm.refreshSemanticProgress()
@@ -262,6 +273,7 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
         semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
         whisperDownloading = whisperDownloading,
+        whisperChecking = whisperChecking,
         liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = updateState,
@@ -306,11 +318,17 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             },
             onDeleteCleanup = vm::deleteCleanupModel,
             onDownloadWhisper = {
+                // The NPU build on a chip Qualcomm publishes one for (issue #159).
+                val bundles = ModelCatalog.whisperNpuBundles(currentSocModel()).ifEmpty { ModelCatalog.whisperBundles }
+                ContextCompat.startForegroundService(context, ModelDownloadService.startIntent(context, bundles))
+            },
+            onDownloadWhisperCpu = {
                 ContextCompat.startForegroundService(
                     context,
                     ModelDownloadService.startIntent(context, ModelCatalog.whisperBundles)
                 )
             },
+            onCheckWhisperNpu = vm::checkWhisperNpu,
             onDeleteWhisper = vm::deleteWhisperModel,
             onWhisperAutoChange = vm::setWhisperAuto,
             onDownloadSemantic = {
@@ -417,6 +435,8 @@ internal class SettingsActions(
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
     val onDownloadWhisper: () -> Unit = {},
+    val onDownloadWhisperCpu: () -> Unit = {},
+    val onCheckWhisperNpu: () -> Unit = {},
     val onDeleteWhisper: () -> Unit = {},
     val onWhisperAutoChange: (Boolean) -> Unit = {},
     val onDownloadSemantic: () -> Unit = {},
@@ -461,6 +481,7 @@ private class PageExtras(
     val semanticDownloading: Boolean,
     val voiceModelDownloading: Boolean,
     val whisperDownloading: Boolean,
+    val whisperChecking: Boolean,
     val liveCleanupVerdict: LiveCleanupVerdict?,
     val overlayGranted: Boolean,
     val update: UpdateState,
@@ -481,7 +502,8 @@ private class PageExtras(
  * [update] and [updateActions] drive the update part of About (issue #15).
  * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
  * [semanticDownloading] while the semantic search model does (issue #61),
- * [whisperDownloading] while Whisper does (issue #158);
+ * [whisperDownloading] while Whisper does (issue #158), [whisperChecking]
+ * while its NPU build is checked (issue #159);
  * [liveCleanupVerdict] is the engine check's verdict on cleaning live
  * with the selected engine, `null` when it was not checked. [backup] is
  * the running or last backup or restore (issue #25).
@@ -496,6 +518,7 @@ internal fun SettingsBody(
     semanticDownloading: Boolean = false,
     voiceModelDownloading: Boolean = false,
     whisperDownloading: Boolean = false,
+    whisperChecking: Boolean = false,
     liveCleanupVerdict: LiveCleanupVerdict? = null,
     overlayGranted: Boolean = true,
     update: UpdateState = UpdateState.Idle,
@@ -510,6 +533,7 @@ internal fun SettingsBody(
         semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
         whisperDownloading = whisperDownloading,
+        whisperChecking = whisperChecking,
         liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = update,
@@ -660,10 +684,13 @@ private fun SettingsPageContent(
                 onCleanByDefaultChange = actions.onCleanAudioDefaultChange
             )
             WhisperSection(
-                installed = state.whisperInstalled,
+                status = state.whisperStatus,
                 downloading = extras.whisperDownloading,
+                checking = extras.whisperChecking,
                 auto = state.whisperAuto,
                 onDownload = actions.onDownloadWhisper,
+                onDownloadCpu = actions.onDownloadWhisperCpu,
+                onCheckNpu = actions.onCheckWhisperNpu,
                 onDelete = actions.onDeleteWhisper,
                 onAutoChange = actions.onWhisperAutoChange
             )

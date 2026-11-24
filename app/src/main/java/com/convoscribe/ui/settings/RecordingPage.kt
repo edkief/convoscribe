@@ -27,6 +27,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import com.convoscribe.R
+import com.convoscribe.asr.WhisperStatus
 import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.settings.FloatingShape
@@ -246,21 +247,30 @@ internal fun NoiseCleanupSection(
 }
 
 /**
- * "Whisper Large-v3-Turbo" section (issue #158): the optional on-device
- * Whisper model (with its voice activity detector), downloaded or
- * removed here, and *Transcribe again with Whisper* ([auto], written
- * immediately, enabled once installed): each stopped recording and each
- * import is transcribed again on the phone, after the server if that is
- * on too. A finished session can use Whisper from *Re-transcribe*
- * either way. It runs on the CPU and is slow; live captions keep the
- * streaming engine.
+ * "Whisper Large-v3-Turbo" section (issues #158, #159): the optional
+ * on-device Whisper model, downloaded or removed here, and *Transcribe
+ * again with Whisper* ([auto], written immediately, enabled once
+ * installed): each stopped recording and each import is transcribed
+ * again on the phone, after the server if that is on too. A finished
+ * session can use Whisper from *Re-transcribe* either way. Live captions
+ * keep the streaming engine.
+ *
+ * On a chip with a published Qualcomm build ([WhisperStatus.npuChip])
+ * the download is that NPU build; the card then says whether Whisper
+ * runs on the NPU or the CPU and why, offers to check the NPU again
+ * ([onCheckNpu], [checking] while the probe runs) and, when the NPU
+ * cannot be used, to download the CPU model ([onDownloadCpu]). Elsewhere
+ * the download is the CPU model, as before.
  */
 @Composable
 internal fun WhisperSection(
-    installed: Boolean,
+    status: WhisperStatus,
     downloading: Boolean,
+    checking: Boolean,
     auto: Boolean,
     onDownload: () -> Unit,
+    onDownloadCpu: () -> Unit,
+    onCheckNpu: () -> Unit,
     onDelete: () -> Unit,
     onAutoChange: (Boolean) -> Unit
 ) {
@@ -277,29 +287,91 @@ internal fun WhisperSection(
                 InlineProgress()
                 NoticeText(text = stringResource(R.string.settings_whisper_downloading))
             }
-            installed -> {
-                SupportingText(text = stringResource(R.string.settings_whisper_installed))
+            !status.anyInstalled -> {
+                SupportingText(text = whisperWhereText(status))
+                OutlinedButton(onClick = onDownload) {
+                    Text(text = whisperDownloadLabel(status.npuSupported))
+                }
+            }
+            else -> {
+                if (checking) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+                    ) {
+                        InlineProgress()
+                        NoticeText(text = stringResource(R.string.settings_whisper_checking_npu))
+                    }
+                } else {
+                    SupportingText(text = whisperWhereText(status))
+                }
+                if (status.npuSupported && !status.npuInstalled) {
+                    OutlinedButton(onClick = onDownload) {
+                        Text(text = whisperDownloadLabel(npu = true))
+                    }
+                }
+                if (status.npuInstalled && status.engine != "npu" && !checking) {
+                    TextButton(onClick = onCheckNpu) {
+                        Text(text = stringResource(R.string.settings_whisper_check_npu))
+                    }
+                }
+                if (status.npuInstalled && !status.cpuInstalled && status.engine != "npu" && !checking) {
+                    OutlinedButton(onClick = onDownloadCpu) {
+                        Text(text = whisperDownloadLabel(npu = false, fallback = true))
+                    }
+                }
                 TextButton(onClick = onDelete) {
                     Text(text = stringResource(R.string.settings_whisper_delete))
                 }
-            }
-            else -> OutlinedButton(onClick = onDownload) {
-                Text(
-                    text = stringResource(
-                        R.string.settings_whisper_download,
-                        ModelCatalog.whisperBundles.sumOf { it.totalBytes }.toFloat() / 1_000_000_000f
-                    )
-                )
             }
         }
         SwitchRow(
             label = stringResource(R.string.settings_whisper_auto_label),
             help = stringResource(R.string.settings_whisper_auto_help),
-            checked = auto && installed,
-            enabled = installed,
+            checked = auto && status.anyInstalled,
+            enabled = status.anyInstalled,
             onCheckedChange = onAutoChange
         )
     }
+}
+
+/** Where Whisper runs, or would run, and why (issue #159); also on Engine check. */
+@Composable
+internal fun whisperWhereText(status: WhisperStatus): String {
+    val chip = status.npuChip
+    return when {
+        status.engine == "npu" && chip != null -> stringResource(R.string.settings_whisper_runs_npu, chip)
+        chip == null && status.cpuInstalled -> stringResource(R.string.settings_whisper_runs_cpu_no_build)
+        chip == null -> stringResource(R.string.settings_whisper_cpu_no_build)
+        !status.anyInstalled -> stringResource(R.string.settings_whisper_npu_available, chip)
+        !status.npuInstalled -> stringResource(R.string.settings_whisper_runs_cpu_npu_not_downloaded, chip)
+        status.npuBlockedReason != null && status.cpuInstalled ->
+            stringResource(R.string.settings_whisper_runs_cpu_npu_failed, status.npuBlockedReason)
+        status.npuBlockedReason != null ->
+            stringResource(R.string.settings_whisper_npu_failed_no_cpu, status.npuBlockedReason)
+        status.cpuInstalled -> stringResource(R.string.settings_whisper_runs_cpu_npu_unchecked)
+        else -> stringResource(R.string.settings_whisper_npu_unchecked_no_cpu)
+    }
+}
+
+@Composable
+private fun whisperDownloadLabel(npu: Boolean, fallback: Boolean = false): String {
+    val bundles = if (npu) {
+        // Every chip's build is about the same size; show the largest.
+        listOf(ModelCatalog.whisperNpuAssets.maxOf { it.bundle.downloadBytes }) +
+            listOf(ModelCatalog.WHISPER_TOKENS, ModelCatalog.VAD_SILERO).map { it.downloadBytes }
+    } else {
+        ModelCatalog.whisperBundles.map { it.downloadBytes }
+    }
+    val gb = bundles.sum().toFloat() / 1_000_000_000f
+    return stringResource(
+        when {
+            npu -> R.string.settings_whisper_download_npu
+            fallback -> R.string.settings_whisper_download_cpu_fallback
+            else -> R.string.settings_whisper_download
+        },
+        gb
+    )
 }
 
 /**

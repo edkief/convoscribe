@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.convoscribe.TAG
+import com.convoscribe.asr.WhisperStatus
 import com.convoscribe.asr.server.ServerAsrException
 import com.convoscribe.data.SummaryTemplateStore
 import com.convoscribe.llm.ChatClient
@@ -259,8 +260,11 @@ data class SettingsUiState(
     /** The noise cleanup model is downloaded (issue #37). */
     val cleanupInstalled: Boolean = false,
 
-    /** Whisper Large-v3-Turbo and its VAD are downloaded (issue #158). */
-    val whisperInstalled: Boolean = false,
+    /**
+     * Where on-device Whisper runs, NPU or CPU, and why (issues #158,
+     * #159); `engine == null` while nothing usable is downloaded.
+     */
+    val whisperStatus: WhisperStatus = WhisperStatus(null, null, false, false, null, false),
 
     /** *Transcribe again with Whisper* (issue #158). */
     val whisperAuto: Boolean = false,
@@ -384,7 +388,13 @@ class SettingsViewModel(
     private val signInApi: DeviceSignInApi? = null,
     private val deviceName: String = "Android",
     private val now: () -> Long = System::currentTimeMillis,
-    private val newSignInState: () -> String = ::randomSignInState
+    private val newSignInState: () -> String = ::randomSignInState,
+    /** Where Whisper runs (issue #159); without an NPU engine, the CPU model's state. */
+    private val whisperStatus: () -> WhisperStatus = { cpuOnlyWhisperStatus(modelStore) },
+    /** Run the Whisper NPU check in the probe process (issue #159). */
+    private val checkWhisperNpu: suspend () -> Unit = {},
+    /** Whisper was deleted: forget what the NPU probe recorded (issue #159). */
+    private val onWhisperDeleted: () -> Unit = {}
 ) : ViewModel() {
 
     private var signInOfferJob: Job? = null
@@ -741,10 +751,25 @@ class SettingsViewModel(
         repo.update { it.copy(whisperAuto = enabled) }
     }
 
-    /** Remove Whisper and its VAD (issue #158); sessions keep their transcripts. */
+    /**
+     * Remove every Whisper model, CPU and NPU, and the VAD (issues #158,
+     * #159); sessions keep their transcripts.
+     */
     fun deleteWhisperModel() {
         viewModelScope.launch {
-            ModelCatalog.whisperBundles.forEach(modelStore::delete)
+            ModelCatalog.allWhisperBundles.forEach(modelStore::delete)
+            onWhisperDeleted()
+            refreshModels()
+        }
+    }
+
+    /**
+     * Check Whisper on the NPU again (issue #159), e.g. after a failure;
+     * the probe runs in its own process, then the status is re-read.
+     */
+    fun checkWhisperNpu() {
+        viewModelScope.launch {
+            checkWhisperNpu.invoke()
             refreshModels()
         }
     }
@@ -1143,7 +1168,7 @@ class SettingsViewModel(
             defaultSummaryTemplate = current.defaultSummaryTemplate,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
-            whisperInstalled = ModelCatalog.whisperBundles.all(modelStore::isInstalled),
+            whisperStatus = whisperStatus(),
             whisperAuto = current.whisperAuto,
             semanticInstalled = modelStore.isInstalled(ModelCatalog.TEXT_EMBEDDING_GEMMA),
             cleanAudioDefault = current.cleanAudioDefault,
@@ -1195,4 +1220,17 @@ private const val SIGN_IN_DESCRIPTION = "Syncs sessions and uses this server's s
 private fun randomSignInState(): String {
     val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
     return bytes.joinToString("") { "%02x".format(it) }
+}
+
+/** Whisper's status when only the CPU model is known (tests, issue #158). */
+internal fun cpuOnlyWhisperStatus(store: ModelStore): WhisperStatus {
+    val cpu = ModelCatalog.whisperBundles.all(store::isInstalled)
+    return WhisperStatus(
+        engine = if (cpu) "cpu" else null,
+        npuChip = null,
+        npuInstalled = false,
+        npuVerified = false,
+        npuBlockedReason = null,
+        cpuInstalled = cpu
+    )
 }

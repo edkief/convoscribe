@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
         The model downloader fetches ASR, segmentation and embedding
@@ -285,12 +286,23 @@
             cannot create the HTP device (e.g. the Boox Note Air 6C,
             whose SoC has the NSP fused off); in-process that closes the
             whole app. Here only `:npuprobe` dies and the engine check
-            reports why. Bound-only, never exported.
+            reports why. It also checks Whisper on the NPU (issue #159)
+            before the app uses it. Bound-only, never exported.
         -->
         <service
             android:name=".service.NpuProbeService"
             android:exported="false"
             android:process=":npuprobe" />
+        <!--
+            onnxruntime 1.30's AAR starts a telemetry uploader at launch.
+            Nothing here leaves the device unless the user asks, and the
+            runtime the app ships (sherpa-onnx's, issue #159) has no
+            telemetry natives, so the provider is removed.
+        -->
+        <provider
+            android:name="ai.onnxruntime.TelemetryInitializer"
+            android:authorities="${applicationId}.onnxruntime_telemetry_initializer"
+            tools:node="remove" />
         <!--
             Serves the M4A exports in `cacheDir/exports/` to the share
             sheet (Share audio). Not exported: access is only through

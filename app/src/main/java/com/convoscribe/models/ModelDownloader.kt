@@ -8,6 +8,7 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.FilterInputStream
 import java.io.IOException
+import java.io.InputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -17,8 +18,10 @@ import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import okhttp3.OkHttpClient
-import org.apache.commons.compress.archivers.tar.TarArchiveEntry
+import org.apache.commons.compress.archivers.ArchiveEntry
+import org.apache.commons.compress.archivers.ArchiveInputStream
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream
+import org.apache.commons.compress.archivers.zip.ZipArchiveInputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorInputStream
 
 /**
@@ -85,7 +88,7 @@ interface ModelDownloads {
  *   target atomically.
  * - Archive bundles ([ModelArchive] is set): [ModelArchive.url] is
  *   fetched the same way into [ModelStore.archivePartFor], then
- *   extracted through bzip2 + tar decoders. Only entries whose path
+ *   extracted through bzip2 + tar (or zip) decoders. Only entries whose path
  *   matches a listed [ModelFile.fileName] are written (each verified
  *   by size); all other entries are skipped. The archive is deleted
  *   once extracted. Already-installed archive bundles are skipped
@@ -277,7 +280,7 @@ class ModelDownloader(
     }
 
     /**
-     * Walks the bzip2 + tar [archiveFile], writes only the entries
+     * Walks the bzip2 + tar (or zip, [ModelArchive.format]) [archiveFile], writes only the entries
      * listed in [bundle.files] (matching by fileName with a leading
      * `./` and `rootDir + "/"` stripped first) to `<target>.part`,
      * verifies each by size, then renames. Throws
@@ -333,15 +336,10 @@ class ModelDownloader(
                     return b
                 }
             }
-            TarArchiveInputStream(
-                BufferedInputStream(
-                    BZip2CompressorInputStream(counting),
-                    BUFFER_SIZE
-                )
-            ).use { tar ->
+            openEntries(archive.format, counting).use { tar ->
                 while (true) {
                     currentCoroutineContext().ensureActive()
-                    val entry: TarArchiveEntry = tar.nextEntry ?: break
+                    val entry: ArchiveEntry = tar.nextEntry ?: break
                     val stripped = stripArchivePrefix(entry.name, archive.rootDir)
                     if (stripped == null || entry.isDirectory) {
                         // Skipped entry; still report the compressed
@@ -391,12 +389,24 @@ class ModelDownloader(
     }
 
     /**
+     * The entries of an archive read from [raw]: bzip2 + tar for
+     * sherpa-onnx's bundles, zip for Qualcomm AI Hub's (issue #159).
+     */
+    private fun openEntries(format: ArchiveFormat, raw: InputStream): ArchiveInputStream<out ArchiveEntry> =
+        when (format) {
+            ArchiveFormat.TAR_BZ2 -> TarArchiveInputStream(
+                BufferedInputStream(BZip2CompressorInputStream(raw), BUFFER_SIZE)
+            )
+            ArchiveFormat.ZIP -> ZipArchiveInputStream(BufferedInputStream(raw, BUFFER_SIZE))
+        }
+
+    /**
      * Reads the rest of [tar]'s current entry into [part] and returns
      * the byte count written. [onChunk] runs after every buffer so
      * progress keeps moving through a multi-hundred-MB entry, and the
      * loop checks for cancellation for the same reason.
      */
-    private suspend fun writeTarEntry(tar: TarArchiveInputStream, part: File, onChunk: suspend () -> Unit): Long {
+    private suspend fun writeTarEntry(tar: ArchiveInputStream<*>, part: File, onChunk: suspend () -> Unit): Long {
         var bytes = 0L
         FileOutputStream(part).use { out ->
             val buffer = ByteArray(BUFFER_SIZE)

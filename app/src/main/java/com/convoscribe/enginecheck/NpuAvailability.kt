@@ -1,6 +1,7 @@
 package com.convoscribe.enginecheck
 
 import android.content.SharedPreferences
+import com.convoscribe.asr.WhisperNpuState
 
 /**
  * Remembers whether the NPU probe has seen the QNN runtime kill
@@ -43,9 +44,44 @@ class NpuAvailability(private val prefs: SharedPreferences) {
         prefs.edit().remove(KEY_BLOCKED_REASON).putBoolean(KEY_VERIFIED, true).apply()
     }
 
+    /**
+     * Why Whisper must not use the NPU (issue #159): its probe died or
+     * failed, or a transcription on the NPU failed. `null` when none is on
+     * record. Kept apart from Nemotron's state: the two use different
+     * runtimes (sherpa-onnx's QNN backend and onnxruntime's QNN provider).
+     */
+    fun whisperBlockedReason(): String? = prefs.getString(KEY_WHISPER_BLOCKED_REASON, null)
+
+    /** `true` once Whisper ran cleanly on the NPU and no failure has been seen since. */
+    fun isWhisperVerified(): Boolean = prefs.getBoolean(KEY_WHISPER_VERIFIED, false)
+
+    /** Record that Whisper failed on the NPU; it uses the CPU until checked again. */
+    fun markWhisperFailed(reason: String) {
+        prefs.edit().putString(KEY_WHISPER_BLOCKED_REASON, reason).putBoolean(KEY_WHISPER_VERIFIED, false).apply()
+    }
+
+    /** Record a clean Whisper run on the NPU. */
+    fun markWhisperVerified() {
+        prefs.edit().remove(KEY_WHISPER_BLOCKED_REASON).putBoolean(KEY_WHISPER_VERIFIED, true).apply()
+    }
+
+    /** Forget Whisper's NPU state, e.g. when its model is deleted. */
+    fun clearWhisper() {
+        prefs.edit().remove(KEY_WHISPER_BLOCKED_REASON).remove(KEY_WHISPER_VERIFIED).apply()
+    }
+
     companion object {
         const val PREFS_NAME = "npu_availability"
         private const val KEY_BLOCKED_REASON = "blockedReason"
         private const val KEY_VERIFIED = "verified"
+        private const val KEY_WHISPER_BLOCKED_REASON = "whisperBlockedReason"
+        private const val KEY_WHISPER_VERIFIED = "whisperVerified"
     }
+}
+
+/** Whisper's side of [NpuAvailability], as [com.convoscribe.asr.WhisperEngine] reads and writes it. */
+fun NpuAvailability.whisperState(): WhisperNpuState = object : WhisperNpuState {
+    override fun blockedReason(): String? = whisperBlockedReason()
+    override fun isVerified(): Boolean = isWhisperVerified()
+    override fun markFailed(reason: String) = markWhisperFailed(reason)
 }

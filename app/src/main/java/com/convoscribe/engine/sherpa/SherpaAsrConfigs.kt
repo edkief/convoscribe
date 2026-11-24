@@ -142,4 +142,42 @@ object SherpaAsrConfigs {
         File(modelDir, "decoder.bin"),
         File(modelDir, "joiner.bin")
     )
+
+    /**
+     * The QNN runtime the app bundles (scripts/build-sherpa-onnx.sh).
+     * [contextBinaries] written by another QNN version are not reused
+     * (issue #159 moved from 2.40 to 2.51): they are compiled again on
+     * the next NPU start.
+     */
+    const val QNN_RUNTIME_VERSION = "2.51.0.260929"
+
+    /** Names the QNN version that wrote [contextBinaries] in [modelDir]. */
+    fun runtimeStamp(modelDir: File): File = File(modelDir, "qnn-runtime.txt")
+
+    /**
+     * `true` when every [contextBinaries] file exists and was written by
+     * [QNN_RUNTIME_VERSION], so the next NPU start skips compiling.
+     */
+    fun contextBinariesCurrent(modelDir: File): Boolean = contextBinaries(modelDir).all { it.exists() } &&
+        runCatching { runtimeStamp(modelDir).readText().trim() }.getOrNull() == QNN_RUNTIME_VERSION
+
+    /**
+     * Delete [contextBinaries] left by another QNN version (or with no
+     * stamp, as before issue #159) so QNN compiles them again. Returns
+     * `true` when anything was deleted.
+     */
+    fun dropStaleContextBinaries(modelDir: File): Boolean {
+        val stamp = runCatching { runtimeStamp(modelDir).readText().trim() }.getOrNull()
+        if (stamp == QNN_RUNTIME_VERSION) return false
+        var deleted = false
+        for (file in contextBinaries(modelDir)) {
+            if (file.exists() && file.delete()) deleted = true
+        }
+        return deleted
+    }
+
+    /** Record that the [contextBinaries] in [modelDir] come from [QNN_RUNTIME_VERSION]. */
+    fun markContextBinariesCurrent(modelDir: File) {
+        runtimeStamp(modelDir).writeText(QNN_RUNTIME_VERSION)
+    }
 }

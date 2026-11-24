@@ -9,6 +9,7 @@ import androidx.core.content.getSystemService
 import androidx.room.InvalidationTracker
 import androidx.room.Room
 import com.convoscribe.asr.TranscriberFactory
+import com.convoscribe.asr.WhisperEngine
 import com.convoscribe.asr.server.ServerTranscriber
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioExporter
@@ -35,12 +36,19 @@ import com.convoscribe.diarization.DiarizerFactory
 import com.convoscribe.diarization.EnrollSpeakerUseCase
 import com.convoscribe.diarization.PendingDiarizationRunner
 import com.convoscribe.diarization.SpeakerEmbedderFactory
+import com.convoscribe.engine.qnn.QnnWhisperRecognizer
 import com.convoscribe.engine.sherpa.SherpaAudioCleanerFactory
 import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
 import com.convoscribe.engine.sherpa.SherpaWhisperRecognizer
 import com.convoscribe.enginecheck.NpuAvailability
+import com.convoscribe.enginecheck.NpuProbeClient
+import com.convoscribe.enginecheck.WhisperNpuAutoCheck
+import com.convoscribe.enginecheck.WhisperNpuProbe
+import com.convoscribe.enginecheck.currentSocModel
+import com.convoscribe.enginecheck.whisperSampleFile
+import com.convoscribe.enginecheck.whisperState
 import com.convoscribe.export.ExportFolder
 import com.convoscribe.export.SafExportFolder
 import com.convoscribe.export.SessionExportLoader
@@ -416,13 +424,60 @@ class AppContainer(val context: Context) {
     }
 
     /**
-     * On-device Whisper Large-v3-Turbo (issue #158), on the CPU with the
-     * Settings thread count, with word times borrowed from the streaming
-     * engine. Used after Stop, for imports and for *Re-transcribe*.
+     * On-device Whisper Large-v3-Turbo on the CPU (issue #158), with the
+     * Settings thread count.
      */
-    val whisperRecognizer: SherpaWhisperRecognizer = SherpaWhisperRecognizer(
+    val whisperCpuRecognizer: SherpaWhisperRecognizer = SherpaWhisperRecognizer(
         store = modelStore,
         numThreads = { settingsRepository.settings.value.numThreads }
+    )
+
+    /**
+     * Whisper on the Hexagon NPU (issue #159) with Qualcomm's build for
+     * this device's chip, when it has one.
+     */
+    val whisperNpuRecognizer: QnnWhisperRecognizer = QnnWhisperRecognizer(
+        store = modelStore,
+        socModel = ::currentSocModel,
+        nativeLibraryDir = context.applicationInfo.nativeLibraryDir ?: ""
+    )
+
+    /**
+     * On-device Whisper (issues #158, #159): the NPU once the probe has
+     * run it cleanly on this chip, otherwise the CPU, with a failure on
+     * the NPU recorded in [npuAvailability] and retried on the CPU. Word
+     * times are borrowed from the streaming engine. Used after Stop, for
+     * imports and for *Re-transcribe*.
+     */
+    val whisperRecognizer: WhisperEngine = WhisperEngine(
+        npu = whisperNpuRecognizer,
+        cpu = whisperCpuRecognizer,
+        npuChip = { whisperNpuRecognizer.asset()?.chipName },
+        npuInstalled = whisperNpuRecognizer::isInstalled,
+        cpuInstalled = whisperCpuRecognizer::isAvailable,
+        npuState = npuAvailability.whisperState()
+    )
+
+    /**
+     * Runs Whisper on the NPU in the `:npuprobe` process (issue #159),
+     * like the engine check's Nemotron probe; a dead probe or an error
+     * keeps Whisper on the CPU.
+     */
+    val whisperNpuProbe: WhisperNpuProbe = NpuProbeClient(
+        context = context.applicationContext,
+        availability = npuAvailability,
+        onVerified = settingsRepository::refreshDefaults
+    )
+
+    /**
+     * Checks Whisper on the NPU as soon as its build is downloaded
+     * (issue #159); started in the main process by [ConvoApp].
+     */
+    val whisperNpuAutoCheck = WhisperNpuAutoCheck(
+        downloads = modelDownloadManager.state,
+        probe = whisperNpuProbe,
+        sample = { whisperSampleFile(context.filesDir, context.cacheDir) },
+        scope = applicationScope
     )
 
     val whisperPass: WhisperPass = WhisperPass(
