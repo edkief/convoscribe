@@ -118,13 +118,19 @@ export const lockOwner = (tx: Pick<ReturnType<typeof db>, 'execute'>, owner: str
  * stale push against a live version is a 409 whatever the conflict rule says,
  * and the device merges and pushes again. There is nothing to merge against a
  * tombstone, so the conflict rule still settles that.
+ *
+ * `create` is for a session made in the web app (#163), whose `syncId` the
+ * browser chose: it may only add a new document, or repeat the one already
+ * there. Anything else under that `syncId`, a tombstone included, is a 409,
+ * whatever the conflict rule says, so a create never overwrites a session
+ * and never brings a deleted one back.
  */
 export async function putDocument(
   owner: string,
   kind: Kind,
   syncId: string,
   push: Push,
-  { strict = false, merge = false }: { strict?: boolean; merge?: boolean } = {},
+  { strict = false, merge = false, create = false }: { strict?: boolean; merge?: boolean; create?: boolean } = {},
 ): Promise<DocumentMeta> {
   const actual = createHash('sha256').update(push.manifest).digest('hex');
   if (actual !== push.manifestHash) throw new HttpError(400, 'hash_mismatch', { actual });
@@ -147,6 +153,7 @@ export async function putDocument(
       if (!current || current.deleted) throw new HttpError(404, 'not_found');
       if (current.revision !== push.baseRevision) throw conflict(meta(current));
     }
+    if (create && current && (current.deleted || current.manifestHash !== push.manifestHash)) throw conflict(meta(current));
     if (current && !current.deleted && current.manifestHash === push.manifestHash) return meta(current);
     // Content-addressed, so concurrent pushes never overwrite each other's bytes.
     await blobStore().put(blobKeys.manifest(owner, kind, syncId, push.manifestHash), gzipped);
