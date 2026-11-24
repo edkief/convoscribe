@@ -18,6 +18,7 @@ import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SegmentEntity
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.TokenTimingCodec
 import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.Diarizer
@@ -116,7 +117,9 @@ class RetranscribeUseCaseTest {
         factory: TranscriberFactory,
         cleaners: AudioCleanerFactory? = null,
         server: FileRecognizer? = null,
-        serverAuto: Boolean = false
+        serverAuto: Boolean = false,
+        whisper: WhisperPass? = null,
+        whisperAuto: Boolean = false
     ) = RetranscribeUseCase(
         repository = repo,
         transcriberFactory = factory,
@@ -124,8 +127,40 @@ class RetranscribeUseCaseTest {
         asrDispatcher = Dispatchers.Unconfined,
         cleanerFactory = cleaners,
         server = server,
-        serverAuto = { serverAuto }
+        serverAuto = { serverAuto },
+        whisper = whisper,
+        whisperAuto = { whisperAuto }
     )
+
+    /** On-device Whisper (issue #158): one line with no word times, or [failure]. */
+    private class FakeWhisper(private val failure: Throwable? = null) : FileRecognizer {
+        val calls = mutableListOf<String>()
+        var onTranscribe: () -> Unit = {}
+        override suspend fun transcribe(
+            file: File,
+            language: String,
+            onProgress: (Float) -> Unit
+        ): List<TranscriptEvent.Final> {
+            calls += language
+            onTranscribe()
+            onProgress(0.5f)
+            failure?.let { throw it }
+            return listOf(TranscriptEvent.Final("Hello there.", 0, 2_000))
+        }
+        override fun describe() = EngineInfo("cpu", "asr-whisper-large-v3-turbo-int8")
+    }
+
+    private fun whisperPass(recognizer: FileRecognizer, live: TranscriberFactory, available: Boolean = true) =
+        WhisperPass(recognizer, { available }, live, Dispatchers.Unconfined)
+
+    /** [englishSession] whose line has word times: "hello" at 300 ms, "there" at 1.2 s. */
+    private suspend fun timedSession(): Long {
+        val id = repo.createSession(title = "t", language = "en")
+        WavWriter(File(repo.audioPath(id))).use { it.write(ShortArray(2_000 * 16)) }
+        repo.finishRecording(id, 2_000)
+        repo.addSegment(id, 0, 2_000, "hello there", listOf(TimedToken(" hello", 300), TimedToken(" there", 1_200)))
+        return id
+    }
 
     /** The transcription server (issue #58): two timed lines, or [failure]. */
     private class FakeServer(private val failure: Throwable? = null) : FileRecognizer {
@@ -288,7 +323,7 @@ class RetranscribeUseCaseTest {
         val server = FakeServer()
         val uc = useCase(factory, server = server)
 
-        assertTrue(uc.run(id, "en", onServer = true))
+        assertTrue(uc.run(id, "en", target = RetranscribeTarget.SERVER))
 
         assertTrue(factory.languages.isEmpty())
         assertEquals(listOf(File(repo.getSession(id)!!.audioPath) to "en"), server.calls)
@@ -310,7 +345,7 @@ class RetranscribeUseCaseTest {
         val uc =
             useCase(factory { FrenchTranscriber() }, server = FakeServer(ServerAsrException("HTTP 502 from x: down")))
 
-        assertFalse(uc.run(id, "en", onServer = true))
+        assertFalse(uc.run(id, "en", target = RetranscribeTarget.SERVER))
 
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
         val state = uc.state.value
@@ -322,20 +357,20 @@ class RetranscribeUseCaseTest {
         val id = englishSession()
         val uc = useCase(factory { FrenchTranscriber() })
 
-        assertFalse(uc.run(id, "en", onServer = true))
+        assertFalse(uc.run(id, "en", target = RetranscribeTarget.SERVER))
 
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
         assertTrue(uc.state.value is RetranscribeState.Failed)
     }
 
     @Test
-    fun improveOnServer_replacesTheTranscriptInTheSessionsLanguageWithoutIdentifyingSpeakers() = runTest {
+    fun improveAfterStop_replacesTheTranscriptInTheSessionsLanguageWithoutIdentifyingSpeakers() = runTest {
         val id = englishSession()
         val server = FakeServer()
         val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
 
-        assertTrue(uc.wantsServer(id))
-        assertTrue(uc.improveOnServer(id))
+        assertEquals(RetranscribeTarget.SERVER, uc.afterStopTarget(id))
+        assertTrue(uc.improveAfterStop(id))
 
         assertEquals("en", server.calls.single().second)
         assertEquals(listOf("Hello there.", "General Kenobi."), repo.getSegments(id).map { it.text })
@@ -346,34 +381,34 @@ class RetranscribeUseCaseTest {
     }
 
     @Test
-    fun improveOnServer_doesNothingWhenOff() = runTest {
+    fun improveAfterStop_doesNothingWhenOff() = runTest {
         val id = englishSession()
         val server = FakeServer()
         val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = false)
 
-        assertFalse(uc.wantsServer(id))
-        assertFalse(uc.improveOnServer(id))
+        assertNull(uc.afterStopTarget(id))
+        assertFalse(uc.improveAfterStop(id))
 
         assertTrue(server.calls.isEmpty())
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
     }
 
     @Test
-    fun improveOnServer_neverReplacesAnEditedTranscript() = runTest {
+    fun improveAfterStop_neverReplacesAnEditedTranscript() = runTest {
         val id = englishSession()
         repo.editLineText(repo.getSegments(id).single().id, "hello there, corrected")
         val server = FakeServer()
         val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
 
-        assertFalse(uc.wantsServer(id))
-        assertFalse(uc.improveOnServer(id))
+        assertNull(uc.afterStopTarget(id))
+        assertFalse(uc.improveAfterStop(id))
 
         assertTrue(server.calls.isEmpty())
         assertEquals(listOf("hello there, corrected"), repo.getSegments(id).map { it.text })
     }
 
     @Test
-    fun improveOnServer_failureKeepsTheDeviceTranscriptWithoutAnError() = runTest {
+    fun improveAfterStop_failureKeepsTheDeviceTranscriptWithoutAnError() = runTest {
         val id = englishSession()
         val uc = useCase(
             factory { FrenchTranscriber() },
@@ -381,14 +416,14 @@ class RetranscribeUseCaseTest {
             serverAuto = true
         )
 
-        assertFalse(uc.improveOnServer(id))
+        assertFalse(uc.improveAfterStop(id))
 
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
         assertEquals(RetranscribeState.Idle, uc.state.value)
     }
 
     @Test
-    fun improveOnServer_cancelKeepsTheDeviceTranscript() = runTest {
+    fun improveAfterStop_cancelKeepsTheDeviceTranscript() = runTest {
         val id = englishSession()
         val job = Job()
         val server = object : FileRecognizer {
@@ -404,7 +439,7 @@ class RetranscribeUseCaseTest {
         }
         val uc = useCase(factory { FrenchTranscriber() }, server = server, serverAuto = true)
         try {
-            withContext(job) { uc.improveOnServer(id) }
+            withContext(job) { uc.improveAfterStop(id) }
             fail("expected cancellation")
         } catch (_: CancellationException) {
         }
@@ -472,7 +507,7 @@ class RetranscribeUseCaseTest {
         }
         uc = useCase(factory { FrenchTranscriber() }, cleaners = cleaners, server = server)
 
-        assertTrue(uc.run(id, "en", clean = true, onServer = true))
+        assertTrue(uc.run(id, "en", clean = true, target = RetranscribeTarget.SERVER))
 
         assertTrue(cleaning.isNotEmpty())
         assertTrue(cleaning.all { it })
@@ -533,5 +568,145 @@ class RetranscribeUseCaseTest {
         assertFalse(session.cleanAudioFile().exists())
         assertTrue(dir.listFiles()!!.none { it.name.endsWith(".cleaning.wav") })
         assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+    }
+
+    @Test
+    fun whisper_replacesTheTranscriptWithWordTimesBorrowedFromTheOldOne() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(live, whisper = whisperPass(recognizer, live))
+
+        assertTrue(uc.run(id, "en", target = RetranscribeTarget.WHISPER))
+
+        assertEquals(listOf("en"), recognizer.calls)
+        // The old transcript had word times: no live pass needed.
+        assertTrue(live.languages.isEmpty())
+        val segment = repo.getSegments(id).single()
+        assertEquals("Hello there.", segment.text)
+        assertEquals(listOf(300L, 1_200L), TokenTimingCodec.decode(segment.tokens).map { it.ms })
+        val session = repo.getSession(id)!!
+        assertEquals("cpu", session.asrEngine)
+        assertEquals("asr-whisper-large-v3-turbo-int8", session.asrModel)
+    }
+
+    @Test
+    fun whisper_withoutOldWordTimes_runsTheLiveEngineFirstThenSpreadsWhatItCannotMatch() = runTest {
+        val id = englishSession()
+        val live = factory { FrenchTranscriber() }
+        val uc = useCase(live, whisper = whisperPass(FakeWhisper(), live))
+
+        assertTrue(uc.run(id, "en", target = RetranscribeTarget.WHISPER))
+
+        assertEquals(listOf("en"), live.languages)
+        val tokens = TokenTimingCodec.decode(repo.getSegments(id).single().tokens)
+        assertEquals(listOf(" Hello", " there."), tokens.map { it.text })
+        assertEquals(listOf(0L, 1_000L), tokens.map { it.ms })
+    }
+
+    @Test
+    fun whisper_inAnotherLanguage_doesNotBorrowTheOldWordTimes() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val uc = useCase(live, whisper = whisperPass(FakeWhisper(), live))
+
+        assertTrue(uc.run(id, "fr", target = RetranscribeTarget.WHISPER))
+
+        assertEquals(listOf("fr"), live.languages)
+    }
+
+    @Test
+    fun whisper_runsOnTheDeviceAndSaysSo() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        lateinit var uc: RetranscribeUseCase
+        val seen = mutableListOf<RetranscribeState>()
+        recognizer.onTranscribe = { seen += uc.state.value }
+        uc = useCase(live, whisper = whisperPass(recognizer, live))
+
+        uc.run(id, "en", target = RetranscribeTarget.WHISPER)
+
+        val running = seen.single() as RetranscribeState.Running
+        assertTrue(running.onWhisper)
+        assertTrue(running.onDevice)
+    }
+
+    @Test
+    fun improveAfterStop_withWhisperOn_transcribesWithWhisper() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(live, whisper = whisperPass(recognizer, live), whisperAuto = true)
+
+        assertEquals(RetranscribeTarget.WHISPER, uc.afterStopTarget(id))
+        assertTrue(uc.improveAfterStop(id))
+
+        assertEquals(listOf("Hello there."), repo.getSegments(id).map { it.text })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
+    }
+
+    @Test
+    fun improveAfterStop_serverFirst_thenWhisperWhenTheServerFails() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(
+            live,
+            server = FakeServer(ServerAsrException("HTTP 502 from x: down")),
+            serverAuto = true,
+            whisper = whisperPass(recognizer, live),
+            whisperAuto = true
+        )
+
+        assertEquals(RetranscribeTarget.SERVER, uc.afterStopTarget(id))
+        assertTrue(uc.improveAfterStop(id))
+
+        assertEquals(listOf("en"), recognizer.calls)
+        assertEquals("asr-whisper-large-v3-turbo-int8", repo.getSession(id)!!.asrModel)
+    }
+
+    @Test
+    fun improveAfterStop_serverSucceeds_whisperNotRun() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(
+            live,
+            server = FakeServer(),
+            serverAuto = true,
+            whisper = whisperPass(recognizer, live),
+            whisperAuto = true
+        )
+
+        assertTrue(uc.improveAfterStop(id))
+
+        assertTrue(recognizer.calls.isEmpty())
+        assertEquals("server", repo.getSession(id)!!.asrEngine)
+    }
+
+    @Test
+    fun improveAfterStop_whisperNotDownloaded_doesNothing() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(live, whisper = whisperPass(recognizer, live, available = false), whisperAuto = true)
+
+        assertNull(uc.afterStopTarget(id))
+        assertFalse(uc.improveAfterStop(id))
+        assertTrue(recognizer.calls.isEmpty())
+    }
+
+    @Test
+    fun improveAfterStop_whisperFailureKeepsTheDeviceTranscriptWithoutAnError() = runTest {
+        val id = timedSession()
+        val live = factory { FrenchTranscriber() }
+        val failing = whisperPass(FakeWhisper(IllegalStateException("oom")), live)
+        val uc = useCase(live, whisper = failing, whisperAuto = true)
+
+        assertFalse(uc.improveAfterStop(id))
+
+        assertEquals(listOf("hello there"), repo.getSegments(id).map { it.text })
+        assertEquals(RetranscribeState.Idle, uc.state.value)
     }
 }

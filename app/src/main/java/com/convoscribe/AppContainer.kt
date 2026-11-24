@@ -39,6 +39,7 @@ import com.convoscribe.engine.sherpa.SherpaAudioCleanerFactory
 import com.convoscribe.engine.sherpa.SherpaDiarizerFactory
 import com.convoscribe.engine.sherpa.SherpaSpeakerEmbedderFactory
 import com.convoscribe.engine.sherpa.SherpaTranscriberFactory
+import com.convoscribe.engine.sherpa.SherpaWhisperRecognizer
 import com.convoscribe.enginecheck.NpuAvailability
 import com.convoscribe.export.ExportFolder
 import com.convoscribe.export.SafExportFolder
@@ -66,6 +67,7 @@ import com.convoscribe.recording.PendingImport
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeUseCase
+import com.convoscribe.recording.WhisperPass
 import com.convoscribe.service.PendingDiarizationScheduler
 import com.convoscribe.service.SemanticIndexScheduler
 import com.convoscribe.service.SyncScheduler
@@ -414,6 +416,22 @@ class AppContainer(val context: Context) {
     }
 
     /**
+     * On-device Whisper Large-v3-Turbo (issue #158), on the CPU with the
+     * Settings thread count, with word times borrowed from the streaming
+     * engine. Used after Stop, for imports and for *Re-transcribe*.
+     */
+    val whisperRecognizer: SherpaWhisperRecognizer = SherpaWhisperRecognizer(
+        store = modelStore,
+        numThreads = { settingsRepository.settings.value.numThreads }
+    )
+
+    val whisperPass: WhisperPass = WhisperPass(
+        recognizer = whisperRecognizer,
+        available = whisperRecognizer::isAvailable,
+        liveFactory = transcriberFactory
+    )
+
+    /**
      * Re-transcribes a session's stored audio in another language and
      * re-identifies its speakers (issue #6). Run by the foreground
      * service; its [RetranscribeUseCase.state] drives the session
@@ -425,7 +443,9 @@ class AppContainer(val context: Context) {
         diarize = diarizeSessionUseCase,
         cleanerFactory = audioCleanerFactory,
         server = serverTranscriber,
-        serverAuto = { settingsRepository.settings.value.asrServerAutoActive }
+        serverAuto = { settingsRepository.settings.value.asrServerAutoActive },
+        whisper = whisperPass,
+        whisperAuto = { settingsRepository.settings.value.whisperAuto }
     )
 
     /**
@@ -444,7 +464,9 @@ class AppContainer(val context: Context) {
         workDir = File(context.cacheDir, "imports"),
         defaultOptions = { ConversationOptions.fromSettings(settingsRepository.settings.value) },
         server = serverTranscriber,
-        useServer = { settingsRepository.settings.value.asrServerAutoActive }
+        useServer = { settingsRepository.settings.value.asrServerAutoActive },
+        whisper = whisperPass,
+        useWhisper = { settingsRepository.settings.value.whisperAuto }
     )
 
     /**

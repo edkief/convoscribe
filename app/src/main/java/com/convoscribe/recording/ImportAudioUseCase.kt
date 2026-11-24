@@ -79,7 +79,9 @@ class ImportSource(val displayName: String?, val sizeBytes: Long?, val open: () 
  *  3. transcribe the WAV with [FileTranscriber], in the language of
  *     [defaultOptions] (the Settings defaults); on the transcription
  *     [server] instead when [useServer] says so (issue #58), falling
- *     back to the device if the server fails;
+ *     back to the device if the server fails; with on-device Whisper
+ *     ([whisper]) when [useWhisper] says so (issue #158), after the
+ *     server or if it failed, falling back to the streaming engine;
  *  4. create the session, its transcript and its recording in one
  *     transaction ([SessionRepository.createImportedSession]);
  *  5. identify speakers with [diarize], as after a recording.
@@ -99,7 +101,9 @@ class ImportAudioUseCase(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val clock: () -> Long = System::currentTimeMillis,
     private val server: FileRecognizer? = null,
-    private val useServer: () -> Boolean = { false }
+    private val useServer: () -> Boolean = { false },
+    private val whisper: WhisperPass? = null,
+    private val useWhisper: () -> Boolean = { false }
 ) {
     private val _state = MutableStateFlow<ImportState>(ImportState.Idle)
     val state: StateFlow<ImportState> = _state.asStateFlow()
@@ -192,7 +196,8 @@ class ImportAudioUseCase(
 
     /**
      * Transcribe [wav] on the server when [useServer] says so, else (or
-     * if the server fails) on the device, with the engine that did it.
+     * if the server fails) with Whisper when [useWhisper] says so, else
+     * (or if that fails) with the streaming engine, and say which did it.
      */
     private suspend fun transcribe(
         wav: File,
@@ -207,6 +212,18 @@ class ImportAudioUseCase(
                 throw ce
             } catch (t: Throwable) {
                 Log.w(TAG, "server transcription failed for import $name; transcribing on the device", t)
+                report(0f)
+            }
+        }
+        if (whisper != null && useWhisper() && whisper.isAvailable()) {
+            try {
+                // No transcript yet: Whisper's word times come from a
+                // quick streaming pass it runs first.
+                return whisper.transcribe(wav, language, anchors = emptyList(), report) to whisper.describe()
+            } catch (ce: CancellationException) {
+                throw ce
+            } catch (t: Throwable) {
+                Log.w(TAG, "Whisper failed for import $name; using the streaming engine", t)
                 report(0f)
             }
         }

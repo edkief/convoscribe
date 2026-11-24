@@ -98,6 +98,7 @@ class SettingsRepository(
             putString(KEY_ASR_SERVER_URL, next.asrServerUrl)
             putString(KEY_ASR_SERVER_MODEL, next.asrServerModel)
             putBoolean(KEY_ASR_SERVER_AUTO, next.asrServerAuto)
+            putBoolean(KEY_WHISPER_AUTO, next.whisperAuto)
             putString(KEY_SYNC_SERVER_URL, next.syncServerUrl)
             putBoolean(KEY_SYNC_ENABLED, next.syncEnabled)
             putBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, next.syncAudioOnMobileData)
@@ -293,6 +294,7 @@ class SettingsRepository(
             asrServerUrl = (prefs.getString(KEY_ASR_SERVER_URL, "") ?: "").trim().trimEnd('/'),
             asrServerModel = prefs.getString(KEY_ASR_SERVER_MODEL, "") ?: "",
             asrServerAuto = prefs.getBoolean(KEY_ASR_SERVER_AUTO, false),
+            whisperAuto = prefs.getBoolean(KEY_WHISPER_AUTO, false),
             syncServerUrl = (prefs.getString(KEY_SYNC_SERVER_URL, "") ?: "").trim().trimEnd('/'),
             syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
             syncAudioOnMobileData = prefs.getBoolean(KEY_SYNC_AUDIO_ON_MOBILE_DATA, false),
@@ -421,6 +423,7 @@ class SettingsRepository(
         const val KEY_ASR_SERVER_URL = "asrServerUrl"
         const val KEY_ASR_SERVER_MODEL = "asrServerModel"
         const val KEY_ASR_SERVER_AUTO = "asrServerAuto"
+        const val KEY_WHISPER_AUTO = "whisperAuto"
         const val KEY_SYNC_SERVER_URL = "syncServerUrl"
         const val KEY_SYNC_ENABLED = "syncEnabled"
         const val KEY_SYNC_AUDIO_ON_MOBILE_DATA = "syncAudioOnMobileData"

@@ -95,7 +95,11 @@ import com.convoscribe.llm.SummaryTemplates
  * means none. Plain `http://` is allowed, as for the LLM endpoint,
  * and Settings warns about it. [asrServerModel] is the model asked
  * for (blank: the server's first one); its API key lives in
- * [SecretStore]. [asrServerAuto] sends each stopped recording and each
+ * [SecretStore]. [whisperAuto] transcribes each stopped recording and each
+ * import again on the phone with Whisper Large-v3-Turbo (issue #158),
+ * once it is downloaded, after the server or if the server fails; like
+ * the ASR engine, it depends on the phone, so backups leave it out.
+ * [asrServerAuto] sends each stopped recording and each
  * import to the server, keeping the device transcript if that fails.
  *
  * [syncServerUrl] is the base URL of the self-hosted sync server
@@ -155,6 +159,7 @@ data class AppSettings(
     val asrServerUrl: String = "",
     val asrServerModel: String = "",
     val asrServerAuto: Boolean = false,
+    val whisperAuto: Boolean = false,
     val syncServerUrl: String = "",
     val syncEnabled: Boolean = false,
     val syncAudioOnMobileData: Boolean = false,

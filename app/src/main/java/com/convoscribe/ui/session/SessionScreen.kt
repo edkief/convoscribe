@@ -77,6 +77,7 @@ import com.convoscribe.models.ModelCatalog
 import com.convoscribe.recording.ImportState
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
+import com.convoscribe.recording.RetranscribeTarget
 import com.convoscribe.service.RecordingService
 import com.convoscribe.settings.SpeakerIdMode
 import com.convoscribe.ui.actions.ActionItemIntents
@@ -475,7 +476,12 @@ fun SessionScreen(
                     vm.stopPlayback()
                     ContextCompat.startForegroundService(
                         context,
-                        RecordingService.retranscribeIntent(context, sessionId, language, onServer = onServer)
+                        RecordingService.retranscribeIntent(
+                            context,
+                            sessionId,
+                            language,
+                            target = if (onServer) RetranscribeTarget.SERVER else RetranscribeTarget.DEVICE
+                        )
                     )
                 }
             },

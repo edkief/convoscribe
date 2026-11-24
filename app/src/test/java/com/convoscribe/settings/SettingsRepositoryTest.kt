@@ -57,6 +57,15 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun whisperAuto_defaultOff_andPersists() {
+        // Issue #158: on-device Whisper after Stop is opt-in.
+        val repo = newRepository()
+        assertEquals(false, repo.settings.value.whisperAuto)
+        repo.update { it.copy(whisperAuto = true) }
+        assertEquals(true, newRepository().settings.value.whisperAuto)
+    }
+
+    @Test
     fun updateSettings_autoCheckOnAndPreReleasesOff_andPersist() {
         val repo = newRepository()
         assertEquals(true, repo.settings.value.updateCheckAuto)

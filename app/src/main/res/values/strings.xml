@@ -54,6 +54,7 @@
     <string name="notification_paused_title">Paused</string>
     <string name="notification_retranscribe_title">Re-transcribing</string>
     <string name="notification_server_title">Transcribing on the server</string>
+    <string name="notification_whisper_title">Transcribing with Whisper</string>
     <string name="notification_retranscribe_text">%1$d%% of the recording</string>
     <string name="notification_cleanup_text">Cleaning up audio, %1$d%%</string>
     <string name="notification_retranscribe_cancel">Cancel</string>
