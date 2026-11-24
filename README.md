@@ -707,10 +707,10 @@ them from the sherpa image with podman or docker. Two images
 (Containerfiles in `docker/`, build context the repo root) make this
 work in CI:
 
-- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>-jni<tag>` is a
+- `convoscribe-sherpa:<sherpa>-qnn<qnn>-ort<onnxruntime>-jni<version>` is a
   `FROM scratch` image holding only `/sherpa/jniLibs/arm64-v8a/*.so`
-  (sherpa-onnx's libraries and the onnxruntime JNI library rebuilt
-  against them) and `/sherpa/libs/*.jar`. Its tag comes from the pins in
+  (sherpa-onnx's libraries and the onnxruntime JNI library matching
+  them) and `/sherpa/libs/*.jar`. Its tag comes from the pins in
   `scripts/build-sherpa-onnx.sh` and `scripts/build-onnxruntime-jni.sh`,
   so you rebuild it only when a pin changes.
 - `convoscribe-android-builder:<sherpa tag>-tc<hash>` has JDK 17, the
@@ -1297,23 +1297,26 @@ features enabled.
 
 1. Shallow-clones the `v1.13.8` tag of `k2-fsa/sherpa-onnx` into
    `~/.local/share/convoscribe-toolchain/sherpa-onnx-build/`.
-2. Downloads the **Qualcomm QNN 2.40.0.251030** C headers and runtime
-   shared libraries from the
-   [sherpa-onnx QNN assets release](https://github.com/k2-fsa/sherpa-onnx/releases/tag/asr-models-qnn).
+2. Downloads the **Qualcomm AI Runtime (QAIRT) SDK 2.51.0.260929** (a
+   public 3 GB zip from Qualcomm, checked against its sha256) and
+   extracts only the QNN C headers and the Android HTP runtime. QNN 2.51
+   is what Qualcomm's precompiled Whisper builds need (issue #159).
 3. Runs the upstream `build-android-arm64-v8a.sh` with
    `SHERPA_ONNX_ENABLE_QNN=ON`, `SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=ON`,
    `SHERPA_ONNX_ENABLE_TTS=OFF`, `SHERPA_ONNX_ENABLE_BINARY=OFF`,
    `SHERPA_ONNX_ENABLE_C_API=OFF`, `SHERPA_ONNX_ENABLE_JNI=ON` and
-   `BUILD_SHARED_LIBS=ON`. This fetches a prebuilt onnxruntime
-   (`csukuangfj/onnxruntime-libs`) and links it as a shared library.
+   `BUILD_SHARED_LIBS=ON`. This fetches a prebuilt onnxruntime **1.30.0**
+   (`csukuangfj/onnxruntime-libs`, built with the QNN execution provider)
+   and links it as a shared library.
 4. Copies `libsherpa-onnx-jni.so` + `libonnxruntime.so` from
    `build-android-arm64-v8a/install/lib/` and the QNN runtime
    (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnSystem.so`,
-   `libQnnHtpV{68,69,73,75,79,81}{Skel,Stub}.so`) into
+   `libQnnHtpV{68,69,73,75,79,81,85}{Skel,Stub}.so`) into
    `app/src/main/jniLibs/arm64-v8a/`.
 5. Verifies the resulting `libsherpa-onnx-jni.so` exports both
    `Java_com_k2fsa_sherpa_onnx_OfflineSpeakerDiarization` and the
-   `prependAdspLibraryPath` symbol (QNN path).
+   `prependAdspLibraryPath` symbol (QNN path), binds to onnxruntime
+   `VERS_1.30.0`, and that `libonnxruntime.so` has the QNN provider.
 6. Downloads `sherpa-onnx-1.13.8.aar`, checks its sha256 against
    `633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96`,
    and extracts the AAR's `classes.jar` into
@@ -1322,24 +1325,32 @@ features enabled.
 
 The build takes **10-30 minutes** on a fresh checkout. Re-runs are
 idempotent: a second `bash scripts/build-sherpa-onnx.sh` prints
-`sherpa-onnx native libs OK` and exits 0. Pass `--force` to wipe
-`$WORK` and rebuild from scratch.
+`sherpa-onnx native libs OK` and exits 0. The versions it built are
+recorded in `app/src/main/jniLibs/arm64-v8a/.runtime-versions`, so a
+tree built with older pins is rebuilt automatically. Pass `--force` to
+wipe `$WORK` and rebuild from scratch.
+
+After an upgrade of the QNN runtime, Nemotron's cached context binaries
+(`encoder.bin`, `decoder.bin`, `joiner.bin` next to the model) are
+compiled again on the next NPU start: the app stamps them with the QNN
+version that wrote them (`qnn-runtime.txt`).
 
 ### onnxruntime JNI library
 
-Semantic search runs its text model through onnxruntime's Java API
-(the `onnxruntime-android` AAR). That AAR's JNI library binds to its own
-runtime's symbol version (`VERS_1.28.0`), and Android refuses to load it
-against the 1.28.2 runtime sherpa-onnx ships. That runtime has to stay
-because it carries the QNN provider. `scripts/build-onnxruntime-jni.sh`
-(also run by `scripts/setup-toolchain.sh`) does three things:
+Semantic search and Whisper on the NPU run through onnxruntime's Java
+API (the `onnxruntime-android` AAR). The AAR's own runtime has no QNN
+provider, so the app ships sherpa-onnx's runtime instead, and the JNI
+library must bind to that runtime's symbol version or Android refuses
+to load it. `scripts/build-onnxruntime-jni.sh` (also run by
+`scripts/setup-toolchain.sh`):
 
-1. Sparse-clones onnxruntime `v1.28.0` (the AAR's version) into
-   `~/.local/share/convoscribe-toolchain/onnxruntime-jni-build/`.
-2. Generates the JNI headers with `javac -h`.
-3. Compiles the JNI sources with the NDK, without training, CUDA or
-   TensorRT. It links them against `app/src/main/jniLibs/arm64-v8a/libonnxruntime.so`
-   and writes `libonnxruntime4j_jni.so` next to it.
+1. Downloads `onnxruntime-android-1.30.0.zip` from
+   `csukuangfj/onnxruntime-libs` (the release sherpa-onnx links against)
+   and checks its sha256.
+2. Checks that its `libonnxruntime.so` is the one in
+   `app/src/main/jniLibs/arm64-v8a/`, then copies the matching
+   `libonnxruntime4j_jni.so` next to it.
+3. Checks that the library binds to `VERS_1.30.0`.
 
 The packaging rules in `app/build.gradle.kts` keep these two libraries
 over the AAR's. Run it again after rebuilding sherpa-onnx.

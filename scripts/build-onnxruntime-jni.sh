@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Build onnxruntime's Java JNI library (`libonnxruntime4j_jni.so`) for
-# arm64-v8a against the `libonnxruntime.so` that
-# scripts/build-sherpa-onnx.sh puts in app/src/main/jniLibs (issue #61).
+# Put onnxruntime's Java JNI library (`libonnxruntime4j_jni.so`) for
+# arm64-v8a next to the `libonnxruntime.so` that
+# scripts/build-sherpa-onnx.sh puts in app/src/main/jniLibs (issues #61,
+# #159).
 #
-# Why: the text embedder uses onnxruntime's Java API from the
-# `onnxruntime-android` AAR, but that AAR's JNI library binds to
-# `OrtGetApiBase@VERS_1.28.0` while the runtime we ship (sherpa-onnx's,
-# built with the QNN provider) only defines `VERS_1.28.2`, so Android's
-# linker refuses to load it. Compiling the same tag's JNI sources and
-# linking them against our runtime gives a library that binds to it.
+# Why: the text embedder (#61) and Whisper on the NPU (#159) use
+# onnxruntime's Java API from the `onnxruntime-android` AAR, but that
+# AAR's runtime has no QNN execution provider, so the app ships
+# sherpa-onnx's runtime instead (csukuangfj/onnxruntime-libs, built with
+# the QNN provider) and the JNI library has to bind to that runtime's
+# symbol version (`OrtGetApiBase@VERS_<version>`), or Android's linker
+# refuses to load it. The same onnxruntime-libs release ships a JNI
+# library built against that runtime; this script takes it from there.
 # The app's copy replaces the AAR's at packaging (app/build.gradle.kts).
-#
-# Training, CUDA and TensorRT sources are left out: the app uses none of
-# them, and their Java entry points then fail only if called.
 #
 # Run after scripts/build-sherpa-onnx.sh; takes under a minute.
 set -euo pipefail
@@ -21,13 +21,15 @@ cd "$(dirname "$0")/.."
 # shellcheck disable=SC1091
 source scripts/env.sh
 
-# Must match `onnxruntime` in gradle/libs.versions.toml (the Java classes).
-ORT_TAG=v1.28.0
+# Must match ONNXRUNTIME_VERSION in scripts/build-sherpa-onnx.sh and
+# `onnxruntime` in gradle/libs.versions.toml (the Java classes).
+ORT_VERSION=1.30.0
+ORT_ZIP_URL="https://github.com/csukuangfj/onnxruntime-libs/releases/download/v$ORT_VERSION/onnxruntime-android-$ORT_VERSION.zip"
+ORT_ZIP_SHA256="150d1fd3356220e7539e17cb4ec81a7f6649218e5d2bab5afbeef6e23daf9641"
 
 WORK="$HOME/.local/share/convoscribe-toolchain/onnxruntime-jni-build"
-SRC="$WORK/onnxruntime-$ORT_TAG"
+ZIP="$WORK/onnxruntime-android-$ORT_VERSION.zip"
 OUT="app/src/main/jniLibs/arm64-v8a"
-API=29
 
 log() {
   echo "[build-onnxruntime-jni] $*"
@@ -38,50 +40,40 @@ if [[ ! -f "$OUT/libonnxruntime.so" ]]; then
   exit 1
 fi
 
-if [[ ! -d "$SRC/java/src/main/native" ]]; then
-  log "Fetching onnxruntime $ORT_TAG JNI sources and headers ..."
-  mkdir -p "$WORK"
-  rm -rf "$SRC"
-  git -c advice.detachedHead=false clone -q --depth 1 --branch "$ORT_TAG" --filter=blob:none --sparse \
-    https://github.com/microsoft/onnxruntime.git "$SRC"
-  git -C "$SRC" sparse-checkout set java/src/main/native java/src/main/java java/src/main/jvm include/onnxruntime/core/session include/onnxruntime/core/providers
+mkdir -p "$WORK"
+if [[ ! -f "$ZIP" ]]; then
+  log "Downloading onnxruntime-libs $ORT_VERSION for Android ..."
+  curl --fail --location --silent --show-error --retry 3 --retry-delay 5 -o "$ZIP.part" "$ORT_ZIP_URL"
+  mv "$ZIP.part" "$ZIP"
+fi
+actual_sha=$(sha256sum "$ZIP" | awk '{print $1}')
+if [[ "$actual_sha" != "$ORT_ZIP_SHA256" ]]; then
+  echo "ERROR: onnxruntime-android-$ORT_VERSION.zip sha256 mismatch." >&2
+  echo "  expected: $ORT_ZIP_SHA256" >&2
+  echo "  actual  : $actual_sha" >&2
+  rm -f "$ZIP"
+  exit 1
 fi
 
-# CMake normally generates this; the JNI sources only read ORT_VERSION
-# from it (HAS_REALLOCARRAY left undefined selects the portable path).
-CONFIG_DIR="$WORK/config"
-mkdir -p "$CONFIG_DIR"
-printf '#pragma once\n#define ORT_VERSION "%s"\n' "${ORT_TAG#v}" > "$CONFIG_DIR/onnxruntime_config.h"
+EXTRACT="$WORK/extract-$ORT_VERSION"
+rm -rf "$EXTRACT"
+unzip -q -o "$ZIP" "jni/arm64-v8a/*" -d "$EXTRACT"
 
-# The JNI headers (prototypes and constants) come from the Java sources,
-# as onnxruntime's own build makes them with `javac -h`.
-HEADERS="$WORK/jni-headers"
-rm -rf "$HEADERS"
-log "Generating JNI headers ..."
-# shellcheck disable=SC2046
-"$JAVA_HOME/bin/javac" -nowarn -h "$HEADERS" -d "$HEADERS/classes" \
-  $(find "$SRC/java/src/main/java" "$SRC/java/src/main/jvm" -name '*.java')
-
-CC="$(ls "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/aarch64-linux-android$API-clang)"
-SOURCES=()
-for file in "$SRC"/java/src/main/native/*.c; do
-  case "$(basename "$file")" in
-    *Training* | *CUDA* | *TensorRT*) ;;
-    *) SOURCES+=("$file") ;;
-  esac
-done
-
-log "Compiling ${#SOURCES[@]} sources with $(basename "$CC") ..."
-"$CC" -shared -fPIC -O2 -std=c11 \
-  -I "$SRC/include" -I "$SRC/include/onnxruntime/core/session" -I "$SRC/java/src/main/native" -I "$CONFIG_DIR" -I "$HEADERS" \
-  -Wl,-soname,libonnxruntime4j_jni.so -Wl,--no-undefined -Wl,-z,max-page-size=16384 \
-  "${SOURCES[@]}" \
-  -L "$OUT" -lonnxruntime -llog -landroid \
-  -o "$OUT/libonnxruntime4j_jni.so"
+# The JNI library must come from the same build as the shipped runtime.
+if ! cmp -s "$EXTRACT/jni/arm64-v8a/libonnxruntime.so" "$OUT/libonnxruntime.so"; then
+  echo "ERROR: $OUT/libonnxruntime.so is not the onnxruntime-libs $ORT_VERSION runtime." >&2
+  echo "       Rebuild with bash scripts/build-sherpa-onnx.sh (ONNXRUNTIME_VERSION=$ORT_VERSION)." >&2
+  exit 1
+fi
+cp "$EXTRACT/jni/arm64-v8a/libonnxruntime4j_jni.so" "$OUT/libonnxruntime4j_jni.so"
+rm -rf "$EXTRACT"
 
 READELF="$(ls "$ANDROID_NDK"/toolchains/llvm/prebuilt/*/bin/llvm-readelf)"
-if "$READELF" --dyn-syms "$OUT/libonnxruntime4j_jni.so" | grep -q "OrtGetApiBase@VERS_1.28.0"; then
-  echo "ERROR: libonnxruntime4j_jni.so still binds to VERS_1.28.0." >&2
+# Capture first: with pipefail, `grep -q` closing the pipe early would
+# fail the pipeline through readelf's SIGPIPE.
+JNI_SYMS="$("$READELF" --dyn-syms "$OUT/libonnxruntime4j_jni.so")"
+if ! grep -q "OrtGetApiBase@VERS_$ORT_VERSION" <<<"$JNI_SYMS"; then
+  echo "ERROR: libonnxruntime4j_jni.so does not bind to VERS_$ORT_VERSION." >&2
   exit 1
 fi
 log "Wrote $OUT/libonnxruntime4j_jni.so"
