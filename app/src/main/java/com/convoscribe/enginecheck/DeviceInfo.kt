@@ -96,6 +96,16 @@ data class DeviceInfo(
 }
 
 /**
+ * `Build.SOC_MODEL` (e.g. `SM8650`), or `null` before Android 12 or when
+ * the device does not say. Picks the Whisper NPU build (issue #159).
+ */
+fun currentSocModel(): String? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+    Build.SOC_MODEL.takeUnless { it.isNullOrBlank() || it == Build.UNKNOWN }
+} else {
+    null
+}
+
+/**
  * Render [info] and [results] as a plain-text report that the
  * engine-check screen's `Copy report` button puts on the
  * clipboard and the share button sends through `ACTION_SEND`.

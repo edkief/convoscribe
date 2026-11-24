@@ -51,4 +51,15 @@ class WhisperCheckTest {
         assertEquals("Model not installed: x", result.error)
         assertEquals(1_000L, result.audioMs)
     }
+
+    @Test
+    fun npuCheck_isReportedAsWhisperNpu() = runTest {
+        // Issue #159: the probe's run on the NPU is named apart from the CPU one.
+        val sample = clip(1_000)
+        val ok = measureWhisper(Fake(), sample, engine = WHISPER_NPU_ENGINE) { 0L }
+        assertEquals("whisper-npu", ok.engine)
+        val failed = measureWhisper(Fake(IllegalStateException("QNN")), sample, engine = WHISPER_NPU_ENGINE) { 0L }
+        assertEquals("whisper-npu", failed.engine)
+        assertEquals("QNN", failed.error)
+    }
 }

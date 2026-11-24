@@ -286,7 +286,8 @@
             cannot create the HTP device (e.g. the Boox Note Air 6C,
             whose SoC has the NSP fused off); in-process that closes the
             whole app. Here only `:npuprobe` dies and the engine check
-            reports why. Bound-only, never exported.
+            reports why. It also checks Whisper on the NPU (issue #159)
+            before the app uses it. Bound-only, never exported.
         -->
         <service
             android:name=".service.NpuProbeService"

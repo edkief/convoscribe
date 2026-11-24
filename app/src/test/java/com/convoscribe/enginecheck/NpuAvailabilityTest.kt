@@ -43,4 +43,28 @@ class NpuAvailabilityTest {
         assertTrue(availability.isVerified())
         assertNull(availability.blockedReason())
     }
+
+    @Test
+    fun whisperState_isSeparateFromNemotrons() {
+        // Issue #159: a Whisper failure on the NPU does not block Nemotron.
+        availability.markVerified()
+        availability.markWhisperFailed("QNN context failed")
+
+        assertEquals("QNN context failed", availability.whisperBlockedReason())
+        assertEquals(false, availability.isWhisperVerified())
+        assertEquals(null, availability.blockedReason())
+        assertEquals(true, availability.isVerified())
+    }
+
+    @Test
+    fun whisperVerified_clearsTheFailure_andClearWhisperForgetsBoth() {
+        availability.markWhisperFailed("died")
+        availability.markWhisperVerified()
+        assertEquals(null, availability.whisperBlockedReason())
+        assertEquals(true, availability.isWhisperVerified())
+
+        availability.clearWhisper()
+        assertEquals(null, availability.whisperBlockedReason())
+        assertEquals(false, availability.isWhisperVerified())
+    }
 }

@@ -24,6 +24,8 @@ class ConvoApp : Application() {
         // not run there: it would see an idle controller and patch
         // the session the main process may be recording right now.
         if (Application.getProcessName()?.contains(':') == true) return
+        // Check Whisper on the NPU once its build is downloaded (issue #159).
+        container.whisperNpuAutoCheck.start()
         // Whether any activity is visible, for the floating control.
         // Coming to the foreground also runs the update check when it
         // is due (issue #41), not only a fresh start, and refreshes what
