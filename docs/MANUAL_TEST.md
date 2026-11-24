@@ -3149,6 +3149,47 @@ with the regression checks.
 - Step 9: the NPU build, tokens, VAD and any CPU model are removed; the
   card offers the NPU download again.
 
+## 69. Live Whisper, experimental (issue #160)
+
+Use a phone with Whisper downloaded (section 67 or 68), and a
+conversation of a few minutes with natural pauses, including one stretch
+of 20 s or more without a pause.
+
+**Steps**
+
+1. Settings → Whisper card with Whisper deleted: look at *Transcribe
+   while recording (experimental)*. Download Whisper.
+2. Turn it on. Leave *Longest segment* at 10 s. Turn on *Transcribe
+   again with Whisper* too.
+3. Record the conversation for 2–3 minutes; Pause for a few seconds in
+   the middle, then Resume. Stop.
+4. Open the session's info, play it and tap a few words.
+5. Set *Longest segment* to 5 s and record the 20 s stretch again; then
+   28 s and again.
+6. On the CPU (a phone without an NPU build, or the CPU model only):
+   record 3 minutes of continuous talk and watch the Record screen.
+   Stop.
+7. Turn the setting off and record 30 s.
+
+**Expected**
+
+- Step 1: the switch is greyed out until Whisper is downloaded; then the
+  *Longest segment* slider appears under it when it is on.
+- Step 3: the Record screen shows no captions while someone talks; each
+  line appears a few seconds after a pause, and *Whisper is
+  transcribing N segments…* while it works. Pause shows the line before
+  the pause. Stop flushes the last line. Nothing is lost from the
+  recording; speakers are identified after Stop. The *Transcribing with
+  Whisper* notification does **not** appear after Stop.
+- Step 4: session info shows the Whisper model and `npu` or `cpu`.
+  Tapping a word seeks close to it (word times are spread evenly).
+- Step 5: at 5 s, lines arrive every ~5 s during the long stretch; at
+  28 s, one late line. The phone warms faster at 5 s.
+- Step 6: if Whisper falls behind, N grows but recording continues and
+  the timer keeps running; Stop shows *Finishing…* until the queue is
+  empty, then every line is there.
+- Step 7: live captions come from Kroko / Nemotron again.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

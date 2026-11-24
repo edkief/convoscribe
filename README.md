@@ -121,7 +121,9 @@ brings them to your other devices.
   Cancel keeps the live one. *Re-transcribe…* in a session's menu offers
   *Whisper on this phone* once it is downloaded. It runs on the Hexagon
   NPU of Snapdragon chips Qualcomm publishes a build for (#159), and on
-  the CPU elsewhere. See [*Whisper on the phone*](#whisper-on-the-phone).
+  the CPU elsewhere. *Transcribe while recording (experimental)* (#160)
+  makes the live transcript come from Whisper too, a line a few seconds
+  after each pause. See [*Whisper on the phone*](#whisper-on-the-phone).
 - **Import an audio file** as a session: *Import audio…* in Recordings' menu, or
   share a voice note to ConvoScribe / *Open with* it from a file
   manager. Any format Android can decode (MP3, M4A/AAC, OGG/Opus,
@@ -1141,7 +1143,8 @@ CONVOSCRIBE_ASR_SAMPLE_WAV=/path/to/16k-speech.wav \
 
 Whisper Large-v3-Turbo (#158) is an on-device, whole-recording engine
 next to the transcription server. It does not stream (it reads 30 s at
-a time), so it never replaces the live transcript while you record:
+a time), so by default the live transcript while you record stays with
+the streaming engine:
 
 - **After Stop and for imports**, with *Transcribe again with Whisper*
   on. With *Improve recordings on the server* also on, the server goes
@@ -1149,6 +1152,8 @@ a time), so it never replaces the live transcript while you record:
 - **Re-transcribe…** → *Whisper on this phone*, whatever the setting.
 - **Engine check** → *Check Whisper* times it on the English sample
   clip (model loading included) and shows what it heard.
+- **While recording** (experimental, #160), with *Transcribe while
+  recording (experimental)* on. See [*Live Whisper*](#live-whisper-experimental).
 
 How it works: Silero VAD cuts the recording into speech segments of at
 most 28 s, and Whisper turns each into one transcript line. The model is
@@ -1163,6 +1168,44 @@ loaded for each recording and released afterwards.
 - **On the CPU** everywhere else: sherpa-onnx's offline Whisper
   recognizer with the int8 export (about 1 GB), with the Settings
   thread count.
+
+### Live Whisper (experimental)
+
+*Transcribe while recording (experimental)* on the Whisper card makes
+Whisper write the live transcript in place of Kroko / Nemotron (#160).
+Silero VAD cuts the incoming audio at pauses of 0.5 s, and each stretch
+of speech becomes a line once Whisper has decoded it. *Longest segment*
+(5–28 s, default 10 s) cuts a long stretch without a pause, so a
+monologue doesn't wait 28 s for its first line. Both take effect from
+the next recording; neither is backed up.
+
+What it costs:
+
+- **Lag.** A line appears a few seconds after the pause that ends it:
+  the segment's length plus Whisper's time for it. There are no partial
+  captions while someone talks. The Record screen says *Whisper is
+  transcribing N segments…* while segments wait.
+- **CPU, battery and heat.** Whisper reads a 30 s window whatever the
+  segment's length, so a short segment costs about as much as a long
+  one: a shorter *Longest segment* means more decodes per minute, and
+  slightly lower accuracy where a segment is cut. The NPU build keeps up
+  easily; on the CPU, Whisper can fall behind on a slow phone.
+- **Memory.** The model stays loaded for the whole recording: about
+  1 GB on the CPU, 2.2 GB on the NPU.
+- **Word times** are spread evenly over each line (Whisper's own are
+  #161), so tap-to-seek and the speaker split of a line are
+  approximate.
+
+Recording never waits for Whisper: when it falls behind, segments queue
+in memory (about 64 KB per second of speech) and nothing is dropped.
+Pause and Stop wait for the queue to empty, so Stop can take a while
+after a long backlog. If Whisper fails on the NPU it carries on on the
+CPU (as after Stop); if it can't run at all, the recording continues
+without a live transcript and the Record screen says so: use
+*Re-transcribe…* afterwards. Speakers are identified after Stop as
+usual. *Transcribe again with Whisper* skips a transcript live Whisper
+already made; *Improve recordings on the server* still applies. Whisper
+must be downloaded; otherwise the recorder uses the streaming engine.
 
 ### Which chips use the NPU
 

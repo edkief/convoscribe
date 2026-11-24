@@ -302,7 +302,8 @@ object ModelCatalog {
      * int8 export, about 1 GB, run on the CPU by an offline (whole
      * recording) recognizer. It transcribes a recording again after Stop,
      * imports and re-transcriptions; live captions keep using the
-     * streaming engines. Multilingual; MIT licence (OpenAI). Needs
+     * streaming engines unless live Whisper (experimental, issue #160)
+     * is on. Multilingual; MIT licence (OpenAI). Needs
      * [VAD_SILERO] to cut recordings into segments of at most 30 s.
      */
     val ASR_WHISPER_TURBO: ModelBundle = ModelBundle(
