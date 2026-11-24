@@ -11,6 +11,8 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
 import okio.Buffer
 import org.apache.commons.compress.archivers.tar.TarArchiveOutputStream
+import org.apache.commons.compress.archivers.zip.ZipArchiveEntry
+import org.apache.commons.compress.archivers.zip.ZipArchiveOutputStream
 import org.apache.commons.compress.compressors.bzip2.BZip2CompressorOutputStream
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -256,6 +258,117 @@ class ModelDownloaderTest {
         assertTrue(store.fileFor(multi, "b.bin").exists())
         // Spot-check the events collected in the first run too.
         assertNotNull(events)
+    }
+
+    /**
+     * Build a deflated `.zip` like Qualcomm AI Hub's (issue #159): a
+     * `rootDir/` directory entry, then [entries]. Written to a
+     * non-seekable stream, so entries carry data descriptors as a
+     * streamed zip does.
+     */
+    private fun buildZip(rootDir: String, entries: List<String>, payloads: List<ByteArray>): ByteArray {
+        require(entries.size == payloads.size)
+        val sink = ByteArrayOutputStream()
+        ZipArchiveOutputStream(sink).use { zip ->
+            zip.putArchiveEntry(ZipArchiveEntry("$rootDir/"))
+            zip.closeArchiveEntry()
+            for (i in entries.indices) {
+                zip.putArchiveEntry(ZipArchiveEntry(entries[i]))
+                zip.write(payloads[i])
+                zip.closeArchiveEntry()
+            }
+        }
+        return sink.toByteArray()
+    }
+
+    private fun zipBundle(archive: ByteArray, files: List<ModelFile>) = ModelBundle(
+        id = "whisper-npu",
+        displayName = "Whisper (NPU)",
+        kind = ModelKind.OFFLINE_ASR,
+        language = null,
+        files = files,
+        archive = ModelArchive(
+            url = server.url("/whisper.zip").toString(),
+            sizeBytes = archive.size.toLong(),
+            rootDir = "root",
+            format = ArchiveFormat.ZIP
+        )
+    )
+
+    @Test
+    fun zipBundle_extractsListedFiles_skipsOthers_andDeletesTheArchive() = runTest {
+        val encoder = ByteArray(20_000) { (it % 251).toByte() }
+        val wrapper = ByteArray(300) { (it % 13).toByte() }
+        val metadata = "{}".toByteArray()
+        val archive = buildZip(
+            rootDir = "root",
+            entries = listOf("root/encoder.onnx", "root/metadata.json", "root/encoder.bin"),
+            payloads = listOf(wrapper, metadata, encoder)
+        )
+        server.enqueue(MockResponse().setBody(Buffer().write(archive)))
+        val bundle = zipBundle(
+            archive,
+            listOf(
+                ModelFile("encoder.onnx", "", wrapper.size.toLong()),
+                ModelFile("encoder.bin", "", encoder.size.toLong())
+            )
+        )
+
+        val events = downloader.download(listOf(bundle)).toList()
+
+        assertEquals(DownloadEvent.Completed, events.last())
+        assertTrue(File(modelsRoot, "whisper-npu/encoder.bin").readBytes().contentEquals(encoder))
+        assertTrue(File(modelsRoot, "whisper-npu/encoder.onnx").readBytes().contentEquals(wrapper))
+        assertTrue(!File(modelsRoot, "whisper-npu/metadata.json").exists())
+        assertTrue(!store.archivePartFor(bundle).exists())
+        assertTrue(store.isInstalled(bundle))
+    }
+
+    @Test
+    fun zipBundle_missingListedFile_throwsArchiveIsMissing() {
+        val wrapper = ByteArray(300) { (it % 13).toByte() }
+        val archive = buildZip("root", listOf("root/encoder.onnx"), listOf(wrapper))
+        server.enqueue(MockResponse().setBody(Buffer().write(archive)))
+        val bundle = zipBundle(
+            archive,
+            listOf(ModelFile("encoder.onnx", "", wrapper.size.toLong()), ModelFile("decoder.bin", "", 10L))
+        )
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking { downloader.download(listOf(bundle)).toList() }
+        }
+
+        assertEquals("Archive is missing decoder.bin", ex.message)
+        assertTrue(!store.archivePartFor(bundle).exists())
+    }
+
+    @Test
+    fun zipBundle_entrySizeMismatch_throwsSizeMismatch() {
+        val wrapper = ByteArray(300) { (it % 13).toByte() }
+        val archive = buildZip("root", listOf("root/encoder.onnx"), listOf(wrapper))
+        server.enqueue(MockResponse().setBody(Buffer().write(archive)))
+        val bundle = zipBundle(archive, listOf(ModelFile("encoder.onnx", "", 299L)))
+
+        val ex = assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking { downloader.download(listOf(bundle)).toList() }
+        }
+
+        assertTrue(ex.message!!, ex.message!!.startsWith("Size mismatch for encoder.onnx"))
+        assertTrue(!File(modelsRoot, "whisper-npu/encoder.onnx.part").exists())
+    }
+
+    @Test
+    fun corruptZip_failsAndDeletesTheArchive() {
+        val garbage = ByteArray(2_000) { (it % 7).toByte() }
+        server.enqueue(MockResponse().setBody(Buffer().write(garbage)))
+        val bundle = zipBundle(garbage, listOf(ModelFile("encoder.onnx", "", 10L)))
+
+        assertThrows(ModelDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking { downloader.download(listOf(bundle)).toList() }
+        }
+
+        assertTrue(!store.archivePartFor(bundle).exists())
+        assertTrue(!store.isInstalled(bundle))
     }
 
     @Test

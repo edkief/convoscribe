@@ -2,6 +2,7 @@ package com.convoscribe.models
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -205,5 +206,91 @@ class ModelCatalogTest {
     fun bundleIds_areUnique() {
         val ids = ModelCatalog.all.map { it.id }
         assertEquals(ids.size, ids.toSet().size)
+    }
+
+    @Test
+    fun whisperNpuFor_mapsPublishedChips_ignoringCaseAndSuffix() {
+        // Issue #159: Build.SOC_MODEL picks the published Qualcomm build.
+        val expected = mapOf(
+            "SM8450" to "snapdragon_8gen1",
+            "SM8550" to "qcs8550_proxy",
+            "QCS8550" to "qcs8550_proxy",
+            "SM8650" to "snapdragon_8gen3",
+            "SM8750" to "snapdragon_8_elite_for_galaxy",
+            "SM8750-AC" to "snapdragon_8_elite_for_galaxy",
+            "sm8750" to "snapdragon_8_elite_for_galaxy",
+            "SM8850-AD" to "snapdragon_8_elite_gen5_for_galaxy",
+            "SM8950" to "snapdragon_8_elite_gen6",
+            "SM8975" to "snapdragon_8_elite_extreme_gen6",
+            "QCS8275" to "qcs8275",
+            "QCS9075" to "qcs9075"
+        )
+        for ((soc, slug) in expected) {
+            val asset = ModelCatalog.whisperNpuFor(soc)
+            assertNotNull("no NPU build for $soc", asset)
+            assertTrue(
+                "$soc should use $slug, got ${asset!!.bundle.archive?.rootDir}",
+                asset.bundle.archive!!.rootDir.endsWith("-qualcomm_$slug")
+            )
+        }
+    }
+
+    @Test
+    fun whisperNpuFor_otherChipsUseTheCpu() {
+        // The Boox's QCS6690, chips with no published build, automotive
+        // chips (no ONNX Runtime wrapper), and no SOC_MODEL at all.
+        for (soc in listOf("QCS6690", "SM7225", "SM8475", "SA8775P", "SA8295P", "SC8380XP", "", " ", null)) {
+            assertNull("$soc should have no NPU build", ModelCatalog.whisperNpuFor(soc))
+            assertTrue(ModelCatalog.whisperNpuBundles(soc).isEmpty())
+        }
+    }
+
+    @Test
+    fun whisperNpuBundles_areTheChipBuildTokensAndVad() {
+        val bundles = ModelCatalog.whisperNpuBundles("SM8650")
+        assertEquals(
+            listOf("asr-whisper-turbo-npu-snapdragon-8gen3", "asr-whisper-large-v3-turbo-tokens", "vad-silero"),
+            bundles.map { it.id }
+        )
+        // Not the 1 GB CPU model.
+        assertTrue(ModelCatalog.ASR_WHISPER_TURBO !in bundles)
+    }
+
+    @Test
+    fun whisperNpuAssets_areZipArchivesWithWrappersAndBinaries() {
+        val ids = ModelCatalog.whisperNpuAssets.map { it.bundle.id }
+        assertEquals(ids.size, ids.toSet().size)
+        val socs = ModelCatalog.whisperNpuAssets.flatMap { it.socModels }
+        assertEquals("a chip maps to one build", socs.size, socs.toSet().size)
+        for (asset in ModelCatalog.whisperNpuAssets) {
+            val bundle = asset.bundle
+            val archive = bundle.archive!!
+            assertEquals(ArchiveFormat.ZIP, archive.format)
+            assertEquals("${archive.rootDir}.zip", archive.url.substringAfterLast('/'))
+            assertTrue(archive.url.startsWith("https://qaihub-public-assets.s3.us-west-2.amazonaws.com/"))
+            assertTrue(archive.url.contains("/releases/v0.67.0/"))
+            assertEquals(
+                listOf("encoder.onnx", "encoder.bin", "decoder.onnx", "decoder.bin"),
+                bundle.files.map { it.fileName }
+            )
+            // Deflate barely shrinks fp16 weights: the zip is a little
+            // smaller than what it holds.
+            assertTrue(archive.sizeBytes in (bundle.totalBytes * 9 / 10)..bundle.totalBytes)
+            assertTrue(bundle in ModelCatalog.all)
+            assertTrue(bundle in ModelCatalog.allWhisperBundles)
+            ModelCatalog.requiredFor("en", "npu").forEach { assertTrue(it != bundle) }
+        }
+    }
+
+    @Test
+    fun whisperTokens_isTheCpuBundlesTokenFile() {
+        val tokens = ModelCatalog.WHISPER_TOKENS.files.single()
+        val cpuTokens = ModelCatalog.ASR_WHISPER_TURBO.files.single { it.fileName == "turbo-tokens.txt" }
+        assertEquals(cpuTokens, tokens)
+    }
+
+    @Test
+    fun tarBz2_isTheDefaultArchiveFormat() {
+        assertEquals(ArchiveFormat.TAR_BZ2, ModelCatalog.ASR_EN_NPU.archive!!.format)
     }
 }
