@@ -46,7 +46,10 @@ class WhisperNpuAutoCheck(
         _checking.value = true
         try {
             val result = probe.runWhisper(sample())
-            Log.i(TAG, "Whisper NPU check: error=${result.error}, rtf=${result.realTimeFactor}")
+            Log.i(
+                TAG,
+                "Whisper NPU check: error=${result.error}, loadMs=${result.initMs}, rtf=${result.realTimeFactor}"
+            )
         } catch (ce: CancellationException) {
             throw ce
         } catch (t: Throwable) {

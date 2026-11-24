@@ -55,15 +55,21 @@ class QnnWhisperRecognizer(
         language: String,
         onProgress: (Float) -> Unit
     ): List<TranscriptEvent.Final> = withContext(dispatcher) {
-        openDecoder(language).use { decoder ->
-            SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
-                val finals = mutableListOf<TranscriptEvent.Final>()
-                SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
-                    currentCoroutineContext().ensureActive()
-                    span.lineOf(decoder.decode(span.samples))?.let(finals::add)
-                }
-                finals
+        openDecoder(language).use { transcribeWith(it, file, onProgress) }
+    }
+
+    override suspend fun transcribeWith(
+        decoder: WhisperDecoder,
+        file: File,
+        onProgress: (Float) -> Unit
+    ): List<TranscriptEvent.Final> = withContext(dispatcher) {
+        SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
+            val finals = mutableListOf<TranscriptEvent.Final>()
+            SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
+                currentCoroutineContext().ensureActive()
+                span.lineOf(decoder.decode(span.samples))?.let(finals::add)
             }
+            finals
         }
     }
 

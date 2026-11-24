@@ -35,6 +35,9 @@ class WhisperEngineTest {
             }
         }
 
+        override suspend fun transcribeWith(decoder: WhisperDecoder, file: File, onProgress: (Float) -> Unit) =
+            emptyList<TranscriptEvent.Final>()
+
         override suspend fun transcribe(
             file: File,
             language: String,

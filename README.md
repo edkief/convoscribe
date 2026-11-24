@@ -1150,8 +1150,9 @@ the streaming engine:
   on. With *Improve recordings on the server* also on, the server goes
   first and Whisper is used only if the server fails.
 - **Re-transcribe…** → *Whisper on this phone*, whatever the setting.
-- **Engine check** → *Check Whisper* times it on the English sample
-  clip (model loading included) and shows what it heard.
+- **Engine check** → *Check Whisper* times loading the model and
+  transcribing the English sample clip apart (the real-time factor is
+  the transcription alone) and shows what it heard.
 - **While recording** (experimental, #160), with *Transcribe while
   recording (experimental)* on. See [*Live Whisper*](#live-whisper-experimental).
 
