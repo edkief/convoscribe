@@ -119,6 +119,17 @@ android {
             // compose each screen (no image capture, no golden files).
             val record = project.findProperty("roborazzi.test.record")?.toString() ?: "false"
             test.systemProperty("roborazzi.test.record", record)
+            // Robolectric downloads its android-all jar on first use, and
+            // after a failed download every test class asks again: once
+            // repo1.maven.org rate-limited this network (HTTP 429 with a
+            // 22 h Retry-After), each run sent ~1,100 more requests and
+            // failed every Robolectric test. Google's mirror of Maven
+            // Central serves the same artifacts.
+            test.systemProperty("robolectric.dependency.repo.id", "google-maven-central")
+            test.systemProperty(
+                "robolectric.dependency.repo.url",
+                "https://maven-central.storage-download.googleapis.com/maven2"
+            )
         }
     }
 
