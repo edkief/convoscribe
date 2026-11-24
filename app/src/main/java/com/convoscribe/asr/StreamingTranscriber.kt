@@ -3,6 +3,7 @@ package com.convoscribe.asr
 import com.convoscribe.audio.AudioSpec
 import com.convoscribe.audio.samplesToMs
 import java.io.Closeable
+import kotlinx.coroutines.flow.StateFlow
 
 /**
  * Engine-agnostic streaming ASR façade. The home screen consumes
@@ -42,6 +43,14 @@ interface StreamingTranscriber : Closeable {
      * transcribers that have no pending state.
      */
     fun endUtterance(): List<TranscriptEvent> = emptyList()
+
+    /**
+     * Work this transcriber does behind the recording, for the Record
+     * screen: live Whisper (issue #160) publishes the speech segments
+     * still waiting for it and why it stopped, if it did. `null` for
+     * transcribers that keep up chunk by chunk.
+     */
+    val status: StateFlow<LiveStatus>? get() = null
 }
 
 /**
