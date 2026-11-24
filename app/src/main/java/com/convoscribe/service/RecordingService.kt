@@ -29,6 +29,7 @@ import com.convoscribe.recording.ImportStep
 import com.convoscribe.recording.RecordingController
 import com.convoscribe.recording.RecordingPhase
 import com.convoscribe.recording.RetranscribeState
+import com.convoscribe.recording.RetranscribeTarget
 import com.convoscribe.recording.RetranscribeUseCase
 import java.io.FileNotFoundException
 import kotlinx.coroutines.CoroutineScope
@@ -167,7 +168,8 @@ class RecordingService : Service() {
                         id,
                         language,
                         intent.getBooleanExtra(EXTRA_CLEAN, false),
-                        intent.getBooleanExtra(EXTRA_SERVER, false)
+                        RetranscribeTarget.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_TARGET) }
+                            ?: RetranscribeTarget.DEVICE
                     )
                 } else {
                     stopIfIdle()
@@ -374,12 +376,13 @@ class RecordingService : Service() {
                 // text changes to "Identifying speakers…" so the user
                 // sees the service is still working.
                 ensureNotificationChannel()
-                // With *Improve recordings on the server* (issue #58) the
-                // transcript is redone on the server first. It runs as
+                // With *Improve recordings on the server* (issue #58) or
+                // *Transcribe again with Whisper* (#158) the transcript is
+                // redone first. It runs as
                 // the re-transcription job, so the session screen shows
                 // its progress and Cancel; a cancel or a failure keeps the
                 // device transcript, and speakers are identified anyway.
-                if (completedId != null) improveOnServer(completedId)
+                if (completedId != null) improveAfterStop(completedId)
                 showForeground()
                 if (completedId != null) {
                     // Now, or left pending for the charger / the user
@@ -430,7 +433,7 @@ class RecordingService : Service() {
                 // speakers are being identified (issue #43).
                 val state = (application as ConvoApp).container.retranscribeUseCase.state.value
                 val notification = if (state is RetranscribeState.Running) {
-                    buildRetranscribeNotification(state.progress, state.cleaning, state.onServer)
+                    buildRetranscribeNotification(state.progress, state.cleaning, state.onServer, state.onWhisper)
                 } else {
                     buildDiarizingNotification()
                 }
@@ -463,32 +466,38 @@ class RecordingService : Service() {
     }
 
     /**
-     * Transcribe the just-stopped [sessionId] again on the server when
-     * [RetranscribeUseCase.wantsServer], and wait for it. Shows the
-     * re-transcription notification with its progress meanwhile.
+     * Transcribe the just-stopped [sessionId] again on the server or
+     * with Whisper when [RetranscribeUseCase.afterStopTarget] says so,
+     * and wait for it. Shows the re-transcription notification with its
+     * progress meanwhile.
      */
-    private suspend fun improveOnServer(sessionId: Long) {
+    private suspend fun improveAfterStop(sessionId: Long) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
-        if (!useCase.wantsServer(sessionId)) return
+        if (useCase.afterStopTarget(sessionId) == null) return
         // One re-transcription at a time (issue #123): a session stopped
         // while an earlier one's server transcript runs waits for it.
         // Meanwhile that one's notification replaces the recording's.
         if (retranscribeLock.isLocked) showForeground()
-        retranscribeLock.withLock { transcribeOnServer(useCase, sessionId) }
+        retranscribeLock.withLock { transcribeAfterStop(useCase, sessionId) }
     }
 
-    /** [improveOnServer]'s run, as the [retranscribeJob], holding [retranscribeLock]. */
-    private suspend fun transcribeOnServer(useCase: RetranscribeUseCase, sessionId: Long) {
+    /** [improveAfterStop]'s run, as the [retranscribeJob], holding [retranscribeLock]. */
+    private suspend fun transcribeAfterStop(useCase: RetranscribeUseCase, sessionId: Long) {
         val job = scope.launch {
             val progress = useCase.state
                 .onEach { state ->
                     if (state is RetranscribeState.Running) {
-                        maybeRefreshRetranscribeNotification(state.progress, cleaning = false, onServer = true)
+                        maybeRefreshRetranscribeNotification(
+                            state.progress,
+                            cleaning = false,
+                            onServer = state.onServer,
+                            onWhisper = state.onWhisper
+                        )
                     }
                 }
                 .launchIn(this)
             try {
-                useCase.improveOnServer(sessionId)
+                useCase.improveAfterStop(sessionId)
             } finally {
                 progress.cancel()
             }
@@ -596,7 +605,7 @@ class RecordingService : Service() {
      * transcript is swapped in, the notification turns into the
      * "Identifying speakers…" one while speakers are identified.
      */
-    private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean, onServer: Boolean) {
+    private fun handleRetranscribe(sessionId: Long, language: String, clean: Boolean, target: RetranscribeTarget) {
         val useCase = (application as ConvoApp).container.retranscribeUseCase
         if (!work().acceptsJob || useCase.isRunning || !retranscribeLock.tryLock()) return
         acquireWakeLock()
@@ -612,6 +621,7 @@ class RecordingService : Service() {
                             state.progress,
                             state.cleaning,
                             onServer = state.onServer,
+                            onWhisper = state.onWhisper,
                             force = state.cleaning != lastCleaning
                         )
                         lastCleaning = state.cleaning
@@ -626,7 +636,7 @@ class RecordingService : Service() {
                 }
                 .launchIn(this)
             try {
-                useCase.run(sessionId, language, clean, onServer)
+                useCase.run(sessionId, language, clean, target)
             } finally {
                 progress.cancel()
                 retranscribeJob = null
@@ -802,6 +812,7 @@ class RecordingService : Service() {
         progress: Float,
         cleaning: Boolean,
         onServer: Boolean = false,
+        onWhisper: Boolean = false,
         force: Boolean = false
     ) {
         // An open session keeps its own notification (issue #123).
@@ -812,7 +823,7 @@ class RecordingService : Service() {
         ServiceCompat.startForeground(
             this,
             NOTIFICATION_ID,
-            buildRetranscribeNotification(progress, cleaning, onServer),
+            buildRetranscribeNotification(progress, cleaning, onServer, onWhisper),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
         )
     }
@@ -820,7 +831,8 @@ class RecordingService : Service() {
     private fun buildRetranscribeNotification(
         progress: Float,
         cleaning: Boolean = false,
-        onServer: Boolean = false
+        onServer: Boolean = false,
+        onWhisper: Boolean = false
     ): android.app.Notification {
         val contentIntent = PendingIntent.getActivity(
             this,
@@ -841,7 +853,11 @@ class RecordingService : Service() {
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(
                 getString(
-                    if (onServer) R.string.notification_server_title else R.string.notification_retranscribe_title
+                    when {
+                        onServer -> R.string.notification_server_title
+                        onWhisper -> R.string.notification_whisper_title
+                        else -> R.string.notification_retranscribe_title
+                    }
                 )
             )
             .setContentText(
@@ -1238,7 +1254,7 @@ class RecordingService : Service() {
         private const val EXTRA_CLEAN = "com.convoscribe.EXTRA_CLEAN"
 
         /** Optional on [ACTION_RETRANSCRIBE]: transcribe on the transcription server (issue #58). */
-        private const val EXTRA_SERVER = "com.convoscribe.EXTRA_SERVER"
+        private const val EXTRA_TARGET = "com.convoscribe.EXTRA_TARGET"
         private const val EXTRA_PARTICIPANTS = "com.convoscribe.EXTRA_PARTICIPANTS"
         private const val EXTRA_TITLE = "com.convoscribe.EXTRA_TITLE"
         private const val EXTRA_TAGS = "com.convoscribe.EXTRA_TAGS"
@@ -1290,7 +1306,8 @@ class RecordingService : Service() {
         /**
          * Build an [Intent] that re-transcribes [sessionId] in
          * [language], cleaning its audio first when [clean] is set
-         * (*Clean up audio*, issue #37). Send it with
+         * (*Clean up audio*, issue #37), with [target] (the streaming
+         * engine, the server or Whisper). Send it with
          * `startForegroundService`.
          */
         fun retranscribeIntent(
@@ -1298,13 +1315,13 @@ class RecordingService : Service() {
             sessionId: Long,
             language: String,
             clean: Boolean = false,
-            onServer: Boolean = false
+            target: RetranscribeTarget = RetranscribeTarget.DEVICE
         ): Intent = Intent(context, RecordingService::class.java)
             .setAction(ACTION_RETRANSCRIBE)
             .putExtra(EXTRA_SESSION_ID, sessionId)
             .putExtra(EXTRA_LANGUAGE, language)
             .putExtra(EXTRA_CLEAN, clean)
-            .putExtra(EXTRA_SERVER, onServer)
+            .putExtra(EXTRA_TARGET, target.name)
 
         /**
          * Build an [Intent] that imports [uri] as a new session, passing

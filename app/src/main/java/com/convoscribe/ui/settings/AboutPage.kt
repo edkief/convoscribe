@@ -129,6 +129,16 @@ internal fun AboutSection(
             url = "https://github.com/Xiaobin-Rong/gtcrn"
         )
         AboutModelRow(
+            name = stringResource(R.string.settings_about_whisper_name),
+            licence = stringResource(R.string.settings_about_whisper_licence),
+            url = "https://github.com/openai/whisper"
+        )
+        AboutModelRow(
+            name = stringResource(R.string.settings_about_silero_name),
+            licence = stringResource(R.string.settings_about_silero_licence),
+            url = "https://github.com/snakers4/silero-vad"
+        )
+        AboutModelRow(
             name = stringResource(R.string.settings_about_sherpa_name),
             licence = stringResource(R.string.settings_about_sherpa_licence),
             url = "https://github.com/k2-fsa/sherpa-onnx"

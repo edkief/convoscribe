@@ -157,7 +157,9 @@ class ModelCatalogTest {
                 ModelKind.SEGMENTATION,
                 ModelKind.EMBEDDING,
                 ModelKind.ENHANCEMENT,
-                ModelKind.TEXT_EMBEDDING
+                ModelKind.TEXT_EMBEDDING,
+                ModelKind.OFFLINE_ASR,
+                ModelKind.VAD
             ),
             kinds
         )
@@ -179,5 +181,29 @@ class ModelCatalogTest {
         }
         assertEquals(ModelKind.ENHANCEMENT, ModelCatalog.CLEANUP.kind)
         assertEquals(1, ModelCatalog.CLEANUP.files.size)
+    }
+
+    @Test
+    fun whisper_isOptionalAndDownloadedWithItsVad() {
+        // Issue #158: Whisper and its VAD are never required for a session.
+        for (language in listOf("en", "fr")) {
+            for (engine in listOf("cpu", "npu")) {
+                val required = ModelCatalog.requiredFor(language, engine)
+                ModelCatalog.whisperBundles.forEach { assertTrue(it !in required) }
+            }
+        }
+        assertEquals(
+            listOf("asr-whisper-large-v3-turbo-int8", "vad-silero"),
+            ModelCatalog.whisperBundles.map { it.id }
+        )
+        assertEquals(1_036_613_791L, ModelCatalog.ASR_WHISPER_TURBO.totalBytes)
+        assertEquals(null, ModelCatalog.ASR_WHISPER_TURBO.asr)
+        assertTrue(ModelCatalog.whisperBundles.all { it in ModelCatalog.all })
+    }
+
+    @Test
+    fun bundleIds_areUnique() {
+        val ids = ModelCatalog.all.map { it.id }
+        assertEquals(ids.size, ids.toSet().size)
     }
 }

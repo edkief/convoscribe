@@ -3037,6 +3037,51 @@ with `convoscribe://api-key`, `DEVICE_SIGN_IN_CLIENT_ID`, and the
 - Step 11: the card is the address and the API key, as before, with no
   **Sign in**.
 
+## 67. Whisper Large-v3-Turbo on the phone (issue #158)
+
+Use a device with the English CPU model installed, about 2.5 GB free and
+a 2–3 minute English recording with two speakers.
+
+**Steps**
+
+1. Settings → *Recording & transcription* → *Whisper Large-v3-Turbo*: **Download Whisper**.
+2. Engine check → **Check Whisper**.
+3. Turn on *Transcribe again with Whisper*. Record the conversation,
+   then **Stop**.
+4. In the finished session, tap a word in the middle of a line, play,
+   and watch the highlight.
+5. Edit a line by hand. Record a short continuation of the session and
+   stop.
+6. Import an audio file.
+7. On another session, *Re-transcribe…* → *Whisper on this phone*;
+   **Cancel** from the notification halfway.
+8. With a transcription server set up and *Improve recordings on the
+   server* also on, stop the server (or point it at a wrong address),
+   then record and stop.
+9. Settings → **Delete Whisper**.
+
+**Expected**
+
+- Step 1: the download shows progress; afterwards the card says *Whisper
+  installed* and the switch is enabled. Settings → About lists Whisper
+  and Silero VAD (MIT).
+- Step 2: a time, a real-time factor and the clip's text. Note the RTF
+  on the bug report.
+- Step 3: the live transcript appears while recording as before. After
+  Stop the notification says *Transcribing with Whisper* with progress,
+  then speakers are identified. Session info shows the model
+  `asr-whisper-large-v3-turbo-int8` (engine `cpu`).
+- Step 4: playback starts at (or within a second of) the tapped word;
+  the highlight follows the speech. A line with a speaker change is
+  split there.
+- Step 5: the edited transcript is not replaced by Whisper.
+- Step 6: the import uses Whisper (session info) and its words are
+  seekable.
+- Step 7: the old transcript is kept, unchanged.
+- Step 8: the server fails quietly and Whisper transcribes the session.
+- Step 9: the card offers the download again; the switch is disabled
+  and nothing is re-transcribed after Stop.
+
 ## Troubleshooting
 
 ### 1. QNN errors (DSP not reachable)

@@ -17,6 +17,7 @@ import com.convoscribe.audio.WavReader
 import com.convoscribe.data.AppDatabase
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.TokenTimingCodec
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import com.convoscribe.diarization.Diarizer
 import com.convoscribe.diarization.DiarizerFactory
@@ -143,7 +144,8 @@ class ImportAudioUseCaseTest {
         decoder: AudioDecoder,
         factory: TranscriberFactory,
         language: String = "fr",
-        server: FileRecognizer? = null
+        server: FileRecognizer? = null,
+        whisper: FileRecognizer? = null
     ) = ImportAudioUseCase(
         repository = repo,
         transcriberFactory = factory,
@@ -169,8 +171,25 @@ class ImportAudioUseCaseTest {
         asrDispatcher = Dispatchers.Unconfined,
         ioDispatcher = Dispatchers.Unconfined,
         server = server,
-        useServer = { server != null }
+        useServer = { server != null },
+        whisper = whisper?.let { WhisperPass(it, { true }, factory, Dispatchers.Unconfined) },
+        useWhisper = { whisper != null }
     )
+
+    /** On-device Whisper (issue #158): one line with no word times, or [failure]. */
+    private class FakeWhisper(private val failure: Throwable? = null) : FileRecognizer {
+        var calls = 0
+        override suspend fun transcribe(
+            file: File,
+            language: String,
+            onProgress: (Float) -> Unit
+        ): List<TranscriptEvent.Final> {
+            calls++
+            failure?.let { throw it }
+            return listOf(TranscriptEvent.Final("A tone.", 1_000, 2_000))
+        }
+        override fun describe() = EngineInfo("cpu", "asr-whisper-large-v3-turbo-int8")
+    }
 
     /** The transcription server (issue #58): one line, or [failure]. */
     private class FakeServer(private val failure: Throwable? = null) : FileRecognizer {
@@ -349,5 +368,47 @@ class ImportAudioUseCaseTest {
         File(work, "decoded.wav").writeText("x")
         useCase(ToneDecoder(), factory { SoundTranscriber() }).cleanUp()
         assertTrue(work.list().isNullOrEmpty())
+    }
+
+    @Test
+    fun import_withWhisperOn_usesWhisperWithWordTimesFromALivePass() = runTest {
+        val factory = factory { SoundTranscriber() }
+        val whisper = FakeWhisper()
+
+        val id = useCase(ToneDecoder(), factory, whisper = whisper).run(source())!!
+
+        assertEquals(1, whisper.calls)
+        // The live engine ran first, for word times only.
+        assertEquals(listOf("fr"), factory.languages)
+        val session = repo.getSession(id)!!
+        assertEquals("asr-whisper-large-v3-turbo-int8", session.asrModel)
+        val segment = repo.getSegments(id).single()
+        assertEquals("A tone.", segment.text)
+        assertEquals(listOf(" A", " tone."), TokenTimingCodec.decode(segment.tokens).map { it.text })
+    }
+
+    @Test
+    fun import_serverFirst_thenWhisperWhenTheServerFails() = runTest {
+        val factory = factory { SoundTranscriber() }
+        val server = FakeServer(ServerAsrException("HTTP 503 from x: busy"))
+        val whisper = FakeWhisper()
+
+        val id = useCase(ToneDecoder(), factory, server = server, whisper = whisper).run(source())!!
+
+        assertEquals(1, server.calls)
+        assertEquals(1, whisper.calls)
+        assertEquals("asr-whisper-large-v3-turbo-int8", repo.getSession(id)!!.asrModel)
+    }
+
+    @Test
+    fun import_whenWhisperFails_usesTheStreamingEngine() = runTest {
+        val factory = factory { SoundTranscriber() }
+        val whisper = FakeWhisper(IllegalStateException("oom"))
+
+        val id = useCase(ToneDecoder(), factory, whisper = whisper).run(source())!!
+
+        assertEquals(1, whisper.calls)
+        assertEquals("asr-fr", repo.getSession(id)!!.asrModel)
+        assertEquals(listOf("tone"), repo.getSegments(id).map { it.text })
     }
 }

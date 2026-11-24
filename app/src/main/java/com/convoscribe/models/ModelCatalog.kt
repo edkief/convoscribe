@@ -5,9 +5,11 @@ package com.convoscribe.models
  * downloader to pick the right on-disk paths and engine code.
  * [ENHANCEMENT] is the optional noise cleanup model (issue #37).
  * [EMBEDDING] is a speaker (voice) embedding model; [TEXT_EMBEDDING]
- * is the optional semantic search model (issue #61).
+ * is the optional semantic search model (issue #61). [OFFLINE_ASR] is a
+ * whole-recording (non-streaming) recognizer and [VAD] the voice
+ * activity detector that cuts its input into speech segments (#158).
  */
-enum class ModelKind { ASR, SEGMENTATION, EMBEDDING, ENHANCEMENT, TEXT_EMBEDDING }
+enum class ModelKind { ASR, SEGMENTATION, EMBEDDING, ENHANCEMENT, TEXT_EMBEDDING, OFFLINE_ASR, VAD }
 
 /**
  * One file that belongs to a [ModelBundle]: its on-disk name (which may
@@ -84,7 +86,7 @@ data class ModelBundle(
  * new language means adding one more ASR bundle and extending
  * [asrFor]; adding a new model kind means adding a constant and
  * listing it in [requiredFor] for any language that needs it. An
- * optional model ([CLEANUP], [TEXT_EMBEDDING_GEMMA]) is in [all] but never in [requiredFor].
+ * optional model ([CLEANUP], [TEXT_EMBEDDING_GEMMA], [whisperBundles]) is in [all] but never in [requiredFor].
  */
 object ModelCatalog {
 
@@ -270,8 +272,58 @@ object ModelCatalog {
         )
     )
 
+    // Pinned to a revision: the downloader checks each file's exact size.
+    private const val WHISPER_TURBO_BASE =
+        "https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/" +
+            "2ca6ff69fc878651b770880507669577ac41c2ff/"
+
+    /**
+     * Optional on-device Whisper Large-v3-Turbo (issue #158): sherpa-onnx's
+     * int8 export, about 1 GB, run on the CPU by an offline (whole
+     * recording) recognizer. It transcribes a recording again after Stop,
+     * imports and re-transcriptions; live captions keep using the
+     * streaming engines. Multilingual; MIT licence (OpenAI). Needs
+     * [VAD_SILERO] to cut recordings into segments of at most 30 s.
+     */
+    val ASR_WHISPER_TURBO: ModelBundle = ModelBundle(
+        id = "asr-whisper-large-v3-turbo-int8",
+        displayName = "Whisper Large-v3-Turbo",
+        kind = ModelKind.OFFLINE_ASR,
+        language = null,
+        files = listOf(
+            ModelFile("turbo-encoder.int8.onnx", WHISPER_TURBO_BASE + "turbo-encoder.int8.onnx", 674_716_297),
+            ModelFile("turbo-decoder.int8.onnx", WHISPER_TURBO_BASE + "turbo-decoder.int8.onnx", 361_080_764),
+            ModelFile("turbo-tokens.txt", WHISPER_TURBO_BASE + "turbo-tokens.txt", 816_730)
+        )
+    )
+
+    /**
+     * Silero voice activity detector (issue #158), about 0.6 MB: cuts a
+     * recording into speech segments for [ASR_WHISPER_TURBO]. Downloaded
+     * with it.
+     */
+    val VAD_SILERO: ModelBundle = ModelBundle(
+        id = "vad-silero",
+        displayName = "Voice activity detection",
+        kind = ModelKind.VAD,
+        language = null,
+        files = listOf(
+            ModelFile(
+                "silero_vad.onnx",
+                "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+                643_854
+            )
+        )
+    )
+
+    /** What on-device Whisper (issue #158) needs, downloaded and deleted together. */
+    val whisperBundles: List<ModelBundle> = listOf(ASR_WHISPER_TURBO, VAD_SILERO)
+
     val all: List<ModelBundle> =
-        listOf(ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, EMBEDDING_CAMPPLUS, CLEANUP, TEXT_EMBEDDING_GEMMA)
+        listOf(
+            ASR_EN, ASR_EN_NPU, ASR_FR, SEGMENTATION, EMBEDDING, EMBEDDING_CAMPPLUS, CLEANUP, TEXT_EMBEDDING_GEMMA,
+            ASR_WHISPER_TURBO, VAD_SILERO
+        )
 
     /**
      * Voice models speaker identification can cluster with, by their

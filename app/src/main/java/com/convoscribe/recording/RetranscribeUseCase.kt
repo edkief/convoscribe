@@ -4,8 +4,10 @@ import android.util.Log
 import com.convoscribe.TAG
 import com.convoscribe.asr.FileRecognizer
 import com.convoscribe.asr.FileTranscriber
+import com.convoscribe.asr.TimedToken
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
+import com.convoscribe.asr.WordTimer
 import com.convoscribe.audio.AudioCleanerFactory
 import com.convoscribe.audio.AudioCleaning
 import com.convoscribe.data.CleanedAudio
@@ -13,6 +15,7 @@ import com.convoscribe.data.SegmentEntity
 import com.convoscribe.data.SegmentPiece
 import com.convoscribe.data.SessionRepository
 import com.convoscribe.data.SessionStatus
+import com.convoscribe.data.TokenTimingCodec
 import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.diarization.DiarizeSessionUseCase
 import java.io.File
@@ -32,13 +35,15 @@ sealed interface RetranscribeState {
      * [sessionId]'s audio is being transcribed again; [progress] is
      * `0f..1f` over the whole run. [cleaning] is `true` while its
      * audio is being cleaned first (issue #37). [onServer] is `true`
-     * when the transcription server does the work (issue #58).
+     * when the transcription server does the work (issue #58),
+     * [onWhisper] when on-device Whisper does (issue #158).
      */
     data class Running(
         val sessionId: Long,
         val progress: Float,
         val cleaning: Boolean = false,
-        val onServer: Boolean = false
+        val onServer: Boolean = false,
+        val onWhisper: Boolean = false
     ) : RetranscribeState {
         /**
          * The phone does the work: it transcribes, or cleans the audio
@@ -50,6 +55,18 @@ sealed interface RetranscribeState {
 
     /** The last run for [sessionId] failed; the previous transcript was kept. */
     data class Failed(val sessionId: Long, val message: String) : RetranscribeState
+}
+
+/** What transcribes a session's audio again. */
+enum class RetranscribeTarget {
+    /** The streaming engine chosen in Settings. */
+    DEVICE,
+
+    /** The transcription server (issue #58). */
+    SERVER,
+
+    /** Whisper Large-v3-Turbo on the phone (issue #158). */
+    WHISPER
 }
 
 /**
@@ -79,10 +96,13 @@ sealed interface RetranscribeState {
  *
  * With `onServer` (issue #58) the same audio goes to the transcription
  * server ([server]) instead of [transcriberFactory], and the session
- * records the server's engine and model. [improveOnServer] is the
- * automatic form run after Stop when [serverAuto] says so: it never
- * replaces a transcript edited by hand, and a failure only keeps the
- * device transcript, without an error on screen.
+ * records the server's engine and model. With [RetranscribeTarget.WHISPER]
+ * (issue #158) on-device Whisper ([whisper]) does it, with word times
+ * borrowed from the previous transcript. [improveAfterStop] is the
+ * automatic form run after Stop: the server when [serverAuto] says so,
+ * then Whisper when [whisperAuto] does (or if the server failed). It
+ * never replaces a transcript edited by hand, and a failure only keeps
+ * the device transcript, without an error on screen.
  */
 class RetranscribeUseCase(
     private val repository: SessionRepository,
@@ -91,7 +111,9 @@ class RetranscribeUseCase(
     private val asrDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val cleanerFactory: AudioCleanerFactory? = null,
     private val server: FileRecognizer? = null,
-    private val serverAuto: () -> Boolean = { false }
+    private val serverAuto: () -> Boolean = { false },
+    private val whisper: WhisperPass? = null,
+    private val whisperAuto: () -> Boolean = { false }
 ) {
     private val _state = MutableStateFlow<RetranscribeState>(RetranscribeState.Idle)
     val state: StateFlow<RetranscribeState> = _state.asStateFlow()
@@ -103,42 +125,60 @@ class RetranscribeUseCase(
 
     /**
      * Re-transcribe [sessionId] in [language], cleaning its audio
-     * first when [clean] is set, on the transcription server when
-     * [onServer] is set. Returns `true` when the
+     * first when [clean] is set, with [target]. Returns `true` when the
      * transcript was replaced (diarization then runs, or is left
      * pending, and reports through the session status as usual). Rethrows cancellation
      * after resetting [state].
      */
-    suspend fun run(sessionId: Long, language: String, clean: Boolean = false, onServer: Boolean = false): Boolean {
-        if (!transcribeAndReplace(sessionId, language, clean, onServer, showFailure = true)) return false
+    suspend fun run(
+        sessionId: Long,
+        language: String,
+        clean: Boolean = false,
+        target: RetranscribeTarget = RetranscribeTarget.DEVICE
+    ): Boolean {
+        if (!transcribeAndReplace(sessionId, language, clean, target, showFailure = true)) return false
         diarize.runOrDefer(sessionId)
         return true
     }
 
-    /**
-     * Whether [improveOnServer] would send [sessionId] to the server:
-     * *Improve recordings on the server* is on with a server set up,
-     * and the transcript was not edited by hand (a continued session
-     * may have been).
-     */
-    suspend fun wantsServer(sessionId: Long): Boolean {
-        if (server == null || !serverAuto()) return false
-        val session = repository.getSession(sessionId) ?: return false
-        return !session.transcriptEdited
-    }
+    /** On-device Whisper is set up and downloaded (issue #158). */
+    val whisperAvailable: Boolean get() = whisper?.isAvailable() == true
 
     /**
-     * After Stop (issue #58): transcribe [sessionId] again on the
-     * server, in its own language, when [wantsServer]. Returns `true`
-     * when the transcript was replaced. A failure is logged and keeps
-     * the device transcript; [state] goes back to Idle, not Failed.
+     * What [improveAfterStop] would try first for [sessionId]: the
+     * server when *Improve recordings on the server* is on with a server
+     * set up, else Whisper when *Transcribe again with Whisper* is on and
+     * downloaded; `null` for neither, or when the transcript was edited
+     * by hand (a continued session may have been).
+     */
+    suspend fun afterStopTarget(sessionId: Long): RetranscribeTarget? {
+        val session = repository.getSession(sessionId) ?: return null
+        if (session.transcriptEdited) return null
+        return when {
+            server != null && serverAuto() -> RetranscribeTarget.SERVER
+            wantsWhisper() -> RetranscribeTarget.WHISPER
+            else -> null
+        }
+    }
+
+    private fun wantsWhisper(): Boolean = whisper != null && whisperAuto() && whisper.isAvailable()
+
+    /**
+     * After Stop (issues #58, #158): transcribe [sessionId] again, in
+     * its own language, on the server, then with Whisper if the server
+     * is off or failed and Whisper is on ([afterStopTarget]). Returns
+     * `true` when the transcript was replaced. A failure is logged and
+     * keeps the device transcript; [state] goes back to Idle, not Failed.
      * Speakers are left to the caller, who identifies them either way.
      * Rethrows cancellation after resetting [state].
      */
-    suspend fun improveOnServer(sessionId: Long): Boolean {
-        if (!wantsServer(sessionId)) return false
+    suspend fun improveAfterStop(sessionId: Long): Boolean {
+        val first = afterStopTarget(sessionId) ?: return false
         val language = repository.getSession(sessionId)?.language ?: return false
-        return transcribeAndReplace(sessionId, language, clean = false, onServer = true, showFailure = false)
+        if (transcribeAndReplace(sessionId, language, clean = false, first, showFailure = false)) return true
+        if (first != RetranscribeTarget.SERVER || !wantsWhisper()) return false
+        Log.i(TAG, "server transcript failed for session $sessionId; trying Whisper")
+        return transcribeAndReplace(sessionId, language, clean = false, RetranscribeTarget.WHISPER, showFailure = false)
     }
 
     /**
@@ -149,13 +189,21 @@ class RetranscribeUseCase(
         sessionId: Long,
         language: String,
         clean: Boolean,
-        onServer: Boolean,
+        target: RetranscribeTarget,
         showFailure: Boolean
     ): Boolean {
-        _state.value = RetranscribeState.Running(sessionId, 0f, cleaning = clean, onServer = onServer)
+        val onServer = target == RetranscribeTarget.SERVER
+        _state.value = RetranscribeState.Running(
+            sessionId,
+            0f,
+            cleaning = clean,
+            onServer = onServer,
+            onWhisper = target == RetranscribeTarget.WHISPER
+        )
         var work: File? = null
         try {
             check(!onServer || server != null) { "The transcription server is not set up" }
+            check(target != RetranscribeTarget.WHISPER || whisper != null) { "Whisper is not set up" }
             val session = repository.getSession(sessionId) ?: error("Session not found")
             check(session.status != SessionStatus.RECORDING && session.status != SessionStatus.DIARIZING) {
                 "The session is busy"
@@ -194,7 +242,14 @@ class RetranscribeUseCase(
                 if (source != null && mix != null) {
                     withContext(asrDispatcher) { AudioCleaning.writeRecognizerMix(original, source, mix) }
                 }
-                transcribe(language, mix ?: original, sessionId, transcribeFrom, onServer)
+                // Whisper borrows word times from the old transcript when
+                // it is in the same language (issue #158).
+                val anchors = if (session.language == language) {
+                    WordTimer.anchorsOf(oldSegments.map { TokenTimingCodec.decode(it.tokens) })
+                } else {
+                    emptyList()
+                }
+                transcribe(language, mix ?: original, sessionId, transcribeFrom, target, anchors)
             } finally {
                 mix?.delete()
             }
@@ -207,7 +262,11 @@ class RetranscribeUseCase(
                     speakerIndex = dominantSpeaker(oldSegments, final.startMs, final.endMs)
                 )
             }
-            val engine = if (onServer) server!!.describe() else transcriberFactory.describe(language)
+            val engine = when (target) {
+                RetranscribeTarget.SERVER -> server!!.describe()
+                RetranscribeTarget.WHISPER -> whisper!!.describe()
+                RetranscribeTarget.DEVICE -> transcriberFactory.describe(language)
+            }
             repository.replaceTranscript(sessionId, language, pieces, engine.engine, engine.model, cleaned)
             work = null
             Log.i(
@@ -222,7 +281,7 @@ class RetranscribeUseCase(
             throw ce
         } catch (t: Throwable) {
             work?.delete()
-            Log.w(TAG, "re-transcription failed for session $sessionId (server=$onServer)", t)
+            Log.w(TAG, "re-transcription failed for session $sessionId (target=$target)", t)
             _state.value = if (showFailure) {
                 RetranscribeState.Failed(sessionId, t.message ?: t.javaClass.simpleName)
             } else {
@@ -234,23 +293,34 @@ class RetranscribeUseCase(
     }
 
     /**
-     * Transcribe [file] on the device, or on the server when [onServer]
-     * is set, reporting progress from [from] to 1 of the whole run.
+     * Transcribe [file] with [target], reporting progress from [from]
+     * to 1 of the whole run. [anchors] are the old transcript's word
+     * tokens, which Whisper borrows its word times from.
      */
     private suspend fun transcribe(
         language: String,
         file: File,
         sessionId: Long,
         from: Float,
-        onServer: Boolean
+        target: RetranscribeTarget,
+        anchors: List<TimedToken>
     ): List<TranscriptEvent.Final> {
         val report = { progress: Float ->
-            _state.value = RetranscribeState.Running(sessionId, from + progress * (1f - from), onServer = onServer)
+            _state.value = RetranscribeState.Running(
+                sessionId,
+                from + progress * (1f - from),
+                onServer = target == RetranscribeTarget.SERVER,
+                onWhisper = target == RetranscribeTarget.WHISPER
+            )
         }
         // Cleaning (on the phone) is over: say so before the first
         // progress report, which a server may be slow to send (issue #123).
         report(0f)
-        if (onServer) return server!!.transcribe(file, language, report)
+        when (target) {
+            RetranscribeTarget.SERVER -> return server!!.transcribe(file, language, report)
+            RetranscribeTarget.WHISPER -> return whisper!!.transcribe(file, language, anchors, report)
+            RetranscribeTarget.DEVICE -> Unit
+        }
         return withContext(asrDispatcher) {
             transcriberFactory.create(language).use { transcriber ->
                 FileTranscriber.transcribe(file, transcriber, onProgress = report)

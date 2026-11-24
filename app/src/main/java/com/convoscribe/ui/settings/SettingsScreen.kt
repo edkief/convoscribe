@@ -186,6 +186,8 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
         ?.bundleIds?.contains(ModelCatalog.CLEANUP.id) == true
     val semanticDownloading = (downloadState as? ModelDownloadState.Running)
         ?.bundleIds?.contains(ModelCatalog.TEXT_EMBEDDING_GEMMA.id) == true
+    val whisperDownloading = (downloadState as? ModelDownloadState.Running)
+        ?.bundleIds?.contains(ModelCatalog.ASR_WHISPER_TURBO.id) == true
     // Sessions get indexed by the charging job meanwhile; re-count on return.
     LifecycleResumeEffect(Unit) {
         vm.refreshSemanticProgress()
@@ -259,6 +261,7 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
         cleanupDownloading = cleanupDownloading,
         semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
+        whisperDownloading = whisperDownloading,
         liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = updateState,
@@ -302,6 +305,14 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
                 )
             },
             onDeleteCleanup = vm::deleteCleanupModel,
+            onDownloadWhisper = {
+                ContextCompat.startForegroundService(
+                    context,
+                    ModelDownloadService.startIntent(context, ModelCatalog.whisperBundles)
+                )
+            },
+            onDeleteWhisper = vm::deleteWhisperModel,
+            onWhisperAutoChange = vm::setWhisperAuto,
             onDownloadSemantic = {
                 ContextCompat.startForegroundService(
                     context,
@@ -405,6 +416,9 @@ internal class SettingsActions(
     val onOpenPresets: () -> Unit = {},
     val onDownloadCleanup: () -> Unit = {},
     val onDeleteCleanup: () -> Unit = {},
+    val onDownloadWhisper: () -> Unit = {},
+    val onDeleteWhisper: () -> Unit = {},
+    val onWhisperAutoChange: (Boolean) -> Unit = {},
     val onDownloadSemantic: () -> Unit = {},
     val onDeleteSemantic: () -> Unit = {},
     val onSemanticIndexModeChange: (String) -> Unit = {},
@@ -446,6 +460,7 @@ private class PageExtras(
     val cleanupDownloading: Boolean,
     val semanticDownloading: Boolean,
     val voiceModelDownloading: Boolean,
+    val whisperDownloading: Boolean,
     val liveCleanupVerdict: LiveCleanupVerdict?,
     val overlayGranted: Boolean,
     val update: UpdateState,
@@ -465,7 +480,8 @@ private class PageExtras(
  * [overlayGranted] is whether "Display over other apps" is allowed;
  * [update] and [updateActions] drive the update part of About (issue #15).
  * [cleanupDownloading] while the noise cleanup model downloads (issue #37),
- * [semanticDownloading] while the semantic search model does (issue #61);
+ * [semanticDownloading] while the semantic search model does (issue #61),
+ * [whisperDownloading] while Whisper does (issue #158);
  * [liveCleanupVerdict] is the engine check's verdict on cleaning live
  * with the selected engine, `null` when it was not checked. [backup] is
  * the running or last backup or restore (issue #25).
@@ -479,6 +495,7 @@ internal fun SettingsBody(
     cleanupDownloading: Boolean = false,
     semanticDownloading: Boolean = false,
     voiceModelDownloading: Boolean = false,
+    whisperDownloading: Boolean = false,
     liveCleanupVerdict: LiveCleanupVerdict? = null,
     overlayGranted: Boolean = true,
     update: UpdateState = UpdateState.Idle,
@@ -492,6 +509,7 @@ internal fun SettingsBody(
         cleanupDownloading = cleanupDownloading,
         semanticDownloading = semanticDownloading,
         voiceModelDownloading = voiceModelDownloading,
+        whisperDownloading = whisperDownloading,
         liveCleanupVerdict = liveCleanupVerdict,
         overlayGranted = overlayGranted,
         update = update,
@@ -640,6 +658,14 @@ private fun SettingsPageContent(
                 onDownload = actions.onDownloadCleanup,
                 onDelete = actions.onDeleteCleanup,
                 onCleanByDefaultChange = actions.onCleanAudioDefaultChange
+            )
+            WhisperSection(
+                installed = state.whisperInstalled,
+                downloading = extras.whisperDownloading,
+                auto = state.whisperAuto,
+                onDownload = actions.onDownloadWhisper,
+                onDelete = actions.onDeleteWhisper,
+                onAutoChange = actions.onWhisperAutoChange
             )
             TranscriptionServerSection(state = state, actions = actions)
             RecordingAdvanced(

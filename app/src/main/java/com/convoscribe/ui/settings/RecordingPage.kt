@@ -246,6 +246,63 @@ internal fun NoiseCleanupSection(
 }
 
 /**
+ * "Whisper Large-v3-Turbo" section (issue #158): the optional on-device
+ * Whisper model (with its voice activity detector), downloaded or
+ * removed here, and *Transcribe again with Whisper* ([auto], written
+ * immediately, enabled once installed): each stopped recording and each
+ * import is transcribed again on the phone, after the server if that is
+ * on too. A finished session can use Whisper from *Re-transcribe*
+ * either way. It runs on the CPU and is slow; live captions keep the
+ * streaming engine.
+ */
+@Composable
+internal fun WhisperSection(
+    installed: Boolean,
+    downloading: Boolean,
+    auto: Boolean,
+    onDownload: () -> Unit,
+    onDelete: () -> Unit,
+    onAutoChange: (Boolean) -> Unit
+) {
+    SectionCard(
+        modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
+        title = stringResource(R.string.settings_section_whisper)
+    ) {
+        SupportingText(text = stringResource(R.string.settings_whisper_help))
+        when {
+            downloading -> Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(AppTheme.spacing.s)
+            ) {
+                InlineProgress()
+                NoticeText(text = stringResource(R.string.settings_whisper_downloading))
+            }
+            installed -> {
+                SupportingText(text = stringResource(R.string.settings_whisper_installed))
+                TextButton(onClick = onDelete) {
+                    Text(text = stringResource(R.string.settings_whisper_delete))
+                }
+            }
+            else -> OutlinedButton(onClick = onDownload) {
+                Text(
+                    text = stringResource(
+                        R.string.settings_whisper_download,
+                        ModelCatalog.whisperBundles.sumOf { it.totalBytes }.toFloat() / 1_000_000_000f
+                    )
+                )
+            }
+        }
+        SwitchRow(
+            label = stringResource(R.string.settings_whisper_auto_label),
+            help = stringResource(R.string.settings_whisper_auto_help),
+            checked = auto && installed,
+            enabled = installed,
+            onCheckedChange = onAutoChange
+        )
+    }
+}
+
+/**
  * "Transcription server" section (issue #58): the base URL (with a
  * warning under a plain `http://` one), API key and
  * model, saved by Save like the LLM's, a Test that lists the server's

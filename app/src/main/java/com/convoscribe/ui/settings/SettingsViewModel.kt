@@ -258,6 +258,12 @@ data class SettingsUiState(
     val summaryTemplates: List<SummaryTemplate> = SummaryTemplates.BUILT_IN,
     /** The noise cleanup model is downloaded (issue #37). */
     val cleanupInstalled: Boolean = false,
+
+    /** Whisper Large-v3-Turbo and its VAD are downloaded (issue #158). */
+    val whisperInstalled: Boolean = false,
+
+    /** *Transcribe again with Whisper* (issue #158). */
+    val whisperAuto: Boolean = false,
     /** The semantic search model is downloaded (issue #61). */
     val semanticInstalled: Boolean = false,
     /** Sessions indexed for semantic search, and all sessions (issue #61). */
@@ -730,6 +736,19 @@ class SettingsViewModel(
         repo.update { it.copy(liveAssistSemantic = enabled) }
     }
 
+    /** Persist *Transcribe again with Whisper* immediately (issue #158). */
+    fun setWhisperAuto(enabled: Boolean) {
+        repo.update { it.copy(whisperAuto = enabled) }
+    }
+
+    /** Remove Whisper and its VAD (issue #158); sessions keep their transcripts. */
+    fun deleteWhisperModel() {
+        viewModelScope.launch {
+            ModelCatalog.whisperBundles.forEach(modelStore::delete)
+            refreshModels()
+        }
+    }
+
     /** Persist *Improve recordings on the server* immediately (issue #58). */
     fun setServerAuto(enabled: Boolean) {
         repo.update { it.copy(asrServerAuto = enabled) }
@@ -1124,6 +1143,8 @@ class SettingsViewModel(
             defaultSummaryTemplate = current.defaultSummaryTemplate,
             frenchModelInstalled = modelStore.isInstalled(ModelCatalog.ASR_FR),
             cleanupInstalled = modelStore.isInstalled(ModelCatalog.CLEANUP),
+            whisperInstalled = ModelCatalog.whisperBundles.all(modelStore::isInstalled),
+            whisperAuto = current.whisperAuto,
             semanticInstalled = modelStore.isInstalled(ModelCatalog.TEXT_EMBEDDING_GEMMA),
             cleanAudioDefault = current.cleanAudioDefault,
             autoMarkNotes = current.autoMarkNotes,
