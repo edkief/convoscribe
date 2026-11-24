@@ -336,6 +336,16 @@ object ModelCatalog {
         )
     )
 
+    /**
+     * Whether a session's recorded ASR model ([asrModel], several joined
+     * by `" + "` for a continued session) is on-device Whisper alone, as
+     * live Whisper (issue #160) records it.
+     */
+    fun isWhisperOnly(asrModel: String?): Boolean =
+        !asrModel.isNullOrBlank() && asrModel.split(" + ").all { it.startsWith(WHISPER_ID_PREFIX) }
+
+    private const val WHISPER_ID_PREFIX = "asr-whisper-"
+
     /** What on-device Whisper (issue #158) needs, downloaded and deleted together. */
     val whisperBundles: List<ModelBundle> = listOf(ASR_WHISPER_TURBO, VAD_SILERO)
 

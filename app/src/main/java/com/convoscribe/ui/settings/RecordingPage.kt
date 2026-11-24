@@ -16,7 +16,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -32,6 +34,7 @@ import com.convoscribe.enginecheck.LiveCleanupVerdict
 import com.convoscribe.models.ModelCatalog
 import com.convoscribe.settings.FloatingShape
 import com.convoscribe.settings.ServiceSource
+import com.convoscribe.settings.SettingsRepository
 import com.convoscribe.settings.isUnencryptedUrl
 import com.convoscribe.ui.components.ChoiceGroup
 import com.convoscribe.ui.components.Disclosure
@@ -44,6 +47,7 @@ import com.convoscribe.ui.components.SectionCard
 import com.convoscribe.ui.components.SupportingText
 import com.convoscribe.ui.components.SwitchRow
 import com.convoscribe.ui.theme.AppTheme
+import kotlin.math.roundToInt
 
 /**
  * "Recording" section: the floating control over other apps (issue
@@ -253,7 +257,9 @@ internal fun NoiseCleanupSection(
  * installed): each stopped recording and each import is transcribed
  * again on the phone, after the server if that is on too. A finished
  * session can use Whisper from *Re-transcribe* either way. Live captions
- * keep the streaming engine.
+ * keep the streaming engine unless *Transcribe while recording*
+ * ([live], experimental, issue #160) is on; its *Longest segment*
+ * slider ([liveMaxSeconds]) shows under it then.
  *
  * On a chip with a published Qualcomm build ([WhisperStatus.npuChip])
  * the download is that NPU build; the card then says whether Whisper
@@ -272,7 +278,11 @@ internal fun WhisperSection(
     onDownloadCpu: () -> Unit,
     onCheckNpu: () -> Unit,
     onDelete: () -> Unit,
-    onAutoChange: (Boolean) -> Unit
+    onAutoChange: (Boolean) -> Unit,
+    live: Boolean = false,
+    liveMaxSeconds: Int = SettingsRepository.DEFAULT_WHISPER_LIVE_MAX_SECONDS,
+    onLiveChange: (Boolean) -> Unit = {},
+    onLiveMaxSecondsChange: (Int) -> Unit = {}
 ) {
     SectionCard(
         modifier = Modifier.widthIn(max = AppTheme.sizes.contentMaxWidth),
@@ -332,7 +342,39 @@ internal fun WhisperSection(
             enabled = status.anyInstalled,
             onCheckedChange = onAutoChange
         )
+        SwitchRow(
+            label = stringResource(R.string.settings_whisper_live_label),
+            help = stringResource(R.string.settings_whisper_live_help),
+            checked = live && status.anyInstalled,
+            enabled = status.anyInstalled,
+            onCheckedChange = onLiveChange
+        )
+        if (live && status.anyInstalled) {
+            WhisperLiveMaxSlider(seconds = liveMaxSeconds, onChange = onLiveMaxSecondsChange)
+        }
     }
+}
+
+/**
+ * Live Whisper's *Longest segment* (issue #160): how long a segment may
+ * grow while someone talks without a pause. Written when the slider is
+ * let go.
+ */
+@Composable
+private fun WhisperLiveMaxSlider(seconds: Int, onChange: (Int) -> Unit) {
+    val min = SettingsRepository.MIN_WHISPER_LIVE_MAX_SECONDS
+    val max = SettingsRepository.MAX_WHISPER_LIVE_MAX_SECONDS
+    var value by remember(seconds) { mutableIntStateOf(seconds) }
+    FieldLabel(text = stringResource(R.string.settings_whisper_live_max_label, value))
+    Slider(
+        value = value.toFloat(),
+        onValueChange = { value = it.roundToInt().coerceIn(min, max) },
+        onValueChangeFinished = { onChange(value) },
+        valueRange = min.toFloat()..max.toFloat(),
+        steps = max - min - 1,
+        modifier = Modifier.fillMaxWidth()
+    )
+    SupportingText(text = stringResource(R.string.settings_whisper_live_max_help))
 }
 
 /** Where Whisper runs, or would run, and why (issue #159); also on Engine check. */

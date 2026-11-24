@@ -68,6 +68,11 @@ enum class RecordingPhase {
  *   ignores it, so a mark never redraws the minimal shape.
  * @property cleaning the open session's audio is cleaned live
  *   (issue #37), so the Record screen can say so; `false` while idle.
+ * @property chunksPending speech segments live Whisper (issue #160)
+ *   has still to transcribe, so the Record screen can say it is behind;
+ *   0 for the streaming engines and while idle.
+ * @property liveNotice why live Whisper stopped transcribing, while the
+ *   recording carries on; `null` otherwise.
  * @property lastCompletedSessionId id of the session that just
  *   finished, until the UI calls [RecordingController.consumeCompleted].
  *   The UI navigates to the session-detail screen on this and then
@@ -86,6 +91,8 @@ data class RecordingState(
     val finalLines: List<String> = emptyList(),
     val markCount: Int = 0,
     val cleaning: Boolean = false,
+    val chunksPending: Int = 0,
+    val liveNotice: String? = null,
     val lastCompletedSessionId: Long? = null,
     val error: String? = null
 )

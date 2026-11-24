@@ -686,6 +686,39 @@ class RetranscribeUseCaseTest {
     }
 
     @Test
+    fun improveAfterStop_liveWhisperTranscript_isNotTranscribedWithWhisperAgain() = runTest {
+        // Issue #160: live Whisper already wrote this transcript.
+        val id = timedSession()
+        repo.recordEngine(id, "npu", "asr-whisper-turbo-npu-snapdragon-8-gen-3")
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(live, whisper = whisperPass(recognizer, live), whisperAuto = true)
+
+        assertNull(uc.afterStopTarget(id))
+        assertFalse(uc.improveAfterStop(id))
+        assertTrue(recognizer.calls.isEmpty())
+    }
+
+    @Test
+    fun improveAfterStop_liveWhisperTranscript_stillGoesToTheServer_butNotToWhisperWhenItFails() = runTest {
+        val id = timedSession()
+        repo.recordEngine(id, "cpu", "asr-whisper-large-v3-turbo-int8")
+        val live = factory { FrenchTranscriber() }
+        val recognizer = FakeWhisper()
+        val uc = useCase(
+            live,
+            server = FakeServer(ServerAsrException("HTTP 502 from x: down")),
+            serverAuto = true,
+            whisper = whisperPass(recognizer, live),
+            whisperAuto = true
+        )
+
+        assertEquals(RetranscribeTarget.SERVER, uc.afterStopTarget(id))
+        assertFalse(uc.improveAfterStop(id))
+        assertTrue(recognizer.calls.isEmpty())
+    }
+
+    @Test
     fun improveAfterStop_whisperNotDownloaded_doesNothing() = runTest {
         val id = timedSession()
         val live = factory { FrenchTranscriber() }

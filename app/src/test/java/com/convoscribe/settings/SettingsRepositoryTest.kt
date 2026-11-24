@@ -66,6 +66,22 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun whisperLive_defaultOffWithTenSecondSegments_persists_andIsClamped() {
+        // Issue #160: experimental live Whisper is opt-in.
+        val repo = newRepository()
+        assertEquals(false, repo.settings.value.whisperLive)
+        assertEquals(10, repo.settings.value.whisperLiveMaxSeconds)
+        repo.update { it.copy(whisperLive = true, whisperLiveMaxSeconds = 6) }
+        val reloaded = newRepository().settings.value
+        assertEquals(true, reloaded.whisperLive)
+        assertEquals(6, reloaded.whisperLiveMaxSeconds)
+        repo.update { it.copy(whisperLiveMaxSeconds = 1) }
+        assertEquals(5, repo.settings.value.whisperLiveMaxSeconds)
+        repo.update { it.copy(whisperLiveMaxSeconds = 60) }
+        assertEquals(28, repo.settings.value.whisperLiveMaxSeconds)
+    }
+
+    @Test
     fun updateSettings_autoCheckOnAndPreReleasesOff_andPersist() {
         val repo = newRepository()
         assertEquals(true, repo.settings.value.updateCheckAuto)

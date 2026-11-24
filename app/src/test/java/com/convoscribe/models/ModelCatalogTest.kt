@@ -1,6 +1,7 @@
 package com.convoscribe.models
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
@@ -292,5 +293,17 @@ class ModelCatalogTest {
     @Test
     fun tarBz2_isTheDefaultArchiveFormat() {
         assertEquals(ArchiveFormat.TAR_BZ2, ModelCatalog.ASR_EN_NPU.archive!!.format)
+    }
+
+    @Test
+    fun isWhisperOnly_matchesLiveWhisperSessions_only() {
+        // Issue #160: after Stop, Whisper is not run again over its own transcript.
+        assertTrue(ModelCatalog.isWhisperOnly(ModelCatalog.ASR_WHISPER_TURBO.id))
+        assertTrue(ModelCatalog.isWhisperOnly(ModelCatalog.whisperNpuAssets.first().bundle.id))
+        assertTrue(ModelCatalog.isWhisperOnly("asr-whisper-large-v3-turbo-int8 + asr-whisper-turbo-npu-x"))
+        assertFalse(ModelCatalog.isWhisperOnly("${ModelCatalog.ASR_EN.id} + asr-whisper-large-v3-turbo-int8"))
+        assertFalse(ModelCatalog.isWhisperOnly(ModelCatalog.ASR_EN.id))
+        assertFalse(ModelCatalog.isWhisperOnly(null))
+        assertFalse(ModelCatalog.isWhisperOnly(""))
     }
 }

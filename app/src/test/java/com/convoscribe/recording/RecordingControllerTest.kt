@@ -1,6 +1,7 @@
 package com.convoscribe.recording
 
 import com.convoscribe.asr.EngineInfo
+import com.convoscribe.asr.LiveStatus
 import com.convoscribe.asr.StreamingTranscriber
 import com.convoscribe.asr.TranscriberFactory
 import com.convoscribe.asr.TranscriptEvent
@@ -20,6 +21,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -302,6 +305,11 @@ class RecordingControllerTest {
         override fun close() {
             closed = true
         }
+
+        /** Live Whisper's status (issue #160), when the test sets one. */
+        var liveStatus: MutableStateFlow<LiveStatus>? = null
+
+        override val status: StateFlow<LiveStatus>? get() = liveStatus
     }
 
     /**
@@ -404,6 +412,33 @@ class RecordingControllerTest {
         // and runTest does not complain about an open child.
         h.controller.stop()
         advanceUntilIdle()
+    }
+
+    @Test
+    fun liveStatus_showsTheBacklogAndAFailure_throughAPause_andStopClearsIt() = runTest {
+        // Issue #160: live Whisper's segments still to transcribe.
+        val transcriber = EveryThirdChunkTranscriber().apply { liveStatus = MutableStateFlow(LiveStatus()) }
+        val h = buildHarness(transcriber = transcriber)
+        h.controller.start(this)
+        advanceUntilIdle()
+        assertEquals(0, h.controller.state.value.chunksPending)
+
+        transcriber.liveStatus!!.value = LiveStatus(pending = 3)
+        advanceUntilIdle()
+        assertEquals(3, h.controller.state.value.chunksPending)
+
+        h.controller.pause()
+        transcriber.liveStatus!!.value = LiveStatus(pending = 1, failure = "out of memory")
+        advanceUntilIdle()
+        assertEquals(RecordingPhase.PAUSED, h.controller.state.value.phase)
+        assertEquals(1, h.controller.state.value.chunksPending)
+        assertEquals("out of memory", h.controller.state.value.liveNotice)
+
+        h.controller.stop()
+        transcriber.liveStatus!!.value = LiveStatus(pending = 5)
+        advanceUntilIdle()
+        assertEquals(0, h.controller.state.value.chunksPending)
+        assertNull(h.controller.state.value.liveNotice)
     }
 
     @Test

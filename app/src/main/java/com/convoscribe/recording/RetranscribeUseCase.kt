@@ -18,6 +18,7 @@ import com.convoscribe.data.SessionStatus
 import com.convoscribe.data.TokenTimingCodec
 import com.convoscribe.data.cleanAudioFile
 import com.convoscribe.diarization.DiarizeSessionUseCase
+import com.convoscribe.models.ModelCatalog
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -149,14 +150,15 @@ class RetranscribeUseCase(
      * server when *Improve recordings on the server* is on with a server
      * set up, else Whisper when *Transcribe again with Whisper* is on and
      * downloaded; `null` for neither, or when the transcript was edited
-     * by hand (a continued session may have been).
+     * by hand (a continued session may have been). A transcript live
+     * Whisper made (issue #160) is not transcribed with Whisper again.
      */
     suspend fun afterStopTarget(sessionId: Long): RetranscribeTarget? {
         val session = repository.getSession(sessionId) ?: return null
         if (session.transcriptEdited) return null
         return when {
             server != null && serverAuto() -> RetranscribeTarget.SERVER
-            wantsWhisper() -> RetranscribeTarget.WHISPER
+            wantsWhisper() && !ModelCatalog.isWhisperOnly(session.asrModel) -> RetranscribeTarget.WHISPER
             else -> null
         }
     }
@@ -177,6 +179,7 @@ class RetranscribeUseCase(
         val language = repository.getSession(sessionId)?.language ?: return false
         if (transcribeAndReplace(sessionId, language, clean = false, first, showFailure = false)) return true
         if (first != RetranscribeTarget.SERVER || !wantsWhisper()) return false
+        if (ModelCatalog.isWhisperOnly(repository.getSession(sessionId)?.asrModel)) return false
         Log.i(TAG, "server transcript failed for session $sessionId; trying Whisper")
         return transcribeAndReplace(sessionId, language, clean = false, RetranscribeTarget.WHISPER, showFailure = false)
     }

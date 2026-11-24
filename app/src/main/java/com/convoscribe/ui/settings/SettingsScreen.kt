@@ -331,6 +331,8 @@ fun SettingsScreen(navController: NavHostController, initialPage: String? = null
             onCheckWhisperNpu = vm::checkWhisperNpu,
             onDeleteWhisper = vm::deleteWhisperModel,
             onWhisperAutoChange = vm::setWhisperAuto,
+            onWhisperLiveChange = vm::setWhisperLive,
+            onWhisperLiveMaxSecondsChange = vm::setWhisperLiveMaxSeconds,
             onDownloadSemantic = {
                 ContextCompat.startForegroundService(
                     context,
@@ -439,6 +441,8 @@ internal class SettingsActions(
     val onCheckWhisperNpu: () -> Unit = {},
     val onDeleteWhisper: () -> Unit = {},
     val onWhisperAutoChange: (Boolean) -> Unit = {},
+    val onWhisperLiveChange: (Boolean) -> Unit = {},
+    val onWhisperLiveMaxSecondsChange: (Int) -> Unit = {},
     val onDownloadSemantic: () -> Unit = {},
     val onDeleteSemantic: () -> Unit = {},
     val onSemanticIndexModeChange: (String) -> Unit = {},
@@ -692,7 +696,11 @@ private fun SettingsPageContent(
                 onDownloadCpu = actions.onDownloadWhisperCpu,
                 onCheckNpu = actions.onCheckWhisperNpu,
                 onDelete = actions.onDeleteWhisper,
-                onAutoChange = actions.onWhisperAutoChange
+                onAutoChange = actions.onWhisperAutoChange,
+                live = state.whisperLive,
+                liveMaxSeconds = state.whisperLiveMaxSeconds,
+                onLiveChange = actions.onWhisperLiveChange,
+                onLiveMaxSecondsChange = actions.onWhisperLiveMaxSecondsChange
             )
             TranscriptionServerSection(state = state, actions = actions)
             RecordingAdvanced(
