@@ -9,6 +9,7 @@ import com.convoscribe.models.ModelDownloadManager
 import com.convoscribe.models.ModelDownloads
 import com.convoscribe.models.ModelStore
 import java.io.File
+import java.io.RandomAccessFile
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -246,7 +247,10 @@ class ModelSetupViewModelTest {
             for (file in installed.files) {
                 val onDisk = File(File(modelsRoot, installed.id), file.fileName)
                 onDisk.parentFile?.mkdirs()
-                onDisk.writeBytes(ByteArray(file.sizeBytes.toInt()) { 0 })
+                // Only the length counts as installed: set it without
+                // allocating the file's 26 MB on the test heap, which
+                // ran out of memory late in a full test run.
+                RandomAccessFile(onDisk, "rw").use { it.setLength(file.sizeBytes) }
             }
         }
         // English ASR: not installed; the test passes engine "npu"
