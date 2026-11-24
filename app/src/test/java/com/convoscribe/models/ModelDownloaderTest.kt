@@ -325,6 +325,33 @@ class ModelDownloaderTest {
     }
 
     @Test
+    fun zipBundle_filesInSubfolders_areStoredFlat() = runTest {
+        // Qualcomm AI Hub's layout: one folder per model.
+        val wrapper = ByteArray(300) { (it % 13).toByte() }
+        val binary = ByteArray(5_000) { (it % 7).toByte() }
+        val archive = buildZip(
+            rootDir = "root",
+            entries = listOf("root/metadata.json", "root/encoder_onnx/encoder.bin", "root/encoder_onnx/encoder.onnx"),
+            payloads = listOf("{}".toByteArray(), binary, wrapper)
+        )
+        server.enqueue(MockResponse().setBody(Buffer().write(archive)))
+        val bundle = zipBundle(
+            archive,
+            listOf(
+                ModelFile("encoder.onnx", "", wrapper.size.toLong(), "encoder_onnx/encoder.onnx"),
+                ModelFile("encoder.bin", "", binary.size.toLong(), "encoder_onnx/encoder.bin")
+            )
+        )
+
+        val events = downloader.download(listOf(bundle)).toList()
+
+        assertEquals(DownloadEvent.Completed, events.last())
+        assertTrue(File(modelsRoot, "whisper-npu/encoder.onnx").readBytes().contentEquals(wrapper))
+        assertTrue(File(modelsRoot, "whisper-npu/encoder.bin").readBytes().contentEquals(binary))
+        assertTrue(store.isInstalled(bundle))
+    }
+
+    @Test
     fun zipBundle_missingListedFile_throwsArchiveIsMissing() {
         val wrapper = ByteArray(300) { (it % 13).toByte() }
         val archive = buildZip("root", listOf("root/encoder.onnx"), listOf(wrapper))
