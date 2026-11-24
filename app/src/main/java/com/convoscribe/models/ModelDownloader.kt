@@ -89,8 +89,9 @@ interface ModelDownloads {
  * - Archive bundles ([ModelArchive] is set): [ModelArchive.url] is
  *   fetched the same way into [ModelStore.archivePartFor], then
  *   extracted through bzip2 + tar (or zip) decoders. Only entries whose path
- *   matches a listed [ModelFile.fileName] are written (each verified
- *   by size); all other entries are skipped. The archive is deleted
+ *   matches a listed [ModelFile.archivePath] are written, as its
+ *   [ModelFile.fileName] (each verified by size); all other entries
+ *   are skipped. The archive is deleted
  *   once extracted. Already-installed archive bundles are skipped
  *   entirely — no HTTP request is made. Before the fetch, [freeBytes]
  *   must cover the rest of the archive plus its extracted files.
@@ -281,7 +282,7 @@ class ModelDownloader(
 
     /**
      * Walks the bzip2 + tar (or zip, [ModelArchive.format]) [archiveFile], writes only the entries
-     * listed in [bundle.files] (matching by fileName with a leading
+     * listed in [bundle.files] (matching by archivePath with a leading
      * `./` and `rootDir + "/"` stripped first) to `<target>.part`,
      * verifies each by size, then renames. Throws
      * [ModelDownloadException] for size mismatches, missing entries
@@ -297,7 +298,7 @@ class ModelDownloader(
         archiveFile: File,
         onTick: suspend (fraction: Float, currentFile: String) -> Unit
     ) {
-        val listedByName = bundle.files.associateBy { it.fileName }
+        val listedByPath = bundle.files.associateBy { it.archivePath }
         val writtenFiles = mutableSetOf<String>()
         val partFiles = mutableListOf<File>()
         val archiveSize = archiveFile.length().coerceAtLeast(1L)
@@ -347,17 +348,17 @@ class ModelDownloader(
                         tickIfDue(bundle.id)
                         continue
                     }
-                    val listed = listedByName[stripped]
+                    val listed = listedByPath[stripped]
                     if (listed == null) {
                         tickIfDue(bundle.id)
                         continue
                     }
-                    val target = store.fileFor(bundle, stripped)
+                    val target = store.fileFor(bundle, listed.fileName)
                     val partFile = File(target.parentFile, target.name + ".part")
                     target.parentFile?.mkdirs()
                     partFiles.add(partFile)
                     val expectedSize = listed.sizeBytes
-                    val entryBytes = writeTarEntry(tar, partFile) { tickIfDue(stripped) }
+                    val entryBytes = writeTarEntry(tar, partFile) { tickIfDue(listed.fileName) }
                     if (entryBytes != expectedSize) {
                         fail(
                             "Size mismatch for ${listed.fileName}: " +
@@ -367,8 +368,8 @@ class ModelDownloader(
                     if (!partFile.renameTo(target)) {
                         fail("Could not rename ${partFile.name} to ${target.name}")
                     }
-                    writtenFiles.add(stripped)
-                    tickIfDue(stripped)
+                    writtenFiles.add(listed.fileName)
+                    tickIfDue(listed.fileName)
                 }
             }
         } catch (e: IOException) {

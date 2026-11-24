@@ -16,11 +16,17 @@ enum class ModelKind { ASR, SEGMENTATION, EMBEDDING, ENHANCEMENT, TEXT_EMBEDDING
  * contain a sub-directory, e.g. `test_wavs/0.wav`), the URL to download
  * it from and the expected size in bytes. The downloader uses the size
  * for progress reporting and to verify a download completed.
+ *
+ * [archivePath] is where the file sits inside its bundle's
+ * [ModelArchive], below [ModelArchive.rootDir], when that differs from
+ * [fileName]: Qualcomm AI Hub's zips keep each model in a sub-directory
+ * (`encoder_onnx/encoder.onnx`), and the app stores them side by side.
  */
 data class ModelFile(
     val fileName: String,
     val url: String,
-    val sizeBytes: Long
+    val sizeBytes: Long,
+    val archivePath: String = fileName
 )
 
 /**
@@ -377,15 +383,21 @@ object ModelCatalog {
      * Qualcomm AI Hub's precompiled Whisper Large-v3-Turbo build for one
      * chip (release v0.67.0, float, QAIRT 2.51 or 2.50, ONNX Runtime
      * 1.30): `encoder.onnx`/`decoder.onnx` are EPContext wrappers that
-     * point at the `.bin` QNN context binaries next to them. Published
-     * as one zip of about 2 GB; [slug] names it.
+     * point at the `.bin` QNN context binaries next to them
+     * (`./encoder.bin`). Published as one zip of about 2 GB; [slug] names
+     * it. Most zips keep each model in a folder of its own
+     * (`encoder_onnx/`, `decoder_onnx/`); the Snapdragon 8 Gen 3 one is
+     * [flat]. The files are stored flat either way, which keeps every
+     * wrapper beside its binary.
      */
     private fun whisperNpuBundle(
         slug: String,
         archiveBytes: Long,
         encoderBinBytes: Long,
-        decoderBinBytes: Long
+        decoderBinBytes: Long,
+        flat: Boolean = false
     ): ModelBundle {
+        fun inZip(model: String, file: String) = if (flat) file else "${model}_onnx/$file"
         val name = "whisper_large_v3_turbo-precompiled_qnn_onnx-float-qualcomm_$slug"
         return ModelBundle(
             id = "asr-whisper-turbo-npu-${slug.replace('_', '-')}",
@@ -393,10 +405,10 @@ object ModelCatalog {
             kind = ModelKind.OFFLINE_ASR,
             language = null,
             files = listOf(
-                ModelFile("encoder.onnx", "", WHISPER_NPU_ENCODER_ONNX),
-                ModelFile("encoder.bin", "", encoderBinBytes),
-                ModelFile("decoder.onnx", "", WHISPER_NPU_DECODER_ONNX),
-                ModelFile("decoder.bin", "", decoderBinBytes)
+                ModelFile("encoder.onnx", "", WHISPER_NPU_ENCODER_ONNX, inZip("encoder", "encoder.onnx")),
+                ModelFile("encoder.bin", "", encoderBinBytes, inZip("encoder", "encoder.bin")),
+                ModelFile("decoder.onnx", "", WHISPER_NPU_DECODER_ONNX, inZip("decoder", "decoder.onnx")),
+                ModelFile("decoder.bin", "", decoderBinBytes, inZip("decoder", "decoder.bin"))
             ),
             archive = ModelArchive(
                 url = "$WHISPER_NPU_BASE$name.zip",
@@ -430,7 +442,7 @@ object ModelCatalog {
         WhisperNpuAsset(
             setOf("SM8650"),
             "Snapdragon 8 Gen 3",
-            whisperNpuBundle("snapdragon_8gen3", 2_018_035_156, 1_752_562_424, 452_486_656)
+            whisperNpuBundle("snapdragon_8gen3", 2_018_035_156, 1_752_562_424, 452_486_656, flat = true)
         ),
         WhisperNpuAsset(
             setOf("SM8750"),

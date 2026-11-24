@@ -274,6 +274,17 @@ class ModelCatalogTest {
                 listOf("encoder.onnx", "encoder.bin", "decoder.onnx", "decoder.bin"),
                 bundle.files.map { it.fileName }
             )
+            // Where each file sits in the published zip: one folder per
+            // model, except in the Snapdragon 8 Gen 3 build.
+            val folders = if ("SM8650" in asset.socModels) {
+                listOf("", "", "", "")
+            } else {
+                listOf("encoder_onnx/", "encoder_onnx/", "decoder_onnx/", "decoder_onnx/")
+            }
+            assertEquals(
+                bundle.files.zip(folders) { file, folder -> folder + file.fileName },
+                bundle.files.map { it.archivePath }
+            )
             // Deflate barely shrinks fp16 weights: the zip is a little
             // smaller than what it holds.
             assertTrue(archive.sizeBytes in (bundle.totalBytes * 9 / 10)..bundle.totalBytes)
