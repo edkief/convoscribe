@@ -28,7 +28,7 @@ import kotlinx.coroutines.withContext
  * ([SpeechChunker]) and each one becomes one line; the build's fixed
  * 30 s window takes each segment padded.
  *
- * The model (about 2.2 GB) is loaded for each call and released
+ * The model (about 1 GB) is loaded for each call and released
  * afterwards; live Whisper (issue #160) keeps it loaded for a recording
  * through [openDecoder]. A failure to load or run it is thrown;
  * [com.convoscribe.asr.WhisperEngine] then records it and falls back to
@@ -55,15 +55,21 @@ class QnnWhisperRecognizer(
         language: String,
         onProgress: (Float) -> Unit
     ): List<TranscriptEvent.Final> = withContext(dispatcher) {
-        openDecoder(language).use { decoder ->
-            SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
-                val finals = mutableListOf<TranscriptEvent.Final>()
-                SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
-                    currentCoroutineContext().ensureActive()
-                    span.lineOf(decoder.decode(span.samples))?.let(finals::add)
-                }
-                finals
+        openDecoder(language).use { transcribeWith(it, file, onProgress) }
+    }
+
+    override suspend fun transcribeWith(
+        decoder: WhisperDecoder,
+        file: File,
+        onProgress: (Float) -> Unit
+    ): List<TranscriptEvent.Final> = withContext(dispatcher) {
+        SherpaVoiceDetector(store.fileFor(ModelCatalog.VAD_SILERO, "silero_vad.onnx")).use { vad ->
+            val finals = mutableListOf<TranscriptEvent.Final>()
+            SpeechChunker.chunk(file, vad, onProgress = onProgress) { span ->
+                currentCoroutineContext().ensureActive()
+                span.lineOf(decoder.decode(span.samples))?.let(finals::add)
             }
+            finals
         }
     }
 

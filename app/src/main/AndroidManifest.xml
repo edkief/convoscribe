@@ -294,10 +294,11 @@
             android:exported="false"
             android:process=":npuprobe" />
         <!--
-            onnxruntime 1.30's AAR starts a telemetry uploader at launch.
-            Nothing here leaves the device unless the user asks, and the
-            runtime the app ships (sherpa-onnx's, issue #159) has no
-            telemetry natives, so the provider is removed.
+            onnxruntime's AAR starts a telemetry uploader at launch.
+            Nothing here leaves the device unless the user asks, so the
+            provider is removed; the runtime the app ships
+            (onnxruntime-android-qnn, issue #159) then logs that telemetry
+            is unavailable and sends nothing.
         -->
         <provider
             android:name="ai.onnxruntime.TelemetryInitializer"

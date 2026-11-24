@@ -82,19 +82,4 @@ class WhisperFeaturesTest {
         assertEquals(0.0, w[10][5].toDouble(), 0.0)
         assertEquals(0.02484120032574144, w[64].sum().toDouble(), 1e-6)
     }
-
-    @Test
-    fun half_roundTripsAndRounds() {
-        for (v in listOf(0f, 1f, -1f, 0.5f, -1.5f, 65504f, 1e-5f, -100f, 3.140625f)) {
-            assertEquals("value $v", v, Half.toFloat(Half.fromFloat(v)), abs(v) * 1e-3f + 1e-7f)
-        }
-        assertEquals(0x3c00.toShort(), Half.fromFloat(1f))
-        assertEquals(0xd640.toShort(), Half.fromFloat(-100f))
-        assertEquals(0x7c00.toShort(), Half.fromFloat(1e6f))
-        assertEquals(0x0001.toShort(), Half.fromFloat(5.9604645e-8f))
-        assertEquals(5.9604645e-8f, Half.toFloat(0x0001), 0f)
-        assertEquals(Float.NEGATIVE_INFINITY, Half.toFloat(0xfc00.toShort()), 0f)
-        // Halfway between 1 and the next half (1 + 2^-10) rounds to even.
-        assertEquals(0x3c00.toShort(), Half.fromFloat(1f + 1f / 2048f))
-    }
 }

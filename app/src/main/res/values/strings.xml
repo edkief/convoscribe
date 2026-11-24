@@ -56,9 +56,10 @@
     <string name="notification_server_title">Transcribing on the server</string>
     <string name="session_retranscribe_whisper">Whisper on this phone</string>
     <string name="enginecheck_whisper_title">Whisper Large-v3-Turbo</string>
-    <string name="enginecheck_whisper_help">Transcribes the English sample clip with Whisper: on the NPU when its build is downloaded (in a separate process, and the result decides whether recordings use the NPU), otherwise on the CPU. The time includes loading the model, as it is loaded for each recording.</string>
+    <string name="enginecheck_whisper_help">Transcribes the English sample clip with Whisper: on the NPU when its build is downloaded (in a separate process, and the result decides whether recordings use the NPU), otherwise on the CPU. Loading the model is timed apart: a recording loads it once, and the real-time factor is the transcription alone.</string>
     <string name="enginecheck_whisper_running">Running Whisper…</string>
-    <string name="enginecheck_whisper_time">Time (with loading)</string>
+    <string name="enginecheck_whisper_load">Model loading</string>
+    <string name="enginecheck_whisper_time">Transcription</string>
     <string name="enginecheck_whisper_rtf">Real-time factor</string>
     <string name="enginecheck_whisper_check">Check Whisper</string>
     <string name="notification_whisper_title">Transcribing with Whisper</string>

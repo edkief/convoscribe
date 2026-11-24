@@ -112,7 +112,7 @@ brings them to your other devices.
   returns there. Each section keeps its place while you switch.
 - **Whisper Large-v3-Turbo on the phone** (optional, issue #158).
   Settings → *Recording & transcription* → *Whisper Large-v3-Turbo*: download it
-  (about 2 GB for the NPU build on supported Snapdragon chips, 1 GB for
+  (about 0.8 GB for the NPU build on supported Snapdragon chips, 1 GB for
   the CPU elsewhere) and turn on *Transcribe again with Whisper* to have each
   stopped recording and each import transcribed again on the phone,
   usually more accurately than the live transcript. Live captions keep
@@ -789,7 +789,7 @@ data.
 | `enh-gtcrn-simple` | CPU, optional | 535 638 (≈0.5 MB) | Noise cleanup (issue #37), downloaded from Settings only. `gtcrn_simple.onnx`, run by sherpa-onnx's streaming denoiser. |
 | `asr-whisper-large-v3-turbo-int8` | CPU, optional | 1 036 613 791 (≈1.04 GB) | Whisper Large-v3-Turbo (issue #158), downloaded from Settings only. `turbo-encoder.int8.onnx`, `turbo-decoder.int8.onnx`, `turbo-tokens.txt`; sherpa-onnx offline recognizer, `modelType = "whisper"`. |
 | `vad-silero` | CPU, optional | 643 854 (≈0.6 MB) | Silero voice activity detection, downloaded with Whisper. Cuts recordings into speech segments of at most 28 s for it. `silero_vad.onnx`. |
-| `asr-whisper-turbo-npu-<chip>` | NPU, optional | ≈2.2 GB unpacked (≈1.8 GB for 8 Gen 1) | Whisper Large-v3-Turbo for the NPU (issue #159), Qualcomm AI Hub's precompiled float build for one chip (see [*Whisper on the phone*](#whisper-on-the-phone)). A zip of about 2.0 GB (1.6 GB for 8 Gen 1); `encoder.onnx`/`decoder.onnx` (onnxruntime EPContext wrappers) and `encoder.bin`/`decoder.bin` (QNN context binaries) are extracted. |
+| `asr-whisper-turbo-npu-<chip>` | NPU, optional | ≈0.98 GB unpacked | Whisper Large-v3-Turbo for the NPU (issue #159), Qualcomm AI Hub's precompiled w8a16 build for one chip (Whisper-Large-V3-Turbo-Quantized; see [*Whisper on the phone*](#whisper-on-the-phone)). A zip of about 0.83 GB; `encoder.onnx`/`decoder.onnx` (onnxruntime EPContext wrappers) and `encoder.bin`/`decoder.bin` (QNN context binaries) are extracted. |
 | `asr-whisper-large-v3-turbo-tokens` | optional | 816 730 (≈0.8 MB) | Whisper's token table (`turbo-tokens.txt`, the same file as in the CPU bundle), downloaded with the NPU build. |
 
 Sources:
@@ -805,7 +805,7 @@ Sources:
 - Whisper: `https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/<file>`
   (pinned to a revision; the downloader checks exact sizes).
 - Silero VAD: `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx`
-- Whisper for the NPU: `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/whisper_large_v3_turbo/releases/v0.67.0/whisper_large_v3_turbo-precompiled_qnn_onnx-float-qualcomm_<chip>.zip`
+- Whisper for the NPU: `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/whisper_large_v3_turbo_quantized/releases/v0.67.0/whisper_large_v3_turbo_quantized-precompiled_qnn_onnx-w8a16-qualcomm_<chip>.zip`
   (release v0.67.0 of [qualcomm/Whisper-Large-V3-Turbo](https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo)).
 
 Models are downloaded on first run into
@@ -1150,8 +1150,9 @@ the streaming engine:
   on. With *Improve recordings on the server* also on, the server goes
   first and Whisper is used only if the server fails.
 - **Re-transcribe…** → *Whisper on this phone*, whatever the setting.
-- **Engine check** → *Check Whisper* times it on the English sample
-  clip (model loading included) and shows what it heard.
+- **Engine check** → *Check Whisper* times loading the model and
+  transcribing the English sample clip apart (the real-time factor is
+  the transcription alone) and shows what it heard.
 - **While recording** (experimental, #160), with *Transcribe while
   recording (experimental)* on. See [*Live Whisper*](#live-whisper-experimental).
 
@@ -1160,10 +1161,14 @@ most 28 s, and Whisper turns each into one transcript line. The model is
 loaded for each recording and released afterwards.
 
 - **On the NPU** (#159), on a chip Qualcomm publishes a Whisper build
-  for: the app runs that precompiled float build (about 2.2 GB) through
-  onnxruntime's QNN execution provider on the Hexagon NPU. It computes
-  Whisper's log-mel features itself and decodes greedily, 200 tokens at
-  most per segment. onnxruntime's CPU fallback is off, so a model the
+  for: the app runs that precompiled w8a16 build (8-bit weights, 16-bit
+  activations, about 1 GB) through onnxruntime's QNN execution provider
+  on the Hexagon NPU. It computes Whisper's log-mel features itself,
+  quantizes them, and decodes greedily, 200 tokens at most per segment.
+  onnxruntime's Java API has no uint16 tensors, so a one-node CPU model
+  (`Cast` int16 → uint16, which keeps the bits) makes the build's uint16
+  inputs. Qualcomm's float build runs its encoder about three times
+  slower and is 2 GB. onnxruntime's CPU fallback is off, so a model the
   NPU cannot run fails instead of crawling.
 - **On the CPU** everywhere else: sherpa-onnx's offline Whisper
   recognizer with the int8 export (about 1 GB), with the Settings
@@ -1191,7 +1196,7 @@ What it costs:
   slightly lower accuracy where a segment is cut. The NPU build keeps up
   easily; on the CPU, Whisper can fall behind on a slow phone.
 - **Memory.** The model stays loaded for the whole recording: about
-  1 GB on the CPU, 2.2 GB on the NPU.
+  1 GB on the CPU or the NPU.
 - **Word times** are spread evenly over each line (Whisper's own are
   #161), so tap-to-seek and the speaker split of a line are
   approximate.
@@ -1232,8 +1237,8 @@ Elite (Windows PCs); those use the CPU too. A suffix in `SOC_MODEL`
 (`SM8750-AC`) is ignored, so the standard 8 Elite uses the Galaxy build
 (the same SoC id).
 
-On such a chip, Settings downloads the NPU build (a zip of about 2 GB,
-unpacked on the phone, so about 4.2 GB must be free while it unpacks)
+On such a chip, Settings downloads the NPU build (a zip of about 0.83 GB,
+unpacked on the phone, so about 1.8 GB must be free while it unpacks)
 instead of the CPU model. Right after the download the app **checks it
 in a separate process** (the engine check's NPU probe), so a native
 crash on the NPU cannot close the app. Whisper uses the NPU only once
@@ -1406,9 +1411,10 @@ features enabled.
    `SHERPA_ONNX_ENABLE_QNN=ON`, `SHERPA_ONNX_ENABLE_SPEAKER_DIARIZATION=ON`,
    `SHERPA_ONNX_ENABLE_TTS=OFF`, `SHERPA_ONNX_ENABLE_BINARY=OFF`,
    `SHERPA_ONNX_ENABLE_C_API=OFF`, `SHERPA_ONNX_ENABLE_JNI=ON` and
-   `BUILD_SHARED_LIBS=ON`. This fetches a prebuilt onnxruntime **1.30.0**
-   (`csukuangfj/onnxruntime-libs`, built with the QNN execution provider)
-   and links it as a shared library.
+   `BUILD_SHARED_LIBS=ON`. This fetches a prebuilt onnxruntime **1.29.0**
+   (`csukuangfj/onnxruntime-libs`) and links it as a shared library.
+   That runtime has no QNN execution provider (sherpa-onnx's own NPU
+   models call the QNN SDK directly); the next script swaps it.
 4. Copies `libsherpa-onnx-jni.so` + `libonnxruntime.so` from
    `build-android-arm64-v8a/install/lib/` and the QNN runtime
    (`libQnnHtp.so`, `libQnnHtpPrepare.so`, `libQnnSystem.so`,
@@ -1416,8 +1422,8 @@ features enabled.
    `app/src/main/jniLibs/arm64-v8a/`.
 5. Verifies the resulting `libsherpa-onnx-jni.so` exports both
    `Java_com_k2fsa_sherpa_onnx_OfflineSpeakerDiarization` and the
-   `prependAdspLibraryPath` symbol (QNN path), binds to onnxruntime
-   `VERS_1.30.0`, and that `libonnxruntime.so` has the QNN provider.
+   `prependAdspLibraryPath` symbol (QNN path) and binds to onnxruntime
+   `VERS_1.29.0`.
 6. Downloads `sherpa-onnx-1.13.8.aar`, checks its sha256 against
    `633c24321e06b1fe79feafa03ea16cbc0f8a286641e2da3559bac91bdb13bd96`,
    and extracts the AAR's `classes.jar` into
@@ -1439,19 +1445,24 @@ version that wrote them (`qnn-runtime.txt`).
 ### onnxruntime JNI library
 
 Semantic search and Whisper on the NPU run through onnxruntime's Java
-API (the `onnxruntime-android` AAR). The AAR's own runtime has no QNN
-provider, so the app ships sherpa-onnx's runtime instead, and the JNI
-library must bind to that runtime's symbol version or Android refuses
-to load it. `scripts/build-onnxruntime-jni.sh` (also run by
+API (the `onnxruntime-android` AAR). Neither that AAR's runtime nor
+sherpa-onnx's has the QNN execution provider Whisper needs, so the app
+ships Microsoft's `onnxruntime-android-qnn` runtime of the same version
+instead: both export `VERS_1.29.0`, which sherpa-onnx's JNI library and
+the Java JNI library bind to (Android refuses any other version). 1.29.0
+is the newest `onnxruntime-android-qnn` on Maven.
+`scripts/build-onnxruntime-jni.sh` (also run by
 `scripts/setup-toolchain.sh`):
 
-1. Downloads `onnxruntime-android-1.30.0.zip` from
-   `csukuangfj/onnxruntime-libs` (the release sherpa-onnx links against)
-   and checks its sha256.
-2. Checks that its `libonnxruntime.so` is the one in
-   `app/src/main/jniLibs/arm64-v8a/`, then copies the matching
-   `libonnxruntime4j_jni.so` next to it.
-3. Checks that the library binds to `VERS_1.30.0`.
+1. Downloads `onnxruntime-android-qnn-1.29.0.aar` from Maven Central and
+   checks its sha256.
+2. Copies its `libonnxruntime.so` and `libonnxruntime4j_jni.so` over
+   the ones in `app/src/main/jniLibs/arm64-v8a/`. The QNN libraries stay
+   the QAIRT 2.51 ones from the step above, not Maven's `qnn-runtime`.
+3. Checks that both JNI libraries bind to `VERS_1.29.0` and that the
+   runtime has the QNN provider compiled in (`QnnBackendManager` and its
+   `backend_path` option; every build merely names
+   `QNNExecutionProvider`).
 
 The packaging rules in `app/build.gradle.kts` keep these two libraries
 over the AAR's. Run it again after rebuilding sherpa-onnx.

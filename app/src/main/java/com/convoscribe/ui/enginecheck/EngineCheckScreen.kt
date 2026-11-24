@@ -424,8 +424,8 @@ private fun SemanticCard(state: EngineCheckUiState, onRun: () -> Unit, modifier:
 
 /**
  * On-device Whisper (issue #158): where it runs, NPU or CPU, and why
- * (issue #159), then its time over the sample clip, model loading
- * included, its real-time factor and the text it heard.
+ * (issue #159), then the time to load the model, the time to transcribe
+ * the sample clip, its real-time factor and the text it heard.
  */
 @Composable
 private fun WhisperCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: Modifier = Modifier) {
@@ -439,6 +439,10 @@ private fun WhisperCard(state: EngineCheckUiState, onRun: () -> Unit, modifier: 
             if (whisper.error != null) {
                 ErrorBanner(message = stringResource(R.string.enginecheck_result_error, whisper.error))
             } else {
+                InfoRow(
+                    stringResource(R.string.enginecheck_whisper_load),
+                    stringResource(R.string.enginecheck_ms, whisper.initMs)
+                )
                 InfoRow(
                     stringResource(R.string.enginecheck_whisper_time),
                     stringResource(R.string.enginecheck_ms, whisper.processMs)

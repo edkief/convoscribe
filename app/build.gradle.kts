@@ -134,9 +134,9 @@ android {
             useLegacyPackaging = true
             // The onnxruntime AAR brings its own runtime and JNI library;
             // the app's copies from src/main/jniLibs are merged first and
-            // are the ones kept, so sherpa-onnx's 1.30.0 runtime serves
-            // sherpa-onnx, the text embedder (issue #61) and Whisper on
-            // the NPU through its QNN provider (issue #159).
+            // are the ones kept, so onnxruntime-android-qnn's 1.29.0 runtime
+            // serves sherpa-onnx, the text embedder (issue #61) and Whisper
+            // on the NPU through its QNN provider (issue #159).
             pickFirsts += "lib/arm64-v8a/libonnxruntime.so"
             pickFirsts += "lib/arm64-v8a/libonnxruntime4j_jni.so"
         }

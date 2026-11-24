@@ -2,7 +2,8 @@
 # Idempotent installer for JDK 17, Gradle, Android command-line tools, and
 # Node.js with pnpm for the sync server (server/).
 # Nothing here uses sudo or apt; everything installs under $CONVOSCRIBE_TOOLCHAIN
-# (default /workspace/toolchain), the same root scripts/env.sh points at.
+# (default /workspace/toolchain), the same root scripts/env.sh points at,
+# including a per-machine scripts/env.<hostname>.sh.
 #
 # CONVOSCRIBE_APP_ONLY=1 installs only what building the app needs (JDK,
 # Gradle, SDK) and skips CMake, the NDK, Node.js and the sherpa-onnx build. The
@@ -11,7 +12,14 @@
 
 set -euo pipefail
 
-TOOLS="${CONVOSCRIBE_TOOLCHAIN:-/workspace/toolchain}"
+# Ask env.sh in a subshell, so a host file's default applies here too
+# without this script inheriting its PATH and JAVA_HOME before the tools
+# exist.
+TOOLS="${CONVOSCRIBE_TOOLCHAIN:-$(
+  # shellcheck disable=SC1091
+  source "$(dirname "$0")/env.sh" >/dev/null 2>&1
+  echo "${CONVOSCRIBE_TOOLCHAIN:-/workspace/toolchain}"
+)}"
 ANDROID_HOME="$TOOLS/Android/Sdk"
 ANDROID_NDK_VERSION="27.2.12479018"
 GRADLE_VERSION="8.11.1"
@@ -186,8 +194,8 @@ else
   echo "WARNING: sherpa-onnx build script not found at $SHERPA_BUILD_SCRIPT; skipping." >&2
 fi
 
-# onnxruntime's JNI library, linked against the runtime sherpa-onnx just
-# installed (issue #61). Under a minute.
+# onnxruntime-android-qnn's runtime and JNI library in place of the
+# runtime sherpa-onnx just installed (issues #61, #159). Under a minute.
 ORT_JNI_BUILD_SCRIPT="$(cd "$(dirname "$0")" && pwd)/build-onnxruntime-jni.sh"
 if [[ "$APP_ONLY" != 1 && -f "$ORT_JNI_BUILD_SCRIPT" ]]; then
   bash "$ORT_JNI_BUILD_SCRIPT"

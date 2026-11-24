@@ -421,6 +421,17 @@ class EngineCheckViewModel(
             append("npuVerified: ").append(status.npuVerified).append('\n')
             status.npuBlockedReason?.let { append("npuFailed: ").append(it).append('\n') }
             append("cpuDownloaded: ").append(status.cpuInstalled).append('\n')
+            _state.value.whisper?.let { whisper ->
+                if (whisper.error != null) {
+                    append("Error: ").append(whisper.error).append('\n')
+                } else {
+                    append("engine: ").append(whisper.engine).append('\n')
+                    append("loadMs: ").append(whisper.initMs).append('\n')
+                    append("processMs: ").append(whisper.processMs).append('\n')
+                    append("audioMs: ").append(whisper.audioMs).append('\n')
+                    append("RTF: ").append("%.2f".format(whisper.realTimeFactor)).append('\n')
+                }
+            }
         }
     }
 

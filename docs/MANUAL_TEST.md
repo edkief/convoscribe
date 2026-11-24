@@ -3092,8 +3092,8 @@ recording with two speakers.
 
 Use a phone with a supported Snapdragon chip (see README → *Which chips
 use the NPU*; e.g. 8 Gen 3 or 8 Elite) and Android 12 or later, about
-4.5 GB free, the English models, and a 2–3 minute English recording.
-The app ships QNN 2.51 and onnxruntime 1.30 since this change, so start
+2 GB free, the English models, and a 2–3 minute English recording.
+The app ships QNN 2.51 and onnxruntime 1.29 (Microsoft's QNN build) since this change, so start
 with the regression checks.
 
 **Steps**
@@ -3127,7 +3127,7 @@ with the regression checks.
   transcribe live. The app does not crash at launch (onnxruntime's
   telemetry provider is removed from the manifest).
 - Step 2: the card says *This phone's Snapdragon … can run Whisper on its
-  NPU* and the button shows about 2 GB.
+  NPU* and the button shows about 0.8 GB (the w8a16 build).
 - Step 3: after the download, *Checking Whisper on the NPU…* for up to a
   minute, then *Runs on the NPU (Snapdragon …)*. The app stays open
   during the check.

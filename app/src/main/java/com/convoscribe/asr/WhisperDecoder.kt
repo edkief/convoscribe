@@ -1,6 +1,7 @@
 package com.convoscribe.asr
 
 import java.io.Closeable
+import java.io.File
 
 /**
  * Whisper loaded once and kept, decoding one speech segment at a time
@@ -35,4 +36,16 @@ interface WhisperRecognizer : FileRecognizer {
      * the caller closes the decoder as soon as it is done with it.
      */
     fun openDecoder(language: String): WhisperDecoder
+
+    /**
+     * Transcribe [file] like [transcribe], with [decoder] (from
+     * [openDecoder]) already loaded; the caller still closes it. The
+     * engine check uses it to time loading apart from decoding (issue
+     * #159).
+     */
+    suspend fun transcribeWith(
+        decoder: WhisperDecoder,
+        file: File,
+        onProgress: (Float) -> Unit = {}
+    ): List<TranscriptEvent.Final>
 }
