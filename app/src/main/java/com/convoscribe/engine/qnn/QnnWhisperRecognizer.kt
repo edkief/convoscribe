@@ -28,7 +28,7 @@ import kotlinx.coroutines.withContext
  * ([SpeechChunker]) and each one becomes one line; the build's fixed
  * 30 s window takes each segment padded.
  *
- * The model (about 2.2 GB) is loaded for each call and released
+ * The model (about 1 GB) is loaded for each call and released
  * afterwards; live Whisper (issue #160) keeps it loaded for a recording
  * through [openDecoder]. A failure to load or run it is thrown;
  * [com.convoscribe.asr.WhisperEngine] then records it and falls back to

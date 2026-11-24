@@ -112,7 +112,7 @@ brings them to your other devices.
   returns there. Each section keeps its place while you switch.
 - **Whisper Large-v3-Turbo on the phone** (optional, issue #158).
   Settings → *Recording & transcription* → *Whisper Large-v3-Turbo*: download it
-  (about 2 GB for the NPU build on supported Snapdragon chips, 1 GB for
+  (about 0.8 GB for the NPU build on supported Snapdragon chips, 1 GB for
   the CPU elsewhere) and turn on *Transcribe again with Whisper* to have each
   stopped recording and each import transcribed again on the phone,
   usually more accurately than the live transcript. Live captions keep
@@ -789,7 +789,7 @@ data.
 | `enh-gtcrn-simple` | CPU, optional | 535 638 (≈0.5 MB) | Noise cleanup (issue #37), downloaded from Settings only. `gtcrn_simple.onnx`, run by sherpa-onnx's streaming denoiser. |
 | `asr-whisper-large-v3-turbo-int8` | CPU, optional | 1 036 613 791 (≈1.04 GB) | Whisper Large-v3-Turbo (issue #158), downloaded from Settings only. `turbo-encoder.int8.onnx`, `turbo-decoder.int8.onnx`, `turbo-tokens.txt`; sherpa-onnx offline recognizer, `modelType = "whisper"`. |
 | `vad-silero` | CPU, optional | 643 854 (≈0.6 MB) | Silero voice activity detection, downloaded with Whisper. Cuts recordings into speech segments of at most 28 s for it. `silero_vad.onnx`. |
-| `asr-whisper-turbo-npu-<chip>` | NPU, optional | ≈2.2 GB unpacked (≈1.8 GB for 8 Gen 1) | Whisper Large-v3-Turbo for the NPU (issue #159), Qualcomm AI Hub's precompiled float build for one chip (see [*Whisper on the phone*](#whisper-on-the-phone)). A zip of about 2.0 GB (1.6 GB for 8 Gen 1); `encoder.onnx`/`decoder.onnx` (onnxruntime EPContext wrappers) and `encoder.bin`/`decoder.bin` (QNN context binaries) are extracted. |
+| `asr-whisper-turbo-npu-<chip>` | NPU, optional | ≈0.98 GB unpacked | Whisper Large-v3-Turbo for the NPU (issue #159), Qualcomm AI Hub's precompiled w8a16 build for one chip (Whisper-Large-V3-Turbo-Quantized; see [*Whisper on the phone*](#whisper-on-the-phone)). A zip of about 0.83 GB; `encoder.onnx`/`decoder.onnx` (onnxruntime EPContext wrappers) and `encoder.bin`/`decoder.bin` (QNN context binaries) are extracted. |
 | `asr-whisper-large-v3-turbo-tokens` | optional | 816 730 (≈0.8 MB) | Whisper's token table (`turbo-tokens.txt`, the same file as in the CPU bundle), downloaded with the NPU build. |
 
 Sources:
@@ -805,7 +805,7 @@ Sources:
 - Whisper: `https://huggingface.co/csukuangfj/sherpa-onnx-whisper-turbo/resolve/2ca6ff69fc878651b770880507669577ac41c2ff/<file>`
   (pinned to a revision; the downloader checks exact sizes).
 - Silero VAD: `https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx`
-- Whisper for the NPU: `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/whisper_large_v3_turbo/releases/v0.67.0/whisper_large_v3_turbo-precompiled_qnn_onnx-float-qualcomm_<chip>.zip`
+- Whisper for the NPU: `https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/whisper_large_v3_turbo_quantized/releases/v0.67.0/whisper_large_v3_turbo_quantized-precompiled_qnn_onnx-w8a16-qualcomm_<chip>.zip`
   (release v0.67.0 of [qualcomm/Whisper-Large-V3-Turbo](https://huggingface.co/qualcomm/Whisper-Large-V3-Turbo)).
 
 Models are downloaded on first run into
@@ -1161,10 +1161,14 @@ most 28 s, and Whisper turns each into one transcript line. The model is
 loaded for each recording and released afterwards.
 
 - **On the NPU** (#159), on a chip Qualcomm publishes a Whisper build
-  for: the app runs that precompiled float build (about 2.2 GB) through
-  onnxruntime's QNN execution provider on the Hexagon NPU. It computes
-  Whisper's log-mel features itself and decodes greedily, 200 tokens at
-  most per segment. onnxruntime's CPU fallback is off, so a model the
+  for: the app runs that precompiled w8a16 build (8-bit weights, 16-bit
+  activations, about 1 GB) through onnxruntime's QNN execution provider
+  on the Hexagon NPU. It computes Whisper's log-mel features itself,
+  quantizes them, and decodes greedily, 200 tokens at most per segment.
+  onnxruntime's Java API has no uint16 tensors, so a one-node CPU model
+  (`Cast` int16 → uint16, which keeps the bits) makes the build's uint16
+  inputs. Qualcomm's float build runs its encoder about three times
+  slower and is 2 GB. onnxruntime's CPU fallback is off, so a model the
   NPU cannot run fails instead of crawling.
 - **On the CPU** everywhere else: sherpa-onnx's offline Whisper
   recognizer with the int8 export (about 1 GB), with the Settings
@@ -1192,7 +1196,7 @@ What it costs:
   slightly lower accuracy where a segment is cut. The NPU build keeps up
   easily; on the CPU, Whisper can fall behind on a slow phone.
 - **Memory.** The model stays loaded for the whole recording: about
-  1 GB on the CPU, 2.2 GB on the NPU.
+  1 GB on the CPU or the NPU.
 - **Word times** are spread evenly over each line (Whisper's own are
   #161), so tap-to-seek and the speaker split of a line are
   approximate.
@@ -1233,8 +1237,8 @@ Elite (Windows PCs); those use the CPU too. A suffix in `SOC_MODEL`
 (`SM8750-AC`) is ignored, so the standard 8 Elite uses the Galaxy build
 (the same SoC id).
 
-On such a chip, Settings downloads the NPU build (a zip of about 2 GB,
-unpacked on the phone, so about 4.2 GB must be free while it unpacks)
+On such a chip, Settings downloads the NPU build (a zip of about 0.83 GB,
+unpacked on the phone, so about 1.8 GB must be free while it unpacks)
 instead of the CPU model. Right after the download the app **checks it
 in a separate process** (the engine check's NPU probe), so a native
 crash on the NPU cannot close the app. Whisper uses the NPU only once

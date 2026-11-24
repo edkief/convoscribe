@@ -4,7 +4,6 @@ import ai.onnxruntime.OnnxJavaType
 import ai.onnxruntime.OnnxTensor
 import ai.onnxruntime.OrtEnvironment
 import ai.onnxruntime.OrtSession
-import com.convoscribe.asr.Half
 import com.convoscribe.asr.WhisperDecoderStep
 import com.convoscribe.asr.WhisperFeatures
 import com.convoscribe.asr.WhisperGreedyDecoder
@@ -22,13 +21,17 @@ import java.nio.ShortBuffer
  * The CPU fallback inside onnxruntime is switched off: a graph the NPU
  * cannot take fails to load instead of crawling on the CPU.
  *
- * Tensors (from the build's `metadata.json`), all fp16 but the ids:
- *  - encoder: `input_features` 1×128×3000 → `k_cache_cross_i`
- *    20×1×64×1500 and `v_cache_cross_i` 20×1×1500×64, i = 0..3;
+ * Tensors (from the w8a16 build's `metadata.json`), quantized as
+ * [WhisperQuant] describes:
+ *  - encoder: `input_features` (uint16 1×128×3000) → `k_cache_cross_i`
+ *    (uint8 20×1×64×1500) and `v_cache_cross_i` (uint8 20×1×1500×64),
+ *    i = 0..3;
  *  - decoder: `input_ids` (int32 1×1), `position_ids` (int32 1),
- *    `attention_mask` 1×1×1×200, `k/v_cache_self_i_in` (20×1×64×199,
- *    20×1×199×64) and the cross caches → `logits` 1×51866×1×1 and
- *    `k/v_cache_self_i_out`.
+ *    `attention_mask` (uint16 1×1×1×200), `k/v_cache_self_i_in` (uint8
+ *    20×1×64×199, 20×1×199×64) and the cross caches → `logits` (uint16
+ *    1×51866×1×1) and `k/v_cache_self_i_out`.
+ *
+ * onnxruntime's Java API has no uint16 tensors; [Uint16Cast] makes them.
  *
  * Not thread-safe; one window at a time.
  */
@@ -38,13 +41,17 @@ internal class WhisperQnnSession private constructor(
     private val decoder: OrtSession
 ) : AutoCloseable {
 
+    private val uint16 = Uint16Cast(env)
+
     /** Token ids Whisper predicts for one window of at most 30 s, after [prompt]. */
     fun transcribe(samples: FloatArray, prompt: IntArray): List<Int> {
         val features = WhisperFeatures.compute(samples)
         val featureBuffer = directShorts(features.size)
-        for (v in features) featureBuffer.put(Half.fromFloat(v))
+        for (v in features) {
+            featureBuffer.put(WhisperQuant.quantize(v, WhisperQuant.FEATURES_SCALE, WhisperQuant.FEATURES_ZERO))
+        }
         featureBuffer.rewind()
-        return OnnxTensor.createTensor(env, featureBuffer, FEATURE_SHAPE, OnnxJavaType.FLOAT16).use { input ->
+        return uint16.withUint16(featureBuffer, FEATURE_SHAPE) { input ->
             encoder.run(mapOf(INPUT_FEATURES to input)).use { encoded ->
                 val cross = crossNames.associateWith { name ->
                     encoded.get(name).orElseThrow { IllegalStateException("encoder has no output $name") } as OnnxTensor
@@ -71,27 +78,29 @@ internal class WhisperQnnSession private constructor(
 
         override fun step(token: Int, position: Int, mask: FloatArray): FloatArray {
             maskBuffer.clear()
-            for (v in mask) maskBuffer.put(Half.fromFloat(v))
+            for (v in mask) maskBuffer.put(WhisperQuant.quantize(v, WhisperQuant.MASK_SCALE, WhisperQuant.MASK_ZERO))
             maskBuffer.rewind()
             val ids = OnnxTensor.createTensor(env, IntBuffer.wrap(intArrayOf(token)), longArrayOf(1, 1))
             val pos = OnnxTensor.createTensor(env, IntBuffer.wrap(intArrayOf(position)), longArrayOf(1))
-            val maskTensor = OnnxTensor.createTensor(env, maskBuffer, MASK_SHAPE, OnnxJavaType.FLOAT16)
             val result = try {
-                decoder.run(
-                    mapOf(INPUT_IDS to ids, POSITION_IDS to pos, ATTENTION_MASK to maskTensor) + selfCaches + cross
-                )
+                uint16.withUint16(maskBuffer, MASK_SHAPE) { maskTensor ->
+                    decoder.run(
+                        mapOf(INPUT_IDS to ids, POSITION_IDS to pos, ATTENTION_MASK to maskTensor) + selfCaches + cross
+                    )
+                }
             } finally {
                 ids.close()
                 pos.close()
-                maskTensor.close()
             }
             previous?.close()
             previous = result
             selfCaches = (0 until LAYERS).flatMap { i ->
                 listOf("k", "v").map { kv -> "${kv}_cache_self_${i}_in" to output(result, "${kv}_cache_self_${i}_out") }
             }.toMap()
-            val logits = output(result, LOGITS).shortBuffer
-            return FloatArray(logits.remaining()) { Half.toFloat(logits.get(it)) }
+            val logits = output(result, LOGITS).byteBuffer.order(ByteOrder.nativeOrder()).asShortBuffer()
+            return FloatArray(logits.remaining()) {
+                WhisperQuant.dequantize(logits.get(it), WhisperQuant.LOGITS_SCALE, WhisperQuant.LOGITS_ZERO)
+            }
         }
 
         private fun output(result: OrtSession.Result, name: String): OnnxTensor =
@@ -103,14 +112,17 @@ internal class WhisperQnnSession private constructor(
         }
     }
 
-    private fun zeroTensor(shape: LongArray): OnnxTensor = OnnxTensor.createTensor(
-        env,
-        directShorts(shape.fold(1L) { a, b -> a * b }.toInt()),
-        shape,
-        OnnxJavaType.FLOAT16
-    )
+    /** An empty uint8 cache: every byte the zero point. */
+    private fun zeroTensor(shape: LongArray): OnnxTensor {
+        val size = shape.fold(1L) { a, b -> a * b }.toInt()
+        val bytes = ByteBuffer.allocateDirect(size).order(ByteOrder.nativeOrder())
+        repeat(size) { bytes.put(WhisperQuant.CACHE_ZERO) }
+        bytes.rewind()
+        return OnnxTensor.createTensor(env, bytes, shape, OnnxJavaType.UINT8)
+    }
 
     override fun close() {
+        uint16.close()
         decoder.close()
         encoder.close()
     }
@@ -140,6 +152,8 @@ internal class WhisperQnnSession private constructor(
          * ([com.convoscribe.engine.sherpa.QnnRuntime.ensurePrepared]).
          */
         fun open(modelDir: File, nativeLibraryDir: String): WhisperQnnSession {
+            val encoderFile = File(modelDir, "encoder.onnx")
+            val decoderFile = File(modelDir, "decoder.onnx")
             val env = OrtEnvironment.getEnvironment()
             fun options() = OrtSession.SessionOptions().apply {
                 addQnn(
@@ -150,9 +164,9 @@ internal class WhisperQnnSession private constructor(
                 )
                 addConfigEntry("session.disable_cpu_ep_fallback", "1")
             }
-            val encoder = options().use { env.createSession(File(modelDir, "encoder.onnx").absolutePath, it) }
+            val encoder = options().use { env.createSession(encoderFile.absolutePath, it) }
             val decoder = try {
-                options().use { env.createSession(File(modelDir, "decoder.onnx").absolutePath, it) }
+                options().use { env.createSession(decoderFile.absolutePath, it) }
             } catch (t: Throwable) {
                 encoder.close()
                 throw t

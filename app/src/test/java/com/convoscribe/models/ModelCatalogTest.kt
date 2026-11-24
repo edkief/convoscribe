@@ -285,9 +285,11 @@ class ModelCatalogTest {
                 bundle.files.zip(folders) { file, folder -> folder + file.fileName },
                 bundle.files.map { it.archivePath }
             )
-            // Deflate barely shrinks fp16 weights: the zip is a little
-            // smaller than what it holds.
-            assertTrue(archive.sizeBytes in (bundle.totalBytes * 9 / 10)..bundle.totalBytes)
+            // The w8a16 build (issue #159): under 0.9 GB, and deflate
+            // takes about a sixth off its 8-bit weights.
+            assertTrue(archive.url.contains("-w8a16-"))
+            assertTrue(archive.sizeBytes < 900_000_000L)
+            assertTrue(archive.sizeBytes in (bundle.totalBytes * 8 / 10)..(bundle.totalBytes * 9 / 10))
             assertTrue(bundle in ModelCatalog.all)
             assertTrue(bundle in ModelCatalog.allWhisperBundles)
             ModelCatalog.requiredFor("en", "npu").forEach { assertTrue(it != bundle) }

@@ -373,19 +373,22 @@ object ModelCatalog {
 
     private const val WHISPER_NPU_BASE =
         "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/" +
-            "whisper_large_v3_turbo/releases/v0.67.0/"
+            "whisper_large_v3_turbo_quantized/releases/v0.67.0/"
 
     /** EPContext wrappers: the same size for every chip. */
-    private const val WHISPER_NPU_ENCODER_ONNX = 1_124L
-    private const val WHISPER_NPU_DECODER_ONNX = 3_149L
+    private const val WHISPER_NPU_ENCODER_ONNX = 4_644L
+    private const val WHISPER_NPU_DECODER_ONNX = 13_849L
 
     /**
      * Qualcomm AI Hub's precompiled Whisper Large-v3-Turbo build for one
-     * chip (release v0.67.0, float, QAIRT 2.51 or 2.50, ONNX Runtime
-     * 1.30): `encoder.onnx`/`decoder.onnx` are EPContext wrappers that
-     * point at the `.bin` QNN context binaries next to them
-     * (`./encoder.bin`). Published as one zip of about 2 GB; [slug] names
-     * it. Most zips keep each model in a folder of its own
+     * chip (Whisper-Large-V3-Turbo-Quantized, release v0.67.0, w8a16,
+     * QAIRT 2.51 or 2.50, ONNX Runtime 1.30): `encoder.onnx`/`decoder.onnx`
+     * are EPContext wrappers that point at the `.bin` QNN context
+     * binaries next to them (`./encoder.bin`). 8-bit weights and 16-bit
+     * activations run the encoder about three times as fast as the float
+     * build and the download is under half the size (issue #159); the
+     * session quantizes its inputs ([com.convoscribe.engine.qnn.WhisperQuant]).
+     * Published as one zip of about 0.83 GB; [slug] names it. Most zips keep each model in a folder of its own
      * (`encoder_onnx/`, `decoder_onnx/`); the Snapdragon 8 Gen 3 one is
      * [flat]. The files are stored flat either way, which keeps every
      * wrapper beside its binary.
@@ -398,7 +401,7 @@ object ModelCatalog {
         flat: Boolean = false
     ): ModelBundle {
         fun inZip(model: String, file: String) = if (flat) file else "${model}_onnx/$file"
-        val name = "whisper_large_v3_turbo-precompiled_qnn_onnx-float-qualcomm_$slug"
+        val name = "whisper_large_v3_turbo_quantized-precompiled_qnn_onnx-w8a16-qualcomm_$slug"
         return ModelBundle(
             id = "asr-whisper-turbo-npu-${slug.replace('_', '-')}",
             displayName = "Whisper Large-v3-Turbo (NPU)",
@@ -432,47 +435,47 @@ object ModelCatalog {
         WhisperNpuAsset(
             setOf("SM8450"),
             "Snapdragon 8 Gen 1",
-            whisperNpuBundle("snapdragon_8gen1", 1_625_282_223, 1_319_346_176, 451_346_432)
+            whisperNpuBundle("snapdragon_8gen1", 823_392_842, 681_562_112, 294_694_912)
         ),
         WhisperNpuAsset(
             setOf("SM8550", "QCS8550"),
             "Snapdragon 8 Gen 2",
-            whisperNpuBundle("qcs8550_proxy", 2_019_798_558, 1_752_641_536, 452_489_216)
+            whisperNpuBundle("qcs8550_proxy", 825_864_854, 686_071_808, 295_849_984)
         ),
         WhisperNpuAsset(
             setOf("SM8650"),
             "Snapdragon 8 Gen 3",
-            whisperNpuBundle("snapdragon_8gen3", 2_018_035_156, 1_752_562_424, 452_486_656, flat = true)
+            whisperNpuBundle("snapdragon_8gen3", 823_721_740, 686_112_520, 295_856_032, flat = true)
         ),
         WhisperNpuAsset(
             setOf("SM8750"),
             "Snapdragon 8 Elite",
-            whisperNpuBundle("snapdragon_8_elite_for_galaxy", 2_019_802_141, 1_752_711_168, 452_452_352)
+            whisperNpuBundle("snapdragon_8_elite_for_galaxy", 825_757_593, 685_924_352, 295_772_160)
         ),
         WhisperNpuAsset(
             setOf("SM8850"),
             "Snapdragon 8 Elite Gen 5",
-            whisperNpuBundle("snapdragon_8_elite_gen5_for_galaxy", 2_021_434_835, 1_758_412_800, 452_898_816)
+            whisperNpuBundle("snapdragon_8_elite_gen5_for_galaxy", 826_785_704, 684_933_120, 295_407_616)
         ),
         WhisperNpuAsset(
             setOf("SM8950"),
             "Snapdragon 8 Elite Gen 6",
-            whisperNpuBundle("snapdragon_8_elite_gen6", 2_021_059_805, 1_756_012_544, 452_726_784)
+            whisperNpuBundle("snapdragon_8_elite_gen6", 826_147_339, 683_667_456, 294_748_160)
         ),
         WhisperNpuAsset(
             setOf("SM8975"),
             "Snapdragon 8 Elite Extreme Gen 6",
-            whisperNpuBundle("snapdragon_8_elite_extreme_gen6", 2_019_791_474, 1_751_298_048, 452_661_248)
+            whisperNpuBundle("snapdragon_8_elite_extreme_gen6", 825_709_722, 683_229_184, 294_735_872)
         ),
         WhisperNpuAsset(
             setOf("QCS8275"),
             "Dragonwing IQ-8275",
-            whisperNpuBundle("qcs8275", 2_019_820_610, 1_752_629_248, 452_493_312)
+            whisperNpuBundle("qcs8275", 825_884_595, 686_026_752, 295_858_176)
         ),
         WhisperNpuAsset(
             setOf("QCS9075"),
             "Dragonwing IQ-9075",
-            whisperNpuBundle("qcs9075", 2_019_868_613, 1_752_633_344, 452_497_408)
+            whisperNpuBundle("qcs9075", 825_852_687, 686_063_616, 295_866_368)
         )
     )
 
