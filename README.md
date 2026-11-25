@@ -707,7 +707,7 @@ network), re-run the PipelineRun. To publish a tag again by hand, start
 
 The release never compiles sherpa-onnx. If its outputs are missing from
 `app/`, it copies them from `$CONVOSCRIBE_SHERPA_PREBUILT` or extracts
-them from the sherpa image with podman or docker. Two images
+them from the sherpa image with podman or docker. Three images
 (Containerfiles in `docker/`, build context the repo root) make this
 work in CI:
 
@@ -717,6 +717,11 @@ work in CI:
   them) and `/sherpa/libs/*.jar`. Its tag comes from the pins in
   `scripts/build-sherpa-onnx.sh` and `scripts/build-onnxruntime-jni.sh`,
   so you rebuild it only when a pin changes.
+- `convoscribe-sherpa-wasm:<sherpa>-emsdk<version>` holds sherpa-onnx
+  built for the browser (`scripts/build-sherpa-onnx-wasm.sh`), which the
+  server image copies in for the web app's Record page (#164). Built
+  with `bash scripts/build-images.sh --push sherpa-wasm`, not part of
+  `all`; rebuild it when a pin in that script changes.
 - `convoscribe-android-builder:<sherpa tag>-tc<hash>` has JDK 17, the
   SDK (no NDK) and `gh`, with the sherpa outputs at `/opt/sherpa`.
   Tekton runs `scripts/release.sh publish` in this image. The exact tag

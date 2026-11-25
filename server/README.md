@@ -577,6 +577,14 @@ curl -H "Authorization: Bearer dev-key-change-me-0123456789abcdef" localhost:300
 Open http://localhost:3000 and sign in with `SYNC_API_KEY` to use the web
 app.
 
+The Record page's live transcript (#164) runs sherpa-onnx compiled to
+WebAssembly, served from `public/sherpa-onnx/<version>/` (gitignored).
+Build it once; without it, the page still records, but with no transcript:
+
+```bash
+bash scripts/build-sherpa-onnx-wasm.sh   # from the repo root; installs emsdk, 5-15 min
+```
+
 The gate, which CI and the image build also run:
 
 ```bash
@@ -771,6 +779,17 @@ It bumps `version` in `server/package.json` (minor by default; `--patch`,
 `--major` or `--version X.Y.Z`), commits `chore(release): server-vX.Y.Z`,
 tags it, and pushes the branch and tag together. It refuses when nothing
 under `server/` changed since the previous `server-v*` tag.
+
+The image copies the Record page's speech runtime from the files-only
+`convoscribe-sherpa-wasm` image (`SHERPA_WASM_IMAGE` in `Dockerfile`), so
+the release never compiles it. Build and push that image once per pin in
+`scripts/build-sherpa-onnx-wasm.sh`, before the first server release that
+needs it:
+
+```bash
+bash scripts/build-images.sh --push sherpa-wasm
+bash scripts/build-images.sh --print-sherpa-wasm-image   # matches SHERPA_WASM_IMAGE
+```
 
 Tekton builds the image from `server/` and pushes it as `<repo>/server`,
 tagged `git-<sha>` and `latest` (see `.k8s-build.yaml`). It doesn't push a
