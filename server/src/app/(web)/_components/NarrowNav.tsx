@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import type { ReactNode } from 'react';
-import { IconActivity, IconChecklist, IconSearch, IconTrash } from './Icons';
+import { IconActivity, IconChecklist, IconMic, IconSearch, IconTrash } from './Icons';
 
 /**
  * The top bar's links on narrow screens, where the sidebar's are hidden:
- * talking-point lists (#110), search, the admin pages and the trash, the
+ * recording (#164), talking-point lists (#110), search, the admin pages and the trash, the
  * current one highlighted.
  */
 export function NarrowNav({ isAdmin }: { isAdmin: boolean }) {
@@ -19,6 +19,7 @@ export function NarrowNav({ isAdmin }: { isAdmin: boolean }) {
   );
   return (
     <>
+      {link('/record', 'Record', <IconMic />)}
       {link('/talking-points', 'Talking points', <IconChecklist />)}
       {link('/search', 'Search', <IconSearch />)}
       {isAdmin && link('/admin/status', 'Admin', <IconActivity />, path.startsWith('/admin'))}

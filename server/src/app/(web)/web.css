@@ -485,6 +485,147 @@ a.chip:hover {
   font-weight: 600;
 }
 
+/* Recording in the web app (#164) */
+
+.record {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 860px;
+}
+
+.record-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 1.5rem;
+}
+
+.record-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  height: 36px;
+  font-size: 0.9rem;
+}
+
+.record-model {
+  display: flex;
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 36px;
+}
+
+.record-model .muted {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.record-model progress {
+  flex: 1;
+  min-width: 120px;
+}
+
+.record-controls {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.record-button {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: var(--shadow-md);
+}
+
+.record-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.record-button.stop {
+  background: var(--surface-3);
+  color: var(--danger);
+}
+
+.record-square {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--danger);
+}
+
+.record-button .spin {
+  animation: reach-spin 0.9s linear infinite;
+}
+
+.record-status {
+  display: grid;
+  flex: 1;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.record-clock {
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 650;
+}
+
+.record-level {
+  width: 100%;
+  max-width: 320px;
+  height: 8px;
+}
+
+.notice.warn {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.danger-text {
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+.live-transcript {
+  max-height: 50vh;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  overflow-y: auto;
+  border-top: 1px solid var(--border);
+}
+
+.live-transcript p {
+  display: flex;
+  gap: 0.85rem;
+  margin: 0 0 0.6rem;
+  line-height: 1.5;
+}
+
+.live-time {
+  flex: none;
+  min-width: 3.2rem;
+  color: var(--text-3);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.9;
+}
+
+.live-partial {
+  color: var(--text-3);
+}
+
 /* Recordings uploading from the web app (#164) */
 
 .upload-status {
