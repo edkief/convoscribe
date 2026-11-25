@@ -22,3 +22,5 @@ next-env.d.ts
 *.tsbuildinfo
 .env*
 !.env.example
+# sherpa-onnx browser runtime (scripts/build-sherpa-onnx-wasm.sh)
+server/public/sherpa-onnx/

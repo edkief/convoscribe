@@ -8,14 +8,19 @@
 #            scripts/build-onnxruntime-jni.sh change.
 #   builder  docker/android-builder.Containerfile: JDK + SDK + gh with the
 #            sherpa outputs at /opt/sherpa; what Tekton runs release.sh in.
+#   sherpa-wasm  docker/sherpa-onnx-wasm.Containerfile: files-only image with
+#            sherpa-onnx's browser ASR runtime (#164), which server/Dockerfile
+#            copies in. Rebuild when the pins in
+#            scripts/build-sherpa-onnx-wasm.sh change. Not part of `all`.
 #
 # Tags are derived from the pinned versions, so an unchanged pin means an
 # unchanged tag and there is nothing to rebuild:
 #   sherpa : <sherpa>-qnn<qnn>-ort<onnxruntime>-jni<onnxruntime JNI version>,
 #            e.g. 1.13.8-qnn2.51.0.260929-ort1.29.0-jni1.29.0
 #   builder: <sherpa tag>-tc<hash of setup-toolchain.sh + env.sh>
+#   sherpa-wasm: <sherpa>-emsdk<emsdk>, e.g. 1.13.8-emsdk4.0.23
 #
-# Usage: bash scripts/build-images.sh [options] [sherpa|builder|all]
+# Usage: bash scripts/build-images.sh [options] [sherpa|builder|sherpa-wasm|all]
 
 set -euo pipefail
 
@@ -25,9 +30,10 @@ cd "$REPO_ROOT"
 
 usage() {
   cat <<'USAGE'
-Usage: bash scripts/build-images.sh [options] [sherpa|builder|all]
+Usage: bash scripts/build-images.sh [options] [sherpa|builder|sherpa-wasm|all]
 
-Build the sherpa-onnx and/or Android builder images (default: all).
+Build the sherpa-onnx and/or Android builder images (default: all), or
+the browser ASR runtime image (sherpa-wasm) that server/Dockerfile uses.
 
 Options:
   --push                  push the images after building them
@@ -37,6 +43,7 @@ Options:
                           docker-registry.docker-registry:5000 (buildah/podman)
   --print-sherpa-image    print the sherpa image reference and exit
   --print-builder-image   print the builder image reference and exit
+  --print-sherpa-wasm-image  print the browser runtime image reference and exit
   -h, --help              show this help
 
 Uses buildah if available, else podman, else docker. Log in to the
@@ -60,7 +67,8 @@ while [[ $# -gt 0 ]]; do
     --tls-verify=false) tls_verify=false ;;
     --print-sherpa-image) print=sherpa ;;
     --print-builder-image) print=builder ;;
-    sherpa | builder | all) target="$1" ;;
+    --print-sherpa-wasm-image) print=sherpa-wasm ;;
+    sherpa | builder | sherpa-wasm | all) target="$1" ;;
     -h | --help)
       usage
       exit 0
@@ -91,6 +99,9 @@ sherpa_tag+="-jni$(pin ORT_VERSION scripts/build-onnxruntime-jni.sh)"
 toolchain_hash=$(cat scripts/setup-toolchain.sh scripts/env.sh | sha256sum | cut -c1-10)
 sherpa_image="$registry/convoscribe-sherpa:$sherpa_tag"
 builder_image="$registry/convoscribe-android-builder:$sherpa_tag-tc$toolchain_hash"
+wasm_script=scripts/build-sherpa-onnx-wasm.sh
+sherpa_wasm_tag="$(pin VERSION $wasm_script)-emsdk$(pin EMSDK_VERSION $wasm_script)"
+sherpa_wasm_image="$registry/convoscribe-sherpa-wasm:$sherpa_wasm_tag"
 
 case "$print" in
   sherpa)
@@ -99,6 +110,10 @@ case "$print" in
     ;;
   builder)
     echo "$builder_image"
+    exit 0
+    ;;
+  sherpa-wasm)
+    echo "$sherpa_wasm_image"
     exit 0
     ;;
 esac
@@ -151,6 +166,13 @@ if [[ "$target" == builder || "$target" == all ]]; then
   # The builder copies from the sherpa image by reference, so when only
   # the builder is built, that image must already be pushed (or local).
   build_image docker/android-builder.Containerfile "$builder_image" "SHERPA_IMAGE=$sherpa_image"
+fi
+if [[ "$target" == sherpa-wasm ]]; then
+  build_image docker/sherpa-onnx-wasm.Containerfile "$sherpa_wasm_image" \
+    "SHERPA_WASM_TAG=$sherpa_wasm_tag" "EMSDK_VERSION=$(pin EMSDK_VERSION $wasm_script)"
+  echo
+  echo "sherpa-wasm: $sherpa_wasm_image (SHERPA_WASM_IMAGE in server/Dockerfile)"
+  exit 0
 fi
 
 echo

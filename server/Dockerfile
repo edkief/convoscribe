@@ -3,6 +3,13 @@
 # Configuration is environment variables only; see README.md.
 
 ARG NODE_IMAGE=node:24-alpine
+# sherpa-onnx's browser ASR runtime for the Record page (#164), prebuilt by
+# `bash scripts/build-images.sh --push sherpa-wasm`; print the reference with
+# --print-sherpa-wasm-image. Its version is SHERPA_WASM_VERSION in
+# src/app/(web)/_components/record/asr-catalog.ts.
+ARG SHERPA_WASM_IMAGE=registry.kieffer.me/convoscribe-sherpa-wasm:1.13.8-emsdk4.0.23
+
+FROM ${SHERPA_WASM_IMAGE} AS sherpa-wasm
 
 FROM ${NODE_IMAGE} AS build
 # Keep in step with "packageManager" in package.json.
@@ -22,6 +29,8 @@ ENV NODE_ENV=production \
     NODE_OPTIONS=--import=/app/http-timeouts.mjs
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
+# Static files the standalone server serves from public/.
+COPY --from=sherpa-wasm --chown=node:node /sherpa-onnx-wasm/ ./public/sherpa-onnx/1.13.8/
 # Applied on startup by src/instrumentation.ts.
 COPY --from=build --chown=node:node /app/drizzle ./drizzle
 # Lets long recordings upload to /api/ai/v1/asr (#93); see the file.
