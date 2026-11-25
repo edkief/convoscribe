@@ -1,11 +1,22 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { formatBytes } from '@/lib/format';
+import { useCallback, useEffect, useState } from 'react';
+import { formatBytes, formatLength } from '@/lib/format';
 import type { QueueStatus } from './record/upload-queue';
-import { announce, retry, UPLOAD_LOCK, uploadRunner } from './record/uploads';
+import {
+  announce,
+  discardInterrupted,
+  interruptedRecordings,
+  onChange,
+  recover,
+  retry,
+  UPLOAD_LOCK,
+  uploadRunner,
+  type Interrupted,
+} from './record/uploads';
 import { IconAlert, IconArrowUp, IconSpinner } from './Icons';
+import { ConfirmButton } from './TrashActions';
 
 type Locks = { request(name: string, callback: () => Promise<void>): Promise<void> };
 
@@ -19,6 +30,28 @@ type Locks = { request(name: string, callback: () => Promise<void>): Promise<voi
 export function UploadQueue() {
   const router = useRouter();
   const [status, setStatus] = useState<QueueStatus | null>(null);
+  const [interrupted, setInterrupted] = useState<Interrupted[]>([]);
+  const [recovering, setRecovering] = useState<string | null>(null);
+  const [recoverError, setRecoverError] = useState<string | null>(null);
+
+  // Recordings a reload or a crash cut short (#165), looked for again whenever the queue changes or the tab comes back.
+  const findInterrupted = useCallback(() => {
+    interruptedRecordings()
+      .then(setInterrupted)
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    findInterrupted();
+    const off = onChange(findInterrupted);
+    const visible = () => {
+      if (document.visibilityState === 'visible') findInterrupted();
+    };
+    document.addEventListener('visibilitychange', visible);
+    return () => {
+      off();
+      document.removeEventListener('visibilitychange', visible);
+    };
+  }, [findInterrupted]);
 
   useEffect(() => {
     const runner = uploadRunner();
@@ -52,7 +85,20 @@ export function UploadQueue() {
     return () => window.removeEventListener('beforeunload', warn);
   }, [queued]);
 
-  if (!status || items.length === 0) return null;
+  const recoverOne = async ({ draft }: Interrupted) => {
+    setRecovering(draft.syncId);
+    setRecoverError(null);
+    try {
+      await recover(draft);
+    } catch (err) {
+      setRecoverError(`It could not be recovered: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setRecovering(null);
+      findInterrupted();
+    }
+  };
+
+  if (!status || (items.length === 0 && interrupted.length === 0)) return null;
   const failed = items.filter((item) => item.failed);
   const waiting = items.length - failed.length;
   const active = status.active && items.find((item) => item.syncId === status.active!.syncId);
@@ -60,6 +106,40 @@ export function UploadQueue() {
 
   return (
     <div className="upload-status" role="status" aria-live="polite">
+      {interrupted.map((one) => (
+        <div key={one.draft.syncId} className="upload-interrupted">
+          <p>
+            <IconAlert size={16} />
+            <span>
+              A recording from {when(one.draft.createdAt)} was interrupted; {formatLength(one.durationMs)} of it can be recovered.
+            </span>
+          </p>
+          <div className="upload-actions">
+            <button type="button" className="button" disabled={recovering !== null} onClick={() => recoverOne(one)}>
+              {recovering === one.draft.syncId ? <IconSpinner size={16} className="spin" /> : null}
+              Recover
+            </button>
+            <ConfirmButton
+              label="Discard"
+              className="link-button"
+              title="Discard this recording?"
+              confirm="Discard"
+              onConfirm={async () => {
+                try {
+                  await discardInterrupted(one.draft);
+                  findInterrupted();
+                  return null;
+                } catch (err) {
+                  return err instanceof Error ? err.message : String(err);
+                }
+              }}
+            >
+              It was never uploaded, so it is deleted from this computer for good.
+            </ConfirmButton>
+          </div>
+        </div>
+      ))}
+      {recoverError && <p className="upload-failed">{recoverError}</p>}
       {waiting > 0 &&
         (active ? (
           <p title={`${formatBytes(status.active!.sent)} of ${formatBytes(active.size)}`}>
@@ -87,3 +167,6 @@ export function UploadQueue() {
     </div>
   );
 }
+
+/** When a recording started, in this browser's time zone. */
+const when = (ms: number) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });

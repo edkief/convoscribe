@@ -651,6 +651,18 @@ a.chip:hover {
   color: var(--danger);
 }
 
+.upload-interrupted {
+  display: grid;
+  gap: 0.4rem;
+  color: var(--text);
+}
+
+.upload-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
 .account {
   display: flex;
   align-items: center;

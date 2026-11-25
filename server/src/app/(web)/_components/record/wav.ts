@@ -43,3 +43,9 @@ export function toPcm16(samples: Float32Array): Uint8Array {
 
 /** The length of a recording with `dataBytes` of 16-bit mono samples. */
 export const pcmDurationMs = (dataBytes: number, sampleRate = SAMPLE_RATE) => Math.floor((dataBytes / 2) * 1000 / sampleRate);
+
+/**
+ * The samples a WAV cut short holds (#165): what follows the header, to the
+ * last whole sample. A crashed recording's header still says 0.
+ */
+export const recoveredDataBytes = (fileSize: number) => Math.max(0, Math.floor((fileSize - WAV_HEADER_BYTES) / 2) * 2);

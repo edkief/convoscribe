@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 import { createSHA256 } from 'hash-wasm';
 import { RECORDINGS_DIR, recordingFileName, type SyncAccessHandle } from './opfs';
-import { pcmDurationMs, toPcm16, WAV_HEADER_BYTES, wavHeader } from './wav';
+import { pcmDurationMs, recoveredDataBytes, toPcm16, WAV_HEADER_BYTES, wavHeader } from './wav';
 
 /**
  * Writes the Record page's recording (#164) to the browser's private
@@ -13,12 +13,20 @@ import { pcmDurationMs, toPcm16, WAV_HEADER_BYTES, wavHeader } from './wav';
  * known then and SHA-256 cannot be prefixed, and reading it back also
  * checks the storage kept every byte.
  *
+ * After a reload or a crash (#165), `recover` finishes a recording that
+ * was never stopped: it cuts the file to its last whole sample, writes the
+ * header's sizes and hashes it as Stop does.
+ *
  * In: `{type:'start', syncId}`, `{type:'audio', samples}` (16 kHz floats),
- * `{type:'stop'}`. Out: `{type:'started'}`, `{type:'stopped', sha256,
+ * `{type:'stop'}`, `{type:'recover', syncId}`. Out: `{type:'started'}`, `{type:'stopped', sha256,
  * size, durationMs}`, `{type:'failed', message}`.
  */
 
-export type WriterIn = { type: 'start'; syncId: string } | { type: 'audio'; samples: Float32Array } | { type: 'stop' };
+export type WriterIn =
+  | { type: 'start'; syncId: string }
+  | { type: 'audio'; samples: Float32Array }
+  | { type: 'stop' }
+  | { type: 'recover'; syncId: string };
 export type WriterOut =
   | { type: 'started' }
   | { type: 'stopped'; sha256: string; size: number; durationMs: number }
@@ -41,11 +49,15 @@ function fail(err: unknown) {
   post({ type: 'failed', message: err instanceof Error ? err.message : String(err) });
 }
 
-async function start(syncId: string) {
+async function openFile(syncId: string, create: boolean): Promise<SyncAccessHandle> {
   const root = await navigator.storage.getDirectory();
   const dir = await root.getDirectoryHandle(RECORDINGS_DIR, { create: true });
-  const file = await dir.getFileHandle(recordingFileName(syncId), { create: true });
-  handle = await (file as unknown as { createSyncAccessHandle(): Promise<SyncAccessHandle> }).createSyncAccessHandle();
+  const file = await dir.getFileHandle(recordingFileName(syncId), { create });
+  return (file as unknown as { createSyncAccessHandle(): Promise<SyncAccessHandle> }).createSyncAccessHandle();
+}
+
+async function start(syncId: string) {
+  handle = await openFile(syncId, true);
   handle.truncate(0);
   handle.write(wavHeader(0), { at: 0 });
   dataBytes = 0;
@@ -72,23 +84,39 @@ async function stop() {
   const h = handle;
   handle = null;
   try {
-    h.write(wavHeader(dataBytes), { at: 0 });
-    h.flush();
-    const size = h.getSize();
-    if (size !== WAV_HEADER_BYTES + dataBytes) throw new Error('The stored recording is incomplete.');
-    const hasher = await createSHA256();
-    hasher.init();
-    const buffer = new Uint8Array(READ_BYTES);
-    for (let at = 0; at < size; ) {
-      const read = h.read(buffer, { at });
-      if (read <= 0) throw new Error('The stored recording could not be read back.');
-      hasher.update(buffer.subarray(0, read));
-      at += read;
-    }
-    post({ type: 'stopped', sha256: hasher.digest('hex'), size, durationMs: pcmDurationMs(dataBytes) });
+    await finish(h, dataBytes);
   } finally {
     h.close();
   }
+}
+
+async function recover(syncId: string) {
+  const h = await openFile(syncId, false);
+  try {
+    const bytes = recoveredDataBytes(h.getSize());
+    h.truncate(WAV_HEADER_BYTES + bytes);
+    await finish(h, bytes);
+  } finally {
+    h.close();
+  }
+}
+
+/** Write the header's sizes, then hash the file read back: Stop's last step, and recovery's. */
+async function finish(h: SyncAccessHandle, dataBytes: number) {
+  h.write(wavHeader(dataBytes), { at: 0 });
+  h.flush();
+  const size = h.getSize();
+  if (size !== WAV_HEADER_BYTES + dataBytes) throw new Error('The stored recording is incomplete.');
+  const hasher = await createSHA256();
+  hasher.init();
+  const buffer = new Uint8Array(READ_BYTES);
+  for (let at = 0; at < size; ) {
+    const read = h.read(buffer, { at });
+    if (read <= 0) throw new Error('The stored recording could not be read back.');
+    hasher.update(buffer.subarray(0, read));
+    at += read;
+  }
+  post({ type: 'stopped', sha256: hasher.digest('hex'), size, durationMs: pcmDurationMs(dataBytes) });
 }
 
 scope.onmessage = (e: MessageEvent<WriterIn>) => {
@@ -97,6 +125,7 @@ scope.onmessage = (e: MessageEvent<WriterIn>) => {
     if (message.type === 'start') start(message.syncId).catch(fail);
     else if (message.type === 'audio') append(message.samples);
     else if (message.type === 'stop') stop().catch(fail);
+    else if (message.type === 'recover') recover(message.syncId).catch(fail);
   } catch (err) {
     fail(err);
   }
