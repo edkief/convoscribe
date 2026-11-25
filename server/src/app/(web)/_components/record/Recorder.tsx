@@ -6,10 +6,12 @@ import { formatBytes } from '@/lib/format';
 import { IconAlert, IconCheckCircle, IconDownload, IconMic, IconSpinner, IconTrash } from '../Icons';
 import { BUNDLES, bundleBytes, bundleFor, type AsrBundle } from './asr-catalog';
 import { bundleReady, deleteBundle, downloadBundle } from './model-store';
-import { recordingSupported, removeRecording } from './opfs';
+import { recordingSupported } from './opfs';
+import { appendDraftLine, markDraftDropped, putDraft } from './queue-store';
 import { Recorder as AudioRecorder, type TranscriptionState } from './recorder';
+import { recordingLock } from './recovery';
 import type { FinalLine } from './segmenter';
-import { enqueue } from './uploads';
+import { discardRecording, enqueue, holdLock } from './uploads';
 
 type ModelState =
   | { kind: 'checking' }
@@ -62,8 +64,15 @@ export function Recorder() {
   const [transcription, setTranscription] = useState<TranscriptionState>({ kind: 'off' });
   const [held, setHeld] = useState(false);
   const recorder = useRef<AudioRecorder | null>(null);
-  /** What the recording needs at Stop, set at Start. */
-  const pending = useRef<{ syncId: string; createdAt: number; bundle: AsrBundle | null; language: string } | null>(null);
+  /** What the recording needs at Stop, set at Start; `release` frees its Web Lock (#165). */
+  const pending = useRef<{
+    syncId: string;
+    createdAt: number;
+    bundle: AsrBundle | null;
+    language: string;
+    zone: string | null;
+    release: () => void;
+  } | null>(null);
   const download = useRef<AbortController | null>(null);
   const transcriptEnd = useRef<HTMLDivElement | null>(null);
 
@@ -120,7 +129,7 @@ export function Recorder() {
         durationMs: done.durationMs,
         createdAt: meta.createdAt,
         language: meta.language,
-        zone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
+        zone: meta.zone,
         asrModel: done.lines ? meta.bundle?.id ?? null : null,
         lines: done.lines ?? [],
         uploadId: null,
@@ -131,8 +140,10 @@ export function Recorder() {
       if (onPage) setPhase({ kind: 'saved', transcript: done.lines !== null });
     } catch (err) {
       rec.abort();
-      await removeRecording(meta.syncId);
+      await discardRecording(meta.syncId);
       if (onPage) setPhase({ kind: 'error', message: `The recording could not be saved: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      meta.release();
     }
   }, []);
 
@@ -167,31 +178,54 @@ export function Recorder() {
 
   const start = async () => {
     const useModel = transcribe && model.kind === 'ready' ? bundle : null;
-    const meta = { syncId: crypto.randomUUID(), createdAt: Date.now(), bundle: useModel, language };
+    const syncId = crypto.randomUUID();
     setPhase({ kind: 'starting' });
     setLines([]);
     setPartial('');
     setHeld(false);
     setLevel(0);
     setNow(0);
+    // Held while recording, so no tab offers to recover this recording (#165).
+    const release = (await holdLock(recordingLock(syncId))) ?? (() => {});
+    const meta = {
+      syncId,
+      createdAt: Date.now(),
+      bundle: useModel,
+      language,
+      zone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? null,
+      release,
+    };
+    const keep = (what: Promise<void>) => what.catch((err) => console.warn(`recording draft: ${err}`));
+    // The draft comes before the file, so a file without one is never a recording in progress.
+    await keep(
+      putDraft({ syncId, createdAt: meta.createdAt, language, zone: meta.zone, asrModel: useModel?.id ?? null, transcriptDropped: false }),
+    );
+    navigator.storage?.persist?.().catch(() => {});
     try {
       recorder.current = await AudioRecorder.start(meta.syncId, useModel, {
         level: setLevel,
         partial: setPartial,
-        line: (line) => setLines((all) => [...all, line]),
-        transcription: setTranscription,
+        line: (line) => {
+          setLines((all) => [...all, line]);
+          keep(appendDraftLine(syncId, line));
+        },
+        transcription: (state) => {
+          setTranscription(state);
+          if (state.kind === 'dropped') keep(markDraftDropped(syncId));
+        },
         error: (message) => {
           recorder.current?.abort();
           recorder.current = null;
           pending.current = null;
-          removeRecording(meta.syncId);
+          discardRecording(meta.syncId).finally(release);
           setPhase({ kind: 'error', message: `Recording stopped: ${message}` });
         },
       });
       pending.current = meta;
       setPhase({ kind: 'recording', since: Date.now() });
     } catch (err) {
-      await removeRecording(meta.syncId);
+      await discardRecording(meta.syncId);
+      release();
       setPhase({ kind: 'error', message: startFailure(err) });
     }
   };

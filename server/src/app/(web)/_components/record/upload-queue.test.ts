@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { backoffMs, PART_BYTES, UploadRunner, type QueuedRecording, type QueueStore } from './upload-queue';
+import { backoffMs, describeError, PART_BYTES, SignedOut, UploadRunner, type QueueStatus, type QueuedRecording, type QueueStore } from './upload-queue';
 
 const SHA = 'a'.repeat(64);
 
@@ -235,6 +235,118 @@ describe('UploadRunner (#164)', () => {
     await runner.run(() => runner.stop());
     expect(waits).toEqual([2000, 4000]);
     expect(server.sessions.size).toBe(1);
+  });
+
+  it('takes a 401 or a redirect to sign in as a signed-out browser (#165)', async () => {
+    const item = recording(1000);
+    await store.put(item);
+    server.answer = { match: /POST \/blobs/, res: () => Response.json({ error: 'unauthorized' }, { status: 401 }) };
+    await expect(runner.send(item)).rejects.toBeInstanceOf(SignedOut);
+    // What fetch returns for a redirect with `redirect: 'manual'`.
+    const redirect = { type: 'opaqueredirect', status: 0, text: async () => '' } as unknown as Response;
+    server.answer = { match: /POST \/blobs/, res: () => redirect };
+    await expect(runner.send(item)).rejects.toBeInstanceOf(SignedOut);
+    expect(store.items.get(item.syncId)?.failed).toBeNull();
+  });
+
+  it('waits, without backing off or failing, while signed out, and goes on after signing in (#165)', async () => {
+    const waits: number[] = [];
+    const seen: QueueStatus[] = [];
+    let signedOut = 2;
+    const expiring = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.redirect).toBe('manual');
+      if (signedOut-- > 0) return Response.json({ error: 'unauthorized' }, { status: 401 });
+      return server.fetch(input, init);
+    }) as typeof fetch;
+    runner = new UploadRunner({
+      fetch: expiring,
+      store,
+      file: async (item) => new Blob([new Uint8Array(item.size)]),
+      removeFile: async () => {},
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    runner.subscribe((status) => seen.push(status));
+    await store.put(recording(1000));
+    await runner.run(() => runner.stop());
+    expect(waits).toEqual([60_000, 60_000]);
+    expect(seen.some((s) => s.signedOut)).toBe(true);
+    expect(seen.at(-1)?.signedOut).toBe(false);
+    expect(server.sessions.size).toBe(1);
+  });
+
+  it('after a reload, a new runner resumes from the parts the server has (#165)', async () => {
+    const item = recording(PART_BYTES * 2 + 10);
+    await store.put(item);
+    server.drop = { match: /PUT .*parts\/2$/, after: false };
+    await expect(runner.send(item)).rejects.toThrow('offline');
+    // The tab is reloaded: what is left is IndexedDB, and the server's upload.
+    const reloaded = new UploadRunner({
+      fetch: server.fetch,
+      store,
+      file: async (i) => new Blob([new Uint8Array(i.size)]),
+      removeFile: async () => {},
+    });
+    server.calls = [];
+    await reloaded.send(store.items.get(item.syncId)!);
+    expect(puts()).toEqual([2, 3]);
+    expect(server.sessions.size).toBe(1);
+  });
+
+  it('keeps why the last try failed, until the next one succeeds (#165)', async () => {
+    let failures = 1;
+    const seen: (string | null | undefined)[] = [];
+    runner = new UploadRunner({
+      fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (failures-- > 0) return Response.json({ error: 'upstream' }, { status: 503 });
+        return server.fetch(input, init);
+      }) as typeof fetch,
+      store,
+      file: async (item) => new Blob([new Uint8Array(item.size)]),
+      removeFile: async () => {},
+      sleep: async () => {
+        seen.push(store.items.get(recording(0).syncId)?.lastError);
+      },
+    });
+    await store.put(recording(1000));
+    await runner.run(() => runner.stop());
+    expect(seen).toEqual(['upstream']);
+    expect(store.items.size).toBe(0);
+  });
+
+  it('fails a recording whose file is gone from this computer (#165)', async () => {
+    runner = new UploadRunner({ fetch: server.fetch, store, file: async () => null, removeFile: async () => {} });
+    await store.put(recording(1000));
+    const run = runner.run();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    runner.stop();
+    await run;
+    expect(store.items.get(recording(0).syncId)?.failed).toMatch(/no longer on this computer/);
+  });
+
+  it('stops sending a recording deleted meanwhile, and creates no session for it (#165)', async () => {
+    const item = recording(PART_BYTES * 2 + 10);
+    await store.put(item);
+    server.answer = {
+      match: /PUT .*parts\/1$/,
+      res: () => {
+        store.items.delete(item.syncId);
+        return new Response(null, { status: 204 });
+      },
+    };
+    await expect(runner.send(item)).rejects.toThrow('deleted');
+    // Part 1 was on its way when it was deleted; nothing after it is sent.
+    expect(puts()).toEqual([1]);
+    expect(server.sessions.size).toBe(0);
+    expect(store.items.size).toBe(0);
+  });
+
+  it('says what an error code means', () => {
+    expect(describeError('offline')).toMatch(/could not be reached/);
+    expect(describeError('unexpected_answer_200')).toMatch(/HTTP 200/);
+    expect(describeError('http_502')).toBe('The server answered HTTP 502.');
+    expect(describeError('upstream')).toBe('The server answered: upstream.');
   });
 
   it('backs off from 2 s to at most a minute', () => {

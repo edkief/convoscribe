@@ -26,6 +26,8 @@ export type QueuedRecording = {
   stored: boolean;
   /** Why the server refused it, for good: the user must retry it by hand. */
   failed: string | null;
+  /** Why the last try failed, when it is waiting to try again (#165): an error code for [describeError]. */
+  lastError?: string | null;
   queuedAt: number;
 };
 
@@ -39,8 +41,8 @@ export interface QueueStore {
 export type UploadDeps = {
   fetch: typeof fetch;
   store: QueueStore;
-  /** The recording's WAV, to slice parts from. */
-  file(item: QueuedRecording): Promise<Blob>;
+  /** The recording's WAV, to slice parts from; null when it is no longer stored. */
+  file(item: QueuedRecording): Promise<Blob | null>;
   /** Delete the recording's WAV once its session exists. */
   removeFile(item: QueuedRecording): Promise<void>;
   /** Wait `ms`, or less when `signal` aborts. */
@@ -49,6 +51,16 @@ export type UploadDeps = {
 
 /** A refusal retrying cannot fix: the item is marked failed. */
 export class FatalUpload extends Error {}
+
+/**
+ * The sign-in has expired (#165): a `401`, or a redirect to sign in from
+ * authz-proxy. The queue waits, untouched, until the user signs in again.
+ */
+export class SignedOut extends Error {
+  constructor() {
+    super('signed_out');
+  }
+}
 
 /** Wait `2 s × 2^(attempt-1)`, at most a minute, before trying again after a failure. */
 export const backoffMs = (attempt: number) => Math.min(60_000, 2_000 * 2 ** Math.max(0, attempt - 1));
@@ -60,6 +72,8 @@ export type QueueStatus = {
   active: { syncId: string; sent: number } | null;
   /** When the last attempt failed and the next is waiting, why. */
   waiting: string | null;
+  /** The sign-in expired: nothing is sent until the user signs in again. */
+  signedOut: boolean;
 };
 
 /** How long an empty queue waits before looking again, unless kicked. */
@@ -87,7 +101,7 @@ type Answer = { status: number; body: Record<string, unknown> };
 export class UploadRunner {
   private wake = new AbortController();
   private listeners = new Set<(status: QueueStatus) => void>();
-  private status: QueueStatus = { items: [], active: null, waiting: null };
+  private status: QueueStatus = { items: [], active: null, waiting: null, signedOut: false };
   private stopped = false;
   private loop: Promise<void> | null = null;
   private onCreated: ((item: QueuedRecording) => void) | undefined;
@@ -145,26 +159,48 @@ export class UploadRunner {
       try {
         await this.send(next);
         attempt = 0;
-        this.emit({ active: null, waiting: null });
+        this.emit({ active: null, waiting: null, signedOut: false });
         this.onCreated?.(next);
       } catch (err) {
         this.emit({ active: null });
+        if (err instanceof SignedOut) {
+          // Not a failure to back off from: wait for the user, looking again now and then or on a kick.
+          attempt = 0;
+          this.emit({ signedOut: true, waiting: null });
+          await sleep(IDLE_MS, signal);
+          continue;
+        }
         if (err instanceof FatalUpload) {
-          await this.deps.store.put({ ...next, failed: err.message });
+          await this.patch(next.syncId, { failed: err.message, lastError: null });
           continue;
         }
         attempt++;
         const wait = backoffMs(attempt);
-        this.emit({ waiting: err instanceof Error ? err.message : String(err) });
+        const code = err instanceof Error ? err.message : String(err);
+        await this.patch(next.syncId, { lastError: code }).catch(() => {});
+        this.emit({ waiting: code, signedOut: false });
         await sleep(wait, signal);
       }
     }
+  }
+
+  /** Update a queued recording as it now stands in the store (send() may have moved it on); nothing if it was deleted. */
+  private async patch(syncId: string, patch: Partial<QueuedRecording>) {
+    const current = (await this.deps.store.all()).find((item) => item.syncId === syncId);
+    if (current) await this.deps.store.put({ ...current, ...patch });
+    await this.refresh();
+  }
+
+  /** Stop sending a recording deleted meanwhile, perhaps from another tab (#165). */
+  private async assertQueued(syncId: string) {
+    if (!(await this.deps.store.all()).some((item) => item.syncId === syncId)) throw new FatalUpload('deleted');
   }
 
   /** Send one recording until its session exists. Throws to retry, or [FatalUpload]. */
   async send(start: QueuedRecording): Promise<void> {
     let item = start;
     const save = async (patch: Partial<QueuedRecording>) => {
+      await this.assertQueued(item.syncId);
       item = { ...item, ...patch };
       await this.deps.store.put(item);
     };
@@ -173,6 +209,7 @@ export class UploadRunner {
       if (round > 5) throw new Error('upload_restarted_too_often');
       await this.upload(item, save);
     }
+    await this.assertQueued(item.syncId);
     const created = await this.call('POST', '/api/web/v1/sessions', {
       json: {
         syncId: item.syncId,
@@ -219,9 +256,11 @@ export class UploadRunner {
     let sent = [...have].reduce((sum, n) => sum + partSize(n), 0);
     this.emit({ active: { syncId: item.syncId, sent } });
     const file = await this.deps.file(item);
+    if (!file) throw new FatalUpload('The recording is no longer on this computer.');
     if (file.size !== item.size) throw new FatalUpload('The recording on this computer is incomplete.');
     for (let n = 1; n <= parts; n++) {
       if (have.has(n)) continue;
+      await this.assertQueued(item.syncId);
       const body = file.slice((n - 1) * PART_BYTES, (n - 1) * PART_BYTES + partSize(n));
       const put = await this.call('PUT', `${upload}/parts/${n}`, { body });
       if (put.status === 404) return save({ uploadId: null });
@@ -241,28 +280,34 @@ export class UploadRunner {
     await save({ stored: true, uploadId: null });
   }
 
-  /** Throw for an unexpected answer: retry on 5xx, 401 and 429, give up on the rest. */
+  /** Throw for an unexpected answer: retry on 5xx and 429, give up on the rest. */
   private refuse(answer: Answer): never {
     const code = typeof answer.body.error === 'string' ? answer.body.error : `http_${answer.status}`;
     if (answer.status >= 500 && answer.status !== 507) throw new Error(code);
-    if (answer.status === 401 || answer.status === 429 || answer.status === 0) throw new Error(code);
+    if (answer.status === 429 || answer.status === 0) throw new Error(code);
     if (answer.status === 507) throw new FatalUpload('No room left for recordings on the server.');
     throw new FatalUpload(`The server refused the recording (${code}).`);
   }
 
-  /** One request; a network failure or an answer that is not the server's JSON throws, to retry. */
+  /**
+   * One request; a network failure or an answer that is not the server's
+   * JSON throws, to retry. Redirects are not followed: the server's routes
+   * never redirect, so one is authz-proxy sending the browser to sign in.
+   */
   private async call(method: string, url: string, init: { json?: unknown; body?: Blob } = {}): Promise<Answer> {
     let res: Response;
     try {
       res = await this.deps.fetch(url, {
         method,
         cache: 'no-store',
+        redirect: 'manual',
         headers: init.json !== undefined ? { 'Content-Type': 'application/json' } : undefined,
         body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
       });
     } catch {
       throw new Error('offline');
     }
+    if (res.type === 'opaqueredirect' || res.status === 401) throw new SignedOut();
     if (res.status === 204) return { status: 204, body: {} };
     const text = await res.text().catch(() => null);
     if (text === null) throw new Error('offline');
@@ -274,4 +319,18 @@ export class UploadRunner {
       throw new Error(`unexpected_answer_${res.status}`);
     }
   }
+}
+
+/** What a [QueuedRecording.lastError] code means, for the upload panel (#165). */
+export function describeError(code: string): string {
+  if (code === 'offline') return 'The server could not be reached.';
+  if (code === 'signed_out') return 'The sign-in has expired.';
+  if (code === 'missing_blobs') return 'The server no longer had the recording; it is sent again.';
+  if (code === 'parts_missing') return 'Some parts did not arrive; they are sent again.';
+  if (code === 'upload_restarted_too_often') return 'The upload kept starting over.';
+  let m = /^unexpected_answer_(\d+)$/.exec(code);
+  if (m) return `An answer that was not the server’s (HTTP ${m[1]}), perhaps from a proxy.`;
+  m = /^http_(\d+)$/.exec(code);
+  if (m) return `The server answered HTTP ${m[1]}.`;
+  return `The server answered: ${code}.`;
 }

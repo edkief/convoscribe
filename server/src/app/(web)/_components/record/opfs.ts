@@ -24,6 +24,16 @@ export async function recordingFile(syncId: string): Promise<File> {
   return file.getFile();
 }
 
+/** The `syncId`s of the recordings stored in this browser (#165). */
+export async function listRecordings(): Promise<string[]> {
+  const dir = (await recordings()) as unknown as { keys(): AsyncIterable<string> };
+  const ids: string[] = [];
+  for await (const name of dir.keys()) {
+    if (name.endsWith('.wav')) ids.push(name.slice(0, -'.wav'.length));
+  }
+  return ids;
+}
+
 /** Delete a stored recording; nothing when it is already gone. */
 export async function removeRecording(syncId: string): Promise<void> {
   await (await recordings()).removeEntry(recordingFileName(syncId)).catch(() => {});
