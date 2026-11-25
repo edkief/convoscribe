@@ -1310,6 +1310,14 @@ and open one to read its transcript beside its summary, action items,
 marks and questions while its recording plays; tap a sentence to play
 from it. Search the words of all your transcripts and summaries there
 too, and open a result at the matching line (#83).
+*Record* records there too (#164, #165), for a computer without the app:
+the transcript appears live, made on the computer by the same speech model
+as the phone's CPU engine, and on *Stop* the recording uploads in the
+background and becomes an ordinary session that syncs to your phones.
+Recording needs no network; an upload cut off resumes, and a recording
+interrupted by a reload or a crash can be recovered when the web app is
+opened again. Chrome and Safari on macOS are the targets. See
+[*Recording in the browser*](server/README.md#recording-in-the-browser).
 Recordings and transcripts (Markdown, SRT or WebVTT) download from there.
 You see only your own sessions. A session deleted there or on a device
 waits in the web app's trash for 30 days (#81): restoring it brings it

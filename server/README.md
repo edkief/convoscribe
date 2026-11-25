@@ -47,7 +47,7 @@ Start (#104).
 On a laptop or a tablet in landscape, a sidebar holds a search field and lists
 your sessions, your talking-point lists, your tags with how many sessions carry each, the trash, the
 size of the recordings you store (trash included) and who is signed in; below
-1200 px wide it folds into a top bar, with talking points (#110), search and
+1200 px wide it folds into a top bar, with record (#164), talking points (#110), search and
 trash buttons beside *Sign out*, and for admins a button to the admin pages. On
 a phone the bar shows the logo without the name, so every button fits.
 
@@ -99,6 +99,8 @@ a phone the bar shows the logo without the name, so every button fits.
   which devices download at their next sync, and the most recent change wins. A
   save or delete from a page older than the list is refused, and the page asks
   you to reload.
+- **Record** (`/record`, #164): record a conversation in the browser, with a
+  live transcript made on your computer. See *Recording in the browser*, below.
 - **Trash** (`/trash`): sessions deleted in the last 30 days, here or on a
   device, the most recently deleted first, each with when it was deleted
   and when it goes for good. *Restore* brings one back; *Empty trash*
@@ -106,6 +108,68 @@ a phone the bar shows the logo without the name, so every button fits.
 
 A manifest from a newer app version is shown as far as the server
 understands it, with a note.
+
+### Recording in the browser
+
+*Record* (#164) records from the microphone. Choose the language (English or French), then
+press the button. With *Live transcript* on and that language's speech model
+downloaded, the transcript appears as you speak. It is made on your computer
+by sherpa-onnx compiled to WebAssembly, with the same Kroko streaming model as
+the phone's CPU engine. *Download* fetches the model once (about 71 MB, from
+Hugging Face, plus the runtime from this server), and the browser keeps it until
+you delete it. Recording never downloads anything. If the computer is too slow
+to keep up, or the model fails to load, the transcript stops and the recording
+goes on, saved without one. The page shows how fast transcription runs (under 1×
+keeps up).
+
+The recording is the phone's format (WAV, 16-bit, 16 kHz mono), written as it
+arrives to the browser's private storage (OPFS). On *Stop* it joins an upload
+queue kept in IndexedDB. The queue sends it in 8 MB parts from any page of the
+web app, then creates the session (`POST /api/web/v1/sessions`). The session is
+an ordinary one: it appears in the library and syncs to your devices, which can
+identify its speakers. Once a session exists, its recording is deleted from the
+browser.
+
+**Browsers.** Chrome and Safari on macOS are the targets. Other Chromium
+browsers should work, and Firefox is best effort. Recording needs OPFS with
+sync access handles in workers, AudioWorklet and IndexedDB. Recovery after a
+crash also needs Web Locks. Where they are missing, the page says it can't record.
+
+**What survives:**
+
+- **No network.** Recording and transcription need none. A lost connection
+  during upload pauses it, and it resumes from the parts the server already
+  has: at once when the browser says it is back online, else after a wait of
+  2 s, doubling to a minute.
+- **A reload, a closed tab or a crash while recording.** The recording is
+  flushed to disk every 5 s, and each finished transcript line is saved as it
+  comes. Opening the web app again offers to *Recover* the recording, up to
+  the last few seconds, with the lines finished by then, or to *Discard* it.
+- **A reload or a crash while uploading.** The queue carries on when the web
+  app is opened again, from the parts the server has. Sending a step twice
+  never makes a second session.
+- **An expired sign-in.** A `401`, or authz-proxy redirecting to its sign-in
+  page, pauses the queue and keeps it. *Sign in again* reloads the page
+  through sign-in, and the queue continues. Signing in from another tab
+  works too, once you come back.
+
+**What does not survive:**
+
+- clearing the site's data, or closing a private window;
+- the browser evicting the site's storage when the disk is nearly full. The
+  page asks the browser to keep the storage persistent, which it may grant
+  to a site you use.
+
+The page warns before you leave it while recording or while recordings wait to
+upload. Links that would end a recording are held until you stop.
+
+**Waiting uploads.** The status line in the sidebar (or the top bar) shows what
+is uploading. It opens a panel listing every recording still on this computer:
+its date, length and size, then its progress, the reason the last try failed,
+or why the server refused it. A refused one can be retried. Any recording
+not being sent can be deleted, which removes it from the browser for good.
+When the web app opens, it also deletes recordings neither queued nor in
+progress, left behind by a crash.
 
 ### Editing a session
 
