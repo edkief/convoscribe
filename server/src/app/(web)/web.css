@@ -626,21 +626,31 @@ a.chip:hover {
   color: var(--text-3);
 }
 
-/* Recordings uploading from the web app (#164) */
+/* Recordings uploading from the web app (#164), and their panel (#165) */
 
 .upload-status {
-  display: grid;
-  gap: 0.3rem;
-  padding: 0 0.6rem;
+  position: relative;
   color: var(--text-2);
   font-size: 0.82rem;
 }
 
-.upload-status p {
+.upload-status summary {
   display: flex;
   align-items: center;
   gap: 0.6rem;
-  margin: 0;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  list-style: none;
+}
+
+.upload-status summary::-webkit-details-marker {
+  display: none;
+}
+
+.upload-status summary:hover,
+.upload-status[open] summary {
+  background: var(--surface-2);
 }
 
 .upload-status .spin {
@@ -651,10 +661,60 @@ a.chip:hover {
   color: var(--danger);
 }
 
-.upload-interrupted {
+/* Opens upwards from the sidebar's foot; downwards from the top bar on narrower screens. */
+.upload-panel {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 0;
+  z-index: 30;
   display: grid;
-  gap: 0.4rem;
+  gap: 0.75rem;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
   color: var(--text);
+}
+
+.upload-panel h2 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.upload-list {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.upload-item {
+  display: grid;
+  gap: 0.3rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.upload-item p {
+  margin: 0;
+}
+
+.upload-item.attention {
+  padding: 0.75rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+.upload-item progress {
+  width: 100%;
+  height: 0.4rem;
+  accent-color: var(--accent);
 }
 
 .upload-actions {
@@ -2694,8 +2754,11 @@ button.t-mark-time:hover {
     display: none;
   }
 
-  .upload-status {
-    padding: 0;
+  .upload-panel {
+    top: calc(100% + 0.5rem);
+    right: 0;
+    bottom: auto;
+    left: auto;
   }
 
   .upload-pct {

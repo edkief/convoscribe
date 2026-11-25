@@ -69,3 +69,26 @@ export function recoveredItem(
     queuedAt: now,
   };
 }
+
+/**
+ * What clean-up removes (#165): stored recordings neither queued nor
+ * noted as a draft (left by a crash between forgetting an upload and
+ * deleting its file), and drafts no tab is recording whose file is gone.
+ * `files` must be listed before `queued` and `drafts`: a draft is written
+ * before its file, so a recording just started is never taken for an orphan.
+ */
+export function orphans(
+  files: string[],
+  queued: string[],
+  drafts: Draft[],
+  heldLocks: ReadonlySet<string>,
+): { files: string[]; drafts: string[] } {
+  const known = new Set([...queued, ...drafts.map((draft) => draft.syncId)]);
+  const stored = new Set(files);
+  return {
+    files: files.filter((syncId) => !known.has(syncId)),
+    drafts: interruptedDrafts(drafts, heldLocks)
+      .map((draft) => draft.syncId)
+      .filter((syncId) => !stored.has(syncId)),
+  };
+}

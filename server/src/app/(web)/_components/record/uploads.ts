@@ -1,8 +1,8 @@
 'use client';
 
-import { recordingFile, removeRecording } from './opfs';
+import { listRecordings, recordingFile, removeRecording } from './opfs';
 import { discardDraft, draftLines, indexedDbQueue, listDrafts, promoteDraft } from './queue-store';
-import { interruptedDrafts, MIN_RECOVERED_MS, recordingLock, recoveredItem, type Draft } from './recovery';
+import { interruptedDrafts, MIN_RECOVERED_MS, orphans, recordingLock, recoveredItem, type Draft } from './recovery';
 import { UploadRunner, type QueuedRecording } from './upload-queue';
 import { pcmDurationMs, recoveredDataBytes } from './wav';
 import type { WriterIn, WriterOut } from './writer.worker';
@@ -22,7 +22,11 @@ export function uploadRunner(): UploadRunner {
     runner = new UploadRunner({
       fetch: (input, init) => fetch(input, init),
       store: indexedDbQueue,
-      file: (item) => recordingFile(item.syncId),
+      file: (item) =>
+        recordingFile(item.syncId).catch((err) => {
+          if (err instanceof DOMException && err.name === 'NotFoundError') return null;
+          throw err;
+        }),
       removeFile: (item) => removeRecording(item.syncId),
     });
     if (typeof BroadcastChannel !== 'undefined') {
@@ -61,7 +65,29 @@ export async function enqueue(item: QueuedRecording): Promise<void> {
 
 /** Try a failed recording again. */
 export async function retry(item: QueuedRecording): Promise<void> {
-  await enqueue({ ...item, failed: null });
+  await enqueue({ ...item, failed: null, lastError: null });
+}
+
+/** Delete a queued recording that will not be uploaded (#165): from the queue, then its file. */
+export async function discard(item: QueuedRecording): Promise<void> {
+  await indexedDbQueue.remove(item.syncId);
+  await removeRecording(item.syncId);
+  await uploadRunner().refresh();
+  announce();
+}
+
+/**
+ * Remove what a crash can leave behind (#165): recordings stored in this
+ * browser that are neither queued nor in progress, and drafts whose
+ * recording is gone. Run by the tab that sends, as it starts.
+ */
+export async function sweep(): Promise<void> {
+  const files = await listRecordings();
+  const queued = (await indexedDbQueue.all()).map((item) => item.syncId);
+  const { files: stale, drafts } = orphans(files, queued, await listDrafts(), await heldLocks());
+  for (const syncId of stale) await removeRecording(syncId);
+  for (const syncId of drafts) await discardDraft(syncId);
+  if (stale.length || drafts.length) announce();
 }
 
 /** Throw away a recording that was never queued: its WAV and its draft. */

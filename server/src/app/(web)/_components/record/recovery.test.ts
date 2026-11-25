@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { interruptedDrafts, linesWithin, recordingLock, recoveredItem, type Draft } from './recovery';
+import { interruptedDrafts, linesWithin, orphans, recordingLock, recoveredItem, type Draft } from './recovery';
 import type { FinalLine } from './segmenter';
 import { recoveredDataBytes, WAV_HEADER_BYTES } from './wav';
 
@@ -71,5 +71,17 @@ describe('recovery (#165)', () => {
     expect(recoveredDataBytes(WAV_HEADER_BYTES + 1001)).toBe(1000);
     expect(recoveredDataBytes(WAV_HEADER_BYTES)).toBe(0);
     expect(recoveredDataBytes(10)).toBe(0);
+  });
+});
+
+describe('orphans (#165)', () => {
+  it('finds recordings neither queued nor in progress, and drafts whose recording is gone', () => {
+    const result = orphans(
+      ['queued', 'draft', 'stray', 'live'],
+      ['queued'],
+      [draft('draft'), draft('live'), draft('lost'), draft('starting')],
+      new Set([recordingLock('live'), recordingLock('starting')]),
+    );
+    expect(result).toEqual({ files: ['stray'], drafts: ['lost'] });
   });
 });
