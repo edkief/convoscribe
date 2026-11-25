@@ -50,6 +50,16 @@ export type UploadDeps = {
 /** A refusal retrying cannot fix: the item is marked failed. */
 export class FatalUpload extends Error {}
 
+/**
+ * The sign-in has expired (#165): a `401`, or a redirect to sign in from
+ * authz-proxy. The queue waits, untouched, until the user signs in again.
+ */
+export class SignedOut extends Error {
+  constructor() {
+    super('signed_out');
+  }
+}
+
 /** Wait `2 s × 2^(attempt-1)`, at most a minute, before trying again after a failure. */
 export const backoffMs = (attempt: number) => Math.min(60_000, 2_000 * 2 ** Math.max(0, attempt - 1));
 
@@ -60,6 +70,8 @@ export type QueueStatus = {
   active: { syncId: string; sent: number } | null;
   /** When the last attempt failed and the next is waiting, why. */
   waiting: string | null;
+  /** The sign-in expired: nothing is sent until the user signs in again. */
+  signedOut: boolean;
 };
 
 /** How long an empty queue waits before looking again, unless kicked. */
@@ -87,7 +99,7 @@ type Answer = { status: number; body: Record<string, unknown> };
 export class UploadRunner {
   private wake = new AbortController();
   private listeners = new Set<(status: QueueStatus) => void>();
-  private status: QueueStatus = { items: [], active: null, waiting: null };
+  private status: QueueStatus = { items: [], active: null, waiting: null, signedOut: false };
   private stopped = false;
   private loop: Promise<void> | null = null;
   private onCreated: ((item: QueuedRecording) => void) | undefined;
@@ -145,17 +157,24 @@ export class UploadRunner {
       try {
         await this.send(next);
         attempt = 0;
-        this.emit({ active: null, waiting: null });
+        this.emit({ active: null, waiting: null, signedOut: false });
         this.onCreated?.(next);
       } catch (err) {
         this.emit({ active: null });
+        if (err instanceof SignedOut) {
+          // Not a failure to back off from: wait for the user, looking again now and then or on a kick.
+          attempt = 0;
+          this.emit({ signedOut: true, waiting: null });
+          await sleep(IDLE_MS, signal);
+          continue;
+        }
         if (err instanceof FatalUpload) {
           await this.deps.store.put({ ...next, failed: err.message });
           continue;
         }
         attempt++;
         const wait = backoffMs(attempt);
-        this.emit({ waiting: err instanceof Error ? err.message : String(err) });
+        this.emit({ waiting: err instanceof Error ? err.message : String(err), signedOut: false });
         await sleep(wait, signal);
       }
     }
@@ -241,28 +260,34 @@ export class UploadRunner {
     await save({ stored: true, uploadId: null });
   }
 
-  /** Throw for an unexpected answer: retry on 5xx, 401 and 429, give up on the rest. */
+  /** Throw for an unexpected answer: retry on 5xx and 429, give up on the rest. */
   private refuse(answer: Answer): never {
     const code = typeof answer.body.error === 'string' ? answer.body.error : `http_${answer.status}`;
     if (answer.status >= 500 && answer.status !== 507) throw new Error(code);
-    if (answer.status === 401 || answer.status === 429 || answer.status === 0) throw new Error(code);
+    if (answer.status === 429 || answer.status === 0) throw new Error(code);
     if (answer.status === 507) throw new FatalUpload('No room left for recordings on the server.');
     throw new FatalUpload(`The server refused the recording (${code}).`);
   }
 
-  /** One request; a network failure or an answer that is not the server's JSON throws, to retry. */
+  /**
+   * One request; a network failure or an answer that is not the server's
+   * JSON throws, to retry. Redirects are not followed: the server's routes
+   * never redirect, so one is authz-proxy sending the browser to sign in.
+   */
   private async call(method: string, url: string, init: { json?: unknown; body?: Blob } = {}): Promise<Answer> {
     let res: Response;
     try {
       res = await this.deps.fetch(url, {
         method,
         cache: 'no-store',
+        redirect: 'manual',
         headers: init.json !== undefined ? { 'Content-Type': 'application/json' } : undefined,
         body: init.json !== undefined ? JSON.stringify(init.json) : init.body,
       });
     } catch {
       throw new Error('offline');
     }
+    if (res.type === 'opaqueredirect' || res.status === 401) throw new SignedOut();
     if (res.status === 204) return { status: 204, body: {} };
     const text = await res.text().catch(() => null);
     if (text === null) throw new Error('offline');

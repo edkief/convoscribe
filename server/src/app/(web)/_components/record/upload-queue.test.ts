@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { backoffMs, PART_BYTES, UploadRunner, type QueuedRecording, type QueueStore } from './upload-queue';
+import { backoffMs, PART_BYTES, SignedOut, UploadRunner, type QueueStatus, type QueuedRecording, type QueueStore } from './upload-queue';
 
 const SHA = 'a'.repeat(64);
 
@@ -234,6 +234,45 @@ describe('UploadRunner (#164)', () => {
     await store.put(recording(1000));
     await runner.run(() => runner.stop());
     expect(waits).toEqual([2000, 4000]);
+    expect(server.sessions.size).toBe(1);
+  });
+
+  it('takes a 401 or a redirect to sign in as a signed-out browser (#165)', async () => {
+    const item = recording(1000);
+    await store.put(item);
+    server.answer = { match: /POST \/blobs/, res: () => Response.json({ error: 'unauthorized' }, { status: 401 }) };
+    await expect(runner.send(item)).rejects.toBeInstanceOf(SignedOut);
+    // What fetch returns for a redirect with `redirect: 'manual'`.
+    const redirect = { type: 'opaqueredirect', status: 0, text: async () => '' } as unknown as Response;
+    server.answer = { match: /POST \/blobs/, res: () => redirect };
+    await expect(runner.send(item)).rejects.toBeInstanceOf(SignedOut);
+    expect(store.items.get(item.syncId)?.failed).toBeNull();
+  });
+
+  it('waits, without backing off or failing, while signed out, and goes on after signing in (#165)', async () => {
+    const waits: number[] = [];
+    const seen: QueueStatus[] = [];
+    let signedOut = 2;
+    const expiring = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(init?.redirect).toBe('manual');
+      if (signedOut-- > 0) return Response.json({ error: 'unauthorized' }, { status: 401 });
+      return server.fetch(input, init);
+    }) as typeof fetch;
+    runner = new UploadRunner({
+      fetch: expiring,
+      store,
+      file: async (item) => new Blob([new Uint8Array(item.size)]),
+      removeFile: async () => {},
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    });
+    runner.subscribe((status) => seen.push(status));
+    await store.put(recording(1000));
+    await runner.run(() => runner.stop());
+    expect(waits).toEqual([60_000, 60_000]);
+    expect(seen.some((s) => s.signedOut)).toBe(true);
+    expect(seen.at(-1)?.signedOut).toBe(false);
     expect(server.sessions.size).toBe(1);
   });
 

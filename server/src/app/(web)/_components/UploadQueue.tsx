@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatBytes, formatLength } from '@/lib/format';
 import type { QueueStatus } from './record/upload-queue';
 import {
@@ -33,6 +33,8 @@ export function UploadQueue() {
   const [interrupted, setInterrupted] = useState<Interrupted[]>([]);
   const [recovering, setRecovering] = useState<string | null>(null);
   const [recoverError, setRecoverError] = useState<string | null>(null);
+  /** Set when the page is left on purpose, to sign in again: no warning then. */
+  const leaving = useRef(false);
 
   // Recordings a reload or a crash cut short (#165), looked for again whenever the queue changes or the tab comes back.
   const findInterrupted = useCallback(() => {
@@ -64,10 +66,18 @@ export function UploadQueue() {
     const locks = (navigator as Navigator & { locks?: Locks }).locks;
     if (locks) locks.request(UPLOAD_LOCK, run).catch(() => {});
     else run().catch(() => {});
-    const online = () => runner.kick();
-    window.addEventListener('online', online);
+    // Back online, or back to this tab (perhaps signed in again in another one, #165): try at once.
+    const kick = () => runner.kick();
+    const visible = () => {
+      if (document.visibilityState === 'visible') runner.kick();
+    };
+    window.addEventListener('online', kick);
+    window.addEventListener('focus', kick);
+    document.addEventListener('visibilitychange', visible);
     return () => {
-      window.removeEventListener('online', online);
+      window.removeEventListener('online', kick);
+      window.removeEventListener('focus', kick);
+      document.removeEventListener('visibilitychange', visible);
       unsubscribe();
       runner.stop();
     };
@@ -78,6 +88,7 @@ export function UploadQueue() {
   useEffect(() => {
     if (!queued) return;
     const warn = (e: BeforeUnloadEvent) => {
+      if (leaving.current) return;
       e.preventDefault();
       e.returnValue = '';
     };
@@ -140,7 +151,29 @@ export function UploadQueue() {
         </div>
       ))}
       {recoverError && <p className="upload-failed">{recoverError}</p>}
+      {status.signedOut && waiting > 0 && (
+        <div className="upload-interrupted">
+          <p>
+            <IconAlert size={16} />
+            <span>Your sign-in has expired. {recordings(waiting)} will wait on this computer.</span>
+          </p>
+          <div className="upload-actions">
+            <button
+              type="button"
+              className="button primary"
+              onClick={() => {
+                // Loading the page again goes through sign-in, the proxy's or the server's; the queue then goes on.
+                leaving.current = true;
+                window.location.reload();
+              }}
+            >
+              Sign in again to finish uploading
+            </button>
+          </div>
+        </div>
+      )}
       {waiting > 0 &&
+        !status.signedOut &&
         (active ? (
           <p title={`${formatBytes(status.active!.sent)} of ${formatBytes(active.size)}`}>
             <IconSpinner size={16} className="spin" />
