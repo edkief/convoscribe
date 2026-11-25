@@ -130,3 +130,30 @@ describe('a merging push (#90)', () => {
     expect((await putDocument('o', 'session', 's1', longer, { merge: true })).revision).toBe(gone.revision + 1);
   });
 });
+
+describe('a create from the web app (#163)', () => {
+  it('adds a new document, and repeating it returns the same revision', async () => {
+    const created = await putDocument('o', 'session', 's1', push(sessionManifest('s1'), 0), { create: true });
+    expect(created.revision).toBe(1);
+    const again = await putDocument('o', 'session', 's1', push(sessionManifest('s1'), 0), { create: true });
+    expect(again).toEqual(created);
+  });
+
+  it('refuses other content under the same syncId, even content the conflict rule would let win', async () => {
+    const first = await pushManifest('o', sessionManifest('s1'));
+    const longer = push(sessionManifest('s1', { title: 'Other' }), 0, { durationMs: 999_999 });
+    await expect(putDocument('o', 'session', 's1', longer, { create: true })).rejects.toMatchObject({
+      status: 409,
+      details: { current: { revision: first.revision } },
+    });
+    expect((await getDocumentMeta('o', 'session', 's1'))?.revision).toBe(first.revision);
+  });
+
+  it('never brings back a deleted session, even with the same content', async () => {
+    const first = await pushManifest('o', sessionManifest('s1'));
+    const gone = await deleteDocument('o', 'session', 's1', first.revision);
+    const same = push(sessionManifest('s1'), 0, { durationMs: 999_999 });
+    await expect(putDocument('o', 'session', 's1', same, { create: true })).rejects.toMatchObject({ status: 409 });
+    expect(await getDocumentMeta('o', 'session', 's1')).toMatchObject({ revision: gone.revision, deleted: true });
+  });
+});
