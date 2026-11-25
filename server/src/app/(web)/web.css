@@ -485,6 +485,31 @@ a.chip:hover {
   font-weight: 600;
 }
 
+/* Recordings uploading from the web app (#164) */
+
+.upload-status {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0 0.6rem;
+  color: var(--text-2);
+  font-size: 0.82rem;
+}
+
+.upload-status p {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0;
+}
+
+.upload-status .spin {
+  animation: reach-spin 0.9s linear infinite;
+}
+
+.upload-failed {
+  color: var(--danger);
+}
+
 .account {
   display: flex;
   align-items: center;
@@ -2513,6 +2538,14 @@ button.t-mark-time:hover {
 
   .side-nav,
   .storage {
+    display: none;
+  }
+
+  .upload-status {
+    padding: 0;
+  }
+
+  .upload-pct {
     display: none;
   }
 
