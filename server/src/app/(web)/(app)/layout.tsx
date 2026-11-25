@@ -8,11 +8,12 @@ import { requireIdentity } from '@/lib/web-identity';
 import { IconDatabase, IconKey, IconLogOut, LogoMark } from '../_components/Icons';
 import { NarrowNav } from '../_components/NarrowNav';
 import { SidebarNav } from '../_components/SidebarNav';
+import { UploadQueue } from '../_components/UploadQueue';
 
 /**
  * The frame of every signed-in page (#80): a sidebar with the library, its
- * tags, the trash (#81), the admin pages (#82), the storage used and who is
- * signed in; a top bar on narrow screens. It renders with Postgres down, so
+ * tags, the trash (#81), the admin pages (#82), recordings still uploading
+ * (#164), the storage used and who is signed in; a top bar on narrow screens. It renders with Postgres down, so
  * the status page can say so.
  */
 export default async function AppLayout({ children }: { children: ReactNode }) {
@@ -40,6 +41,8 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
           <SidebarNav total={total} tags={tags} trash={trash} isAdmin={isAdmin} />
         </Suspense>
         <div className="side-foot">
+          {/* Recordings made here, still uploading (#164); it keeps sending while you browse. */}
+          <UploadQueue />
           <div className="storage" title="Recordings stored on this server, including the trash">
             <IconDatabase />
             <span>

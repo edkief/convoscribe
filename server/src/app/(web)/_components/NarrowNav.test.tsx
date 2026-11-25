@@ -19,14 +19,16 @@ describe('NarrowNav (#110)', () => {
   });
 
   it('links to talking points, search and the trash, and admin pages only for admins', () => {
-    expect(links(false)).toEqual(['Talking points', 'Search', 'Trash']);
-    expect(links(true)).toEqual(['Talking points', 'Search', 'Admin', 'Trash']);
+    expect(links(false)).toEqual(['Record', 'Talking points', 'Search', 'Trash']);
+    expect(links(true)).toEqual(['Record', 'Talking points', 'Search', 'Admin', 'Trash']);
   });
 
   it('marks the current page', () => {
     path = '/talking-points';
-    expect(links(true)).toEqual(['Talking points*', 'Search', 'Admin', 'Trash']);
+    expect(links(true)).toEqual(['Record', 'Talking points*', 'Search', 'Admin', 'Trash']);
     path = '/admin/users';
-    expect(links(true)).toEqual(['Talking points', 'Search', 'Admin*', 'Trash']);
+    expect(links(true)).toEqual(['Record', 'Talking points', 'Search', 'Admin*', 'Trash']);
+    path = '/record';
+    expect(links(false)).toEqual(['Record*', 'Talking points', 'Search', 'Trash']);
   });
 });
