@@ -1,7 +1,7 @@
 'use client';
 
 import { recordingFile, removeRecording } from './opfs';
-import { indexedDbQueue } from './queue-store';
+import { discardDraft, indexedDbQueue, promoteDraft } from './queue-store';
 import { UploadRunner, type QueuedRecording } from './upload-queue';
 
 /** Tabs tell each other the queue changed, so every tab's status follows. */
@@ -37,10 +37,10 @@ export function announce() {
   channel?.postMessage('changed');
 }
 
-/** Queue a finished recording and start sending it. */
+/** Queue a finished recording, forgetting its draft (#165), and start sending it. */
 export async function enqueue(item: QueuedRecording): Promise<void> {
   const r = uploadRunner();
-  await indexedDbQueue.put(item);
+  await promoteDraft(item);
   await r.refresh();
   announce();
   r.kick();
@@ -49,4 +49,29 @@ export async function enqueue(item: QueuedRecording): Promise<void> {
 /** Try a failed recording again. */
 export async function retry(item: QueuedRecording): Promise<void> {
   await enqueue({ ...item, failed: null });
+}
+
+/** Throw away a recording that was never queued: its WAV and its draft. */
+export async function discardRecording(syncId: string): Promise<void> {
+  await Promise.all([removeRecording(syncId), discardDraft(syncId).catch(() => {})]);
+}
+
+/**
+ * Take the Web Lock `name` and keep it until the returned function is
+ * called. Resolves once it is held; with `ifAvailable`, resolves null when
+ * another tab holds it. Without Web Locks, every lock is free.
+ */
+export function holdLock(name: string, options: { ifAvailable?: boolean } = {}): Promise<(() => void) | null> {
+  if (typeof navigator === 'undefined' || !navigator.locks) return Promise.resolve(() => {});
+  return new Promise((acquired) => {
+    navigator.locks
+      .request(name, { ifAvailable: options.ifAvailable ?? false }, (lock) => {
+        if (!lock) {
+          acquired(null);
+          return;
+        }
+        return new Promise<void>((release) => acquired(release));
+      })
+      .catch(() => acquired(null));
+  });
 }
